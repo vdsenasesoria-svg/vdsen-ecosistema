@@ -1,0 +1,100 @@
+name: VDSEN client app production release (app-only)
+
+# APP-ONLY production release lane for the VDSEN Client App.
+#
+# This workflow is deliberately separate from `vdsen-release-prod.yml` (the RULES-ONLY lane).
+# Nothing here can deploy Firestore rules, touch firestore.indexes.json, write Firestore
+# documents, change IAM, generate credentials, mutate `main` or alter NUMERIC_APPLY_ENABLED.
+# Its only mutation is pointing Vercel production traffic at an exact, pre-verified Git
+# deployment, and its only revert points that traffic back at the captured previous one.
+#
+# Controlled by its OWN kill switch, `CLIENT_APP_RELEASE_ENABLED`.
+# `PRODUCTION_RELEASE_ENABLED` (the rules switch) is irrelevant here and must stay false.
+
+on:
+  workflow_dispatch:
+    inputs:
+      runtime_sha:
+        description: 'Exact 40-char commit SHA to release (never latest/HEAD/branch)'
+        required: true
+        type: string
+      reason:
+        description: 'Why this app release is being performed'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  app-release:
+    # The candidate is a Git commit, not a branch head: this must run from the canonical branch.
+    if: github.ref == 'refs/heads/codex/client-app-next'
+    environment: Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      CLIENT_APP_RELEASE_ENABLED: ${{ vars.CLIENT_APP_RELEASE_ENABLED }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      APP_RUNTIME_SHA: ${{ inputs.runtime_sha }}
+      APP_RELEASE_REASON: ${{ inputs.reason }}
+      APP_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      APP_TEAM_ID: ${{ vars.VERCEL_ORG_ID }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: App kill switch and trusted ref
+        run: |
+          test "$CLIENT_APP_RELEASE_ENABLED" = true
+          test "$GITHUB_REF" = refs/heads/codex/client-app-next
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Repo contract (no Firestore mutation, no implicit HEAD)
+        run: node scripts/release/check.cjs
+      - name: App-only lane tests
+        run: node --test tests/app-release-lane.test.js
+      - name: Baseline-aware unit gate
+        run: node scripts/release/baseline.cjs unit
+      - name: Baseline-aware canonical emulator gate
+        run: node scripts/release/baseline.cjs emulator
+      - name: Enforce both baseline gates
+        run: |
+          node -e "const u=require('./release-output/unit-baseline-result.json');const e=require('./release-output/emulator-baseline-result.json');if(u.gate!=='PASS'||e.gate!=='PASS'){console.error('baseline gate not PASS');process.exit(1)}if(u.NEW_REGRESSIONS!==0||e.NEW_REGRESSIONS!==0){console.error('new regressions');process.exit(1)}"
+      - name: Release tooling HEAD must be byte-identical to the candidate product
+        # The lane runs from canonical HEAD (tooling), while the product released is the exact
+        # candidate SHA. Every served path must match between the two, or the bytes being
+        # verified below would not be the bytes being tested.
+        run: node scripts/release/app-live.cjs verify-product-identity
+      - name: Pre-mutation gates (candidate, baseline, env, rollback artifact)
+        run: node scripts/release/app-live.cjs preflight
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: app-rollback-${{ github.run_id }}
+          path: release-output/app-rollback-*.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Promote exact candidate to production
+        run: node scripts/release/app-live.cjs apply
+      - name: Recover the app if promotion or verification failed
+        if: failure()
+        run: node scripts/release/app-live.cjs rollback
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: app-release-result-${{ github.run_id }}
+          path: release-output/app-*.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Release result
+        if: always()
+        run: node scripts/release/app-live.cjs release-result

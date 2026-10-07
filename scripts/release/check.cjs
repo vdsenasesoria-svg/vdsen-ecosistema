@@ -19,6 +19,24 @@ function workflowContract() {
   }
   const source = fs.readFileSync('.github/workflows/vdsen-release-check.yml', 'utf8');
   assert.ok(!/secrets\.|id-token: write|environment:|live\.cjs|google-github-actions\/auth/.test(source), 'Repo check must not need live credentials');
+  // The APP-ONLY lane is separate by contract: its own kill switch, and no path into the
+  // Firestore rules lane. It must never consult PRODUCTION_RELEASE_ENABLED.
+  const app = fs.readFileSync('.github/workflows/vdsen-app-release-prod.yml', 'utf8');
+  assert.ok(app.includes('environment: Production'), 'App lane must use the canonical Environment');
+  assert.ok(!app.includes('environment: production'));
+  assert.ok(app.includes('test "$CLIENT_APP_RELEASE_ENABLED" = true'), 'App lane needs its own kill switch');
+  // Check actual USE, not prose: the workflow explains the rule in a comment, so the name may
+  // appear as text. What must never appear is a READ of it.
+  assert.ok(!/vars\.PRODUCTION_RELEASE_ENABLED/.test(app), 'App lane must not read the rules kill switch');
+  assert.ok(app.includes('scripts/release/app-live.cjs'), 'App lane must use the app-only tooling');
+  // Exact path, not a substring: 'live.cjs' also matches 'app-live.cjs'.
+  assert.ok(!app.includes('scripts/release/live.cjs'), 'App lane must not run the rules release path');
+  assert.ok(!app.includes('firestore.rules'), 'App lane must not deploy rules');
+  for (const match of app.matchAll(/secrets\.([A-Z_]+)/g)) assert.equal(match[1], 'VERCEL_TOKEN');
+  assert.ok(!app.includes('credentials_json:'));
+  const appAllowed = new Set(['VERCEL_PROJECT_ID', 'VERCEL_ORG_ID', 'CLIENT_APP_RELEASE_ENABLED']);
+  for (const match of app.matchAll(/vars\.([A-Z_]+)/g)) assert.ok(appAllowed.has(match[1]), 'App lane noncanonical variable: ' + match[1]);
+  console.log('CLIENT_APP_KILL_SWITCH=' + (process.env.CLIENT_APP_RELEASE_ENABLED === 'true' ? 'true (release lane armed)' : 'false (disabled or unavailable; default false)'));
   console.log('PRODUCTION_KILL_SWITCH=' + (process.env.PRODUCTION_RELEASE_ENABLED === 'true' ? 'true (repo checks only)' : 'false (disabled or unavailable; default false)'));
 }
 function check(runtime = process.env.RUNTIME_SHA) {
