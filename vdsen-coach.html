@@ -3058,11 +3058,22 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     // `clientes` NO entra en esta lista: es el contenedor PADRE de `clientList`, así que vaciarlo
     // borraba la estructura del shell y el coach siguiente ya no podía renderizar su lista. El arnés
     // lo detectó de inmediato (parkedLen cayó a 0 y la lista desapareció).
+    // CN3 — clear what the previous coach left RENDERED. `planClientSelect` and `crearPlan` are NOT
+    // listed here: planClientSelect lives INSIDE crearPlan, so clearing the parent destroyed the
+    // <select> element itself. The shell must survive parking with its markup intact - only its
+    // dynamic CONTENT is cleared - or the next coach's init throws on a missing element (which is
+    // exactly what an unguarded `select.innerHTML` in loadClientsSelect did).
     ['modalClientBody', 'clientList', 'dashSummary', 'clientNavBar', 'accountInfoBox',
-      'fichasRecibidas', 'templateList', 'exerciseCatalog', 'planBuilder', 'compendioStatus',
-      'planClientSelect', 'crearPlan'].forEach(id => {
+      'fichasRecibidas', 'templateList', 'exerciseCatalog', 'planBuilder', 'compendioStatus'].forEach(id => {
       const e = document.getElementById(id); if (e) e.innerHTML = '';
     });
+    // Keep the client picker element and its placeholder, but drop the outgoing coach's client
+    // OPTIONS by value. Static options are untouched, and the next coach repopulates from scratch.
+    const _pcs = document.getElementById('planClientSelect');
+    if (_pcs) {
+      const _knownClients = new Set(_clientIdList.concat(Object.keys(_clientNameMap)));
+      Array.prototype.slice.call(_pcs.options || []).forEach(o => { if (_knownClients.has(o.value)) o.remove(); });
+    }
     const _t = document.getElementById('modalClientName'); if (_t) _t.textContent = '—';
     const _d = document.getElementById('modalDeleteClientBtn');
     if (_d) { _d.style.display = 'none'; _d.onclick = null; }
@@ -6262,6 +6273,10 @@ Reporte:
     if (!currentCoach) return;
     const snap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
     const select = document.getElementById("planClientSelect");
+    // Defensive: the client picker lives inside a section that may not be present in this shell (a
+    // parked or partial shell). init calls this unconditionally, so a missing element must be a no-op
+    // rather than an uncaught TypeError that aborts the rest of the init sequence.
+    if (!select) return;
     select.innerHTML = '<option value="">-- Selecciona cliente --</option>';
     snap.forEach(d => { const _o = document.createElement('option'); _o.value = d.id; _o.textContent = d.data().displayName || d.id; select.appendChild(_o); });
     // T117-H: clear stale _importedPlan and planBuilder when the selected client changes.
