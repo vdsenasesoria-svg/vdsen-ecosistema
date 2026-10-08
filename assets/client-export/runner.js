@@ -41,9 +41,24 @@
     return out;
   }
 
-  // Pure: raw collection -> { filename, bytes, manifest, files }.
-  function buildArchive(raw, opts) {
+  // PHASE 5 — a massive history must not freeze the phone.
+  //
+  // Measured before this change: a 30k-set history took 5.5 s with ZERO event-loop yields, because
+  // every stage is synchronous and `await` on an in-memory adapter resolves in MICROtasks, which
+  // never hand control back to the browser. The tab was frozen for the whole export: the spinner did
+  // not turn, nothing repainted, and the user could not cancel.
+  //
+  // `yieldTo` lets a caller interleave the stage boundaries with the event loop. It defaults to a
+  // resolved promise, so pure Node callers and every existing test keep their exact semantics, while
+  // the browser wires it to a macrotask so the UI stays alive. This does NOT make the export
+  // incremental; it bounds how long the main thread is held in a single stretch.
+  function defaultYield() { return Promise.resolve(); }
+
+  // raw collection -> { filename, bytes, manifest, files }.
+  async function buildArchive(raw, opts) {
+    var yieldTo = (opts && typeof opts.yieldTo === 'function') ? opts.yieldTo : defaultYield;
     var now = opts && opts.now instanceof Date ? opts.now : new Date();
+    await yieldTo();
     var model = N.normalize(raw, { now: now });
     assertOwnedModel(model, raw.client_id, raw.coach_id);
     delete model._internal;
@@ -52,6 +67,7 @@
 
     // Media extraction works on a private clone so the model/derived objects stay untouched.
     var meta = { exported_at: now.toISOString(), client_id: raw.client_id, coach_id: raw.coach_id, complete: complete };
+    await yieldTo();
     var working = { model: clone(model), derived: clone(derived) };
     var media = M.extract(working);
     var m2 = working.model, d2 = working.derived;
@@ -63,11 +79,24 @@
     // Secret scan over every JSON document; a hit blocks the whole export (fail closed).
     jsonFiles.forEach(function(f) { if (S.scanForSecrets(f[1]).length) throw S.ExportError('SECRET_SCAN_FAILED', f[0]); });
 
-    // Every text file is UTF-8 encoded exactly once; size, CRC and the ZIP all reuse those bytes (avoids 3x copies of large histories).
-    var files = jsonFiles.map(function(f) { return { path: f[0], content: ZIP.utf8(Z.toJson(f[1])) }; })
-      .concat(Z.csvFiles(m2, d2).map(function(f) { return { path: f[0], content: ZIP.utf8(f[1]) }; }))
+    // Every text file is UTF-8 encoded exactly once; size, CRC and the ZIP all reuse those bytes
+    // (avoids 3x copies of large histories).
+    //
+    // PHASE 5: encoding + CRC32 is where a huge history actually blocks the thread - measured at
+    // 2911 ms in ONE uninterrupted stretch for a 30k-set history, far more than the ZIP itself
+    // (393 ms). So this walks the files one at a time and yields between them instead of doing a
+    // monolithic map+forEach. Each archive has only a handful of files, but each one can be tens of
+    // megabytes, so the yield granularity that matters is per file.
+    var pending = jsonFiles.map(function(f) { return { path: f[0], json: f[1] }; })
+      .concat(Z.csvFiles(m2, d2).map(function(f) { return { path: f[0], text: f[1] }; }))
       .concat(media.files.map(function(f) { return { path: f.path, content: f.bytes }; }));
-    files.forEach(function(f) { f.bytes = f.content.length; f.crc32 = ZIP.crc32(f.content); });
+    var files = [];
+    for (var fi = 0; fi < pending.length; fi++) {
+      var p = pending[fi];
+      var content = p.content !== undefined ? p.content : ZIP.utf8(p.json !== undefined ? Z.toJson(p.json) : p.text);
+      files.push({ path: p.path, content: content, bytes: content.length, crc32: ZIP.crc32(content) });
+      await yieldTo();
+    }
 
     var counts = { plans: m2.training.plans.length, plans_backup: m2.training.plans_backup.length, mesocycles: m2.training.mesocycles.length, sessions: m2.training.sessions.length,
       exercise_logs: m2.training.exercise_logs.length, body_metrics: m2.body_metrics.length, recovery: m2.recovery.length, notes: m2.notes.length,
@@ -92,6 +121,8 @@
     };
     if (S.scanForSecrets(manifest).length) throw S.ExportError('SECRET_SCAN_FAILED', 'manifest.json');
     var all = [{ path: 'manifest.json', content: ZIP.utf8(Z.toJson(manifest)) }].concat(files.map(function(f) { return { path: f.path, content: f.content }; }));
+    // Final breath before the ZIP itself, which is the single heaviest step.
+    await yieldTo();
     var bytes = ZIP.build(all, now);
     return { filename: archiveName(m2.client.display_name, now), bytes: bytes, manifest: manifest, entries: all };
   }
@@ -106,7 +137,8 @@
         state.busy = true;
         try {
           var raw = await C.collect(cfg.io, { clientId: req && req.clientId, coachUid: cfg.coachUid });
-          var out = buildArchive(raw, { now: cfg.now ? cfg.now() : new Date() });
+          // The browser passes a macrotask-based yieldTo so a heavy history cannot freeze the tab.
+          var out = await buildArchive(raw, { now: cfg.now ? cfg.now() : new Date(), yieldTo: cfg.yieldTo });
           return { ok: true, filename: out.filename, bytes: out.bytes, manifest: out.manifest };
         } catch (e) {
           var code = e && e.isExportError ? e.code : 'EXPORT_FAILED';

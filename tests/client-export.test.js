@@ -279,7 +279,8 @@ test('CE.24 secret protection: denylist targets keys/PEM values (not note text);
   // Defense in depth: a secret that survives normalization (here via a warning record) aborts the whole export.
   const raw = await COL.collect(fx.makeIo(fx.build(), fx.COACH_A), { clientId: fx.A1, coachUid: fx.COACH_A });
   raw.warnings.push({ code: 'X', section: 'x', detail: 'y', apiKey: 'leaky' });
-  assert.throws(() => RUN.buildArchive(raw, { now: NOW }), e => e.code === 'SECRET_SCAN_FAILED');
+  // buildArchive is async since Phase 5 (it yields between stages so a huge history cannot freeze the tab), so the fail-closed secret gate must be asserted as a rejection.
+  await assert.rejects(() => RUN.buildArchive(raw, { now: NOW }), e => e.code === 'SECRET_SCAN_FAILED');
 });
 
 test('CE.25 media: inline images are bundled; URLs are REFERENCE ONLY (never fetched, signed query stripped); none -> NOT_PRESENT', async () => {
