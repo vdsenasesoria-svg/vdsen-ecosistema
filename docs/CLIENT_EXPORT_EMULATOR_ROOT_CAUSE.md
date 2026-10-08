@@ -73,6 +73,50 @@ clientDbs en el archivo: False
 
 ---
 
+## 3.bis — Aislamiento por operación (medido)
+
+Para no volver a suponer, se ejecutó **una operación por vez** contra el emulador y se contó la tasa
+de reintentos de `Listen` durante 6 s después de cada una:
+
+`
+A) web SDK: sólo connect, sin operación     listens en 6s = 0
+B) web SDK: getDoc                          listens en 6s = 0
+C) web SDK: getDocs(query where)            listens en 6s = 0   <- lo que usa el exportador
+D) Admin: sólo initialize                   listens en 6s = 0
+E) Admin: set                               listens en 6s = 0
+F) Admin: get                               listens en 6s = 0
+G) Admin: deleteApp                         listens en 6s = 0
+H) web SDK: terminate                       listens en 6s = 0
+I) web SDK: deleteApp                       listens en 6s = 0
+TOTAL de líneas Listen en toda la corrida: 0
+`
+
+Conclusión: **ninguna operación básica ni el ciclo de vida de las apps lo provocan por sí solos.**
+Se confirmó además que **nadie en el test, los helpers ni los módulos del export usa `onSnapshot`**.
+El bucle sólo aparece al correr el archivo completo bajo `node --test` con las diez pruebas, es decir
+depende de la **escala** (muchos exports y cientos de documentos) y del runner, no de una API suelta.
+
+## 3.ter — El SEGUNDO intento de arreglo tampoco funcionó (y también se revirtió)
+
+Hipótesis: forzar la salida del proceso desde el `after()`.
+
+`js
+test.after(() => { setImmediate(() => process.exit(process.exitCode || 0)); });
+`
+
+**Medición: tampoco sirvió.** El bucle persistió (52.532 líneas de `GrpcConnection`) y el proceso
+siguió vivo. Motivo: `node --test` mantiene sus propios handles, así que la salida programada no
+llega a ejecutarse. El cambio se **revirtió** igual que el anterior:
+
+`
+terminate     en el archivo: False
+clientDbs     en el archivo: False
+process.exit  en el archivo: False
+git diff HEAD -- tests/client-export-emulator.cjs  ->  sin diferencias
+`
+
+**Dos intentos, dos reversiones.** El árbol no contiene ningún arreglo no probado.
+
 ## 4. Estado honesto
 
 | Aspecto | Resultado |
