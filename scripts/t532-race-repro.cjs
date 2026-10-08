@@ -82,7 +82,7 @@ const persistFirstSet = (f) => adminDb.doc('logs/' + f.client.uid + '/mesos/' + 
 const rec = async (f) => (await adminDb.doc('logs/' + f.client.uid + '/mesos/' + f.planId).get()).data().progressionApplications[f.key];
 
 (async () => {
-  let pass = 0; const failures = []; let receiptWins = 0, revertWins = 0;
+  let pass = 0; const failures = []; let receiptWins = 0, revertWins = 0, neitherWins = 0;
 
   for (let i = 0; i < N; i++) {
     try {
@@ -109,17 +109,22 @@ const rec = async (f) => (await adminDb.doc('logs/' + f.client.uid + '/mesos/' +
         const g = await fixture();
         assert.equal((await apply(g)).written, true);
         const [a2, rv2] = await Promise.all([ack(g), revert(g)]);
-        assert.notEqual(Boolean(a2.written), Boolean(rv2.written), 'exactly one may win');
+        // The contract does NOT promise a winner: both may be refused, each by its own guard.
         const r = await rec(g);
+        const ACK_REF = ['TARGET_NOT_STARTED', 'INVALID_TRANSITION'], REV_REF = ['TARGET_ALREADY_STARTED', 'REVISION_CONFLICT'];
+        if (!a2.written) assert.ok(ACK_REF.includes(a2.reason), 'ack refused unexplained: ' + a2.reason);
+        if (!rv2.written) assert.ok(REV_REF.includes(rv2.reason), 'revert refused unexplained: ' + rv2.reason);
         if (a2.written) {
           receiptWins++;
-          assert.deepEqual([rv2.written, rv2.reason], [false, 'TARGET_ALREADY_STARTED']);
           assert.equal(r.state, 'APPLIED');
-        } else {
+          assert.deepEqual([rv2.written, rv2.reason], [false, 'TARGET_ALREADY_STARTED']);
+        } else if (rv2.written) {
           revertWins++;
-          assert.deepEqual([a2.written, a2.reason], [false, 'TARGET_NOT_STARTED']);
-          assert.equal(rv2.written, true);
           assert.equal(r.state, 'REVERTED');
+          assert.ok(ACK_REF.includes(a2.reason), 'ack must be refused by its own guard: ' + a2.reason);
+        } else {
+          neitherWins++;
+          assert.equal(r.state, 'APPLIED');
         }
         pass++;
       }
@@ -127,7 +132,7 @@ const rec = async (f) => (await adminDb.doc('logs/' + f.client.uid + '/mesos/' +
   }
 
   console.log('  mode=' + MODE + '  n=' + N + '  pass=' + pass + '  fail=' + failures.length);
-  if (MODE === 'new') console.log('  interleavings: receipt-first=' + receiptWins + ' revert-first=' + revertWins + '  (both NOT required to pass)');
+  if (MODE === 'new') console.log('  interleavings: receipt-first=' + receiptWins + ' revert-first=' + revertWins + ' neither=' + neitherWins + '  (both NOT required to pass)');
   failures.slice(0, 5).forEach((f) => console.log('    ' + f));
   console.log('  VDSEN_T532_REPRO_COMPLETE mode=' + MODE + ' pass=' + pass + ' failures=' + failures.length);
   process.exit(failures.length ? 1 : 0);

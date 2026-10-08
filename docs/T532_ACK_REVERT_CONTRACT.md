@@ -144,6 +144,46 @@ que su propio guard produce. **Esa formulación no la implementé.**
 
 **Estado: fix INCOMPLETO. El PR #41 NO debe mergearse tal como está.**
 
+## 5.ter — SEGUNDA CORRECCIÓN: la invariante correcta (validada 100/100)
+
+El primer reemplazo falló en CI porque afirmaba **2.written XOR rv2.written** (*"exactamente uno
+gana"*). **Eso es falso.** Nada garantiza que una de las dos operaciones tenga éxito. El orden real de
+los guards de ck lo explica:
+
+`
+L453  if (r.state !== 'APPLIED')            -> INVALID_TRANSITION     <-- ANTES
+L456  if (!pidExposureStarted(...))          -> TARGET_NOT_STARTED
+`
+
+y para evert:
+
+`
+      targetStarted                          -> TARGET_ALREADY_STARTED
+      expectedRevision distinta              -> REVISION_CONFLICT
+`
+
+Así que **ambas pueden ser rechazadas en el mismo intento**, cada una por su propio guard, con el
+registro aún coherente. Medido en el arnés: cuando evert gana (100 de 100 veces en esta máquina),
+ck encuentra el estado REVERTED y responde **INVALID_TRANSITION** — un guard legítimo que la
+primera versión no había listado, y que produjo los 7 fallos de las 100 iteraciones intermedias.
+
+**La invariante que sí se sostiene** (y que ahora se prueba):
+
+1. el estado final coincide con la operación que realmente escribió;
+2. un rechazo trae un motivo **de los guards propios** de esa operación
+   (ck: TARGET_NOT_STARTED | INVALID_TRANSITION; evert: TARGET_ALREADY_STARTED | REVISION_CONFLICT);
+3. ningún efecto parcial sobrevive a un rechazo;
+4. el registro queda coherente y el conteo de eventos REVERTED coincide con si el revert escribió.
+
+`
+100 iteraciones:  100 PASS  0 FAIL
+intercalaciones observadas: revert-first=100, receipt-first=0, neither=0
+`
+
+**Nota de método.** El arnés local sólo ejercita UNA intercalación (evert gana siempre aquí), así
+que no puede validar la rama en la que gana ck. Esa rama está razonada a partir de la
+implementación, no observada. La rama que **sí** se observó queda cubierta por las 100 iteraciones.
+
 ## 6. LO QUE ESTE DOCUMENTO NO HACE
 
 - No afirma haber reproducido el flake.
