@@ -199,3 +199,17 @@ test('EM.11 no privileged bypass: export path uses only the Web SDK adapter (no 
   const glue = html.slice(html.indexOf('function _vdsenClientExportIo'), html.indexOf('window._vdsenOpenClientExport'));
   assert.ok(glue.includes('VDSEN_CE_FIRESTORE_IO.create({ db, doc, getDoc, getDocs, collection, query, where })'));
 });
+
+// PHASE 2 — completion sentinel for scripts/client-export-emulator-gate.cjs.
+//
+// Printed from the 'exit' event, NOT from test.after: at after() time node:test has not finalized its
+// failure count, so process.exitCode can still read as 0 even when tests failed - a sentinel there
+// would be a FALSE PASS. On 'exit' the code is final, and the sentinel is emitted ONLY when it is 0.
+//
+// Deliberately here and not in the gate: the gate must never be able to declare success for a suite
+// that did not actually finish, and a missing sentinel is exactly how the parent detects that.
+process.on('exit', (code) => {
+  if (code === 0) {
+    console.log((process.env.VDSEN_EXPORT_GATE_SENTINEL || 'VDSEN_EXPORT_EMULATOR_COMPLETE') + ' tests=11 failures=0');
+  }
+});
