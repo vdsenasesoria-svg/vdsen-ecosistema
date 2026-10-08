@@ -11602,7 +11602,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if (!currentCoach || !currentCoach.uid) { showToast('La exportación no pudo completarse', true); return; }
     // The exporter is per-coach: a coach switch must never reuse the previous coach's instance.
     if (!_clientExporter || _clientExporterUid !== currentCoach.uid) {
-      _clientExporter = window.VDSEN_CLIENT_EXPORT.createExporter({ io: _vdsenClientExportIo(), coachUid: currentCoach.uid });
+      // yieldTo devuelve el control al navegador entre etapas: sin esto una historia masiva
+      // bloquea el hilo principal durante segundos (medido: 5.5 s con 30k series) y la UI se congela.
+      _clientExporter = window.VDSEN_CLIENT_EXPORT.createExporter({ io: _vdsenClientExportIo(), coachUid: currentCoach.uid, yieldTo: function () { return new Promise(function (r) { setTimeout(r, 0); }); } });
       _clientExporterUid = currentCoach.uid;
     }
     window.VDSEN_CE_UI.open({ clientId: clientId, clientName: clientName }, {
