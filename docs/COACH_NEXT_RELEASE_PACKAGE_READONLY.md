@@ -107,6 +107,38 @@ comportamiento diseñado, no un defecto.**
 
 ---
 
+## 4.bis — Aceptación POST-MERGE (Fase 9) — EJECUTADA
+
+Contra un **worktree de la canónica ya mergeada** (`e3828bddc22c2b4b5adce9dc2323edecc4e081b7`,
+sin los assets del export, como corresponde a un PR #40 sin mergear), servida por el arnés con Coach
+A/B sintéticos y el probe de módulo inyectado:
+
+`
+AISLAMIENTO A->B (17/17)
+  A) pantalla de login     0 centinelas de A     B) shell estacionado   0 centinelas de A
+  C) memoria del módulo    limpia                 C2) memoria de detalle  limpia
+  D) DOM de B visible      0 centinelas de A      E) DOM de B oculto      0 centinelas de A
+  F) opciones de select    0 de A entre 24        G) módulo de B          limpio
+  H) atributos/ids         0 de A                 I) coach activo es B    correcto
+  J) mismo NOMBRE resuelve correcto               K) el detalle de B no trae datos de A
+  0 errores de consola
+
+REGRESIÓN (7/7, lista 4.1 del mandato)
+  R1  login sin recarga, lista poblada
+  R2  detalle de cliente propio abre, body=18505, sin error crudo
+  R3  activePlanId obsoleto tolerado, body=18506, sin error crudo
+  R4  cliente sin plan abre
+  R5.1/R5.2  logout/login del MISMO coach, DOS pasadas: limpio al salir y lista al volver
+  R6  0 errores de consola atribuibles al build
+
+TOTAL: 24/24 filas
+`
+
+**Conclusión de la Fase 9: el arreglo está VIVO en canónica y verificado sobre el artefacto mergeado,
+no sobre la rama de trabajo.** El export no está en canónica, como corresponde.
+
+---
+
 ## 5. Evidencia de staging
 
 ```
