@@ -166,12 +166,27 @@ async function main() {
     verdict.sentinel = true;
     log('sentinel observed: ' + SENTINEL);
 
-    // Parse the reporter summary. A sentinel is necessary but NOT sufficient.
-    const p = Number((out.match(/^# pass (\d+)/m) || [])[1] || 0);
-    const f = Number((out.match(/^# fail (\d+)/m) || [])[1] || 0);
-    log('reported: pass=' + p + ' fail=' + f + ' expected=' + EXPECTED_TESTS);
+    // A sentinel alone is necessary but NOT sufficient, and the count must come from a source that
+    // actually states it.
+    //
+    // Preferred: the sentinel's own counters. It is printed from the 'exit' event only when the exit
+    // code is 0, so it simultaneously proves every test passed AND that the suite FINISHED - which is
+    // exactly what separates a completed run from the post-suite handle retention.
+    //
+    // Fallback: the node:test summary lines, emitted only when a reporter is configured. Requiring
+    // them unconditionally produced a false FAIL: the suite emitted its sentinel with tests=11
+    // failures=0 while '# pass' was absent because no reporter had been selected.
+    const sent = out.match(new RegExp(SENTINEL + '\\s+tests=(\\d+)\\s+failures=(\\d+)'));
+    let p, f, source;
+    if (sent) { p = Number(sent[1]); f = Number(sent[2]); source = 'sentinel'; }
+    else {
+      p = Number((out.match(/^# pass (\d+)/m) || [])[1] || 0);
+      f = Number((out.match(/^# fail (\d+)/m) || [])[1] || 0);
+      source = 'reporter summary';
+    }
+    log('reported(' + source + '): pass=' + p + ' fail=' + f + ' expected=' + EXPECTED_TESTS);
     if (f !== 0) { verdict.reason = 'reported failures=' + f; return verdict; }
-    if (p !== EXPECTED_TESTS) { verdict.reason = 'expected ' + EXPECTED_TESTS + ' tests, got ' + p; return verdict; }
+    if (p !== EXPECTED_TESTS) { verdict.reason = 'expected ' + EXPECTED_TESTS + ' tests, got ' + p + ' (' + source + ')'; return verdict; }
     // Every EM.x must be present and passing, so a silently skipped test cannot pass the gate.
     const missing = [];
     for (let i = 1; i <= EXPECTED_TESTS; i++) if (!new RegExp('EM\\.' + i + '\\b').test(out)) missing.push('EM.' + i);
