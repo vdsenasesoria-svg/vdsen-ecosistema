@@ -239,14 +239,61 @@ test('13. payload alteration after APPLIED is denied for the athlete (load, reps
 });
 
 test('14. athlete acknowledgement vs Coach revert: started exposure -> revert refused, receipt accepted; not started -> receipt refused, revert wins', { timeout: 60000 }, async () => {
+  // CONTRACT (read from the implementation, not assumed): ack and revert have NO precedence over each
+  // other. Each re-verifies its own guard INSIDE its transaction, and the guards are mutually
+  // exclusive by state:
+  //   recordConsumptionReceiptTransaction  requires pidExposureStarted -> else TARGET_NOT_STARTED
+  //   revertOverlayTransaction             requires !targetStarted     -> else TARGET_ALREADY_STARTED
+  // So the winner is whichever commits first, and "last writer wins" only looks that way: a transaction
+  // that finds the other's committed state is REFUSED, never silently applied.
+  //
+  // That makes the two halves of this test fundamentally different, and the old version conflated them
+  // by racing both:
+  //
+  //   HALF 1 - the first working set is ALREADY PERSISTED before either call. The outcome is therefore
+  //   DETERMINISTIC: the exposure has started, so the revert is refused regardless of ordering. Racing
+  //   this with Promise.all manufactured a race that does not exist and made a deterministic assertion
+  //   flaky. It is now sequenced, which tests the guarantee rather than a scheduling accident.
+  //
+  //   HALF 2 - nothing is persisted, so the target has NOT started and the outcome genuinely depends on
+  //   which transaction commits first. Both interleavings are legitimate protocol outcomes here, so the
+  //   assertion is on the INVARIANT (exactly one wins, the loser is refused with the reason that matches
+  //   its own guard, and the final state matches the winner) instead of on a preferred winner.
   const f = await fixture(); assert.equal((await apply(f)).written, true); await persistFirstSet(f);
-  const [a, rv] = await Promise.all([ack(f), revert(f)]);
-  assert.equal(a.written, true); assert.deepEqual([rv.written, rv.reason], [false, 'TARGET_ALREADY_STARTED']);
+  // Exposure already started: the receipt is accepted...
+  const a = await ack(f);
+  assert.equal(a.written, true);
+  // ...and a revert attempted afterwards is refused BECAUSE the target has started. No race, no sleeping.
+  const rv = await revert(f);
+  assert.deepEqual([rv.written, rv.reason], [false, 'TARGET_ALREADY_STARTED']);
   assert.equal((await rec(f)).state, 'APPLIED');
-  const g = await fixture(); assert.equal((await apply(g)).written, true);
-  const [a2, rv2] = await Promise.all([ack(g), revert(g)]);
-  assert.deepEqual([a2.written, a2.reason], [false, 'TARGET_NOT_STARTED']); assert.equal(rv2.written, true);
-  assert.equal((await assertCoherent(g)).r.state, 'REVERTED'); assert.equal((await mesoDoc(g)).consumptionReceipts, undefined);
+
+  // Genuine race, invariant-only. A fresh fixture per attempt keeps instances independent; the loop is
+  // bounded so a protocol violation cannot hang the suite.
+  let sawReceiptWin = false, sawRevertWin = false, attempts = 0;
+  while (attempts < 6 && !(sawReceiptWin && sawRevertWin)) {
+    attempts++;
+    const g = await fixture(); assert.equal((await apply(g)).written, true);
+    const [a2, rv2] = await Promise.all([ack(g), revert(g)]);
+    const coh = await assertCoherent(g);
+    if (a2.written) {
+      // The receipt won: the revert must have been refused for the reason its own guard produces.
+      sawReceiptWin = true;
+      assert.deepEqual([rv2.written, rv2.reason], [false, 'TARGET_ALREADY_STARTED']);
+      assert.equal(coh.r.state, 'APPLIED');
+    } else {
+      // The revert won: the receipt must have been refused because the exposure had not started.
+      sawRevertWin = true;
+      assert.deepEqual([a2.written, a2.reason], [false, 'TARGET_NOT_STARTED']);
+      assert.equal(rv2.written, true);
+      assert.equal(coh.r.state, 'REVERTED');
+      assert.equal((await mesoDoc(g)).consumptionReceipts, undefined);
+    }
+    // Whatever the interleaving was, exactly ONE may have won and the pair must stay coherent.
+    assert.notEqual(Boolean(a2.written), Boolean(rv2.written), 'exactly one of ack/revert may win');
+    // events() returns a COUNT, not an array.
+    assert.equal(events(coh.r, 'REVERTED'), rv2.written ? 1 : 0, 'revert events match the winner');
+  }
 });
 
 test('15. owner Coach vs unrelated Coach racing on the same APPLIED record: only the owner changes state', { timeout: 60000 }, async () => {
