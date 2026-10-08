@@ -110,6 +110,40 @@ pero no puedo afirmar que reproduje el fallo de CI.
 
 ---
 
+## 5.bis — RESULTADO EN CI: EL FIX **NO** FUNCIONÓ (medido)
+
+El PR #41 falló en CI **con el mismo test**:
+
+`
+run 37719846887 -> gate=FAIL  raw PASS=83 FAIL=1
+new_regression_ids:   tests/t532-lifecycle-emulator.cjs::14
+critical_failure_ids: tests/t532-lifecycle-emulator.cjs::14
+`
+
+La mitad **determinista** pasó (el revert secuenciado es rechazado), así que el fallo está en la mitad
+**invariante**, en concreto:
+
+`js
+assert.notEqual(Boolean(a2.written), Boolean(rv2.written), 'exactly one of ack/revert may win');
+`
+
+**Esa invariante NO se sostiene.** En CI **ambas** operaciones pueden perder en la misma iteración. Es
+coherente con lo ya medido en el arnés local: cuando el estado no satisface ninguno de los dos guards,
+ck responde TARGET_NOT_STARTED y evert puede responder REVISION_CONFLICT → **cero ganadores**.
+
+**Contrato revisado: es MÁS DÉBIL que "exactamente uno gana".**
+
+- evert exige la expectedRevision exacta → si difiere, REVISION_CONFLICT (no significa "ganó la otra").
+- ck exige la exposición iniciada → si no, TARGET_NOT_STARTED.
+- **Nada garantiza que una de las dos tenga éxito.** Ambas pueden ser rechazadas, cada una por su propio
+  guard, y el estado final sigue coherente (APPLIED).
+
+La invariante correcta no es sobre un ganador sino sobre **coherencia y rechazo por guard propio**:
+el estado final es coherente, ninguna operación aplica un efecto parcial, y cada fallo trae el motivo
+que su propio guard produce. **Esa formulación no la implementé.**
+
+**Estado: fix INCOMPLETO. El PR #41 NO debe mergearse tal como está.**
+
 ## 6. LO QUE ESTE DOCUMENTO NO HACE
 
 - No afirma haber reproducido el flake.
