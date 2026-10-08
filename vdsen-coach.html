@@ -11616,22 +11616,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   function _vdsenOpenClientExport(clientId, clientName) {
     if (!currentCoach || !currentCoach.uid) { showToast('La exportación no pudo completarse', true); return; }
     // The exporter is per-coach: a coach switch must never reuse the previous coach's instance.
-    // Read-only test handles (see window._vdsenClientExporter): the acceptance harness recreates the
-    // exporter with a slower yieldTo so the logout-during-export cancellation window is reachable.
-    // These hold the ADAPTER OBJECT and the uid, not the adapter factory.
-    window._vdsenClientExportIoForTest = _vdsenClientExportIo();
-    window._vdsenClientExportUidForTest = currentCoach.uid;
     if (!_clientExporter || _clientExporterUid !== currentCoach.uid) {
       // yieldTo devuelve el control al navegador entre etapas: sin esto una historia masiva
       // bloquea el hilo principal durante segundos (medido: 5.5 s con 30k series) y la UI se congela.
       _clientExporter = window.VDSEN_CLIENT_EXPORT.createExporter({ io: _vdsenClientExportIo(), coachUid: currentCoach.uid, yieldTo: function () { return new Promise(function (r) { setTimeout(r, 0); }); } });
       _clientExporterUid = currentCoach.uid;
-      // Read-only handle: an acceptance harness needs an OBSERVABLE terminal state to know when an
-      // export has finished, because the export is CPU-heavy and outlives the click that starts it.
-      // Without it a harness must guess with sleeps, which is exactly the flakiness that let a
-      // previous case's late download be mistaken for a missing one. Exposing the instance changes
-      // no behaviour: it is the same object the UI already receives.
-      window._vdsenClientExporter = _clientExporter;
     }
     window.VDSEN_CE_UI.open({ clientId: clientId, clientName: clientName }, {
       document: document, exporter: _clientExporter, toast: showToast,
