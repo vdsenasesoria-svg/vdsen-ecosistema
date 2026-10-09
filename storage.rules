@@ -1,0 +1,58 @@
+rules_version = '2';
+// Coach exercise images (Firebase Storage).
+//
+// Ownership comes from the SAME topology as firestore.rules, so there is one authority model in the
+// product rather than two:
+//   Coach   = Firebase Auth user with a coaches/{uid} document; request.auth.uid == exercises/{id}.coachId
+//   Athlete = Firebase Auth user whose clients/{uid}.coachId names the coach that owns the exercise
+//
+// Objects live at exercise-media/{coachId}/{exerciseId}/image-<16 hex>.
+//
+// A replacement is uploaded under a NEW random name and Firestore is updated first; the previous object
+// is deleted afterwards. Overwriting the same name would rotate the download token and break the still
+// referenced old URL if the Firestore update then failed, so the name is versioned by construction and
+// the rules only accept that shape.
+//
+// Everything outside that path is denied by default: there is no public read and no unauthenticated
+// read of any kind.
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isImageName(fileName) { return fileName.matches('image-[a-f0-9]{16}'); }
+
+    function isCoachOwner(coachId) {
+      return request.auth != null
+        && request.auth.uid == coachId
+        && firestore.exists(/databases/(default)/documents/coaches/$(coachId));
+    }
+
+    // The exercise must exist AND belong to this coach. Checked on every write, so a coach can never
+    // write into another coach's namespace even by guessing a valid exerciseId.
+    function ownsExercise(coachId, exerciseId) {
+      return isCoachOwner(coachId)
+        && firestore.exists(/databases/(default)/documents/exercises/$(exerciseId))
+        && firestore.get(/databases/(default)/documents/exercises/$(exerciseId)).data.get('coachId', '') == coachId;
+    }
+
+    function athleteOfCoach(coachId) {
+      return request.auth != null
+        && firestore.exists(/databases/(default)/documents/clients/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/clients/$(request.auth.uid)).data.get('coachId', '') == coachId;
+    }
+
+    // Bounded, image-only, no SVG/HTML anywhere. The client re-encodes to roughly 350 KB; 512 KiB is the
+    // hard server-side ceiling and is enforced here, not in the UI.
+    function validImage() {
+      return request.resource.size > 0
+        && request.resource.size <= 512 * 1024
+        && request.resource.contentType in ['image/jpeg', 'image/png', 'image/webp'];
+    }
+
+    match /exercise-media/{coachId}/{exerciseId}/{fileName} {
+      allow read: if isCoachOwner(coachId) || athleteOfCoach(coachId);
+      allow create, update: if isImageName(fileName) && ownsExercise(coachId, exerciseId) && validImage();
+      // Own namespace only. The versioned name means a delete can never remove the object a live
+      // reference still points at, because a replacement already published a new name.
+      allow delete: if isImageName(fileName) && isCoachOwner(coachId);
+    }
+  }
+}
