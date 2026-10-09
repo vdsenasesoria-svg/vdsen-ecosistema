@@ -2,9 +2,14 @@
   "name": "vdsen-ecosistema",
   "version": "1.0.0",
   "private": true,
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "firebase-admin": "^13.0.0",
     "openai": "^4.98.0"
+  },
+  "devDependencies": {
+    "firebase": "^10.12.0"
   }
 }
