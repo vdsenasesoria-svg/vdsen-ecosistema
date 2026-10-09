@@ -1,0 +1,80 @@
+name: VDSEN client app lane diagnostics (read-only)
+
+# READ-ONLY diagnostics for the app-only release lane.
+#
+# Reports the HTTP status of each Vercel read the app lane performs, so a failing read
+# identifies itself instead of surfacing as a bare "API GET failed: HTTP 400".
+#
+# This workflow CANNOT mutate anything: it has no promote, no rollback, no Firestore access,
+# and it does not consult any release kill switch because it never releases. It exists purely
+# to report which endpoint is unhealthy. It never prints a token, a variable value, or a
+# response body — only the operation name, HTTP status and a redacted shape summary.
+
+on:
+  workflow_dispatch:
+    inputs:
+      note:
+        description: 'Optional note for this diagnostic run'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    environment: Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Probe endpoint health (independent of the lane code)
+        run: node scripts/release/app-diagnostics.cjs
+      - name: Run the lane's REAL read path with a redacted read trace
+        # The critical step. A separate probe reported every read healthy while the release
+        # preflight failed on the same endpoint, because the probe was a DIFFERENT code path.
+        # This runs readOnlyPreflight() - the exact reads the release performs - with
+        # APP_TRACE_READS so each request is logged by parameter NAME and value LENGTH only.
+        # No token, no parameter value and no response body is printed.
+        env:
+          APP_RUNTIME_SHA: c3e78380d3a076e643a1957203c093260851210e
+          APP_EXPECTED_MAIN_SHA: f6596ba5207dc158b8a9b01483cd0fe0ebeb274c
+          APP_TRACE_READS: 'true'
+        run: |
+          set -o pipefail
+          node scripts/release/app-live.cjs read-only-preflight 2>&1 | tee /tmp/rop.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" != "0" ]; then
+            echo "::error::read-only preflight exited $status"
+            cat /tmp/rop.log
+          fi
+          exit "$status"
+      - name: Can the resolved candidate actually be promoted?
+        # The promote endpoint answers 422 even though the request matches its published schema
+        # (no request body, teamId in query). 422 is a documented response for that operation, so
+        # the deployment itself is likely not eligible. This reports the candidate's own flags
+        # (target, readyState, state, ready, isRollbackCandidate) as booleans/names only.
+        if: always()
+        env:
+          APP_RUNTIME_SHA: c3e78380d3a076e643a1957203c093260851210e
+        run: node scripts/release/app-candidate-check.cjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: app-diagnostics-${{ github.run_id }}
+          path: release-output/app-diagnostics.json
+          if-no-files-found: warn
+          retention-days: 30

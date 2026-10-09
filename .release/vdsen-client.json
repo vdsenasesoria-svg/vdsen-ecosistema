@@ -1,0 +1,56 @@
+{
+  "runtime_sha": "8365410cf7f09427c79ead77aa4f769c16e9a803",
+  "production_deployment": "dpl_4xAS5kXuny7APpaRjozGeNdPETMj",
+  "rollback_deployment": "dpl_FngrtpodSKHZ9aPk75aA5SS7JGnB",
+  "rollback_runtime_sha": "d7bb71521d750eafd46a15fdd3c6ee157d4bd4cf",
+  "target_deployment": "dpl_4xAS5kXuny7APpaRjozGeNdPETMj",
+  "production_project": "prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN",
+  "vercel_team": "team_VZc5H7Q1DBIJ3g0mwrSBz1o8",
+  "production_origin": "https://vdsen-ecosistema.vercel.app",
+  "firebase_project": "vdsen-ecosistema",
+  "numeric_apply_enabled": false,
+  "rules_transition": {
+    "target_sha256": "ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6",
+    "order": "verify_current_app_then_rules",
+    "rollback_order": "rules_then_app",
+    "rollback_sha256": "bb4402e9b99d2d78c1f2867fa09bd75b89f9a88046189edfb0302b0635635f0b",
+    "rollback_source_path": ".release/rollback/firestore.rules.bb4402e9b99d2d78c1f2867fa09bd75b89f9a88046189edfb0302b0635635f0b.rules"
+  },
+  "required_index": {
+    "collectionGroup": "plans_backup",
+    "queryScope": "COLLECTION",
+    "fields": [
+      {
+        "fieldPath": "coachId",
+        "order": "ASCENDING"
+      },
+      {
+        "fieldPath": "clientId",
+        "order": "ASCENDING"
+      },
+      {
+        "fieldPath": "backedUpAt",
+        "order": "DESCENDING"
+      }
+    ]
+  },
+  "release_status": "READY",
+  "preconditions": {
+    "entitlements_verified": true,
+    "legacy_data_reviewed": true,
+    "preview_production_env_verified": true,
+    "human_ux_approved": true
+  },
+  "observation_source": "Live revalidation 2026-10-06 (DeepSeek operator): production alias vdsen-ecosistema.vercel.app -> dpl_FngrtpodSKHZ9aPk75aA5SS7JGnB (READY, githubCommitSha d7bb71521d750eafd46a15fdd3c6ee157d4bd4cf, ref codex/client-app-next); Vercel Production scope has FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY; required index plans_backup (coachId, clientId, backedUpAt) Enabled; PRODUCTION_RELEASE_ENABLED=false; production public bytes byte-identical to the approved runtime; clients 45/45 with coachId (0 orphan); root logs 29/29 with planId. Entitlement: apiAccessEnabled granted to the single approved Coach z82EDPvsCaabfMN3eGAP3rpxeMt1 (ayrtonvd@gmail.com), verified true; eUD5y7BrdASwn5DBk1FCvD4aJVC3 (coach@vdsen.com) and bXty0kXIpjfUWBF5dd6xYf60Eny2 (phone) intentionally unchanged. Human UX approved explicitly by Ayrton for the current production Cliente and Coach experience. Governance note: Environment Production has branch_policy only (no required_reviewers); main and codex/client-app-next are not branch-protected. SUPERSEDED 2026-10-07 by the first Client App production release (see app_release): the alias above became that release's ROLLBACK target and is no longer current production. --- Client App release 2026-10-07 (DeepSeek operator, autonomous run 37688146609, promotion_model staged_production): production alias vdsen-ecosistema.vercel.app -> dpl_4xAS5kXuny7APpaRjozGeNdPETMj (runtime 8365410cf7f09427c79ead77aa4f769c16e9a803); a staged production deployment was created with 'vercel deploy --prod --skip-domain' from a git archive of that exact commit, verified against the commit for all 26 served paths, and then promoted EXACTLY ONCE; the release workflow reported 25 verified public surfaces and rules_mutated=false. Verified independently after the release: the public origin serves the new bytes and the four Training improvements are present in production; live Firestore rules read back as ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6, UNCHANGED by the app release; main remained f6596ba5207dc158b8a9b01483cd0fe0ebeb274c; both kill switches left false; NUMERIC_APPLY_ENABLED=false. The entitlement, index and data-precondition observations above are unaffected by an app release and remain in force. NOTE: observation_source is a prose record of what was observed; it is not schema-validated and confers no release authority.",
+  "release_mode": "app_only",
+  "app_release": {
+    "runtime_sha": "8365410cf7f09427c79ead77aa4f769c16e9a803",
+    "deployment": "dpl_4xAS5kXuny7APpaRjozGeNdPETMj",
+    "promotion_model": "staged_production",
+    "previous_deployment": "dpl_FngrtpodSKHZ9aPk75aA5SS7JGnB",
+    "previous_runtime_sha": "d7bb71521d750eafd46a15fdd3c6ee157d4bd4cf",
+    "verified_surfaces": 25,
+    "source_release_run": "37688146609",
+    "completed_at": "2026-10-07T21:18:05Z"
+  }
+}

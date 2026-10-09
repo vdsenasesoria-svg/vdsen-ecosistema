@@ -1,0 +1,185 @@
+name: VDSEN client app production release (app-only)
+
+# APP-ONLY production release lane for the VDSEN Client App.
+#
+# This workflow is deliberately separate from `vdsen-release-prod.yml` (the RULES-ONLY lane).
+# Nothing here can deploy Firestore rules, touch firestore.indexes.json, write Firestore
+# documents, change IAM, generate credentials, mutate `main` or alter NUMERIC_APPLY_ENABLED.
+# Its only mutation is pointing Vercel production traffic at an exact, pre-verified Git
+# deployment, and its only revert points that traffic back at the captured previous one.
+#
+# Controlled by its OWN kill switch, `CLIENT_APP_RELEASE_ENABLED`.
+# `PRODUCTION_RELEASE_ENABLED` (the rules switch) is irrelevant here and must stay false.
+
+on:
+  workflow_dispatch:
+    inputs:
+      runtime_sha:
+        description: 'Exact 40-char commit SHA to release (never latest/HEAD/branch)'
+        required: true
+        type: string
+      reason:
+        description: 'Why this app release is being performed'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  app-release:
+    # The candidate is a Git commit, not a branch head: this must run from the canonical branch.
+    if: github.ref == 'refs/heads/codex/client-app-next'
+    environment: Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      CLIENT_APP_RELEASE_ENABLED: ${{ vars.CLIENT_APP_RELEASE_ENABLED }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      APP_RUNTIME_SHA: ${{ inputs.runtime_sha }}
+      APP_RELEASE_REASON: ${{ inputs.reason }}
+      APP_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      APP_TEAM_ID: ${{ vars.VERCEL_ORG_ID }}
+      # Pinned on purpose: the lane refuses to release if `main` is not exactly this commit.
+      # It was missing, so the baseline check compared a real SHA against undefined and failed
+      # with 'main moved' on every attempt.
+      APP_EXPECTED_MAIN_SHA: f6596ba5207dc158b8a9b01483cd0fe0ebeb274c
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        # REQUIRED. The Firestore emulator is a JVM process. Without Java it starts degraded and
+        # the emulator gate produces different results than the canonical release check: at the
+        # SAME commit d117e9d9 the canonical gate reported 84/0 PASS while this workflow reported
+        # 83/1 with a spurious new regression in t532-lifecycle-emulator.cjs. Because the
+        # emulator gate runs BEFORE the preflight, that also silently prevented the release
+        # preflight from ever executing.
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: App kill switch and trusted ref
+        # Fails visibly instead of aborting: the run summary must still be produced so the
+        # operator can see exactly which gate stopped the release.
+        run: |
+          if [ "$CLIENT_APP_RELEASE_ENABLED" != "true" ]; then
+            echo "::error::CLIENT_APP_RELEASE_ENABLED is not true; the app release lane is disarmed. Refusing to mutate production."
+            exit 1
+          fi
+          if [ "$GITHUB_REF" != "refs/heads/codex/client-app-next" ]; then
+            echo "::error::This lane must run from refs/heads/codex/client-app-next."
+            exit 1
+          fi
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Repo contract (no Firestore mutation, no implicit HEAD)
+        run: node scripts/release/check.cjs
+      - name: App-only lane tests
+        run: node --test tests/app-release-lane.test.js
+      - name: Baseline-aware unit gate
+        run: node scripts/release/baseline.cjs unit
+      - name: Baseline-aware canonical emulator gate
+        run: node scripts/release/baseline.cjs emulator
+      - name: Enforce both baseline gates
+        run: |
+          node -e "const u=require('./release-output/unit-baseline-result.json');const e=require('./release-output/emulator-baseline-result.json');if(u.gate!=='PASS'||e.gate!=='PASS'){console.error('baseline gate not PASS');process.exit(1)}if(u.NEW_REGRESSIONS!==0||e.NEW_REGRESSIONS!==0){console.error('new regressions');process.exit(1)}"
+      - name: Release tooling HEAD must be byte-identical to the candidate product
+        # The lane runs from canonical HEAD (tooling), while the product released is the exact
+        # candidate SHA. Every served path must match between the two, or the bytes being
+        # verified below would not be the bytes being tested.
+        run: node scripts/release/app-live.cjs verify-product-identity
+      - name: Pre-mutation gates (candidate, baseline, env, rollback artifact)
+        # `continue-on-error` is used ONLY so the summary below always renders. The gate
+        # outcome is re-read immediately after and the job still fails on it: nothing is
+        # waived. Promotion is additionally blocked by `if: steps.preflight.outcome == 'success'`.
+        #
+        # stdout+stderr are teed to a file and echoed explicitly: this step has twice exited
+        # non-zero with NO output in the job log, which made the failing gate unidentifiable.
+        # The trace reports the failing operation NAME only (never a token or a value).
+        id: preflight
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          node scripts/release/app-live.cjs preflight 2>&1 | tee /tmp/preflight.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" != "0" ]; then
+            echo "::error::preflight exited $status"
+            echo "--- preflight output (repeated) ---"
+            cat /tmp/preflight.log
+            echo "--- end ---"
+          fi
+          exit "$status"
+      - name: Surface preflight report
+        if: always()
+        run: node scripts/release/app-live.cjs preflight-summary >> "$GITHUB_STEP_SUMMARY"
+      - name: Enforce the preflight gate
+        if: always()
+        run: |
+          if [ "${{ steps.preflight.outcome }}" != "success" ]; then
+            echo "::error::Pre-mutation gates failed; production was NOT mutated."
+            exit 1
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: app-rollback-${{ github.run_id }}
+          path: release-output/app-rollback-*.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Create ONE staged production deployment (not yet serving)
+        # Staged production deployment, the documented Vercel model:
+        #   vercel deploy --prod --skip-domain
+        # It is built with PRODUCTION variables but is NOT assigned the production domains, so
+        # customer traffic keeps hitting the previous deployment until the promote below. The
+        # source is `git archive` of the exact authorized SHA, so an ephemeral Preview rotating
+        # away can no longer make a release impossible.
+        id: stage
+        if: steps.preflight.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          node scripts/release/app-live.cjs stage 2>&1 | tee /tmp/stage.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" != "0" ]; then
+            echo "::error::staged production deployment exited $status"
+            cat /tmp/stage.log
+          fi
+          exit "$status"
+      - name: Enforce the staging gate
+        if: always() && steps.preflight.outcome == 'success'
+        run: |
+          if [ "${{ steps.stage.outcome }}" != "success" ]; then
+            echo "::error::Staging failed; production was NOT promoted."
+            exit 1
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: app-staged-${{ github.run_id }}
+          path: release-output/app-staged.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Promote the staged deployment to production
+        if: steps.preflight.outcome == 'success' && steps.stage.outcome == 'success'
+        run: node scripts/release/app-live.cjs apply
+      - name: Recover the app if promotion or verification failed
+        if: failure()
+        run: node scripts/release/app-live.cjs rollback
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: app-release-result-${{ github.run_id }}
+          path: release-output/app-*.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Release result
+        if: always()
+        run: node scripts/release/app-live.cjs release-result

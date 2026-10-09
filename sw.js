@@ -1,11 +1,18 @@
-// VDSEN Service Worker — offline support
-const CACHE = 'vdsen-v5';
+// VDSEN Service Worker — offline support. T555: cache v13 so every device drops the older client build; HTML stays NETWORK-FIRST (the cache is only an offline fallback).
+const CACHE = 'vdsen-v13';
 
 // Assets to pre-cache on install (propio HTML)
 const PRECACHE = [
   '/vdsen-cliente.html',
   '/cliente',
-  '/manifest.json'
+  '/manifest.json',
+  '/assets/vdsen-logo-official.jpg',
+  '/assets/exercise-visual-catalog.js',
+  '/assets/progression-auto-apply-shadow.js',
+  '/assets/progression-magnitude-policy.js',
+  '/assets/progression-effective-prescription.js',
+  '/assets/progression-application-consumer.js',
+  '/assets/exercises/pending-license.svg'
 ];
 
 self.addEventListener('install', e => {

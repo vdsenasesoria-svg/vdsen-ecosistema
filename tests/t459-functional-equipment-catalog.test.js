@@ -1,0 +1,21 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const catalog = require('../assets/exercise-visual-catalog.js');
+
+const functional = catalog.functionalEquipment;
+assert.equal(functional.length, 6);
+assert.equal(new Set(functional.map(x => x.equipmentId)).size, 6);
+assert.deepEqual(functional.map(x => x.equipmentType), ['free_weight','cable','barbell','trap_bar','bench','bench']);
+assert.equal(catalog.gyms.bugambilias, catalog.gyms['smart-fit-san-diego']);
+assert.equal(catalog.gyms.bugambilias.entries, catalog.gyms['smart-fit-san-diego'].entries);
+const entries = catalog.gyms['smart-fit-san-diego'].entries;
+assert.equal(entries.find(x => x.exerciseName === 'Mancuernas').equipmentType, 'free_weight');
+assert.equal(entries.find(x => x.exerciseName === 'Polea Alta').equipmentType, 'cable');
+assert.equal(entries.find(x => x.exerciseName === 'Barra Hexagonal').equipmentType, 'trap_bar');
+assert.notEqual(functional.find(x => x.equipmentId === 'functional-olympic-barbell').equipmentId, 'functional-trap-bar');
+assert.notEqual(functional.find(x => x.equipmentId === 'functional-adjustable-bench').equipmentId, 'functional-hyperextension-bench');
+const coach = fs.readFileSync('vdsen-coach.html', 'utf8');
+assert.match(coach, /vm-equipment-options/);
+assert.match(coach, /functionalEquipment/);
+assert.match(coach, /VDSEN_EXERCISE_VISUAL_CATALOG/);
+console.log('T459 — functional/free-weight/cable/bench equipment model: PASS');

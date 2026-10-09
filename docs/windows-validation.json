@@ -1,0 +1,16 @@
+{
+  "runner": "scripts/test-auto-apply-emulator.cjs",
+  "status": "PENDING",
+  "platform": null,
+  "recordedAt": null,
+  "checks": {
+    "npmCmdPath": null,
+    "tempDependencyInstall": null,
+    "emulatorJarSha256": null,
+    "localhostBind": null,
+    "taskkillCleanup": null,
+    "portClosedAfterShutdown": null,
+    "t476Result": null
+  },
+  "note": "Sin validar: el entorno de desarrollo es Linux. Ejecutar scripts/record-windows-validation.cjs en Windows para registrar el resultado real."
+}

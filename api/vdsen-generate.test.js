@@ -18,8 +18,18 @@ function test(name, fn) { tests.push({ name: name, fn: fn }); }
 
 // ─── Mock helpers ─────────────────────────────────────────────────────────────
 
-function mockReq(body, method) {
-  return { method: method || 'POST', body: body || {} };
+// Default auth: always succeeds as an authorized coach. Every pre-existing
+// test in this file is about request-contract/OpenAI-response handling, not
+// auth -- so by default they run through a valid, authorized caller and stay
+// unchanged. Auth-specific tests (T-AUTH-*) override headers/authDeps below.
+var DEFAULT_AUTH_HEADERS = { authorization: 'Bearer fake-valid-token' };
+var DEFAULT_AUTH_DEPS = {
+  verifyIdToken:     function(token) { return Promise.resolve({ uid: 'coach-test-001' }); },
+  isAuthorizedCoach: function(uid)   { return Promise.resolve(true); }
+};
+
+function mockReq(body, method, headers) {
+  return { method: method || 'POST', body: body || {}, headers: headers || DEFAULT_AUTH_HEADERS };
 }
 
 function mockRes() {
@@ -55,10 +65,14 @@ function mockFactory(createFn) {
   };
 }
 
-// Call handler with given factory and body, return { status, body }
-async function call(factory, body, method) {
-  var h   = createHandlerWithClient(factory);
-  var req = mockReq(body, method);
+// Call handler with given factory and body, return { status, body }.
+// opts.headers / opts.authDeps let auth-specific tests override the
+// default "valid authorized coach" identity without touching any of the
+// 26 pre-existing request/response-contract tests below.
+async function call(factory, body, method, opts) {
+  opts = opts || {};
+  var h   = createHandlerWithClient(factory, opts.authDeps || DEFAULT_AUTH_DEPS);
+  var req = mockReq(body, method, opts.headers);
   var res = mockRes();
   await h(req, res);
   return { status: res._status, body: res._body };
@@ -367,6 +381,153 @@ test('T-C26: outputMode=all pasa contrato', async function() {
   });
   await call(factory, Object.assign({}, VALID_REQUEST, { outputMode: 'all' }));
   return capturedPayload && capturedPayload.outputMode === 'all';
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// T335 — Authenticated AI generation gate (cases A-K from the ticket)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// A. missing Authorization → 401, OpenAI not called
+test('T-AUTH-A: missing Authorization header → 401, OpenAI not called', async function() {
+  var called = false;
+  var factory = mockFactory(async function() { called = true; return wrapOAI(VALID_RESPONSE_BODY); });
+  var r = await call(factory, VALID_REQUEST, 'POST', { headers: {} });
+  return r.status === 401 && called === false;
+});
+
+// B. malformed bearer token → 401, OpenAI not called
+test('T-AUTH-B: malformed Authorization header (not "Bearer <token>") → 401, OpenAI not called', async function() {
+  var called = false;
+  var factory = mockFactory(async function() { called = true; return wrapOAI(VALID_RESPONSE_BODY); });
+  var r = await call(factory, VALID_REQUEST, 'POST', { headers: { authorization: 'Basic abc123' } });
+  return r.status === 401 && called === false;
+});
+
+// C. verification failure (token present, well-formed, but rejected by the verifier) → 401, OpenAI not called
+test('T-AUTH-C: token verification failure → 401, OpenAI not called', async function() {
+  var called = false;
+  var factory = mockFactory(async function() { called = true; return wrapOAI(VALID_RESPONSE_BODY); });
+  var badAuthDeps = {
+    verifyIdToken:     function() { return Promise.reject(new Error('invalid signature')); },
+    isAuthorizedCoach: function() { return Promise.resolve(true); }
+  };
+  var r = await call(factory, VALID_REQUEST, 'POST', { authDeps: badAuthDeps });
+  return r.status === 401 && called === false;
+});
+
+// C2. valid token, but caller has no coaches/{uid} doc → 403, OpenAI not called.
+// Not one of the ticket's lettered cases, but required by "reject non-authorized
+// caller if role/claim contract already exists" — the contract (coaches/{uid})
+// does exist, so this closes the loop C started.
+test('T-AUTH-C2: valid token but not an authorized coach → 403, OpenAI not called', async function() {
+  var called = false;
+  var factory = mockFactory(async function() { called = true; return wrapOAI(VALID_RESPONSE_BODY); });
+  var notCoachDeps = {
+    verifyIdToken:     function() { return Promise.resolve({ uid: 'stranger-001' }); },
+    isAuthorizedCoach: function() { return Promise.resolve(false); }
+  };
+  var r = await call(factory, VALID_REQUEST, 'POST', { authDeps: notCoachDeps });
+  return r.status === 403 && called === false;
+});
+
+// C3. an authorization CHECK failure (e.g. Firestore read error) fails closed, never open.
+test('T-AUTH-C3: isAuthorizedCoach throwing fails closed (401), never treated as authorized', async function() {
+  var called = false;
+  var factory = mockFactory(async function() { called = true; return wrapOAI(VALID_RESPONSE_BODY); });
+  var flakyDeps = {
+    verifyIdToken:     function() { return Promise.resolve({ uid: 'coach-test-001' }); },
+    isAuthorizedCoach: function() { return Promise.reject(new Error('Firestore unavailable')); }
+  };
+  var r = await call(factory, VALID_REQUEST, 'POST', { authDeps: flakyDeps });
+  return (r.status === 401 || r.status === 403) && called === false;
+});
+
+// D. valid authenticated request → existing generation path unchanged
+test('T-AUTH-D: valid authenticated request → existing generation path unchanged (200 VALID)', async function() {
+  var factory = mockFactory(async function() { return wrapOAI(VALID_RESPONSE_BODY); });
+  var r = await call(factory, VALID_REQUEST);
+  return r.status === 200 && r.body.status === 'VALID';
+});
+
+// E. malformed generation request WITH valid auth → existing validation failure (auth never bypasses it)
+test('T-AUTH-E: malformed request body with valid auth → still 400 REQUEST_INVALID', async function() {
+  var called = false;
+  var factory = mockFactory(async function() { called = true; return wrapOAI(VALID_RESPONSE_BODY); });
+  var r = await call(factory, { schema: 'vdsen-generation-request-v1', mode: 'new_plan' });
+  return r.status === 400 && r.body.errorCode === ERR.REQUEST_INVALID && called === false;
+});
+
+// F. OpenAI failure AFTER valid auth → existing failure behavior unchanged
+test('T-AUTH-F: OpenAI failure after valid auth → existing 502 behavior unchanged', async function() {
+  var factory = mockFactory(async function() { throw new Error('boom'); });
+  var r = await call(factory, VALID_REQUEST);
+  return r.status === 502 && r.body.errorCode === ERR.OPENAI_REQUEST_FAILED;
+});
+
+// I. the raw token never appears in any response body, on any auth outcome
+test('T-AUTH-I: raw token never appears in any response body', async function() {
+  var secretToken = 'super-secret-id-token-should-never-leak-12345';
+  var factory = mockFactory(async function() { return wrapOAI(VALID_RESPONSE_BODY); });
+  var badAuthDeps = {
+    verifyIdToken:     function() { return Promise.reject(new Error('bad token: ' + secretToken)); },
+    isAuthorizedCoach: function() { return Promise.resolve(true); }
+  };
+  var r = await call(factory, VALID_REQUEST, 'POST', {
+    headers: { authorization: 'Bearer ' + secretToken },
+    authDeps: badAuthDeps
+  });
+  var bodyStr = JSON.stringify(r.body || {});
+  return r.status === 401 && bodyStr.indexOf(secretToken) === -1;
+});
+
+// I2. the raw token never reaches console.log either (dynamic proof, not just source review)
+test('T-AUTH-I2: raw token never passed to console.log', async function() {
+  var secretToken = 'super-secret-id-token-xyz-789';
+  var logs = [];
+  var origLog = console.log;
+  console.log = function() { logs.push(Array.prototype.slice.call(arguments).join(' ')); };
+  try {
+    var factory = mockFactory(async function() { return wrapOAI(VALID_RESPONSE_BODY); });
+    await call(factory, VALID_REQUEST, 'POST', { headers: { authorization: 'Bearer ' + secretToken } });
+  } finally { console.log = origLog; }
+  return logs.join('\n').indexOf(secretToken) === -1;
+});
+
+// J. OPENAI_API_KEY never appears in any response body
+test('T-AUTH-J: OPENAI_API_KEY value never appears in any response body', async function() {
+  var factory = mockFactory(async function() { return wrapOAI(VALID_RESPONSE_BODY); });
+  var r = await call(factory, VALID_REQUEST);
+  var bodyStr = JSON.stringify(r.body || {});
+  return bodyStr.indexOf(process.env.OPENAI_API_KEY) === -1;
+});
+
+// Auth failure responses are generic — same shape regardless of the internal reason.
+test('T-AUTH: 401 response body is a generic {error:"UNAUTHORIZED"}, no internal detail leaked', async function() {
+  var factory = mockFactory(async function() { return wrapOAI(VALID_RESPONSE_BODY); });
+  var r = await call(factory, VALID_REQUEST, 'POST', { headers: {} });
+  return r.status === 401 && r.body && r.body.error === 'UNAUTHORIZED' && Object.keys(r.body).length === 1;
+});
+
+test('T-AUTH: 403 response body is a generic {error:"FORBIDDEN"}, no internal detail leaked', async function() {
+  var factory = mockFactory(async function() { return wrapOAI(VALID_RESPONSE_BODY); });
+  var notCoachDeps = {
+    verifyIdToken:     function() { return Promise.resolve({ uid: 'stranger-001' }); },
+    isAuthorizedCoach: function() { return Promise.resolve(false); }
+  };
+  var r = await call(factory, VALID_REQUEST, 'POST', { authDeps: notCoachDeps });
+  return r.status === 403 && r.body && r.body.error === 'FORBIDDEN' && Object.keys(r.body).length === 1;
+});
+
+// Client-supplied identity in the request body is never trusted as auth proof:
+// a body claiming a different coachId than the verified token's uid is still
+// processed under the verified identity only (this endpoint never reads
+// body.coachId for any access-control decision -- confirmed by source audit
+// in T-C22-style checks and by this behavioral proof).
+test('T-AUTH: body.coachId cannot forge identity — request proceeds on verified token uid only, body.coachId is inert', async function() {
+  var forgedRequest = Object.assign({}, VALID_REQUEST, { coachId: 'someone-elses-coach-id' });
+  var factory = mockFactory(async function() { return wrapOAI(VALID_RESPONSE_BODY); });
+  var r = await call(factory, forgedRequest); // DEFAULT_AUTH_DEPS verifies uid='coach-test-001', unrelated to body.coachId
+  return r.status === 200; // succeeds under the verified identity regardless of the body's own (inert) coachId claim
 });
 
 // ════════════════════════════════════════════════════════════════════════════════
