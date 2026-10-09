@@ -23,6 +23,13 @@
    *   db, doc, updateDoc
    * }
    */
+  // The presentation fields a coach may write through the upload surface. Anything not listed here
+  // (coachId, id, exerciseId, prescriptionExerciseId, createdAt, ...) is dropped by construction.
+  var ALLOWED_VISUAL_FIELDS = [
+    'gym', 'equipment', 'assetRef', 'imageUrl',
+    'instructions', 'setup', 'execution', 'technicalObjective', 'commonErrors', 'variants',
+  ];
+
   function createAdapter(sdk) {
     if (!sdk) throw new Error('sdk requerido');
 
@@ -52,13 +59,19 @@
         return sdk.deleteObject(sdk.ref(sdk.storage, path));
       },
 
-      // ONLY imageUrl and assetRef are written. coachId, the exercise identity and every other field are
-      // part of the document's ownership contract and must not change here; storage.rules and
-      // firestore.rules both verify that ownership independently.
+      // Publishes the ALREADY-SANITISED visual metadata patch produced by the visual metadata editor and
+      // merged by the controller, so the image fields and the coach's text edits land in ONE write.
+      //
+      // Explicit allow-list, never a passthrough. The coach owns these presentation fields and nothing
+      // else: coachId, the exercise identity, createdAt and any arbitrary key must remain impossible to
+      // write from the upload surface, because storage.rules and firestore.rules both depend on that
+      // ownership being immutable.
       publishExerciseImage: function (exerciseId, patch) {
+        var src = patch || {};
         var clean = {};
-        if (Object.prototype.hasOwnProperty.call(patch, 'imageUrl')) clean.imageUrl = patch.imageUrl;
-        if (Object.prototype.hasOwnProperty.call(patch, 'assetRef')) clean.assetRef = patch.assetRef;
+        ALLOWED_VISUAL_FIELDS.forEach(function (k) {
+          if (Object.prototype.hasOwnProperty.call(src, k)) clean[k] = src[k];
+        });
         return sdk.updateDoc(sdk.doc(sdk.db, 'exercises', exerciseId), clean);
       },
     };
@@ -74,5 +87,5 @@
     });
   }
 
-  return { createAdapter: createAdapter, fromModules: fromModules };
+  return { createAdapter: createAdapter, fromModules: fromModules, ALLOWED_VISUAL_FIELDS: ALLOWED_VISUAL_FIELDS };
 });

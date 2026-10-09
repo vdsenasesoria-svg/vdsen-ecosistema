@@ -152,6 +152,14 @@
         if (prepared.coachUid !== undefined && prepared.coachUid !== coachUid) return failed(CODES.STALE, MESSAGES.STALE);
         if (prepared.exerciseId !== undefined && prepared.exerciseId !== exerciseId) return failed(CODES.STALE, MESSAGES.STALE);
 
+        // The prepared image must belong to THIS generation. A stale prepared result from an earlier
+        // editor session on the same coach and the same exercise would otherwise still pass the
+        // coach/exercise checks above, so this is a genuinely separate condition and not a duplicate of
+        // guard(). Checked BEFORE any byte is uploaded.
+        if (prepared.token !== undefined && input.token !== undefined && prepared.token !== input.token) {
+          return failed(CODES.STALE, MESSAGES.STALE);
+        }
+
         // Revalidate the payload: never trust that it is still within the cap.
         var pv = V.validateProcessedBlob(prepared.blob, prepared.type);
         if (!pv.ok) return failed(pv.code === 'TOO_BIG_PROCESSED' ? CODES.PROCESS_FAILED : CODES.INVALID, pv.message);
