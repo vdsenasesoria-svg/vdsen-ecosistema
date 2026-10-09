@@ -3,8 +3,17 @@ name: VDSEN Image Upload acceptance
 # Local/emulator acceptance for the Coach exercise-image upload. NOTHING here touches production: the
 # project id is a demo-* one, so reaching a real Firebase/Storage resource is impossible by construction.
 #
-# Emulator binaries (Storage rules runtime, Firestore emulator) are downloaded by the CLI on demand.
-# A cache is welcome but correctness never depends on it.
+# TEST TOOLING IS NOT A PRODUCT DEPENDENCY
+# The Storage rules can only be exercised through the normal Firebase CLIENT SDK (there is no Storage
+# client in @firebase/rules-unit-testing), and the rules under test must be evaluated by the same client
+# generation the browser uses. Adding it to package.json would be the obvious move, but check.cjs
+# requires package.json to be byte-identical to the approved runtime SHA, so a new dependency would
+# invalidate the release provenance of a different workstream. Instead the SDK is installed into a
+# throwaway runtime and exposed through NODE_PATH for this job only - the same pattern already used for
+# the emulator binaries. The product's package.json is untouched.
+#
+# Emulator binaries are downloaded by the CLI on demand; a cache is welcome but correctness never
+# depends on it.
 
 on:
   pull_request:
@@ -13,9 +22,11 @@ on:
       - 'storage.rules'
       - 'firebase.image-upload-emulator.json'
       - 'tests/image-upload*'
+      - 'tests/coach-image-upload*'
+      - 'tests/coach-visual-metadata*'
       - 'assets/coach-image-upload/**'
+      - 'assets/exercise-visual-metadata-editor.js'
       - 'vdsen-coach.html'
-      - 'scripts/image-upload*'
       - '.github/workflows/vdsen-image-upload-acceptance.yml'
   workflow_dispatch:
 
@@ -32,6 +43,9 @@ jobs:
     timeout-minutes: 30
     env:
       GCLOUD_PROJECT: demo-vdsen-image-upload
+      # Pinned to the same SDK generation the product loads from the CDN.
+      FIREBASE_SDK_VERSION: '10.12.0'
+      FIREBASE_TOOLS_VERSION: '15.32.1'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -61,10 +75,19 @@ jobs:
             echo "ABORT: production/staging project id"; exit 1
           fi
 
-      - name: Storage rules lint (official rules runtime)
+      - name: Install Firebase client SDK into a throwaway test runtime
         run: |
-          # Compiles the ruleset and validates the cross-service firestore.get()/exists() calls.
-          npx --yes firebase-tools@15.32.1 emulators:exec \
+          RUNTIME="$RUNNER_TEMP/iu-runtime"
+          mkdir -p "$RUNTIME"
+          cd "$RUNTIME"
+          npm init -y >/dev/null 2>&1
+          npm install --no-audit --no-fund "firebase@${FIREBASE_SDK_VERSION}"
+          echo "NODE_PATH=$RUNTIME/node_modules" >> "$GITHUB_ENV"
+          node -e "console.log('firebase/app -> ' + require.resolve('firebase/app'))"
+
+      - name: Storage rules compile (official runtime)
+        run: |
+          npx --yes "firebase-tools@${FIREBASE_TOOLS_VERSION}" emulators:exec \
             --config firebase.image-upload-emulator.json \
             --project "$GCLOUD_PROJECT" \
             --only storage \
@@ -72,13 +95,15 @@ jobs:
 
       - name: Storage rules security matrix
         run: |
-          npx --yes firebase-tools@15.32.1 emulators:exec \
+          npx --yes "firebase-tools@${FIREBASE_TOOLS_VERSION}" emulators:exec \
             --config firebase.image-upload-emulator.json \
             --project "$GCLOUD_PROJECT" \
             "node tests/image-upload-storage-rules.cjs"
 
-      - name: Image upload module tests
-        run: node --test tests/coach-image-upload*.test.js
+      - name: Module unit tests
+        run: |
+          node --test tests/coach-image-upload.test.js
+          node --test tests/coach-visual-metadata.test.js
 
       - name: Release check
         run: node scripts/release/check.cjs
@@ -109,6 +134,9 @@ jobs:
           set -e
           echo "STORAGE_RULES=PASS"
           echo "IMMUTABILITY=PASS"
+          echo "MAGIC_BYTES=PASS"
+          echo "PROCESSOR_REQUIRED=PASS"
+          echo "SINGLE_FLIGHT=PASS"
           echo "PRODUCTION_CONTACT=0"
           echo "RELEASE_CHECK=PASS"
-          echo "IMAGE_UPLOAD_ACCEPTANCE=STORAGE_AND_IMMUTABILITY_PASS"
+          echo "IMAGE_UPLOAD_ACCEPTANCE=STORAGE_AND_MODULE_PASS"
