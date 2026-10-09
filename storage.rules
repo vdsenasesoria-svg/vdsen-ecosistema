@@ -1,20 +1,33 @@
 rules_version = '2';
 // Coach exercise images (Firebase Storage).
 //
-// Ownership comes from the SAME topology as firestore.rules, so there is one authority model in the
-// product rather than two:
+// Ownership uses the SAME topology as firestore.rules, so the product has one authority model rather
+// than two:
 //   Coach   = Firebase Auth user with a coaches/{uid} document; request.auth.uid == exercises/{id}.coachId
 //   Athlete = Firebase Auth user whose clients/{uid}.coachId names the coach that owns the exercise
 //
-// Objects live at exercise-media/{coachId}/{exerciseId}/image-<16 hex>.
+// OBJECT PATH: exercise-media/{coachId}/{exerciseId}/image-<16 hex>
 //
-// A replacement is uploaded under a NEW random name and Firestore is updated first; the previous object
-// is deleted afterwards. Overwriting the same name would rotate the download token and break the still
-// referenced old URL if the Firestore update then failed, so the name is versioned by construction and
-// the rules only accept that shape.
+// REPLACEMENT IS CREATE-ONLY, AND THAT IS ENFORCED HERE
+// Replacement means a NEW object under a NEW versioned name, then publishing the new reference, then
+// (optionally) deleting the old object. Overwriting an existing object at the same path is therefore
+// DENIED: `update` is not granted at all. If an overwrite were allowed, the download token would rotate
+// and the still-referenced old URL would break the moment a later Firestore write failed.
 //
-// Everything outside that path is denied by default: there is no public read and no unauthenticated
-// read of any kind.
+// WHAT THESE RULES DO **NOT** GUARANTEE - stated honestly
+// They grant DELETION AUTHORITY only: the owning coach may delete any image in its own namespace.
+// They do NOT and cannot prove reference ordering. Keeping a live reference pointing at an existing
+// object is the PRODUCT's responsibility, via this sequence:
+//   1. upload the NEW object
+//   2. publish the NEW Firestore reference (only on success)
+//   3. only after that, attempt to delete the OLD object
+// If step 1 fails: Firestore keeps OLD and the OLD object stays.
+// If step 2 fails: Firestore keeps OLD, the OLD object stays, and the NEW object is cleaned up.
+// If step 3 fails: Firestore points at NEW, the NEW object is valid, and the OLD object becomes bounded
+// cleanup debt. A durable product guarantee must never rest on the rules alone.
+//
+// Everything outside exercise-media/{coachId}/{exerciseId}/ is denied by default: no public read and no
+// unauthenticated read or write of any kind.
 service firebase.storage {
   match /b/{bucket}/o {
     function isImageName(fileName) { return fileName.matches('image-[a-f0-9]{16}'); }
@@ -49,9 +62,9 @@ service firebase.storage {
 
     match /exercise-media/{coachId}/{exerciseId}/{fileName} {
       allow read: if isCoachOwner(coachId) || athleteOfCoach(coachId);
-      allow create, update: if isImageName(fileName) && ownsExercise(coachId, exerciseId) && validImage();
-      // Own namespace only. The versioned name means a delete can never remove the object a live
-      // reference still points at, because a replacement already published a new name.
+      // create only. No update: replacement is a new versioned object, never an overwrite.
+      allow create: if isImageName(fileName) && ownsExercise(coachId, exerciseId) && validImage();
+      // Deletion AUTHORITY only (own namespace). Reference safety comes from product sequencing above.
       allow delete: if isImageName(fileName) && isCoachOwner(coachId);
     }
   }
