@@ -231,7 +231,7 @@ function deps(opts) {
     // Holds ONLY the first upload. Blocking every upload would deadlock the third save in the
     // single-flight test and keep the test runner alive, which is a mock bug and not a product one.
     upload: (path, blob, ct) => {
-      calls.uploaded.push({ path, ct });
+      calls.uploaded.push({ path, ct, blob });
       if (opts.holdFirstUpload && calls.uploaded.length === 1) {
         return new Promise((r) => { releaseUpload = () => r(); });
       }
@@ -360,6 +360,30 @@ test('stale after the URL is retrieved: NEW cleaned up, no publish', async () =>
   assert.equal(r.code, CODES.STALE);
   assert.equal(seen.published, 0);
   assert.deepEqual(seen.deleted, seen.uploaded);
+});
+
+// --- required processor (no fallback to the original file) -------------------
+test('an absent processor fails closed with IMAGE_PROCESSOR_UNAVAILABLE and ZERO side effects', async () => {
+  const d = deps();
+  delete d.process;   // simulate a wiring mistake
+  const r = await createController(d).saveImage(req());
+  assert.equal(r.ok, false);
+  assert.equal(r.code, CODES.NO_PROCESSOR);
+  assert.equal(d.calls.uploaded.length, 0, 'the ORIGINAL file must never be uploaded');
+  assert.equal(d.calls.published.length, 0);
+  assert.equal(d.calls.deleted.length, 0);
+});
+
+test('the payload passed to upload is always the PROCESSED blob, never the source file', async () => {
+  const d = deps();
+  const sentinel = blobOf(200 * 1024, 'image/jpeg');
+  d.process = async () => ({ ok: true, blob: sentinel, type: 'image/jpeg' });
+  const sourceFile = fileOf(jpegBytes(), 'image/jpeg');
+  const r = await createController(d).saveImage(req({ file: sourceFile }));
+  assert.equal(r.ok, true);
+  assert.equal(d.calls.uploaded[0].blob, sentinel);
+  assert.notEqual(d.calls.uploaded[0].blob, sourceFile);
+  assert.equal(d.calls.uploaded[0].ct, 'image/jpeg');
 });
 
 // --- single flight -----------------------------------------------------------

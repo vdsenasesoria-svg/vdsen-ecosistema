@@ -37,7 +37,7 @@
     INVALID: 'IMAGE_INVALID', PROCESS_FAILED: 'IMAGE_PROCESS_FAILED',
     UPLOAD_FAILED: 'IMAGE_UPLOAD_FAILED', URL_FAILED: 'IMAGE_URL_FAILED',
     PUBLISH_FAILED: 'IMAGE_PUBLISH_FAILED', STALE: 'IMAGE_OPERATION_STALE',
-    BUSY: 'IMAGE_SAVE_IN_PROGRESS', OK: 'OK',
+    BUSY: 'IMAGE_SAVE_IN_PROGRESS', NO_PROCESSOR: 'IMAGE_PROCESSOR_UNAVAILABLE', OK: 'OK',
   };
   var MESSAGES = {
     INVALID: 'La imagen no es válida.',
@@ -47,6 +47,7 @@
     PUBLISH_FAILED: 'No se pudo guardar la imagen en el ejercicio. La imagen anterior sigue activa.',
     STALE: 'La sesión cambió durante la operación. No se guardó nada.',
     BUSY: 'Ya hay una imagen guardándose.',
+    NO_PROCESSOR: 'El procesador de imagen no está disponible.',
   };
 
   // The existing product schema. NOT a third field: `imageUrl` is the renderable HTTPS reference and
@@ -98,6 +99,12 @@
         var exerciseId = input.exerciseId;
         var currentPath = input.currentPath || '';
 
+        // 0. The processor is not optional. Without it the ORIGINAL file would be uploaded, which
+        //    means no EXIF/GPS strip, no resize, no size reduction and a contentType that was merely
+        //    declared. Refusing here is the only safe behaviour, and it must be visible - never a
+        //    silent fallback to the source bytes.
+        if (typeof deps.process !== 'function') return failed(CODES.NO_PROCESSOR, MESSAGES.NO_PROCESSOR);
+
         // 1. cheap source validation (size + declared type)
         var cheap = V.validateSourceFile(input.file);
         if (!cheap.ok) return failed(CODES.INVALID, cheap.message);
@@ -106,17 +113,18 @@
 
         // 2. process (decode -> resize -> re-encode). The byte-level validation and the metadata strip
         //    happen here too, so nothing outside this module ever sees the original bytes.
-        var processed = null;
-        if (deps.process) {
-          var source = await V.validateSource(input.file);
-          if (!source.ok) return failed(CODES.INVALID, source.message);
-          try { guard(token); } catch (e) { return failed(CODES.STALE, MESSAGES.STALE); }
-          try { processed = await deps.process(input.file); }
-          catch (e) { return failed(CODES.PROCESS_FAILED, MESSAGES.PROCESS_FAILED); }
-          if (!processed || !processed.ok) return failed(CODES.PROCESS_FAILED, (processed && processed.message) || MESSAGES.PROCESS_FAILED);
-          var pv = V.validateProcessedBlob(processed.blob, processed.type);
-          if (!pv.ok) return failed(pv.code === 'TOO_BIG_PROCESSED' ? CODES.PROCESS_FAILED : CODES.INVALID, pv.message);
-        }
+        var source = await V.validateSource(input.file);
+        if (!source.ok) return failed(CODES.INVALID, source.message);
+        try { guard(token); } catch (e) { return failed(CODES.STALE, MESSAGES.STALE); }
+        // The real content decision (magic bytes) happens here and the re-encode follows, so the
+        // original bytes never reach Storage.
+        var processed;
+        try { processed = await deps.process(input.file); }
+        catch (e) { return failed(CODES.PROCESS_FAILED, MESSAGES.PROCESS_FAILED); }
+        if (!processed || !processed.ok) return failed(CODES.PROCESS_FAILED, (processed && processed.message) || MESSAGES.PROCESS_FAILED);
+        var pv = V.validateProcessedBlob(processed.blob, processed.type);
+        if (!pv.ok) return failed(pv.code === 'TOO_BIG_PROCESSED' ? CODES.PROCESS_FAILED : CODES.INVALID, pv.message);
+        if (!processed.blob) return failed(CODES.PROCESS_FAILED, MESSAGES.PROCESS_FAILED);
 
         try { guard(token); } catch (e) { return failed(CODES.STALE, MESSAGES.STALE); }
 
@@ -127,8 +135,9 @@
         if (oldPath && newPath === oldPath) return failed(CODES.UPLOAD_FAILED, MESSAGES.UPLOAD_FAILED);
 
         // 3. upload the NEW object. Nothing in Firestore is touched yet.
-        var blob = processed ? processed.blob : input.file;
-        var contentType = processed ? processed.type : (cheap.declaredType || 'image/jpeg');
+        // Always the PROCESSED output. The original source file must never be uploaded.
+        var blob = processed.blob;
+        var contentType = processed.type;
         try { guard(token); await deps.upload(newPath, blob, contentType); }
         catch (e) {
           if (e && e.stale) return failed(CODES.STALE, MESSAGES.STALE);

@@ -28,10 +28,20 @@
 
     return {
       // Uploads the PROCESSED blob. `contentType` is the sniffed type, so the declared type can never
-      // disagree with the bytes. cacheControl is set so a replaced object does not linger in a CDN.
+      // disagree with the bytes.
+      //
+      // CACHE POLICY. Object paths are immutable, so a replacement always produces a NEW path and a NEW
+      // download URL - cache-busting is a structural property here, not something cacheControl provides.
+      // A one-year public cache would be actively wrong: a download URL carries a bearer-like token, and
+      // a long-lived shared cache keeps that tokenised response retrievable well after the object is
+      // logically replaced or deleted. Storage does NOT purge caches on delete, so no comment here may
+      // claim that deletion immediately invalidates a cached bearer URL.
+      //
+      // A bounded private cache is used instead: it keeps the athlete image reasonably warm without
+      // extending a tokenised URL's life across a long shared cache.
       upload: function (path, blob, contentType) {
         var r = sdk.ref(sdk.storage, path);
-        return sdk.uploadBytes(r, blob, { contentType: contentType, cacheControl: 'public, max-age=31536000' });
+        return sdk.uploadBytes(r, blob, { contentType: contentType, cacheControl: 'private, max-age=3600' });
       },
 
       getDownloadUrl: function (path) {

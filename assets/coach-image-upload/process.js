@@ -150,28 +150,56 @@
   /* --- Browser environment -------------------------------------------------- */
 
   // createImageBitmap with orientation support when the browser offers it, else an <img> + object URL.
+  // EVERY path returns the same normalised shape so processImage can rely on it:
+  //   { width, height, source, hasAlpha }
   function browserEnv(win) {
     var w = win || (typeof window !== 'undefined' ? window : null);
     if (!w) throw new Error('no-window');
-    var created = [];
 
     function release(source) {
       if (!source) return;
-      try { if (source.close) source.close(); } catch (e) {}
+      try { if (typeof source.close === 'function') source.close(); } catch (e) {}
       try { if (source.__url) w.URL.revokeObjectURL(source.__url); } catch (e) {}
+    }
+
+    // PNG and WebP can carry an alpha channel and JPEG never does. Treating PNG/WebP as opaque would
+    // silently flatten a transparent logo onto white, so they stay on the lossless-ish path. A full
+    // pixel scan is deliberately NOT done: it is expensive and this heuristic is the safe direction.
+    function alphaFor(file) {
+      var t = String((file && file.type) || '').toLowerCase();
+      return t === 'image/png' || t === 'image/webp';
+    }
+
+    function normaliseFromBitmap(bitmap, file) {
+      return { width: bitmap.width, height: bitmap.height, source: bitmap, hasAlpha: alphaFor(file) };
+    }
+
+    function normaliseFromImg(img, file) {
+      return {
+        width: img.naturalWidth || img.width,
+        height: img.naturalHeight || img.height,
+        source: img,
+        hasAlpha: alphaFor(file),
+      };
     }
 
     return {
       release: release,
+      alphaFor: alphaFor,
       decode: function (file) {
         if (typeof w.createImageBitmap === 'function') {
           // imageOrientation:'from-image' applies EXIF rotation, so a portrait photo is not sideways
-          // after the re-encode strips that EXIF. Not every browser accepts the option, hence the retry.
+          // after the re-encode strips that EXIF. Not every browser accepts the option, hence the retry
+          // without it. Both resolutions are then NORMALISED, which is the part that was missing.
           return w.createImageBitmap(file, { imageOrientation: 'from-image' })
-            .catch(function () { return w.createImageBitmap(file); })
-            .catch(function () { return decodeWithImg(w, file, created); });
+            .then(function (b) { return normaliseFromBitmap(b, file); })
+            .catch(function () {
+              return w.createImageBitmap(file)
+                .then(function (b) { return normaliseFromBitmap(b, file); })
+                .catch(function () { return decodeWithImg(w, file); });
+            });
         }
-        return decodeWithImg(w, file, created);
+        return decodeWithImg(w, file);
       },
       createCanvas: function (cw, ch) {
         if (typeof w.OffscreenCanvas === 'function') return new w.OffscreenCanvas(cw, ch);
@@ -179,21 +207,18 @@
         c.width = cw; c.height = ch;
         return c;
       },
-      // hasAlpha cannot be read cheaply from a decoded bitmap, so PNG/WebP keep their type and only
-      // ordinary opaque photos (JPEG) take the JPEG path. Conservative and lossless in intent.
-      hasAlphaHint: function (file) {
-        var t = String((file && file.type) || '').toLowerCase();
-        return t === 'image/png' || t === 'image/webp';
-      },
     };
   }
 
-  function decodeWithImg(w, file, created) {
+  function decodeWithImg(w, file) {
     return new Promise(function (resolve, reject) {
       var url = w.URL.createObjectURL(file);
-      created.push(url);
       var img = new w.Image();
-      img.onload = function () { img.__url = url; resolve({ width: img.naturalWidth || img.width, height: img.naturalHeight || img.height, source: img }); };
+      img.onload = function () {
+        // The URL stays attached to the source so release() can revoke it after the draw.
+        img.__url = url;
+        resolve(normaliseFromImg(img, file));
+      };
       img.onerror = function () { try { w.URL.revokeObjectURL(url); } catch (e) {} reject(new Error('decode')); };
       img.src = url;
     });
