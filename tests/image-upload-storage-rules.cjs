@@ -139,27 +139,39 @@ async function tryDelete(ctx, p) {
   await T('S14', 'exactamente 512 KiB', () => tryUpload(CA, imgPath(coachA, 'exA', '6666666666666666'), 'image/jpeg', 512 * 1024), 'ALLOW');
   await T('S15', '512 KiB + 1', () => tryUpload(CA, imgPath(coachA, 'exA', '7777777777777777'), 'image/jpeg', 512 * 1024 + 1), 'DENY');
   await T('S16', 'segundo CREATE con nombre nuevo', () => tryUpload(CA, imgPath(coachA, 'exA', '8888888888888888'), 'image/jpeg', 1024), 'ALLOW');
-  // S17 - overwrite of the SAME object path: reported as UNKNOWN, deliberately.
+  // S17 / S28 / S29 - OBJECT IMMUTABILITY.
   //
-  // storage.rules grants NO `update` anywhere - only `create`, `read` and `delete` - and the official
-  // linter (cloud-storage-rules-runtime lint) accepts the ruleset with no issues. An overwrite of an
-  // existing object therefore cannot be authorized by these rules: Cloud Storage evaluates a write to an
-  // existing object as an `update` and would deny it.
+  // The create rule now requires `resource == null`, so a path can be written exactly ONCE, enforced by
+  // the state of the resource at that path rather than by how the write happens to be classified. This
+  // is what closed the previous UNKNOWN: `update` was never granted, but the emulator routes a second
+  // upload to the same path as a fresh `create`, so classification alone let the overwrite through.
   //
-  // The Storage EMULATOR, however, routes a second uploadBytes() to the same path as a fresh `create`
-  // and answers ALLOW, and it exposes no way to force the update path through the client SDK. The
-  // emulator therefore cannot answer this particular question, so the case is recorded as UNKNOWN and is
-  // NOT counted as a pass. It must be confirmed against a real bucket before production reliance.
-  {
-    const path17 = pA(h1);
-    const first = await tryUpload(CA, path17, 'image/jpeg', 1024);
-    const second = await tryUpload(CA, path17, 'image/jpeg', 2048);
-    rec('S17', false, {
-      label: 'OVERWRITE del mismo path => UNKNOWN (1er=' + first + ' 2do=' + second + ')',
-      expected: 'DENY en produccion (no se concede update)',
-      actual: 'UNKNOWN_EMULATOR_TREATS_AS_CREATE',
-    });
-  }
+  // All three cases use a dedicated path so earlier rows cannot leave state behind, and the same path is
+  // reused deliberately to prove the second write is refused.
+  const immutablePath = pA('9999999999999999');
+  const firstWrite = await tryUpload(CA, immutablePath, 'image/jpeg', 1024);
+  const sameBytes = await tryUpload(CA, immutablePath, 'image/jpeg', 1024);
+  const diffBytes = await tryUpload(CA, immutablePath, 'image/jpeg', 2048);
+  // getBytes resolves an ArrayBuffer, which has byteLength and NOT length - reading `.length` silently
+  // yielded undefined and looked like a failed read. The real error, if any, is captured too so a
+  // genuine denial can never be mistaken for a measurement mistake.
+  let readable = -1, readErr = null;
+  try { const buf = await getBytes(ref(CA.storage, immutablePath)); readable = buf.byteLength; }
+  catch (e) { readErr = String((e && e.code) || (e && e.message) || e).slice(0, 60); }
+  if (readErr) console.log('        (lectura del objeto inmutable fallo: ' + readErr + ')');
+
+  rec('S17', firstWrite === 'ALLOW' && diffBytes === 'DENY', {
+    label: 'OVERWRITE del mismo path con bytes DISTINTOS (1er=' + firstWrite + ' 2do=' + diffBytes + ')',
+    expected: 'DENY', actual: diffBytes,
+  });
+  rec('S28', sameBytes === 'DENY', {
+    label: 'mismo path con bytes IDENTICOS => DENY (inmutable incluso sin cambios)',
+    expected: 'DENY', actual: sameBytes,
+  });
+  rec('S29', readable === 1024, {
+    label: 'el objeto original sigue intacto tras los intentos (' + readable + ' bytes)',
+    expected: '1024', actual: String(readable),
+  });
   await T('S18', 'lectura anonima', () => tryRead(ANON, pA(h1)), 'DENY');
   await T('S19', 'Coach A lee lo propio', () => tryRead(CA, pA(h1)), 'ALLOW');
   await T('S20', 'Coach B lee lo de A', () => tryRead(CB, pA(h1)), 'DENY');

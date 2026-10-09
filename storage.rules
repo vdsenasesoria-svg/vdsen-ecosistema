@@ -8,11 +8,18 @@ rules_version = '2';
 //
 // OBJECT PATH: exercise-media/{coachId}/{exerciseId}/image-<16 hex>
 //
-// REPLACEMENT IS CREATE-ONLY, AND THAT IS ENFORCED HERE
-// Replacement means a NEW object under a NEW versioned name, then publishing the new reference, then
-// (optionally) deleting the old object. Overwriting an existing object at the same path is therefore
-// DENIED: `update` is not granted at all. If an overwrite were allowed, the download token would rotate
-// and the still-referenced old URL would break the moment a later Firestore write failed.
+// OBJECT PATHS ARE IMMUTABLE: CREATE-ONCE, ENFORCED BY RESOURCE STATE
+// A valid object path may be written exactly once. Replacement means a NEW object under a NEW versioned
+// name, then publishing the new reference, then (optionally) deleting the old object - never replacing
+// bytes at the old path. If an overwrite were allowed, the download token would rotate and the
+// still-referenced old URL would break the moment a later Firestore write failed.
+//
+// The decisive check is `resource == null` in the create rule, not the absence of an `update` grant.
+// `resource` is the object CURRENTLY at the requested path, so `resource == null` asserts there is
+// nothing there yet. That enforces immutability by EXISTING RESOURCE STATE instead of depending on how
+// the request method happens to be classified: the Storage emulator routes a second upload to the same
+// path as a fresh `create`, and relying on classification alone let an overwrite through. `update` is
+// still granted nowhere, but it is the null check that carries the guarantee.
 //
 // WHAT THESE RULES DO **NOT** GUARANTEE - stated honestly
 // They grant DELETION AUTHORITY only: the owning coach may delete any image in its own namespace.
@@ -62,8 +69,17 @@ service firebase.storage {
 
     match /exercise-media/{coachId}/{exerciseId}/{fileName} {
       allow read: if isCoachOwner(coachId) || athleteOfCoach(coachId);
-      // create only. No update: replacement is a new versioned object, never an overwrite.
-      allow create: if isImageName(fileName) && ownsExercise(coachId, exerciseId) && validImage();
+      // CREATE-ONCE. `resource == null` is the decisive check: it asserts there is no object at this
+      // path yet, which enforces immutable object paths by EXISTING RESOURCE STATE rather than by
+      // relying on how the request method happens to be classified. Without it, an overwrite of an
+      // existing object depends on the write being judged an `update` - and the Storage emulator routes
+      // a second upload to the same path as a fresh `create`, which is exactly how the overwrite slipped
+      // through before. With it, the same path is refused regardless of classification.
+      // `update` is still granted nowhere.
+      allow create: if resource == null
+        && isImageName(fileName)
+        && ownsExercise(coachId, exerciseId)
+        && validImage();
       // Deletion AUTHORITY only (own namespace). Reference safety comes from product sequencing above.
       allow delete: if isImageName(fileName) && isCoachOwner(coachId);
     }
