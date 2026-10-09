@@ -147,6 +147,33 @@
     return { ok: true, code: 'OK', blob: best.blob, type: best.type, width: best.width, height: best.height, bytes: best.blob.size, attempts: attempts, quality: best.quality, atTarget: best.blob.size <= TARGET_BYTES };
   }
 
+  /* --- Decode contract ------------------------------------------------------ */
+
+  // ONE normalisation contract at MODULE scope, so every decode path can reach it. These used to be
+  // nested inside browserEnv, which made decodeWithImg (module scope) throw ReferenceError on the
+  // <img> fallback.
+
+  // PNG and WebP can carry an alpha channel and JPEG never does. Treating PNG/WebP as opaque would
+  // silently flatten a transparent logo onto white, so they stay on the lossless-ish path. A full
+  // pixel scan is deliberately NOT done: it is expensive and this heuristic errs on the safe side.
+  function alphaFor(file) {
+    var t = String((file && file.type) || '').toLowerCase();
+    return t === 'image/png' || t === 'image/webp';
+  }
+
+  function normaliseFromBitmap(bitmap, file) {
+    return { width: bitmap.width, height: bitmap.height, source: bitmap, hasAlpha: alphaFor(file) };
+  }
+
+  function normaliseFromImg(img, file) {
+    return {
+      width: img.naturalWidth || img.width,
+      height: img.naturalHeight || img.height,
+      source: img,
+      hasAlpha: alphaFor(file),
+    };
+  }
+
   /* --- Browser environment -------------------------------------------------- */
 
   // createImageBitmap with orientation support when the browser offers it, else an <img> + object URL.
@@ -162,26 +189,7 @@
       try { if (source.__url) w.URL.revokeObjectURL(source.__url); } catch (e) {}
     }
 
-    // PNG and WebP can carry an alpha channel and JPEG never does. Treating PNG/WebP as opaque would
-    // silently flatten a transparent logo onto white, so they stay on the lossless-ish path. A full
-    // pixel scan is deliberately NOT done: it is expensive and this heuristic is the safe direction.
-    function alphaFor(file) {
-      var t = String((file && file.type) || '').toLowerCase();
-      return t === 'image/png' || t === 'image/webp';
-    }
 
-    function normaliseFromBitmap(bitmap, file) {
-      return { width: bitmap.width, height: bitmap.height, source: bitmap, hasAlpha: alphaFor(file) };
-    }
-
-    function normaliseFromImg(img, file) {
-      return {
-        width: img.naturalWidth || img.width,
-        height: img.naturalHeight || img.height,
-        source: img,
-        hasAlpha: alphaFor(file),
-      };
-    }
 
     return {
       release: release,
