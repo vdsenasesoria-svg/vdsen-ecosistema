@@ -1,28 +1,34 @@
 /* VDSEN coach exercise image — upload controller.
  *
- * SAFE REPLACEMENT SEMANTICS. The order below is the whole point of this module and must not be
- * reordered:
+ * TWO-PHASE API, so the UI can preview the PROCESSED image and still process the photo exactly ONCE.
  *
- *   initial:     validate source -> process -> validate blob -> upload NEW -> URL -> publish -> success
- *   replacement: ... -> upload NEW -> URL -> publish OLD->NEW -> ONLY THEN delete OLD
+ *   prepare(file, ctx)   validate source -> process -> validate blob  => a prepared image
+ *   savePrepared(prep,…) upload NEW -> URL -> publish -> ONLY THEN delete OLD
  *
- * Consequences, by construction:
- *   source invalid          -> no Storage write, no Firestore write
- *   processing fails        -> no Storage write, no Firestore write
- *   upload fails            -> Firestore untouched, OLD object untouched
- *   URL retrieval fails     -> NEW object cleaned up, Firestore untouched
- *   publish fails           -> Firestore still OLD, OLD object untouched, NEW orphan cleaned up
- *   OLD delete fails        -> Firestore points NEW and NEW is valid; OLD becomes cleanup debt and the
- *                              operation still SUCCEEDS, because the user-visible result is correct
- *   token goes stale        -> nothing is published into the next session; any NEW object is cleaned up
+ * The naive alternative - process once for the preview and then hand the raw File to a save that
+ * processes it again - is explicitly rejected: it would decode a multi-megabyte photo twice, and it
+ * would give the UI a path to the original bytes. savePrepared uploads EXACTLY the Blob that prepare
+ * produced, and it revalidates that Blob rather than trusting its origin.
  *
- * Never: delete OLD first, overwrite an existing path, or publish a reference before its upload
- * completed. storage.rules independently refuses to overwrite an existing object (`resource == null`),
- * so the immutable versioned path holds even if this module is wrong.
+ * SAFE REPLACEMENT ORDER (must not be reordered):
+ *   upload NEW -> get URL -> publish -> only then delete OLD
  *
- * SINGLE FLIGHT: the controller carries its own `busy`. A second save while one is running is refused
- * with IMAGE_SAVE_IN_PROGRESS and produces ZERO side effects - the UI disabling its button is a
- * convenience, never the guarantee.
+ *   source invalid      -> no Storage write, no Firestore write
+ *   processing fails    -> no Storage write, no Firestore write
+ *   upload fails        -> Firestore untouched, OLD object untouched
+ *   URL retrieval fails -> NEW object cleaned up, Firestore untouched
+ *   publish fails       -> Firestore still OLD, OLD object untouched, NEW orphan cleaned up
+ *   OLD delete fails    -> Firestore points NEW and NEW is valid; OLD becomes cleanup debt and the
+ *                          operation still SUCCEEDS, because the user-visible result is correct
+ *   token goes stale    -> nothing is published into the next session; any NEW object is cleaned up
+ *
+ * METADATA COHERENCE: savePrepared accepts the editor's ordinary metadata patch and merges imageUrl and
+ * assetRef into it, so ONE Firestore write publishes everything. Two competing updateDoc calls would
+ * race and could lose the text edits the coach is saving at the same time.
+ *
+ * SINGLE FLIGHT: the controller carries its own `busy`. A second save while one runs is refused with
+ * IMAGE_SAVE_IN_PROGRESS and produces ZERO side effects - a disabled button is a convenience, never the
+ * guarantee.
  */
 (function (root, factory) {
   var V = (typeof require === 'function') ? require('./validate.js') : (root && root.VDSEN_IMG_VALIDATE);
@@ -56,11 +62,11 @@
   var FIELD_REF = 'assetRef';
 
   /* deps = {
-   *   process(file)                 -> Promise<{ok, blob, type}>            (optional; skipped if absent)
+   *   process(file)                 -> Promise<{ ok, blob, type, width?, height? }>
    *   upload(path, blob, type)      -> Promise
    *   getDownloadUrl(path)          -> Promise<string>
    *   deleteObject(path)            -> Promise
-   *   publish(exerciseId, patch)    -> Promise     patch = { imageUrl, assetRef }
+   *   publish(exerciseId, patch)    -> Promise     patch already merged by the controller
    *   isCurrent(token)              -> boolean
    *   onCleanupFailure?(path, err)  -> void
    * }
@@ -74,6 +80,10 @@
       }
     }
 
+    function failed(code, message, extra) {
+      return Object.assign({ ok: false, code: code, message: message }, extra || {});
+    }
+
     // Best-effort removal of a just-created object. A failure here must NOT turn a correct state into a
     // reported failure: it becomes cleanup debt and the original outcome stands.
     async function safeDelete(path) {
@@ -81,50 +91,70 @@
       catch (err) { try { if (deps.onCleanupFailure) deps.onCleanupFailure(path, err); } catch (e) {} return false; }
     }
 
-    function failed(code, message, extra) {
-      return Object.assign({ ok: false, code: code, message: message }, extra || {});
+    /* PHASE 1 of the API: validate and process, produce a Blob the caller may preview.
+     * Nothing is written anywhere. The returned `blob` is the exact object savePrepared will upload.
+     */
+    async function prepare(file, ctx) {
+      var token = ctx && ctx.token;
+      if (typeof deps.process !== 'function') return failed(CODES.NO_PROCESSOR, MESSAGES.NO_PROCESSOR);
+
+      var cheap = V.validateSourceFile(file);
+      if (!cheap.ok) return failed(CODES.INVALID, cheap.message);
+
+      try { guard(token); } catch (e) { return failed(CODES.STALE, MESSAGES.STALE); }
+
+      // Byte-level decision (magic bytes) + re-encode. This is where EXIF/GPS is destroyed, so the
+      // original bytes never leave this step.
+      var source = await V.validateSource(file);
+      if (!source.ok) return failed(CODES.INVALID, source.message);
+
+      try { guard(token); } catch (e) { return failed(CODES.STALE, MESSAGES.STALE); }
+
+      var processed;
+      try { processed = await deps.process(file); }
+      catch (e) { return failed(CODES.PROCESS_FAILED, MESSAGES.PROCESS_FAILED); }
+      if (!processed || !processed.ok || !processed.blob) {
+        return failed(CODES.PROCESS_FAILED, (processed && processed.message) || MESSAGES.PROCESS_FAILED);
+      }
+
+      // Revalidate the OUTPUT rather than trusting the processor's word for it.
+      var pv = V.validateProcessedBlob(processed.blob, processed.type);
+      if (!pv.ok) return failed(pv.code === 'TOO_BIG_PROCESSED' ? CODES.PROCESS_FAILED : CODES.INVALID, pv.message);
+
+      return {
+        ok: true, code: CODES.OK,
+        blob: processed.blob, type: pv.type, bytes: pv.bytes,
+        width: processed.width, height: processed.height,
+        quality: processed.quality, attempts: processed.attempts,
+        // The generation this preparation belongs to, so a late save from an old editor is refused.
+        token: token,
+        coachUid: ctx && ctx.coachUid, exerciseId: ctx && ctx.exerciseId,
+      };
     }
 
-    /* input = {
-     *   token, coachUid, exerciseId, file,
-     *   currentUrl?, currentPath?   (existing values; currentPath is only deleted when it is managed)
-     * }
+    /* PHASE 2 of the API: persist a prepared image, optionally together with the editor's own metadata.
+     *
+     * `prepared` must come from prepare(). It is revalidated here so a caller cannot hand in an
+     * arbitrary Blob, and a raw File can never reach upload.
      */
-    async function saveImage(input) {
+    async function savePrepared(prepared, input) {
       if (busy) return failed(CODES.BUSY, MESSAGES.BUSY);
       busy = true;
       try {
+        if (!prepared || prepared.ok !== true || !prepared.blob) return failed(CODES.INVALID, MESSAGES.INVALID);
+
         var token = input.token;
         var coachUid = input.coachUid;
         var exerciseId = input.exerciseId;
         var currentPath = input.currentPath || '';
 
-        // 0. The processor is not optional. Without it the ORIGINAL file would be uploaded, which
-        //    means no EXIF/GPS strip, no resize, no size reduction and a contentType that was merely
-        //    declared. Refusing here is the only safe behaviour, and it must be visible - never a
-        //    silent fallback to the source bytes.
-        if (typeof deps.process !== 'function') return failed(CODES.NO_PROCESSOR, MESSAGES.NO_PROCESSOR);
+        // The prepared image must belong to THIS coach and THIS exercise, or it is a cross-editor mixup.
+        if (prepared.coachUid !== undefined && prepared.coachUid !== coachUid) return failed(CODES.STALE, MESSAGES.STALE);
+        if (prepared.exerciseId !== undefined && prepared.exerciseId !== exerciseId) return failed(CODES.STALE, MESSAGES.STALE);
 
-        // 1. cheap source validation (size + declared type)
-        var cheap = V.validateSourceFile(input.file);
-        if (!cheap.ok) return failed(CODES.INVALID, cheap.message);
-
-        try { guard(token); } catch (e) { return failed(CODES.STALE, MESSAGES.STALE); }
-
-        // 2. process (decode -> resize -> re-encode). The byte-level validation and the metadata strip
-        //    happen here too, so nothing outside this module ever sees the original bytes.
-        var source = await V.validateSource(input.file);
-        if (!source.ok) return failed(CODES.INVALID, source.message);
-        try { guard(token); } catch (e) { return failed(CODES.STALE, MESSAGES.STALE); }
-        // The real content decision (magic bytes) happens here and the re-encode follows, so the
-        // original bytes never reach Storage.
-        var processed;
-        try { processed = await deps.process(input.file); }
-        catch (e) { return failed(CODES.PROCESS_FAILED, MESSAGES.PROCESS_FAILED); }
-        if (!processed || !processed.ok) return failed(CODES.PROCESS_FAILED, (processed && processed.message) || MESSAGES.PROCESS_FAILED);
-        var pv = V.validateProcessedBlob(processed.blob, processed.type);
+        // Revalidate the payload: never trust that it is still within the cap.
+        var pv = V.validateProcessedBlob(prepared.blob, prepared.type);
         if (!pv.ok) return failed(pv.code === 'TOO_BIG_PROCESSED' ? CODES.PROCESS_FAILED : CODES.INVALID, pv.message);
-        if (!processed.blob) return failed(CODES.PROCESS_FAILED, MESSAGES.PROCESS_FAILED);
 
         try { guard(token); } catch (e) { return failed(CODES.STALE, MESSAGES.STALE); }
 
@@ -134,17 +164,14 @@
         catch (e) { return failed(CODES.UPLOAD_FAILED, e && e.code === 'NO_CRYPTO' ? 'No hay generador seguro disponible.' : MESSAGES.UPLOAD_FAILED); }
         if (oldPath && newPath === oldPath) return failed(CODES.UPLOAD_FAILED, MESSAGES.UPLOAD_FAILED);
 
-        // 3. upload the NEW object. Nothing in Firestore is touched yet.
-        // Always the PROCESSED output. The original source file must never be uploaded.
-        var blob = processed.blob;
-        var contentType = processed.type;
-        try { guard(token); await deps.upload(newPath, blob, contentType); }
+        // 1. upload the NEW object. Nothing in Firestore is touched yet.
+        try { guard(token); await deps.upload(newPath, prepared.blob, pv.type); }
         catch (e) {
           if (e && e.stale) return failed(CODES.STALE, MESSAGES.STALE);
           return failed(CODES.UPLOAD_FAILED, MESSAGES.UPLOAD_FAILED);
         }
 
-        // 4. the renderable URL. If this fails the NEW object is an orphan and must be removed.
+        // 2. the renderable URL. If this fails the NEW object is an orphan and must be removed.
         var url;
         try { guard(token); url = await deps.getDownloadUrl(newPath); }
         catch (e) {
@@ -154,10 +181,13 @@
         }
         if (!url) { await safeDelete(newPath); return failed(CODES.URL_FAILED, MESSAGES.URL_FAILED); }
 
-        // 5. publish. On failure the previous reference must remain authoritative.
+        // 3. ONE publish: the editor's metadata plus the image fields, so nothing races and no text edit
+        //    is lost. On failure the previous reference must remain authoritative.
         try {
           guard(token);
-          var patch = {}; patch[FIELD_URL] = url; patch[FIELD_REF] = newPath;
+          var patch = Object.assign({}, input.metadata || {});
+          patch[FIELD_URL] = url;
+          patch[FIELD_REF] = newPath;
           await deps.publish(exerciseId, patch);
         } catch (e) {
           await safeDelete(newPath);
@@ -165,22 +195,30 @@
           return failed(CODES.PUBLISH_FAILED, MESSAGES.PUBLISH_FAILED);
         }
 
-        // 6. ONLY NOW may the previous object be removed. A failure here is cleanup debt, not a failure of
-        //    the user's operation: Firestore already points at NEW and NEW exists.
+        // 4. ONLY NOW may the previous object be removed. A failure here is cleanup debt, not a failure
+        //    of the user's operation: Firestore already points at NEW and NEW exists.
         var cleanup = 'NOT_NEEDED';
         if (oldPath) cleanup = (await safeDelete(oldPath)) ? 'DELETED' : 'PENDING';
 
         return {
           ok: true, code: CODES.OK, path: newPath, url: url, previousPath: oldPath || null,
-          replaced: !!oldPath, cleanup: cleanup, bytes: blob && blob.size,
+          replaced: !!oldPath, cleanup: cleanup, bytes: pv.bytes,
           warning: cleanup === 'PENDING' ? 'La imagen anterior no se pudo borrar; queda pendiente de limpieza.' : '',
         };
       } finally {
         // Must reset on EVERY path: success, validation failure, upload failure, URL failure, publish
         // failure, stale token, cleanup failure and an unexpected dependency exception alike. A stuck
-        // busy flag would make the feature permanently unusable until a reload.
+        // busy flag would make the feature unusable until a reload.
         busy = false;
       }
+    }
+
+    /* Convenience for callers that genuinely have only a File and no preview step: prepare + save in one
+     * call. The UI uses the two-phase API instead so the photo is processed exactly once. */
+    async function saveImage(input) {
+      var prep = await prepare(input.file, input);
+      if (!prep.ok) return prep;
+      return savePrepared(prep, input);
     }
 
     /* removeImage(input) -> { ok, code, cleanup }
@@ -198,7 +236,8 @@
         try { guard(token); } catch (e) { return failed(CODES.STALE, MESSAGES.STALE); }
 
         var managed = P.isManagedPathFor(input.currentPath, input.coachUid, input.exerciseId) ? input.currentPath : '';
-        var patch = {}; patch[FIELD_URL] = ''; patch[FIELD_REF] = '';
+        var patch = Object.assign({}, input.metadata || {});
+        patch[FIELD_URL] = ''; patch[FIELD_REF] = '';
         try { guard(token); await deps.publish(input.exerciseId, patch); }
         catch (e) {
           if (e && e.stale) return failed(CODES.STALE, MESSAGES.STALE);
@@ -213,7 +252,7 @@
     }
 
     return {
-      saveImage: saveImage, removeImage: removeImage,
+      prepare: prepare, savePrepared: savePrepared, saveImage: saveImage, removeImage: removeImage,
       get busy() { return busy; },
       CODES: CODES, MESSAGES: MESSAGES,
     };
