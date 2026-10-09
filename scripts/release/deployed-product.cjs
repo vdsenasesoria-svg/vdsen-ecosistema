@@ -49,7 +49,51 @@ const SERVED = [
   'fonts/CourierPrime-Bold.ttf',
   'fonts/CourierPrime-Regular.ttf',
   'fonts/Inter-400.ttf',
+  // Exportar cliente (vdsen-client-export-v1). Registered here on purpose: the served surface is
+  // explicit, so a new browser asset must be named or it ships unverified.
+  'assets/client-export/util.js',
+  'assets/client-export/security.js',
+  'assets/client-export/collect.js',
+  'assets/client-export/normalize.js',
+  'assets/client-export/derive.js',
+  'assets/client-export/media.js',
+  'assets/client-export/serialize.js',
+  'assets/client-export/zip.js',
+  'assets/client-export/firestore-io.js',
+  'assets/client-export/runner.js',
+  'assets/client-export/ui.js',
 ];
+
+// Paths the CANDIDATE intends to serve but that are NOT yet in production.
+//
+// WHY THIS EXISTS
+// `SERVED` used to be a single registry, and `verify()` required every entry of it to exist at the
+// DEPLOYED runtime commit. That coupled product development to a production deploy: the moment a
+// candidate added a served asset, the frozen deployed manifest could no longer verify, and the only
+// way out was to regenerate the manifest and pretend the new file was already live - i.e. falsify
+// production metadata. Adding product files to canonical does not authorize a production deploy, so
+// the two concepts are now separate:
+//
+//   DEPLOYED SURFACE   = SERVED minus CANDIDATE_ONLY   -> frozen in .release/deployed-product.json
+//   CANDIDATE SURFACE  = SERVED (everything the candidate serves once released)
+//
+// A path moves OUT of this list only when it is genuinely deployed, at which point the manifest is
+// regenerated as part of an authorized release.
+const CANDIDATE_ONLY = [
+  'assets/client-export/util.js',
+  'assets/client-export/security.js',
+  'assets/client-export/collect.js',
+  'assets/client-export/normalize.js',
+  'assets/client-export/derive.js',
+  'assets/client-export/media.js',
+  'assets/client-export/serialize.js',
+  'assets/client-export/zip.js',
+  'assets/client-export/firestore-io.js',
+  'assets/client-export/runner.js',
+  'assets/client-export/ui.js',
+];
+
+const DEPLOYED = SERVED.filter((f) => !CANDIDATE_ONLY.includes(f));
 
 const MANIFEST = '.release/deployed-product.json';
 const sha256 = (b) => crypto.createHash('sha256').update(b).digest('hex');
@@ -71,7 +115,10 @@ function hashHeadFile(file) { return sha256(gitBytes(['show', 'HEAD:' + file]));
 
 function generate(runtime, out) {
   const files = {};
-  for (const f of SERVED) files[f] = hashCommitFile(runtime, f);
+  // A manifest is a statement about what is DEPLOYED, so it records only the deployed surface.
+  // Candidate-only paths are intentionally absent until an authorized release moves them out of
+  // CANDIDATE_ONLY.
+  for (const f of DEPLOYED) files[f] = hashCommitFile(runtime, f);
   const doc = {
     schema: 'vdsen-deployed-product-v1',
     runtime_sha: runtime,
@@ -79,7 +126,7 @@ function generate(runtime, out) {
     files,
   };
   fs.writeFileSync(out, JSON.stringify(doc, null, 2) + '\n');
-  console.log('wrote ' + out + ' for runtime ' + runtime + ' (' + SERVED.length + ' files)');
+  console.log('wrote ' + out + ' for runtime ' + runtime + ' (' + DEPLOYED.length + ' files)');
   return doc;
 }
 
@@ -96,15 +143,48 @@ function verify(runtime, manifestPath) {
   if (doc.schema !== 'vdsen-deployed-product-v1') throw new Error('unexpected manifest schema: ' + doc.schema);
   if (doc.runtime_sha !== runtime) throw new Error('manifest runtime_sha ' + doc.runtime_sha + ' != deployed ' + runtime);
   const problems = [];
-  for (const f of SERVED) {
+  // Only the DEPLOYED surface must exist at the deployed runtime. Candidate-only paths are
+  // deliberately absent there, and demanding them would force a production deploy just to merge a
+  // candidate asset.
+  for (const f of DEPLOYED) {
     // The registry must describe the deployed artifact honestly, or it is just unverified
     // metadata: every served path is re-hashed at the deployed runtime commit.
     const atRuntime = hashCommitFile(runtime, f);
     if (doc.files[f] !== atRuntime) problems.push('manifest does not describe the deployed runtime: ' + f);
   }
   for (const f of Object.keys(doc.files)) if (!SERVED.includes(f)) problems.push('manifest has unknown path: ' + f);
+  // A deployed path missing from the manifest means the manifest went stale: production serves
+  // something the frozen surface does not describe. Candidate-only paths are exempt by design.
+  for (const f of DEPLOYED) if (!(f in doc.files)) problems.push('deployed path missing from manifest: ' + f);
   if (problems.length) { const e = new Error(problems.join('; ')); e.problems = problems; throw e; }
   return doc;
+}
+
+// Throws unless the CANDIDATE is internally coherent. This is what lets a candidate add served
+// assets WITHOUT touching the deployed manifest.
+//
+// It proves three things about the candidate commit:
+//   1. every registered served path EXISTS there (a registry entry must not name a vanished file)
+//   2. every one can be hashed, so the artifact is readable
+//   3. the HTML entry points do not reference a local browser asset the registry forgot, which would
+//      ship something unverified
+function verifyCandidate(candidateSha, { entryPoints = ['vdsen-cliente.html', 'vdsen-coach.html'] } = {}) {
+  const problems = [];
+  for (const f of SERVED) {
+    try { hashCommitFile(candidateSha, f); }
+    catch (e) { problems.push('candidate is missing a registered served path: ' + f); }
+  }
+  const declared = new Set(SERVED);
+  for (const ep of entryPoints) {
+    let html;
+    try { html = gitBytes(['show', candidateSha + ':' + ep]).toString('utf8'); } catch (e) { continue; } // entry point absent at this commit
+    for (const m of html.matchAll(/(?:src|href)=["'](assets\/[^"'?]+)["']/g)) {
+      const ref = m[1];
+      if (!declared.has(ref)) problems.push(ep + ' references an unregistered browser asset: ' + ref);
+    }
+  }
+  if (problems.length) { const e = new Error(problems.join('; ')); e.problems = problems; throw e; }
+  return { paths: SERVED.length, candidate_only: CANDIDATE_ONLY.length, entryPoints };
 }
 
 if (require.main === module) {
@@ -116,4 +196,4 @@ if (require.main === module) {
     else throw new Error('usage: deployed-product.cjs generate|verify <runtime_sha> [path]');
   } catch (e) { console.error(e.message); process.exitCode = 1; }
 }
-module.exports = { SERVED, MANIFEST, generate, verify, hashCommitFile, hashHeadFile };
+module.exports = { SERVED, DEPLOYED, CANDIDATE_ONLY, MANIFEST, generate, verify, verifyCandidate, hashCommitFile, hashHeadFile };

@@ -498,6 +498,7 @@
         <button onclick="navClient(1)" class="text-[#888] hover:text-[#F4F4F0] text-lg px-2 py-1" title="Siguiente cliente">▶</button>
       </div>
       <div class="flex items-center gap-2">
+        <button id="modalExportClientBtn" type="button" style="display:none;padding:4px 8px;border-radius:6px;border:1px solid rgba(68,187,136,.5);background:rgba(68,187,136,.1);color:#44BB88;font-size:12px;cursor:pointer" title="Exportar toda la información de este cliente (ZIP)">⬇ Exportar cliente</button>
         <button id="modalDeleteClientBtn" style="display:none;padding:4px 8px;border-radius:6px;border:1px solid #FF4444;background:rgba(255,68,68,.1);color:#FF4444;font-size:12px;cursor:pointer" title="Eliminar cliente">🗑 Eliminar</button>
         <button onclick="closeClientModal()" class="text-[#888] hover:text-white text-xl leading-none">✕</button>
       </div>
@@ -1585,6 +1586,18 @@
 
   <script src="assets/exercise-visual-catalog.js"></script>
   <script src="assets/exercise-visual-metadata-editor.js"></script>
+  <!-- Exportar cliente (vdsen-client-export-v1): ZIP local, sólo lectura. Orden = dependencias. -->
+  <script src="assets/client-export/util.js"></script>
+  <script src="assets/client-export/security.js"></script>
+  <script src="assets/client-export/collect.js"></script>
+  <script src="assets/client-export/normalize.js"></script>
+  <script src="assets/client-export/derive.js"></script>
+  <script src="assets/client-export/media.js"></script>
+  <script src="assets/client-export/serialize.js"></script>
+  <script src="assets/client-export/zip.js"></script>
+  <script src="assets/client-export/firestore-io.js"></script>
+  <script src="assets/client-export/runner.js"></script>
+  <script src="assets/client-export/ui.js"></script>
   <script src="assets/progression-magnitude-policy.js"></script>
   <script src="assets/progression-equipment-resolver.js"></script>
   <script src="assets/equipment-identity.js"></script>
@@ -3077,6 +3090,17 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     const _t = document.getElementById('modalClientName'); if (_t) _t.textContent = '—';
     const _d = document.getElementById('modalDeleteClientBtn');
     if (_d) { _d.style.display = 'none'; _d.onclick = null; }
+    // Exportar cliente: mientras el dialogo este abierto es un hijo del body, asi que sin cerrarlo se
+    // estacionaria y reapareceria ante el siguiente coach. Se cierra, se desenlaza el boton del
+    // cliente anterior y se suelta la instancia del exportador, que es POR COACH.
+    if (window.VDSEN_CE_UI && window.VDSEN_CE_UI.closeActive) window.VDSEN_CE_UI.closeActive();
+    const _x = document.getElementById('modalExportClientBtn');
+    if (_x) { _x.style.display = 'none'; _x.onclick = null; }
+    // Selectores de cliente (<select> con options "value=clientId>nombre"): se quitan las opciones que
+    // nombran a un cliente del coach saliente. No se tocan las opciones estaticas ajenas al cliente.
+    const _known = new Set(_clientIdList.concat(Object.keys(_clientNameMap)));
+    if (_known.size) document.querySelectorAll('select option').forEach(o => { if (_known.has(o.value)) o.remove(); });
+    _clientExporter = null; _clientExporterUid = null; _clientIdList = []; _clientNameMap = {};
     const frag = document.createDocumentFragment();
     while (document.body.firstChild) frag.appendChild(document.body.firstChild);
     window._vdsenShellStash = frag;
@@ -11580,6 +11604,31 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   }
 
   // opts.tab — optional tab to open instead of default 'ficha' (e.g. { tab: 'plan' } after a plan save)
+  // ── Exportar cliente (vdsen-client-export-v1) ───────────────────────────────────────────────
+  // Local / download-only. Reads use the Coach's own SDK, so they are subject to firestore.rules:
+  // there is no privileged endpoint and NO write path anywhere in this feature. The exporter itself
+  // lives in assets/client-export/*.js (collect → normalize → derive → serialize → ZIP), and the
+  // identity is ALWAYS the client document id, never a display name.
+  var _clientExporter = null, _clientExporterUid = null;
+  function _vdsenClientExportIo() {
+    return window.VDSEN_CE_FIRESTORE_IO.create({ db, doc, getDoc, getDocs, collection, query, where });
+  }
+  function _vdsenOpenClientExport(clientId, clientName) {
+    if (!currentCoach || !currentCoach.uid) { showToast('La exportación no pudo completarse', true); return; }
+    // The exporter is per-coach: a coach switch must never reuse the previous coach's instance.
+    if (!_clientExporter || _clientExporterUid !== currentCoach.uid) {
+      // yieldTo devuelve el control al navegador entre etapas: sin esto una historia masiva
+      // bloquea el hilo principal durante segundos (medido: 5.5 s con 30k series) y la UI se congela.
+      _clientExporter = window.VDSEN_CLIENT_EXPORT.createExporter({ io: _vdsenClientExportIo(), coachUid: currentCoach.uid, yieldTo: function () { return new Promise(function (r) { setTimeout(r, 0); }); } });
+      _clientExporterUid = currentCoach.uid;
+    }
+    window.VDSEN_CE_UI.open({ clientId: clientId, clientName: clientName }, {
+      document: document, exporter: _clientExporter, toast: showToast,
+      download: (name, bytes) => window.VDSEN_CE_UI.downloadBytes(document, window, name, bytes)
+    });
+  }
+  window._vdsenOpenClientExport = _vdsenOpenClientExport;
+
   async function showClientDetail(clientId, opts) {
     var _initialTab = (opts && opts.tab) || 'ficha';
     _detailClientId   = clientId;
@@ -11592,6 +11641,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const title = document.getElementById("modalClientName");
     body.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando datos...</div>`;
     modal.style.display = "flex";
+    // Export button: never keep the PREVIOUS client's binding while this client is loading, or if it
+    // fails to load. It is rebound below only once the client proves to be ours.
+    const _expReset = document.getElementById('modalExportClientBtn');
+    if (_expReset) { _expReset.style.display = 'none'; _expReset.onclick = null; }
 
     // CN2 — firestore.rules responde a la lectura de un plan ausente/ajeno con permission-denied.
     // Antes, eso abortaba el detalle del cliente entero cuando su `activePlanId` estaba obsoleto,
@@ -11613,6 +11666,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     _detailClientData = clientSnap.data();
     const c = _detailClientData;
     title.textContent = c.displayName;
+    // Bound to this exact clientId — never to a display name, and never left over from the previous
+    // client. Ownership is re-verified inside the exporter before any byte is produced.
+    const _expBtn = document.getElementById('modalExportClientBtn');
+    if (_expBtn) {
+      _expBtn.style.display = '';
+      _expBtn.onclick = () => _vdsenOpenClientExport(clientId, c.displayName || c.email || clientId);
+    }
     const _delBtn = document.getElementById('modalDeleteClientBtn');
     if (_delBtn) {
       _delBtn.style.display = '';
