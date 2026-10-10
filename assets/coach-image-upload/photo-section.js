@@ -137,8 +137,12 @@
         var prep = await deps.controllerApi.prepare(file, { token: token, coachUid: ctx.coachUid, exerciseId: ctx.exerciseId });
         if (myGen !== gen) return;   // a superseded selection must never replace the current one
         if (!prep.ok) { staged = null; setStatus(MESSAGES.INVALID); return; }
-        staged = { blob: prep.blob, type: prep.type, bytes: prep.bytes, width: prep.width, height: prep.height, token: prep.token };
-        previewUrl = deps.env.URL.createObjectURL(prep.blob);
+        // KEEP THE EXACT OBJECT. Rebuilding it field by field dropped `ok: true` (and coachUid /
+        // exerciseId / quality / attempts), so savePrepared() saw prepared.ok === undefined and returned
+        // IMAGE_INVALID with zero uploads. Holding the same reference also makes the contract literal:
+        // the preview and the upload use the same prepared object, and the two schemas cannot drift.
+        staged = prep;
+        previewUrl = deps.env.URL.createObjectURL(staged.blob);
         setStatus(MESSAGES.READY);
       } catch (e) {
         if (myGen === gen) { staged = null; revokePreview(); setStatus(MESSAGES.INVALID); }
