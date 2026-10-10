@@ -4121,13 +4121,16 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       return {
         coachUid: currentCoach ? currentCoach.uid : null,
         coachId: ex ? ex.coachId : null,
-        exerciseId: ex ? ex.exerciseId : null,
+        // The authority the Storage path, the Firestore target and the rules lookup must all agree on.
+        exerciseId: ex ? (ex.documentId || ex.id) : null,
+        documentId: ex ? (ex.documentId || ex.id) : null,
+        logicalExerciseId: ex ? (ex.logicalExerciseId || null) : null,
         exercise: _vdsenPhotoExercise || null,
       };
     },
     // The generation token the controller binds a prepared image to. It changes on every editor open,
     // so a prepared image from an earlier session is refused even for the same coach and exercise.
-    token: function () { return String(_visualSeq) + ":" + (currentCoach ? currentCoach.uid : "") + ":" + (_visualEditorExercise ? _visualEditorExercise.exerciseId : ""); },
+    token: function () { var ex = _visualEditorExercise; return String(_visualSeq) + ":" + (currentCoach ? currentCoach.uid : "") + ":" + (ex ? (ex.documentId || ex.id) : ""); },
   };
   var _vdsenPhotoExercise = null;
   var _vdsenPhotoMount = null;
@@ -4140,7 +4143,17 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   }
   function openVisualMetadataEditor(exercise) {
     if (!exercise || !currentCoach || !exercise.id) return;
-    _visualEditorExercise = { id: exercise.id, coachId: currentCoach.uid, exerciseId: exercise.exerciseId || exercise.id, prescriptionExerciseId: exercise.prescriptionExerciseId || null };
+    // DOCUMENT IDENTITY vs DOMAIN IDENTITY. They are NOT interchangeable: storage.rules validates
+    // ownership with firestore.exists(/documents/exercises/{documentId}), so the Storage path and the
+    // Firestore target must use the DOCUMENT id. `logicalExerciseId` is kept for reference only and is
+    // never used to build a path or choose a document.
+    _visualEditorExercise = {
+      documentId: exercise.id,
+      id: exercise.id,
+      coachId: currentCoach.uid,
+      logicalExerciseId: exercise.exerciseId || null,
+      prescriptionExerciseId: exercise.prescriptionExerciseId || null,
+    };
     var gyms = [...new Set(['San Diego', 'Smart Fit San Diego', 'Bugambilias'].concat(_allExercises.map(function (x) { return x.gym; }).filter(Boolean)))];
     var variants = Array.isArray(exercise.variants) && exercise.variants.length ? JSON.stringify(exercise.variants, null, 2) : '';
     var ov = document.createElement('div'); ov.id = 'visualMetadataEditor';
