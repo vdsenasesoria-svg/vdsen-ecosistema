@@ -87,10 +87,28 @@
       if (!els.root) return;
       var src = previewUrl || persistedPreviewSrc();
       if (els.origin) els.origin.textContent = originLabel();
+      // NO innerHTML and NO string concatenation of the URL. An ^https:// check does not make
+      // concatenation into an attribute safe: a quote in a historical or manipulated Firestore value could
+      // inject an event handler. The element is built with DOM APIs and the URL goes through the src
+      // PROPERTY, so an adversarial value can only ever become a (failed) URL, never markup.
       if (els.preview) {
-        els.preview.innerHTML = src
-          ? '<img src="' + src + '" alt="Foto del ejercicio" style="max-width:100%;max-height:170px;border-radius:6px;border:1px solid #444;display:block">'
-          : '<div style="color:#777;font-size:12px;border:1px dashed #444;border-radius:6px;padding:12px;text-align:center">Sin foto</div>';
+        while (els.preview.firstChild) els.preview.removeChild(els.preview.firstChild);
+        if (src) {
+          var img = deps.env.document.createElement('img');
+          img.alt = 'Foto del ejercicio';
+          img.style.maxWidth = '100%';
+          img.style.maxHeight = '170px';
+          img.style.borderRadius = '6px';
+          img.style.border = '1px solid #444';
+          img.style.display = 'block';
+          img.src = src;
+          els.preview.appendChild(img);
+        } else {
+          var ph = deps.env.document.createElement('div');
+          ph.style.cssText = 'color:#777;font-size:12px;border:1px dashed #444;border-radius:6px;padding:12px;text-align:center';
+          ph.textContent = 'Sin foto';
+          els.preview.appendChild(ph);
+        }
       }
       if (els.meta) {
         els.meta.textContent = staged
@@ -118,7 +136,7 @@
         var token = deps.generation.token();
         var prep = await deps.controllerApi.prepare(file, { token: token, coachUid: ctx.coachUid, exerciseId: ctx.exerciseId });
         if (myGen !== gen) return;   // a superseded selection must never replace the current one
-        if (!prep.ok) { staged = null; setStatus(prep.message || MESSAGES.INVALID); return; }
+        if (!prep.ok) { staged = null; setStatus(MESSAGES.INVALID); return; }
         staged = { blob: prep.blob, type: prep.type, bytes: prep.bytes, width: prep.width, height: prep.height, token: prep.token };
         previewUrl = deps.env.URL.createObjectURL(prep.blob);
         setStatus(MESSAGES.READY);
@@ -221,7 +239,11 @@
       els.remove.onclick = stageRemoval;
 
       render();
-      return { persist: persist, invalidate: invalidate, destroy: destroy, originLabel: originLabel };
+      // SYNCHRONOUS. The click handler must know whether it owns this Save BEFORE any async work, because
+    // event propagation cannot be cancelled after the microtask queue has run.
+    function hasPendingChange() { return !!(removeStaged || staged); }
+
+    return { persist: persist, hasPendingChange: hasPendingChange, invalidate: invalidate, destroy: destroy, originLabel: originLabel };
     }
 
     function destroy() {

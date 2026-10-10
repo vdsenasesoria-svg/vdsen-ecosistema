@@ -54,23 +54,30 @@
       });
     }
 
-    // Capture phase: runs BEFORE the editor's own onclick, and only stops it when it actually handled the
-    // save. A metadata-only save therefore keeps the exact behaviour it had before this feature existed.
+    // Capture phase. The decision to intercept is made SYNCHRONOUSLY, before any async work, because
+    // propagation cannot be cancelled once the handler returns: stopPropagation() inside a .then() would
+    // run after saveBtn.onclick had already been reached, allowing TWO Firestore publications for one Save.
     saveBtn.addEventListener('click', function (ev) {
+      // Nothing staged: do not preventDefault, do not stop propagation, do not disable Save, do not start
+      // async work. The original editor save runs exactly as it always did.
+      if (!handle.hasPendingChange()) return;
+
+      // From here this click belongs to the image path, so the original handler must never execute.
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      if (opts.onIntercept) opts.onIntercept();   // harness observation point, no product behaviour
+
       var metadata;
       try { metadata = buildMetadata(); }
       catch (e) {
         if (statusEl) statusEl.textContent = e.message || 'No se pudo guardar';
-        ev.stopPropagation();
-        ev.preventDefault();
-        return;
+        return;   // original handler stays suppressed; nothing was written anywhere
       }
+
       saveBtn.disabled = true;
       var restore = function () { saveBtn.disabled = false; };
       Promise.resolve(handle.persist(metadata)).then(function (out) {
         if (!out || out.handled !== true) { restore(); return; }
-        ev.stopPropagation();
-        ev.preventDefault();
         if (out.ok) {
           if (root.showToast) root.showToast(out.message || 'Imagen actualizada', false);
           // `cleanup === 'PENDING'` is NOT a failure: Firestore already points at the new object and the
@@ -87,7 +94,7 @@
       });
     }, true);
 
-    return { section: section, persist: handle.persist, destroy: section.destroy };
+    return { section: section, persist: handle.persist, hasPendingChange: handle.hasPendingChange, destroy: section.destroy };
   }
 
   root.VDSEN_COACH_IMAGE_MOUNT = { mount: mount };
