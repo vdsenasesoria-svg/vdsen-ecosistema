@@ -18827,7 +18827,7 @@ El esfuerzo no es negociable.
     // salida YA CALCULADA y persistida por el Motor de progresión. Coach no
     // recalcula nada aquí; solo categoriza/ordena/formatea campos existentes.
     if (lastRec && lastRec.recommendations && lastRec.recommendations.length) {
-      const aL = { deload:{label:'DELOAD',color:'#4488cc'}, reduce_load:{label:'↓ CARGA',color:'#FF4444'}, reduce_sets:{label:'↓ SERIES',color:'#FF8844'}, add_sets:{label:'+ SERIES',color:'#44BB88'}, increase_load:{label:'↑ CARGA',color:'#44BB88'}, freeze_load:{label:'CONGELAR',color:'#F4F4F0'}, maintain:{label:'MANTENER',color:'#888'} };
+      const aL = { deload:{label:'DELOAD',color:'#4488cc'}, reduce_load:{label:'↓ CARGA',color:'#FF4444'}, reduce_sets:{label:'↓ SERIES',color:'#FF8844'}, add_sets:{label:'+ SERIES',color:'#44BB88'}, increase_load:{label:'↑ CARGA',color:'#44BB88'}, freeze_load:{label:'CONGELAR',color:'#F4F4F0'}, insufficient_data:{label:'DATOS INSUFICIENTES',color:'#888'}, maintain:{label:'MANTENER',color:'#888'} };
 
       // PID-first identity check (PASO 6): a recommendation whose
       // prescriptionExerciseId no longer exists in the CURRENT active plan
@@ -18860,6 +18860,7 @@ El esfuerzo no es negociable.
 
       function _categorizeRec(r) {
         if (_isIdentityStale(r) || _isCoachEditStale(r)) return 'REVIEW';
+        if (r.action === 'insufficient_data') return 'INSUFFICIENT_DATA';
         if (r.action === 'freeze_load') return 'FREEZE';
         if (r.action === 'deload') return 'DELOAD';
         if (r.action === 'reduce_load' || r.action === 'reduce_sets') return 'DOWN_LOAD';
@@ -18871,16 +18872,17 @@ El esfuerzo no es negociable.
       // Exceptions-first order (PASO 3) — KEEP always last, never dominant.
       const CAT_META = {
         REVIEW:        { order:0, label:'REVIEW',        color:'#FF66FF' },
-        FREEZE:        { order:1, label:'FREEZE',        color:'#F4F4F0' },
-        DOWN_LOAD:     { order:2, label:'DOWN_LOAD',     color:'#FF4444' },
-        DELOAD:        { order:3, label:'DELOAD',        color:'#4488cc' },
-        PROGRESS_LOAD: { order:4, label:'PROGRESS_LOAD', color:'#44BB88' },
-        PROGRESS_REPS: { order:5, label:'PROGRESS_REPS', color:'#66CCFF' },
-        KEEP:          { order:6, label:'KEEP',          color:'#888'    }
+        INSUFFICIENT_DATA: { order:1, label:'INSUFFICIENT_DATA', color:'#888' },
+        FREEZE:        { order:2, label:'FREEZE',        color:'#F4F4F0' },
+        DOWN_LOAD:     { order:3, label:'DOWN_LOAD',     color:'#FF4444' },
+        DELOAD:        { order:4, label:'DELOAD',        color:'#4488cc' },
+        PROGRESS_LOAD: { order:5, label:'PROGRESS_LOAD', color:'#44BB88' },
+        PROGRESS_REPS: { order:6, label:'PROGRESS_REPS', color:'#66CCFF' },
+        KEEP:          { order:7, label:'KEEP',          color:'#888'    }
       };
 
       const categorized = lastRec.recommendations.map(r => ({ r: r, cat: _categorizeRec(r) }));
-      const counts = { REVIEW:0, FREEZE:0, DOWN_LOAD:0, DELOAD:0, PROGRESS_LOAD:0, PROGRESS_REPS:0, KEEP:0 };
+      const counts = { REVIEW:0, INSUFFICIENT_DATA:0, FREEZE:0, DOWN_LOAD:0, DELOAD:0, PROGRESS_LOAD:0, PROGRESS_REPS:0, KEEP:0 };
       categorized.forEach(x => { counts[x.cat] = (counts[x.cat]||0) + 1; });
       const sorted = categorized.slice().sort((a,b) => CAT_META[a.cat].order - CAT_META[b.cat].order);
 
