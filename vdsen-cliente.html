@@ -16388,6 +16388,49 @@ function _computeDeloadTriggers(week, postDataOverride) {
   return { triggers: triggers, isDeload: triggers.length >= 2 };
 }
 
+// P0 execution boundary: absence or incompleteness of client execution is an
+// evidence state, never an implicit completion and never a numeric proposal.
+// Keep the prescribed-instance identity so Coach can see exactly what needs
+// review without matching by display name or array position.
+function _insufficientProgressionRec(ej, opts) {
+  opts = opts || {};
+  var sets = Array.isArray(opts.sets) ? opts.sets : [];
+  var plannedSetCount = Number.isInteger(opts.plannedSetCount) && opts.plannedSetCount > 0 ? opts.plannedSetCount : null;
+  var observedRirs = sets.map(function(s) { return parseFloat(s && s.rir_real); }).filter(function(v) { return !isNaN(v) && v >= 0 && v <= 5; });
+  var observedICS = sets.map(function(s) { return parseFloat(s && s.ics); }).filter(function(v) { return !isNaN(v) && v > 0; });
+  var completionRate = plannedSetCount ? Math.min(1, sets.length / plannedSetCount) : null;
+  var noSets = sets.length === 0;
+  return {
+    exerciseName: (ej && (ej.nombre || ej.exerciseName)) || '',
+    prescriptionExerciseId: ej && ej.prescriptionExerciseId || undefined,
+    exerciseId: ej && ej.exerciseId || undefined,
+    action: 'insufficient_data',
+    executionState: noSets ? 'NO_EXECUTED_SETS' : 'PARTIAL_EXECUTION',
+    newLoad: null,
+    newSets: null,
+    newReps: null,
+    prescribedRIR: opts.prescribedRIR == null ? null : opts.prescribedRIR,
+    observedRIR: observedRirs.length ? +_avgArr(observedRirs).toFixed(2) : null,
+    observedICS: observedICS.length ? +_avgArr(observedICS).toFixed(2) : null,
+    observedPump: null,
+    repRangeTarget: null,
+    rirTarget: null,
+    reason: noSets
+      ? 'Sin series ejecutadas — datos insuficientes; no se propone cambio.'
+      : 'Sesión parcial (' + sets.length + '/' + plannedSetCount + ' series ejecutadas) — datos insuficientes; no se propone cambio.',
+    substituteExercise: null,
+    trend: null,
+    setMetrics: {
+      validSetCount: observedRirs.length,
+      minRIR: observedRirs.length ? Math.min.apply(null, observedRirs) : null,
+      maxRIR: observedRirs.length ? Math.max.apply(null, observedRirs) : null,
+      setsWithinRirBand: 0,
+      setsAtTopRange: 0,
+      setCompletionRate: completionRate
+    }
+  };
+}
+
 function calculateProgression(di, postData) {
   var sesiones = getSesiones();
   var dia = sesiones[di];
@@ -16441,7 +16484,14 @@ function calculateProgression(di, postData) {
       var k = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
       if (LOGS[k] && LOGS[k].done && !LOGS[k].autoFilled) sets.push(LOGS[k]);
     }
-    if (!sets.length) return null;
+    if (!sets.length) return _insufficientProgressionRec(ej, { plannedSetCount: planSets, prescribedRIR: rirObj });
+
+    // A partial execution is real evidence of what happened, but it is not
+    // enough to derive a safe progression. Preserve it as such rather than
+    // averaging the completed subset into a false "full session" verdict.
+    if (sets.length < planSets) return _insufficientProgressionRec(ej, {
+      sets: sets, plannedSetCount: planSets, prescribedRIR: rirObj
+    });
 
     var exName = ej.nombre || ej.exerciseName || '';
     var catData = _getCatalogData(exName);
@@ -16589,7 +16639,7 @@ function calculateProgression(di, postData) {
       var setsWithinRirBand = _rirRealArr.filter(function(v){ return Math.abs(v - rirObj) <= 1; }).length;
       var setsAtTopRange    = sets.filter(function(s){ return (parseFloat(s.reps)||0) >= repsTarget; }).length;
       var validSetCount     = _rirRealArr.length;
-      var setCompletionRate = sets.length ? (sets.length / numSets) : 0;
+      var setCompletionRate = planSets > 0 ? Math.min(1, sets.length / planSets) : null;
 
       // Gate: si un set llegó a RIR=0 (fallo) y NO todos los sets están dentro de la banda ±1,
       // el promedio está normalizando un set problemático → no progresar carga [HEURÍSTICA].
