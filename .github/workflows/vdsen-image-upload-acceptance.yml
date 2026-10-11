@@ -20,7 +20,9 @@ on:
     branches: [codex/client-app-next]
     paths:
       - 'storage.rules'
+      - 'firestore.rules'
       - 'firebase.image-upload-emulator.json'
+      - 'scripts/image-upload-e2e/**'
       - 'tests/image-upload*'
       - 'tests/coach-image-upload*'
       - 'tests/coach-visual-metadata*'
@@ -103,7 +105,16 @@ jobs:
       - name: Module unit tests
         run: |
           node --test tests/coach-image-upload.test.js
+          node --test tests/coach-image-upload-two-phase.test.js
+          node --test tests/coach-image-upload-integration-boundaries.test.js
+          node --test tests/coach-image-upload-save-race.test.js
+          node --test tests/coach-image-upload-identity.test.js
+          node --test tests/coach-image-upload-prepared-identity.test.js
+          node --test tests/coach-image-upload-lifecycle.test.js
           node --test tests/coach-visual-metadata.test.js
+
+      - name: Full browser and real-emulator acceptance
+        run: node scripts/image-upload-e2e/run-image-upload-acceptance.cjs
 
       - name: Release check
         run: node scripts/release/check.cjs
@@ -139,4 +150,4 @@ jobs:
           echo "SINGLE_FLIGHT=PASS"
           echo "PRODUCTION_CONTACT=0"
           echo "RELEASE_CHECK=PASS"
-          echo "IMAGE_UPLOAD_ACCEPTANCE=STORAGE_AND_MODULE_PASS"
+          echo "IMAGE_UPLOAD_ACCEPTANCE=PASS"
