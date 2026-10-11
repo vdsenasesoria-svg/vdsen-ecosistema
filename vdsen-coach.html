@@ -1586,6 +1586,18 @@
 
   <script src="assets/exercise-visual-catalog.js"></script>
   <script src="assets/exercise-visual-metadata-editor.js"></script>
+
+<!-- Coach exercise image upload. Dependency order matters: sniff and validate are pure, process
+     produces the re-encoded blob, paths owns the immutable naming, firebase-adapter is the only
+     Firebase surface, controller owns the safe replacement order. -->
+<script src="assets/coach-image-upload/sniff.js"></script>
+<script src="assets/coach-image-upload/validate.js"></script>
+<script src="assets/coach-image-upload/process.js"></script>
+<script src="assets/coach-image-upload/paths.js"></script>
+<script src="assets/coach-image-upload/firebase-adapter.js"></script>
+<script src="assets/coach-image-upload/controller.js"></script>
+<script src="assets/coach-image-upload/photo-section.js"></script>
+<script src="assets/coach-image-upload/mount.js"></script>
   <!-- Exportar cliente (vdsen-client-export-v1): ZIP local, sólo lectura. Orden = dependencias. -->
   <script src="assets/client-export/util.js"></script>
   <script src="assets/client-export/security.js"></script>
@@ -1609,6 +1621,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAuth, signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail, setPersistence, browserLocalPersistence, indexedDBLocalPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
   import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, orderBy, limit, updateDoc, addDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction, deleteField } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
   
   // ========== CONFIGURACIÓN FIREBASE (REEMPLAZAR CON DATOS REALES) ==========
   const firebaseConfig = {
@@ -3060,6 +3073,12 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   // anterior (lista de clientes, cuerpo del detalle, título y el botón de borrar cliente, que estaba
   // enlazado al cliente previo), para que nada suyo pueda reaparecer ante el siguiente coach.
   function _parkCoachShell() {
+    // Coach A -> Coach B: drop any staged photo and revoke its preview URL BEFORE the shell is parked,
+    // or A's blob would sit in parked DOM for the next coach.
+    try { if (_vdsenPhotoMount) _vdsenPhotoMount.destroy(); } catch (e) {}
+    _vdsenPhotoMount = null;
+    _vdsenPhotoExercise = null;
+    _visualSeq++;
     if (window._vdsenShellStash || !document.getElementById('clientList')) return; // ya estacionado, o no es el shell del Coach
     document.querySelectorAll('.modal-overlay').forEach(m => { m.style.display = 'none'; });
     // CN3 — La auditoría encontró datos privados del coach que sobrevivían en el shell estacionado.
@@ -4061,10 +4080,80 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   // Editor mínimo: escribe únicamente campos visuales en el documento exercises.
   var _visualEditorExercise = null;
   function _visualEditorText(id) { return (document.getElementById(id) || {}).value || ''; }
-  function _visualEditorClose() { var el = document.getElementById('visualMetadataEditor'); if (el) el.remove(); _visualEditorExercise = null; }
+  // --- Coach exercise image: lazy adapter + editor generation -------------------
+  //
+  // The factory closes over the LEXICAL import bindings (getStorage, storageRef, uploadBytes, app, db,
+  // doc, updateDoc). Those are not window properties, and referencing them from a script-tag context
+  // yields undefined - which is exactly what broke a previous integration attempt.
+  //
+  // It is LAZY on purpose: getStorage(app) must not execute during module evaluation, because
+  // initializeApp has not run yet and Firebase would read app._providers on undefined. The adapter
+  // receives a REAL Storage instance, never a thunk, because the adapter does sdk.ref(sdk.storage, p).
+  var _vdsenImageAdapterCache = null;
+  function _vdsenImageAdapter() {
+    if (_vdsenImageAdapterCache) return _vdsenImageAdapterCache;
+    if (!window.VDSEN_IMG_ADAPTER) throw new Error('adapter-unavailable');
+    _vdsenImageAdapterCache = window.VDSEN_IMG_ADAPTER.createAdapter({
+      storage: getStorage(app),
+      ref: storageRef,
+      uploadBytes: uploadBytes,
+      getDownloadURL: getDownloadURL,
+      deleteObject: deleteObject,
+      db: db,
+      doc: doc,
+      updateDoc: updateDoc,
+    });
+    return _vdsenImageAdapterCache;
+  }
+
+  // Editor generation. A prepared image is bound to this value, so a stale prepared result from an
+  // earlier editor session on the SAME coach and exercise is refused by the controller even though
+  // coach and exercise still match.
+  var _visualSeq = 0;
+  var _vdsenPhoto = null;   // { state, render } owned by the mount below
+
+  // Narrow re-export for the classic-script mount layer. ONLY the editor context crosses this
+  // boundary; the Firebase imports stay private to module scope, which is why there is no
+  // window.getStorage / window.app / window.db anywhere in this file.
+  window.VDSEN_VISUAL_EDITOR_CTX = {
+    current: function () {
+      var ex = _visualEditorExercise;
+      return {
+        coachUid: currentCoach ? currentCoach.uid : null,
+        coachId: ex ? ex.coachId : null,
+        // The authority the Storage path, the Firestore target and the rules lookup must all agree on.
+        exerciseId: ex ? (ex.documentId || ex.id) : null,
+        documentId: ex ? (ex.documentId || ex.id) : null,
+        logicalExerciseId: ex ? (ex.logicalExerciseId || null) : null,
+        exercise: _vdsenPhotoExercise || null,
+      };
+    },
+    // The generation token the controller binds a prepared image to. It changes on every editor open,
+    // so a prepared image from an earlier session is refused even for the same coach and exercise.
+    token: function () { var ex = _visualEditorExercise; return String(_visualSeq) + ":" + (currentCoach ? currentCoach.uid : "") + ":" + (ex ? (ex.documentId || ex.id) : ""); },
+  };
+  var _vdsenPhotoExercise = null;
+  var _vdsenPhotoMount = null;
+  function _visualEditorClose() {
+    try { if (_vdsenPhotoMount) _vdsenPhotoMount.destroy(); } catch (e) {}
+    _vdsenPhotoMount = null;
+    _vdsenPhotoExercise = null;
+    _visualSeq++;   // invalidates any prepared image still held by the mount layer
+    var el = document.getElementById('visualMetadataEditor'); if (el) el.remove(); _visualEditorExercise = null;
+  }
   function openVisualMetadataEditor(exercise) {
     if (!exercise || !currentCoach || !exercise.id) return;
-    _visualEditorExercise = { id: exercise.id, coachId: currentCoach.uid, exerciseId: exercise.exerciseId || exercise.id, prescriptionExerciseId: exercise.prescriptionExerciseId || null };
+    // DOCUMENT IDENTITY vs DOMAIN IDENTITY. They are NOT interchangeable: storage.rules validates
+    // ownership with firestore.exists(/documents/exercises/{documentId}), so the Storage path and the
+    // Firestore target must use the DOCUMENT id. `logicalExerciseId` is kept for reference only and is
+    // never used to build a path or choose a document.
+    _visualEditorExercise = {
+      documentId: exercise.id,
+      id: exercise.id,
+      coachId: currentCoach.uid,
+      logicalExerciseId: exercise.exerciseId || null,
+      prescriptionExerciseId: exercise.prescriptionExerciseId || null,
+    };
     var gyms = [...new Set(['San Diego', 'Smart Fit San Diego', 'Bugambilias'].concat(_allExercises.map(function (x) { return x.gym; }).filter(Boolean)))];
     var variants = Array.isArray(exercise.variants) && exercise.variants.length ? JSON.stringify(exercise.variants, null, 2) : '';
     var ov = document.createElement('div'); ov.id = 'visualMetadataEditor';
@@ -4094,7 +4183,55 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     document.getElementById('vm-instructions').value = exercise.instructions || exercise.exerciseInstructions || '';
     document.getElementById('vm-errors').value = (exercise.commonErrors || []).join('\n');
     document.getElementById('vm-variants').value = variants;
+    // A new editor session is a new generation, and it remembers the FULL exercise document so the
+    // photo section can derive the origin from the ORIGINAL persisted values rather than from inputs.
+    _visualSeq++;
+    _vdsenPhotoExercise = exercise;
     document.getElementById('visualMetaClose').onclick = _visualEditorClose;
+
+    // --- Foto del ejercicio ------------------------------------------------------
+    // Mounted AFTER the editor has rendered. The mount intercepts Save in the CAPTURE phase, so a
+    // staged photo is persisted by the controller (ONE Firestore write carrying image + metadata) and
+    // the editor save below is stopped. With nothing staged, persist() answers { handled:false } and
+    // the editor save runs exactly as it always did.
+    try {
+      if (window.VDSEN_COACH_IMAGE_MOUNT && window.VDSEN_COACH_IMAGE_UI && window.VDSEN_IMG_CONTROLLER) {
+        var _imgAdapter = _vdsenImageAdapter();
+        var _imgController = window.VDSEN_IMG_CONTROLLER.createController({
+          process: function (file) { return window.VDSEN_IMG_PROCESS.processImage(file, window.VDSEN_IMG_PROCESS.browserEnv(window)); },
+          upload: _imgAdapter.upload,
+          getDownloadUrl: _imgAdapter.getDownloadUrl,
+          deleteObject: _imgAdapter.deleteObject,
+          publish: function (exerciseId, patch) { return _imgAdapter.publishExerciseImage(exerciseId, patch); },
+          // BOTH conditions the controller needs: the token must be the ACTIVE generation, and the
+          // prepared image must carry that same token (checked inside savePrepared).
+          isCurrent: function (token) {
+            if (!currentCoach || !currentCoach.uid) return false;
+            if (!_visualEditorExercise) return false;
+            if (_visualEditorExercise.coachId !== currentCoach.uid) return false;
+            return String(token) === window.VDSEN_VISUAL_EDITOR_CTX.token();
+          },
+          onCleanupFailure: function () { /* orphan debt on the OLD object; the new state is correct */ },
+        });
+        var _saveEl = document.getElementById(String.fromCharCode(118,105,115,117,97,108,77,101,116,97,83,97,118,101));
+        var _statusEl = document.getElementById(String.fromCharCode(118,105,115,117,97,108,77,101,116,97,83,116,97,116,117,115));
+        _vdsenPhotoMount = window.VDSEN_COACH_IMAGE_MOUNT.mount({
+          env: window,
+          overlay: ov,
+          saveBtn: _saveEl,
+          statusEl: _statusEl,
+          ctx: window.VDSEN_VISUAL_EDITOR_CTX,
+          controller: _imgController,
+          paths: window.VDSEN_IMG_PATHS,
+          read: function (id) { var el = document.getElementById(id); return el ? el.value : ''; },
+          onDone: function () { _visualEditorClose(); loadExerciseCatalog(); },
+        });
+      }
+    } catch (e) {
+      // Storage unavailable must not break the editor: the metadata fields stay fully usable.
+      var _st = document.getElementById(String.fromCharCode(118,105,115,117,97,108,77,101,116,97,83,116,97,116,117,115));
+      if (_st) _st.textContent = 'No se pudo iniciar el almacenamiento de imágenes.';
+    }
     document.getElementById('visualMetaSave').onclick = async function () {
       var status = document.getElementById('visualMetaStatus');
       try {
