@@ -4739,11 +4739,10 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           const al = actionLabels[r.action] || actionLabels.maintain;
           const _rKey = (r.exerciseName || '').toLowerCase().trim();
           const _clientNote = _exNoteByName[_rKey];
-          // FASE 22 FIX — resolver pid desde plan cache para navegación sin ambigüedad
-          const _rNorm = _rKey.replace(/\s+/g,' ');
-          const _monDay = _activePlanCache && _activePlanCache.days && _activePlanCache.days[lastRecDay];
-          const _monEx  = _monDay && (_monDay.exercises||[]).find(x => (x.exerciseName||x.nombre||'').toLowerCase().trim().replace(/\s+/g,' ') === _rNorm);
-          const _rPid   = (_monEx && _monEx.prescriptionExerciseId) || '';
+          // Persisted recommendation identity is authoritative. Never resolve a
+          // deep link by display name: the same catalog exercise can appear in
+          // several prescriptions and same-name rows are not interchangeable.
+          const _rPid   = r.prescriptionExerciseId || '';
           html += `
             <div class="card p-3" style="border-left:3px solid ${al.color};border-radius:0 8px 8px 0">
               <div class="flex justify-between items-start mb-1.5">

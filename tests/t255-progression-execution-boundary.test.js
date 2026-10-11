@@ -88,6 +88,11 @@ assert.ok(
   coach.includes("insufficient_data:{label:'DATOS INSUFICIENTES',color:'#888'}"),
   'Coach renders the state without inventing a progression action'
 );
+assert.ok(
+  coach.includes("const _rPid   = r.prescriptionExerciseId || '';") &&
+  !coach.includes("const _rPid   = (_monEx && _monEx.prescriptionExerciseId) || '';") ,
+  'Coach deep links use the persisted prescriptionExerciseId, never a display-name lookup'
+);
 assert.ok(!client.includes('NUMERIC_APPLY_ENABLED = true'), 'numeric application remains disabled');
 
 console.log('T255 — progression execution boundary: PASSED');
