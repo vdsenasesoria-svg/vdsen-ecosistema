@@ -63,7 +63,7 @@ test('T483.1/2 a fresh legacy newLoad/newReps does not prefill the next exposure
   assert.ok(!client.includes('_progCargaConv') && !client.includes('_progRepsApply'));
 });
 
-test('T483.3 (T500) legacy recommendations are no longer presented to the athlete', () => {
+test('T483.3 (T500) legacy recommendations are not presented through the removed legacy surfaces', () => {
   assert.ok(!client.includes('var headerRec = _getProgRecForExercise'));
   assert.ok(client.includes('function _buildSetReferenceHtml(prev, histEx'));
   assert.ok(!/Referencia: '\+progrec\.newLoad/.test(client));

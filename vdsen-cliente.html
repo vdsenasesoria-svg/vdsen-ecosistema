@@ -667,6 +667,10 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .cnote{margin-top:12px;padding:10px 12px;border-left:3px solid var(--tx);background:var(--plate)}
 .cnote-l{font-size:9.5px;font-weight:800;letter-spacing:.16em;color:var(--mt);margin-bottom:4px}
 .cnote-t{font-size:13.5px;line-height:1.55;color:var(--tx);white-space:pre-line}
+.nxexp{margin-top:10px;padding:10px 12px;border-left:3px solid var(--accent);background:var(--plate)}
+.nxexp-l{font-size:9.5px;font-weight:800;letter-spacing:.16em;color:var(--mt);margin-bottom:4px}
+.nxexp-v{font-family:var(--font-num);font-size:14px;font-weight:800;color:var(--tx);font-variant-numeric:tabular-nums}
+.nxexp-m{margin-top:3px;font-size:11px;line-height:1.4;color:var(--mt)}
 .xh-mynote{display:flex;align-items:flex-start;gap:8px;width:100%;margin-top:10px;padding:10px 12px;background:transparent;border:1px solid var(--rule);color:var(--mt);text-align:left;font:inherit;font-size:12.5px;line-height:1.45;cursor:pointer;min-height:44px}
 .xh-mynote .ico{margin-top:1px}
 /* T549: athlete-authored read-only note history (dashed rule = athlete evidence; the Coach note keeps its solid .cnote bar) */
@@ -6409,11 +6413,11 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var sessionDone = !!LOGS['done_'+CURRENT_WEEK+'_'+di];
   // Modificaciones manuales de parámetros del ejercicio (coach-note + ajuste de sets/reps/RIR)
 
-  // ── Recomendación de la sesión anterior (única llamada, reutilizada en todo el panel) ──
-  // T161: PID-first — pasa prescriptionExerciseId para que la búsqueda intente
-  // coincidencia exacta de identidad antes de caer al fallback legacy por
-  // posición/nombre (ver _getProgRecForExercise).
-  // T487: the recommendation is informational only (hints/labels); nothing applies it automatically.
+  // Recomendación de próxima exposición: evidencia del mismo PID, solo lectura.
+  // Nunca cae a nombre/posición y nunca modifica la prescripción ni los inputs.
+  var _nextExposureHtml = _buildReadOnlyNextExposureHtml(
+    _getPidProgRecForExercise(ej.prescriptionExerciseId), unit
+  );
 
   // ── Determinar numSeries ─────────────────────────────────────────────────
   //
@@ -6512,6 +6516,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       })()+
       // FASE 18 — Coach note visible al cliente durante workout (inmutable, solo lectura)
       _coachNoteHtml(ej.coachNote)+
+      _nextExposureHtml+
       (_exNoteInline
         ? '<button type="button" id="exnote_inline_'+di+'_'+ei+'" onclick="toggleUserNote('+di+','+ei+')" class="xh-mynote" title="Editar nota del ejercicio"><svg class="ico sm" aria-hidden="true" focusable="false"><use href="#i-note"/></svg> '+_escHTml(_exNoteInline)+'</button>'
         : '')+
@@ -15573,6 +15578,50 @@ function _getProgRecForExercise(di, ei, exName, prescriptionExerciseId) {
     }
   }
   return null;
+}
+
+// La superficie del Cliente consume exclusivamente una recomendación con PID
+// exacto. A diferencia del adaptador de compatibilidad anterior, no permite
+// fallbacks por índice o nombre: sin PID o ante ambigüedad no se muestra nada.
+function _getPidProgRecForExercise(prescriptionExerciseId) {
+  if (!prescriptionExerciseId) return null;
+  for (var w = CURRENT_WEEK; w >= 1; w--) {
+    var matches = [];
+    (LOGS_BY_WEEK.progrec[w] || []).forEach(function(key) {
+      var parent = LOGS[key];
+      if (!parent || !parent.calculatedAt || !Array.isArray(parent.recommendations)) return;
+      parent.recommendations.forEach(function(rec) {
+        if (rec && rec.prescriptionExerciseId === prescriptionExerciseId) matches.push(rec);
+      });
+    });
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) return null;
+  }
+  return null;
+}
+
+// Presentación informativa: no hay inputs, handlers ni efectos persistentes.
+// El atleta conserva la prescripción del Coach y confirma por separado lo que
+// realmente ejecuta. Las propuestas estructurales (series) quedan fuera.
+function _buildReadOnlyNextExposureHtml(rec, unit) {
+  if (!rec || rec.action === 'insufficient_data') return '';
+  var labels = {
+    increase_load: 'SUBIR CARGA', reduce_load: 'BAJAR CARGA',
+    maintain: 'MANTENER', freeze_load: 'CONSOLIDAR', deload: 'REVISAR DESCARGA'
+  };
+  var values = [];
+  if (typeof rec.newLoad === 'number' && isFinite(rec.newLoad) && rec.newLoad > 0)
+    values.push(_escHTml(String(rec.newLoad)) + ' ' + _escHTml(String(unit || 'KG')));
+  if (typeof rec.newReps === 'number' && isFinite(rec.newReps) && rec.newReps > 0)
+    values.push(_escHTml(String(rec.newReps)) + ' reps');
+  if (typeof rec.rirTarget === 'number' && isFinite(rec.rirTarget))
+    values.push('RIR ' + _escHTml(String(rec.rirTarget)));
+  if (!values.length) return '';
+  return '<div class="nxexp" role="note" aria-label="Próxima exposición informativa">'+
+    '<div class="nxexp-l">PRÓXIMA EXPOSICIÓN · INFORMATIVO</div>'+
+    '<div class="nxexp-v">'+_escHTml(labels[rec.action] || 'REVISAR')+' · '+values.join(' · ')+'</div>'+
+    '<div class="nxexp-m">Referencia derivada de tu última ejecución. No cambia la prescripción ni rellena tus campos.</div>'+
+  '</div>';
 }
 
 // ── FASE 6 — EXERCISE HISTORY HELPERS ──────────────────────────────────

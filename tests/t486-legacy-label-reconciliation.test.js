@@ -25,7 +25,7 @@ vm.createContext(ctx);
 vm.runInContext("var _escHTml = function(s){return String(s)}; var _prevWeekReuseHtml = function(){ return ''; };" +
   ['_normName', '_roundUnit', '_convertCarga', '_buildSetReferenceHtml', '_buildProgreSummaryHtml'].map(fnSource).join('\n'), ctx);
 
-test('T486.1 (T500) the next-exposure recommendation card no longer exists', () => {
+test('T486.1 (T500) the removed legacy next-exposure card does not return', () => {
   assert.ok(!client.includes('_buildNextExposureHtml'));
 });
 
@@ -48,7 +48,7 @@ test('T486.4 the OBJETIVO block shows only Coach-authored reps/RIR', () => {
   assert.ok(/repsTarget\+'(<\/b>)? reps/.test(block) && /RIR '\+baseRIR/.test(block));
 });
 
-test('T486.5 (T500) no athlete-facing recommendation label remains; fatigue signals are informational', () => {
+test('T486.5 (T500) removed legacy recommendation labels stay absent; fatigue signals are informational', () => {
   assert.ok(!client.includes('Recomendación (no aplicada)') && !client.includes('ÚLTIMA RECOMENDACIÓN'));
   assert.ok(!client.includes('>ÚLTIMA PROGRESIÓN<') && !client.includes('>PRÓXIMA SESIÓN<'));
   const summary = ctx._buildProgreSummaryHtml({ recommendations: [{ action: 'increase_load', newLoad: 82.5, exerciseName: 'Remo' }], deloadTriggers: ['EIMD alto'] });

@@ -1,7 +1,6 @@
-// T500: the legacy client engine (calculateProgression / progrec_*) is evidence only. It is no longer presented
-// to the athlete as a recommendation (no card block, header line, per-set reference, add-sets/deload banner or
-// post-session recommendation rows). Fatigue/deload signals remain visible as informational only. The canonical
-// shadow record (Coach) is the only recommendation surface.
+// T500: compatibility recommendation paths never control an athlete input or
+// prescription. The PID-exact, read-only next-exposure surface is covered by
+// T558; legacy cards, positional references and operational application remain removed.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -12,7 +11,7 @@ const client = fs.readFileSync(path.join(__dirname, '..', 'vdsen-cliente.html'),
 const coach = fs.readFileSync(path.join(__dirname, '..', 'vdsen-coach.html'), 'utf8');
 const fn = (name) => { const i = client.indexOf('function ' + name + '('); assert.ok(i >= 0, name); return client.slice(i, client.indexOf('\n}\n', i) + 3); };
 
-test('T500.1 no athlete-facing legacy recommendation surface remains in the client', () => {
+test('T500.1 legacy recommendation surfaces remain removed from the client', () => {
   for (const n of ['_buildNextExposureHtml', 'headerRecHtml', 'addSetsBannerHtml', 'RECOMENDACIÓN · NO APLICADA',
     'Recomendación (no aplicada)', 'El algoritmo recomienda', 'RECOMENDACIÓN (NO APLICADA)'])
     assert.ok(!client.includes(n), n);
@@ -40,7 +39,7 @@ test('T500.3 post-session summary shows fatigue signals as informational, never 
   assert.ok(!/AUMENTAR|82\.5|MANTENER|REDUCIR|SERIES|NO APLICADA/.test(sig));
 });
 
-test('T500.4 the athlete client no longer reads progrec_ to render anything but fatigue signals', () => {
+test('T500.4 the legacy compatibility adapter has no UI consumer', () => {
   const calls = client.split('_getProgRecForExercise(').length - 1;
   assert.equal(calls, 1, 'only the definition remains (compat adapter, no UI consumer)');
   assert.ok(!client.includes('progHtml') && !client.includes('ÚLTIMA RECOMENDACIÓN'));
