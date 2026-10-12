@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const client = fs.readFileSync('vdsen-cliente.html', 'utf8');
-const start = client.indexOf('async function _doSaveLogs()');
+const start = client.indexOf('async function _doSaveLogs(_setSaveMetrics)');
 assert.ok(start >= 0);
 let depth = 0, end = client.indexOf('{', start);
 for (; end < client.length; end++) {
@@ -17,6 +17,7 @@ test('T441: a save started by A never writes A payload to B after logout/login',
     var USER = { uid: 'A' }, ACTIVE_PLAN_ID = 'plan-a', REAL_WEEK = 1;
     var LOGS = { log_a: { done: true } }, EXERCISE_UNITS = {}, EXERCISE_HISTORY = {};
     var _saveLogsTimer = null, _logsWriteInFlight = 0, calls = [];
+    function _markSetSaveMetric() {} function _setSaveNow() { return 0; }
     var document = { getElementById: function(){ return null; }, createElement: function(){ return { style:{}, addEventListener:function(){} }; }, body:{ appendChild:function(){} } };
     var navigator = { onLine: true };
     function showToast() {} function _showSaveOk() {}

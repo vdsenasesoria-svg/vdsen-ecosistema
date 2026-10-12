@@ -19,7 +19,7 @@ function makeRuntime() {
     var CURRENT_WEEK = 1, REAL_WEEK = 1, DIA_ACTIVO = 0, EJ_ACTIVO = 0;
     var LOGS = {}, EXERCISE_HISTORY = {}, LOGS_BY_WEEK = { log: { 1: [] } }, _saveLogsTimer = null;
     var _EJERCICIOS_DIA = [{ exerciseName: 'Press', prescriptionExerciseId: 'pid-press', sets: [{ restSeconds: 0 }] }];
-    var window = {};
+    var window = { performance: { now: function(){ return 0; } } };
     var navigator = {};
     var elements = {
       carga_log_1_0_0_s0: { value: '80' }, reps_log_1_0_0_s0: { value: '8' },
@@ -32,6 +32,9 @@ function makeRuntime() {
     function _coachRIR() { return 2; }
     function _historyPidKey(pid) { return pid ? '__pid__' + String(pid) : ''; }
     function _lbwTrack() {}
+    var _setSavePending = Object.create(null);
+    function _startSetSaveMetrics() { return {}; }
+    function _markSetSaveMetric() {}
     function _recordExerciseHistoryAndPR() {}
     function _rebuildExerciseHistoryFromLogs() {}
     function saveLogs() {}

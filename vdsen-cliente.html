@@ -1289,6 +1289,19 @@ let PLAN = null;
 let LOGS = {};         // { "semana_dia_ejercicio": {carga, reps, rir} }
 var _logsAuthorityUpdatedAt = 0; // version of the root/meso entries currently in LOGS
 var LOGS_BY_WEEK = { log: {}, progrec: {} }; // derived index: { w: [key1,...] } — rebuilt on bulk load, appended on writes
+// UI-only acknowledgement for a set write in flight. It never enters LOGS or a
+// Firestore payload: durable completion still requires _doSaveLogs() to resolve.
+var _setSavePending = Object.create(null);
+var _lastSetSaveMetrics = null;
+function _setSaveNow() { return (window.performance && typeof window.performance.now === 'function') ? window.performance.now() : Date.now(); }
+function _startSetSaveMetrics(key) {
+  _lastSetSaveMetrics = { key: key, startedAt: _setSaveNow() };
+  window.VDSEN_SAVE_SET_METRICS = _lastSetSaveMetrics; // diagnostic-only; no execution data is exposed
+  return _lastSetSaveMetrics;
+}
+function _markSetSaveMetric(metrics, field) {
+  if (metrics) metrics[field] = Math.max(0, _setSaveNow() - metrics.startedAt);
+}
 let CURRENT_WEEK = 1;
 var REAL_WEEK = 1;     // semana real de entrenamiento (no cambia al navegar)
 var _weeksExpanded = false; // selector: mostrar semanas pasadas
@@ -6562,9 +6575,16 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
 
   // ── E. Series ─────────────────────────────────────────────────────────
   // Encontrar primer set activo
+  // A completed set is not navigable until its Firestore acknowledgement.  Keeping
+  // this transient state out of LOGS means the durable record is still the source
+  // of truth, while the UI can acknowledge the tap immediately without exposing
+  // the next set (and a second authoritative write) in the gap.
+  var _pendingSetKey = null;
   var activeSi = -1;
   for (var _as = 0; _as < numSeries; _as++) {
-    if (!LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_as] || !LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_as].done) {
+    var _asKey = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_as;
+    if (_setSavePending[_asKey]) { _pendingSetKey = _asKey; break; }
+    if (!LOGS[_asKey] || !LOGS[_asKey].done) {
       activeSi = _as; break;
     }
   }
@@ -6833,7 +6853,15 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '</div>'
       : '';
 
-    if (saved.done) {
+    if (saved.done && _setSavePending[key]) {
+      // Local acknowledgement only: this is deliberately not a success card and
+      // does not offer correction/navigation until Firestore has acknowledged it.
+      setsHtml += '<div class="workout-set workout-set-current" aria-live="polite" style="display:flex;align-items:center;gap:10px;padding:12px;margin-bottom:8px">'+
+        '<div style="width:28px;height:28px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:900">…</div>'+
+        '<div><div style="font-size:12px;font-weight:900;letter-spacing:1px;color:var(--accent)">GUARDANDO SERIE '+(s+1)+'…</div>'+
+        '<div style="font-size:11px;color:var(--mt);margin-top:2px">Confirmando el registro de esta serie</div></div>'+
+      '</div>';
+    } else if (saved.done) {
       // ── SET COMPLETADO — SIEMPRE editable con botón ✏ ────────────────
       // Cualquier set guardado puede corregirse, aunque la sesión esté cerrada
       // o sea un set previo. Tap ✏ → abre el set como activo con valores
@@ -7031,7 +7059,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     }
   }
   var completedBlockHtml = '';
-  if (activeSi === -1 && !isPartner) {
+  if (activeSi === -1 && !_pendingSetKey && !isPartner) {
     if (_ssPartnerPending) {
       completedBlockHtml = '<div style="margin-top:16px;padding:12px 14px;background:rgba(107,107,102,.10);border:1px solid #6B6B66;border-radius:12px;text-align:center;color:#A5A59E;font-size:13px;font-weight:700">🔁 Completa el partner del SS antes de avanzar</div>';
     } else {
@@ -9643,6 +9671,7 @@ window._skipPresession = _skipPresession;
 async function completeSet(key, di, ei, si, unit) {
   if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   if (CURRENT_WEEK < REAL_WEEK) { showToast('Semana pasada — modo lectura', true); return; }
+  var _saveMetrics = typeof _startSetSaveMetrics === 'function' ? _startSetSaveMetrics(key) : null;
   // T568 — El guardado es asíncrono (await _doSaveLogs) y el botón NO se deshabilitaba: medido,
   // un segundo toque entraba en la función con el primero todavía en vuelo, y el cliente no
   // recibía ninguna señal de que su toque estuviera en curso. Guard de reentrada + feedback
@@ -9653,10 +9682,18 @@ async function completeSet(key, di, ei, si, unit) {
     _saveBtn = _row ? _row.querySelector('button[onclick*="completeSet"]') : null;
   } catch (_e) { _saveBtn = null; }
   if (_saveBtn && _saveBtn.disabled) return; // ya hay un guardado en vuelo para esta serie
+  var _saveButtonLabel = _saveBtn ? _saveBtn.textContent : '';
+  var _restoreSaveButton = function() {
+    if (!_saveBtn) return;
+    _saveBtn.disabled = false;
+    _saveBtn.removeAttribute('aria-busy');
+    _saveBtn.textContent = _saveButtonLabel;
+  };
   if (_saveBtn) {
     _saveBtn.disabled = true;
     _saveBtn.setAttribute('aria-busy', 'true');
     _saveBtn.textContent = 'GUARDANDO…';
+    if (typeof _markSetSaveMetric === 'function') _markSetSaveMetric(_saveMetrics, 'clickToVisualFeedbackMs');
   }
   unit = getExUnit(di, ei); // siempre usar la unidad actual del ejercicio
   var carga = document.getElementById('carga_'+key)?.value || '';
@@ -9667,7 +9704,7 @@ async function completeSet(key, di, ei, si, unit) {
   var icsEl = document.getElementById('ics_'+key);
   var ics = icsEl ? (parseInt(icsEl.value) || null) : null;
   var prev  = LOGS[key] || {};
-  if (prev.done) return; // correction uses editSet(); repeated save events are idempotent
+  if (prev.done) { _restoreSaveButton(); return; } // correction uses editSet(); repeated save events are idempotent
   var _hadSetLog = Object.prototype.hasOwnProperty.call(LOGS, key);
   var _previousSetLog = _hadSetLog ? JSON.parse(JSON.stringify(LOGS[key])) : null;
   var _weekAtSetStart = CURRENT_WEEK;
@@ -9692,17 +9729,17 @@ async function completeSet(key, di, ei, si, unit) {
     var cargaNum = parseFloat(carga);
     var repsNum = parseInt(reps);
     if (!_isBW && (!carga || isNaN(cargaNum) || cargaNum <= 0)) {
-      showToast('Ingresa la carga (> 0)', true); return;
+      _restoreSaveButton(); showToast('Ingresa la carga (> 0)', true); return;
     }
     if (!reps || isNaN(repsNum) || repsNum <= 0) {
-      showToast(_isIso ? 'Ingresa los segundos (> 0)' : 'Ingresa las repeticiones (> 0)', true); return;
+      _restoreSaveButton(); showToast(_isIso ? 'Ingresa los segundos (> 0)' : 'Ingresa las repeticiones (> 0)', true); return;
     }
     if (ics !== null && (ics < 1 || ics > 10)) {
-      showToast('ICS debe ser entre 1 y 10', true); return;
+      _restoreSaveButton(); showToast('ICS debe ser entre 1 y 10', true); return;
     }
     var rirNum = parseFloat(rirReal);
     if (rirReal !== '' && !isNaN(rirNum) && (rirNum < 0 || rirNum > 5)) {
-      showToast('RIR debe ser entre 0 y 5', true); return;
+      _restoreSaveButton(); showToast('RIR debe ser entre 0 y 5', true); return;
     }
     // Para autocarga sin lastre, normalizamos carga a "0" para que se guarde como número
     if (_isBW && (!carga || isNaN(cargaNum))) carga = '0';
@@ -9724,6 +9761,7 @@ async function completeSet(key, di, ei, si, unit) {
   };
   if (_subName) LOGS[key].substitutedFrom = { prescriptionExerciseId: _ejMeta.prescriptionExerciseId || null, exerciseId: _ejMeta.exerciseId || null, exerciseName: _ejMetaName || null };
   _lbwTrack(key);
+  _setSavePending[key] = true;
 
   // Leer nombre del ejercicio antes de re-render
   var exName = (document.getElementById('setrow_'+key)?.dataset.exname || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
@@ -9744,8 +9782,13 @@ async function completeSet(key, di, ei, si, unit) {
   // the workout until its write is accepted. This keeps a failed write
   // retryable without leaving a phantom completed set in memory.
   if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
-  var _setSaved = await _doSaveLogs();
+  // Paint a pending acknowledgement before starting the network request. The
+  // pending renderer keeps the next set inaccessible until the ack arrives.
+  _refreshExPanelOnly();
+  if (typeof _markSetSaveMetric === 'function') _markSetSaveMetric(_saveMetrics, 'clickToLocalStateUpdateMs');
+  var _setSaved = await _doSaveLogs(_saveMetrics);
   if (_setSaved === false) {
+    delete _setSavePending[key];
     if (_hadSetLog) LOGS[key] = _previousSetLog;
     else delete LOGS[key];
     if (_historyStore) {
@@ -9757,17 +9800,13 @@ async function completeSet(key, di, ei, si, unit) {
       if (_failedLogIndex >= 0) LOGS_BY_WEEK.log[_weekAtSetStart].splice(_failedLogIndex, 1);
     }
     if (CURRENT_WEEK === _weekAtSetStart && DIA_ACTIVO === _dayAtSetStart && EJ_ACTIVO === _exerciseAtSetStart) {
+      _refreshExPanelOnly();
       showToast('⚠ NO SE GUARDÓ — revisa conexión y reintenta', true);
-    }
-    // T568: en el fallo NO hay re-render que reconstruya el botón, así que hay que devolverlo a
-    // su estado utilizable o el cliente no podría reintentar.
-    if (_saveBtn) {
-      _saveBtn.disabled = false;
-      _saveBtn.removeAttribute('aria-busy');
-      _saveBtn.textContent = '✓ GUARDAR ' + (_techLower === 'cluster' ? 'CLUSTER' : 'SERIE') + ' ' + (si + 1);
     }
     return false;
   }
+
+  delete _setSavePending[key];
 
   // The write belongs to its original log key, but its follow-up UI belongs
   // only to the context where it started. Navigation while saving must not
@@ -9797,6 +9836,10 @@ async function completeSet(key, di, ei, si, unit) {
 
   // Re-render solo el panel de ejercicio activo (no scroll reset)
   _refreshExPanelOnly();
+  if (typeof _markSetSaveMetric === 'function') _markSetSaveMetric(_saveMetrics, 'clickToFinalSettlementMs');
+  if (_saveMetrics && typeof _saveMetrics.firestoreAcknowledgedAt === 'number') {
+    _saveMetrics.renderTimeAfterSaveMs = Math.max(0, _setSaveNow() - _saveMetrics.firestoreAcknowledgedAt);
+  }
 
   // Flash visual en el row del set completado (feedback táctil + visual)
   if (done) {
@@ -11156,13 +11199,15 @@ function _logsPlanChanged(logData, activePlanId, flagSession, localPlanId) {
   return !!(flagSession || (localPlanId && localPlanId !== activePlanId) || (firestorePlanId && firestorePlanId !== activePlanId));
 }
 
-async function _doSaveLogs() {
+async function _doSaveLogs(_setSaveMetrics) {
   if (!USER || !FB) return false;
   var _uidAtStart = USER.uid;
   _saveLogsTimer = null; // limpiar ID del timer que ya disparó (evita false-positive en visibilitychange)
   var _seqAtStart = typeof _logsReqSeq === 'number' ? _logsReqSeq : 0;
   _logsWriteInFlight++;
   try {
+    if (typeof _markSetSaveMetric === 'function') _markSetSaveMetric(_setSaveMetrics, 'clickToFirestoreRequestStartMs');
+    var _firestoreStartedAt = (_setSaveMetrics && typeof _setSaveNow === 'function') ? _setSaveNow() : 0;
     // Sanear: Firestore rechaza objetos con `undefined`. JSON.parse(JSON.stringify(...))
     // descarta cualquier campo undefined heredado de versiones anteriores o de bugs.
     const _safeEntries = JSON.parse(JSON.stringify(LOGS || {}));
@@ -11197,8 +11242,13 @@ async function _doSaveLogs() {
     // Indicador breve de guardado exitoso
     _showSaveOk();
     try { _maybeConsumeOverlays(_uidAtStart); } catch(_ce) {}
+    if (_setSaveMetrics && typeof _setSaveNow === 'function') {
+      _setSaveMetrics.firestoreAcknowledgedAt = _setSaveNow();
+      _setSaveMetrics.firestoreRequestDurationMs = Math.max(0, _setSaveMetrics.firestoreAcknowledgedAt - _firestoreStartedAt);
+    }
     return true;
   } catch(e) {
+    if (_setSaveMetrics && typeof _setSaveNow === 'function') _setSaveMetrics.firestoreRequestDurationMs = Math.max(0, _setSaveNow() - _firestoreStartedAt);
     if (!USER || USER.uid !== _uidAtStart) return false;
     console.error('saveLogs error:', e.code, e.message, e);
     var _errMsg = '⚠ Error al guardar: ' + (e.code ? '['+e.code+'] ' : '') + (e.message || 'sin conexión');
