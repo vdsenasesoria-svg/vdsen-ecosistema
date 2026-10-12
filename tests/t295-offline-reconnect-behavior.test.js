@@ -58,7 +58,7 @@ ok(showSaveOkSrc.includes("var _offline = (typeof navigator !== 'undefined' && n
 ok(showSaveOkSrc.includes("el.textContent = _offline ? '⏳ GUARDADO LOCAL — pendiente de sincronizar' : '✓ GUARDADO';"),
   'the badge text now honestly distinguishes a locally-pending write from a server-confirmed one');
 
-const doSaveLogsSrc = extractFunction(CLIENT, 'async function _doSaveLogs()');
+const doSaveLogsSrc = extractFunction(CLIENT, 'async function _doSaveLogs(');
 ok(doSaveLogsSrc.includes('return true;') && doSaveLogsSrc.includes('return false;'),
   '_doSaveLogs still returns the exact same true/false contract -- every existing caller (_confirmSessionDone, guardarCI, guardarNutriLog, skipSession, etc.) is unaffected by the wording-only fix');
 

@@ -15,6 +15,7 @@ function runtime(sub) {
   return new Function('SUB', `
     var CURRENT_WEEK = 1, REAL_WEEK = 1, DIA_ACTIVO = 0, EJ_ACTIVO = 0;
     var LOGS = SUB ? { exsub_1_0_0: SUB } : {}, EXERCISE_HISTORY = {}, LOGS_BY_WEEK = { log: { 1: [] } }, _saveLogsTimer = null;
+    var _setSavePending = Object.create(null);
     var _EJERCICIOS_DIA = [{ exerciseName: 'Press', exerciseId: 'ex-press', prescriptionExerciseId: 'pid-press', sets: [{ restSeconds: 0 }] }];
     var window = {}, navigator = {}, recorded = [];
     var elements = {
