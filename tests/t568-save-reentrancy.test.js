@@ -45,13 +45,14 @@ function build(opts = {}) {
 }
 
 test('T568-1 an in-flight save disables the button and shows progress', () => {
-  // Assert on the guard block directly: it must run before any async work.
-  const guard = SRC.slice(SRC.indexOf('var _saveBtn'), SRC.indexOf('unit = getExUnit'));
-  assert.ok(/_saveBtn\.disabled = true/.test(guard), 'debe deshabilitar el boton');
-  assert.ok(/_saveBtn\.setAttribute\('aria-busy', 'true'\)/.test(guard), 'debe marcar aria-busy');
-  assert.ok(/_saveBtn\.textContent = 'GUARDANDO…'/.test(guard), 'debe mostrar GUARDANDO');
-  assert.ok(/button\[onclick\*="completeSet"\]/.test(guard), 'localiza el boton por su onclick');
-  assert.ok(/_row \? _row\.querySelector/.test(guard), 'acotado a la fila de esta serie');
+  // Invalid drafts must not become stuck in GUARDANDO. The visual busy state is
+  // therefore applied immediately after synchronous validation, before the write.
+  const feedback = SRC.slice(SRC.indexOf('// A valid intentional save'), SRC.indexOf('var _ejMeta'));
+  assert.ok(/_saveBtn\.disabled = true/.test(feedback), 'debe deshabilitar el boton');
+  assert.ok(/_saveBtn\.setAttribute\('aria-busy', 'true'\)/.test(feedback), 'debe marcar aria-busy');
+  assert.ok(/_saveBtn\.textContent = 'GUARDANDO…'/.test(feedback), 'debe mostrar GUARDANDO');
+  assert.ok(SRC.includes('button[onclick*="completeSet"]'), 'localiza el boton por su onclick');
+  assert.ok(/_row \? _row\.querySelector/.test(SRC), 'acotado a la fila de esta serie');
 });
 
 test('T568-2 a second tap while saving is refused', () => {
@@ -97,9 +98,9 @@ test('T568-7 the guard is defensive: a missing button must not break saving', ()
 
 test('T568-8 the change does not touch the data contract', () => {
   // UI only: no new field, no changed key, no extra write.
-  const guard = SRC.slice(SRC.indexOf('var _saveBtn'), SRC.indexOf('unit = getExUnit'));
-  assert.ok(!/setDoc|updateDoc|LOGS\[/.test(guard), 'el guard no escribe datos');
-  assert.ok(!/prescriptionExerciseId|rir_real|ics|pump/.test(guard), 'no toca campos del log');
+  const feedback = SRC.slice(SRC.indexOf('// A valid intentional save'), SRC.indexOf('var _ejMeta'));
+  assert.ok(!/setDoc|updateDoc|LOGS\[/.test(feedback), 'el feedback no escribe datos');
+  assert.ok(!/prescriptionExerciseId|rir_real|ics|pump/.test(feedback), 'no toca campos del log');
 });
 
 test('T568-9 NUMERIC_APPLY_ENABLED sigue en false', () => {

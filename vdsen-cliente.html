@@ -9640,7 +9640,37 @@ window._skipPresession = _skipPresession;
 // T497: no in-session extra-set recommender. Set count is structural prescription (Coach / future explicit
 // canonical structural policy). ICS / pump / observed RIR stay logged as evidence only.
 
+// Save-set timing is local diagnostics only: it never enters LOGS, Firestore or a plan.
+// It makes the UI, request-start, request-duration and settlement boundaries observable
+// without redefining Firestore's persistence acknowledgement contract.
+var _saveSetMeasurementByKey = {};
+var _saveSetMeasurementActiveKey = null;
+function _saveSetMeasureNow() {
+  return (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
+}
+function _measureSaveSet(key, phase) {
+  var now = _saveSetMeasureNow();
+  var metric = _saveSetMeasurementByKey[key];
+  if (phase === 'CLICK' || !metric) metric = _saveSetMeasurementByKey[key] = { key: key, clickAt: now };
+  if (phase === 'VISUAL_FEEDBACK') metric.visualFeedbackAt = now;
+  else if (phase === 'LOCAL_STATE_UPDATE') metric.localStateAt = now;
+  else if (phase === 'FIRESTORE_REQUEST_START') metric.firestoreRequestStartAt = now;
+  else if (phase === 'FIRESTORE_REQUEST_END') metric.firestoreRequestEndAt = now;
+  else if (phase === 'FINAL_SETTLEMENT') metric.finalSettlementAt = now;
+  else if (phase === 'RENDER_COMPLETE') metric.renderCompleteAt = now;
+  function elapsed(end) { return typeof metric.clickAt === 'number' && typeof end === 'number' ? Math.max(0, end - metric.clickAt) : null; }
+  metric.CLICK_TO_VISUAL_FEEDBACK = elapsed(metric.visualFeedbackAt);
+  metric.CLICK_TO_LOCAL_STATE_UPDATE = elapsed(metric.localStateAt);
+  metric.CLICK_TO_FIRESTORE_REQUEST_START = elapsed(metric.firestoreRequestStartAt);
+  metric.FIRESTORE_REQUEST_DURATION = (typeof metric.firestoreRequestStartAt === 'number' && typeof metric.firestoreRequestEndAt === 'number') ? Math.max(0, metric.firestoreRequestEndAt - metric.firestoreRequestStartAt) : null;
+  metric.CLICK_TO_FINAL_SETTLEMENT = elapsed(metric.finalSettlementAt);
+  metric.RENDER_TIME_AFTER_SAVE = (typeof metric.finalSettlementAt === 'number' && typeof metric.renderCompleteAt === 'number') ? Math.max(0, metric.renderCompleteAt - metric.finalSettlementAt) : null;
+  if (typeof window !== 'undefined') window.__VDSEN_LAST_SAVE_SET_METRICS = metric;
+  return metric;
+}
+
 async function completeSet(key, di, ei, si, unit) {
+  _measureSaveSet(key, 'CLICK');
   if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   if (CURRENT_WEEK < REAL_WEEK) { showToast('Semana pasada — modo lectura', true); return; }
   // T568 — El guardado es asíncrono (await _doSaveLogs) y el botón NO se deshabilitaba: medido,
@@ -9653,11 +9683,6 @@ async function completeSet(key, di, ei, si, unit) {
     _saveBtn = _row ? _row.querySelector('button[onclick*="completeSet"]') : null;
   } catch (_e) { _saveBtn = null; }
   if (_saveBtn && _saveBtn.disabled) return; // ya hay un guardado en vuelo para esta serie
-  if (_saveBtn) {
-    _saveBtn.disabled = true;
-    _saveBtn.setAttribute('aria-busy', 'true');
-    _saveBtn.textContent = 'GUARDANDO…';
-  }
   unit = getExUnit(di, ei); // siempre usar la unidad actual del ejercicio
   var carga = document.getElementById('carga_'+key)?.value || '';
   var reps  = document.getElementById('reps_'+key)?.value  || '';
@@ -9708,6 +9733,15 @@ async function completeSet(key, di, ei, si, unit) {
     if (_isBW && (!carga || isNaN(cargaNum))) carga = '0';
   }
 
+  // A valid intentional save receives immediate local acknowledgement. This is not
+  // a persisted-success claim; the success state remains gated on _doSaveLogs().
+  if (_saveBtn) {
+    _saveBtn.disabled = true;
+    _saveBtn.setAttribute('aria-busy', 'true');
+    _saveBtn.textContent = 'GUARDANDO…';
+    _measureSaveSet(key, 'VISUAL_FEEDBACK');
+  }
+
   var _ejMeta = (_EJERCICIOS_DIA || [])[ei] || {};
   var _ejMetaName = _ejMeta.exerciseName || _ejMeta.nombre || '';
   var _ejMetaBase = _coachRIR(_ejMeta);
@@ -9724,6 +9758,7 @@ async function completeSet(key, di, ei, si, unit) {
   };
   if (_subName) LOGS[key].substitutedFrom = { prescriptionExerciseId: _ejMeta.prescriptionExerciseId || null, exerciseId: _ejMeta.exerciseId || null, exerciseName: _ejMetaName || null };
   _lbwTrack(key);
+  _measureSaveSet(key, 'LOCAL_STATE_UPDATE');
 
   // Leer nombre del ejercicio antes de re-render
   var exName = (document.getElementById('setrow_'+key)?.dataset.exname || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
@@ -9744,7 +9779,10 @@ async function completeSet(key, di, ei, si, unit) {
   // the workout until its write is accepted. This keeps a failed write
   // retryable without leaving a phantom completed set in memory.
   if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
+  _saveSetMeasurementActiveKey = key;
   var _setSaved = await _doSaveLogs();
+  if (_saveSetMeasurementActiveKey === key) _saveSetMeasurementActiveKey = null;
+  _measureSaveSet(key, 'FINAL_SETTLEMENT');
   if (_setSaved === false) {
     if (_hadSetLog) LOGS[key] = _previousSetLog;
     else delete LOGS[key];
@@ -9797,6 +9835,7 @@ async function completeSet(key, di, ei, si, unit) {
 
   // Re-render solo el panel de ejercicio activo (no scroll reset)
   _refreshExPanelOnly();
+  _measureSaveSet(key, 'RENDER_COMPLETE');
 
   // Flash visual en el row del set completado (feedback táctil + visual)
   if (done) {
@@ -11172,21 +11211,29 @@ async function _doSaveLogs() {
     // Replace each owned top-level field atomically (including the entire entries map),
     // while preserving progressionApplications/summary written by the shadow transaction.
     const _ownedFields = Object.keys(_payload);
-    // T1 dual-write: nuevo path por mesociclo primero (future source), legacy segundo (compatibilidad coach).
-    // El fallo del path nuevo es no-fatal: datos seguros en legacy y localStorage.
-    var _mesoOk = false;
-    if (ACTIVE_PLAN_ID) {
-      try { await FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart, 'mesos', ACTIVE_PLAN_ID), _payload, { mergeFields: _ownedFields }); _mesoOk = true; }
-      catch(_me) { console.warn('[logs/mesos] write:', _me && _me.code, _me && _me.message); }
+    // T573: the plan-scoped log and compatibility mirror are independent writes.
+    // Start both before awaiting either: this removes the artificial serial
+    // request-start delay while retaining the former success/failure contract.
+    // The root mirror is still required unless LEGACY_UNBOUND_EVIDENCE fences it.
+    var _mesoOk = false, _rootOk = true, _rootWriteError = null;
+    var _mesoWrite = ACTIVE_PLAN_ID
+      ? FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart, 'mesos', ACTIVE_PLAN_ID), _payload, { mergeFields: _ownedFields })
+        .then(function(){ _mesoOk = true; }, function(_me){ console.warn('[logs/mesos] write:', _me && _me.code, _me && _me.message); })
+      : Promise.resolve();
+    var _rootWrite = Promise.resolve();
+    if (!(typeof _rootLogUnbound !== 'undefined' && _rootLogUnbound)) {
+      var _rootRef = FB.doc(FB.db, 'logs', _uidAtStart);
+      _rootWrite = FB.setDoc(_rootRef, _payload, { mergeFields: _ownedFields }).catch(function(_re){ _rootOk = false; _rootWriteError = _re; });
     }
+    if (_saveSetMeasurementActiveKey) _measureSaveSet(_saveSetMeasurementActiveKey, 'FIRESTORE_REQUEST_START');
+    await Promise.all([_mesoWrite, _rootWrite]);
+    if (_saveSetMeasurementActiveKey) _measureSaveSet(_saveSetMeasurementActiveKey, 'FIRESTORE_REQUEST_END');
     if (!USER || USER.uid !== _uidAtStart) return false;
     if (typeof _rootLogUnbound !== 'undefined' && _rootLogUnbound) {
-      // T553: the root doc holds LEGACY_UNBOUND_EVIDENCE: it is neither rewritten (its entries would be replaced) nor stamped with the plan id. The plan-bound meso
-      // doc is the only durable path while that is true; without it nothing durable was written => report the failure like any failed save.
+      // T553: only the plan-bound document may establish durability in this mode.
       if (!_mesoOk) throw new Error('plan-bound log write failed');
-    } else {
-      const ref = FB.doc(FB.db, 'logs', _uidAtStart);
-      await FB.setDoc(ref, _payload, { mergeFields: _ownedFields });
+    } else if (!_rootOk) {
+      throw _rootWriteError || new Error('root log write failed');
     }
     if (!USER || USER.uid !== _uidAtStart) return false;
     if (ACTIVE_PLAN_ID === _payload.planId) _logsAuthorityUpdatedAt = _payload.updatedAt;
