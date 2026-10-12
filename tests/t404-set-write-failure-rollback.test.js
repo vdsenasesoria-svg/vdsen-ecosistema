@@ -18,6 +18,7 @@ function makeRuntime() {
   return new Function(`
     var CURRENT_WEEK = 1, REAL_WEEK = 1, DIA_ACTIVO = 0, EJ_ACTIVO = 0;
     var LOGS = {}, EXERCISE_HISTORY = {}, LOGS_BY_WEEK = { log: { 1: [] } }, _saveLogsTimer = null;
+    var _setSavePending = Object.create(null);
     var _EJERCICIOS_DIA = [
       { exerciseName: 'Press', prescriptionExerciseId: 'pid-press', sets: [{ restSeconds: 0 }] },
       { exerciseName: 'Remo', prescriptionExerciseId: 'pid-row', sets: [{ restSeconds: 0 }] }

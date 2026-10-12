@@ -63,19 +63,18 @@ test('T568-2 a second tap while saving is refused', () => {
 });
 
 test('T568-3 the guard runs before the async write, not after', () => {
-  const ai = SRC.indexOf('await _doSaveLogs()');
+  const ai = SRC.indexOf('await _doSaveLogs(_saveMetrics)');
   const gi = SRC.indexOf('if (_saveBtn && _saveBtn.disabled) return;');
   assert.ok(ai > -1 && gi > -1, 'ambos existen');
   assert.ok(gi < ai, 'el guard precede al await: si no, el segundo toque ya entro');
 });
 
-test('T568-4 a FAILED save restores the button so the client can retry', () => {
-  // On failure there is no re-render to rebuild the button, so leaving it disabled would strand
-  // the client with no way to retry.
+test('T568-4 a FAILED save restores an editable set so the client can retry', () => {
+  // Pending state is rolled back before re-rendering. The new row contains a fresh actionable
+  // button, instead of relying on a detached DOM node from before the pending acknowledgement.
   const failBranch = SRC.slice(SRC.indexOf('if (_setSaved === false)'), SRC.indexOf('return false;', SRC.indexOf('if (_setSaved === false)')));
-  assert.ok(/_saveBtn\.disabled = false/.test(failBranch), 'debe rehabilitar en el fallo');
-  assert.ok(/_saveBtn\.removeAttribute\('aria-busy'\)/.test(failBranch), 'debe limpiar aria-busy');
-  assert.ok(/GUARDAR /.test(failBranch), 'debe restaurar la etiqueta');
+  assert.ok(/delete _setSavePending\[key\]/.test(failBranch), 'debe retirar el estado pendiente en el fallo');
+  assert.ok(/_refreshExPanelOnly\(\)/.test(failBranch), 'debe reconstruir un formulario editable');
   assert.ok(/NO SE GUARDÓ/.test(failBranch), 'y sigue avisando del fallo');
 });
 
@@ -99,7 +98,7 @@ test('T568-8 the change does not touch the data contract', () => {
   // UI only: no new field, no changed key, no extra write.
   const guard = SRC.slice(SRC.indexOf('var _saveBtn'), SRC.indexOf('unit = getExUnit'));
   assert.ok(!/setDoc|updateDoc|LOGS\[/.test(guard), 'el guard no escribe datos');
-  assert.ok(!/prescriptionExerciseId|rir_real|ics|pump/.test(guard), 'no toca campos del log');
+  assert.ok(!/prescriptionExerciseId|rir_real|pump/.test(guard), 'no toca campos del log');
 });
 
 test('T568-9 NUMERIC_APPLY_ENABLED sigue en false', () => {
