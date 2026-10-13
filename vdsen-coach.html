@@ -17211,7 +17211,11 @@ El esfuerzo no es negociable.
     var confidence = _computeEvidenceConfidence(weeks.map(function() { return 1; }));
 
     if (confidence === 'none' || confidence === 'low') {
-      return { pattern: 'INSUFFICIENT_DATA', confidence: confidence, weeksObserved: n };
+      return { pattern: 'INSUFFICIENT_DATA', confidence: confidence, weeksObserved: n,
+        classification: 'RULE', signal: 'INSUFFICIENT_DATA',
+        reason: 'No hay suficientes exposiciones persistidas y comparables para inferir recuperación.',
+        evidence: { persistedWeeks: n, deloadSignals: Object.keys(deloadByWeek).length },
+        dataStatus: 'INSUFFICIENT_DATA', reviewRequired: true };
     }
 
     var avgStress = weeks.reduce(function(sum, w) { return sum + weekStress[w]; }, 0) / n;
@@ -17226,10 +17230,36 @@ El esfuerzo no es negociable.
       pattern = 'DECLINES_AT_HIGHER_STRESS';
     }
 
+    var signal = pattern === 'DECLINES_AT_HIGHER_STRESS' ? 'RECOVERY_REVIEW' : 'RECOVERY_MONITOR';
     return {
       pattern: pattern, confidence: confidence, weeksObserved: n,
       highStressDeloadRate: parseFloat(highDeloadRate.toFixed(2)),
-      lowStressDeloadRate:  parseFloat(lowDeloadRate.toFixed(2))
+      lowStressDeloadRate:  parseFloat(lowDeloadRate.toFixed(2)),
+      // SRA is a contextual MONITOR over existing persisted evidence, never a prescription mutation.
+      classification: 'MONITOR', signal: signal,
+      reason: pattern === 'DECLINES_AT_HIGHER_STRESS'
+        ? 'Las señales existentes de recuperación coinciden más en semanas de mayor exposición; requiere revisión Coach.'
+        : 'Sin patrón persistido de deterioro relativo al nivel de exposición actual.',
+      evidence: { persistedWeeks: n, highStressWeeks: highStressWeeks.length, lowStressWeeks: lowStressWeeks.length },
+      dataStatus: 'PERSISTED_COMPARABLE_EVIDENCE', reviewRequired: pattern === 'DECLINES_AT_HIGHER_STRESS'
+    };
+  }
+
+  // SRA trace is explanatory only: it preserves the existing progression signal
+  // and never produces a prescription delta or a Firestore write.
+  function _buildSraTrace(input) {
+    input = input || {};
+    var sra = input.sra || {};
+    var pid = input.prescriptionExerciseId;
+    if (!input.clientId || !pid) return { dataStatus: 'INSUFFICIENT_DATA', reviewRequired: true, reason: 'Identidad longitudinal incompleta.' };
+    return {
+      clientId: input.clientId, prescriptionExerciseId: pid,
+      inputEvidence: sra.evidence || {}, evidenceWindow: sra.weeksObserved || 0,
+      classification: sra.classification || 'RULE', ruleOrRange: sra.classification || 'RULE',
+      progressionSignal: input.progressionSignal || 'UNAVAILABLE', sraSignal: sra.signal || 'INSUFFICIENT_DATA',
+      agreementState: sra.reviewRequired ? 'CONFLICT_OR_REVIEW' : 'NO_CONFLICT_IDENTIFIED',
+      finalRecommendation: input.recommendation || 'REVIEW_REQUIRED', reason: sra.reason || 'Evidencia insuficiente.',
+      reviewRequired: sra.reviewRequired !== false, dataStatus: sra.dataStatus || 'INSUFFICIENT_DATA', mutation: 'NONE'
     };
   }
 
@@ -17238,7 +17268,8 @@ El esfuerzo no es negociable.
     computeVolumeTolerance: _computeVolumeToleranceByMuscle,
     computeExerciseTolerance: _computeExerciseToleranceByPid,
     computePatternTolerance: _computePatternTolerance,
-    computeRecoverySensitivity: _computeRecoverySensitivity
+    computeRecoverySensitivity: _computeRecoverySensitivity,
+    buildSraTrace: _buildSraTrace
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -18371,7 +18402,7 @@ El esfuerzo no es negociable.
         });
 
       const _learnedRecoveryLine = (_learnedRecovery && _learnedRecovery.confidence !== 'none' && _LEARNED_REC_LABEL[_learnedRecovery.pattern])
-        ? `<div class="text-xs mb-1"><span style="font-weight:700">Recuperación</span> — ${_LEARNED_REC_LABEL[_learnedRecovery.pattern]} <span style="color:#888">(confianza ${_learnedRecovery.confidence})</span></div>`
+        ? `<div class="text-xs mb-1"><span style="font-weight:700">Recuperación</span> — ${_LEARNED_REC_LABEL[_learnedRecovery.pattern]} <span style="color:#888">(confianza ${_learnedRecovery.confidence})</span>${_learnedRecovery.reviewRequired ? ' <span style="color:#FF8844;font-weight:700">· REVISAR</span>' : ''}<div style="color:#888;margin-top:2px">${_escH(_learnedRecovery.reason || '')}</div></div>`
         : '';
 
       const _learnedHasAnything = _learnedMuscleLines.length || _learnedExLines.length || _learnedRecoveryLine;

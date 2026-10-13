@@ -39,9 +39,11 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 const confSrc = extractFunction(COACH, 'function _computeEvidenceConfidence(observations, malformedCount)');
 const snapSrc = extractFunction(COACH, 'function _buildWeeklyExecutionSnapshots(planDoc, progressionHistory)');
 const sensSrc = extractFunction(COACH, 'function _computeRecoverySensitivity(entries, planDoc, progressionHistory)');
-ok(confSrc && snapSrc && sensSrc, 'prerequisite: _computeRecoverySensitivity and its dependencies extract cleanly');
+const traceSrc = extractFunction(COACH, 'function _buildSraTrace(input)');
+ok(confSrc && snapSrc && sensSrc && traceSrc, 'prerequisite: recovery and SRA trace helpers extract cleanly');
 
 const computeRecoverySensitivity = new Function(confSrc + ';\n' + snapSrc + ';\n' + sensSrc + ';\nreturn _computeRecoverySensitivity;')();
+const buildSraTrace = new Function(traceSrc + ';\nreturn _buildSraTrace;')();
 
 ok(COACH.includes('computeRecoverySensitivity: _computeRecoverySensitivity'), 'exposed via window.VDSEN_LEARNED for T214/T215 reuse');
 
@@ -84,6 +86,7 @@ function historyWithRates(weeks) {
   ok(result.confidence !== 'none' && result.confidence !== 'low', '6 usable weeks -> real confidence');
   ok(result.highStressDeloadRate === 1, 'highStressDeloadRate correctly reports 100% of high-stress weeks triggering deload');
   ok(result.lowStressDeloadRate === 0, 'lowStressDeloadRate correctly reports 0% of low-stress weeks triggering deload');
+  ok(result.classification === 'MONITOR' && result.signal === 'RECOVERY_REVIEW' && result.reviewRequired === true, 'S02: persisted recovery concern is a MONITOR requiring Coach review, never a mutation');
 })();
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -102,6 +105,7 @@ function historyWithRates(weeks) {
   ]);
   const result = computeRecoverySensitivity(entries, planDoc, progressionHistory);
   ok(result.pattern === 'STABLE_AT_CURRENT_STRESS', 'no deload triggers at any stress level -> STABLE_AT_CURRENT_STRESS');
+  ok(result.classification === 'MONITOR' && result.signal === 'RECOVERY_MONITOR' && result.reviewRequired === false, 'S01: stable persisted evidence remains an informational monitor');
 })();
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -114,6 +118,7 @@ function historyWithRates(weeks) {
   const entries = entriesWithDeload([{ week: 1, deloadTriggerCount: 2 }]);
   const result = computeRecoverySensitivity(entries, planDoc, progressionHistory);
   ok(result.pattern === 'INSUFFICIENT_DATA', 'a single overlapping week -> INSUFFICIENT_DATA, no pattern concluded');
+  ok(result.dataStatus === 'INSUFFICIENT_DATA' && result.reviewRequired === true, 'S07/S08: insufficient or missing recovery evidence fails closed');
 })();
 
 (function testNoOverlapIsInsufficient() {
@@ -131,6 +136,13 @@ function historyWithRates(weeks) {
 
 ok(sensSrc.includes('entry.deloadTriggers'), 'reuses the EXISTING progrec_{W}_{D}.deloadTriggers record, never recomputes deload logic');
 ok(!sensSrc.includes('who5') && !sensSrc.includes('hrv'), 'does not re-derive clinical thresholds itself -- consumes the already-computed trigger record only');
+
+(function testTraceFailsClosedAndKeepsSignalsSeparate() {
+  const incomplete = buildSraTrace({ clientId: 'c1' });
+  ok(incomplete.dataStatus === 'INSUFFICIENT_DATA' && incomplete.reviewRequired, 'S11/S12: trace rejects missing PID rather than matching name or position');
+  const trace = buildSraTrace({ clientId: 'c1', prescriptionExerciseId: 'pid-1', progressionSignal: 'FAVORABLE', recommendation: 'MAINTAIN', sra: { classification: 'MONITOR', signal: 'RECOVERY_REVIEW', reason: 'persisted conflict', evidence: { persistedWeeks: 6 }, weeksObserved: 6, dataStatus: 'PERSISTED_COMPARABLE_EVIDENCE', reviewRequired: true } });
+  ok(trace.progressionSignal === 'FAVORABLE' && trace.sraSignal === 'RECOVERY_REVIEW' && trace.reviewRequired && trace.mutation === 'NONE', 'S03/S04/S10: trace preserves distinct progression and SRA signals with no mutation');
+})();
 
 console.log('');
 console.log('T213 — Recovery sensitivity learning: ' + pass + ' assertions PASSED');
