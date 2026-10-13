@@ -42,8 +42,9 @@ const sensSrc = extractFunction(COACH, 'function _computeRecoverySensitivity(ent
 const traceSrc = extractFunction(COACH, 'function _buildSraTrace(input)');
 ok(confSrc && snapSrc && sensSrc && traceSrc, 'prerequisite: recovery and SRA trace helpers extract cleanly');
 
-const computeRecoverySensitivity = new Function(confSrc + ';\n' + snapSrc + ';\n' + sensSrc + ';\nreturn _computeRecoverySensitivity;')();
-const buildSraTrace = new Function(traceSrc + ';\nreturn _buildSraTrace;')();
+const { computeRecoverySensitivity, buildSraTrace } = require('../assets/sra-context.js');
+const SRA_SOURCE = fs.readFileSync(path.join(__dirname, '..', 'assets/sra-context.js'), 'utf8');
+
 
 ok(COACH.includes('computeRecoverySensitivity: _computeRecoverySensitivity'), 'exposed via window.VDSEN_LEARNED for T214/T215 reuse');
 
@@ -54,7 +55,7 @@ function plan(sets) {
 function entriesWithDeload(weeks) {
   // weeks: [{week, deloadTriggerCount}]
   var e = {};
-  weeks.forEach(function(w) { e['progrec_' + w.week + '_0'] = { deloadTriggers: new Array(w.deloadTriggerCount).fill('X') }; });
+  weeks.forEach(function(w) { e['progrec_' + w.week + '_0'] = { deloadTriggers: new Array(w.deloadTriggerCount).fill('X') }; for (let i = 0; i < (w.week % 2 ? 8 : 4); i++) e['log_' + w.week + '_0_0_s' + i] = { done: true, prescriptionExerciseId: 'pid-1' }; });
   return e;
 }
 
@@ -134,7 +135,7 @@ function historyWithRates(weeks) {
 // existing progrec_{W}_{D}.deloadTriggers, never recomputed here.
 // ─────────────────────────────────────────────────────────────────────────────
 
-ok(sensSrc.includes('entry.deloadTriggers'), 'reuses the EXISTING progrec_{W}_{D}.deloadTriggers record, never recomputes deload logic');
+ok(SRA_SOURCE.includes('entry.deloadTriggers'), 'reuses the EXISTING progrec_{W}_{D}.deloadTriggers record, never recomputes deload logic');
 ok(!sensSrc.includes('who5') && !sensSrc.includes('hrv'), 'does not re-derive clinical thresholds itself -- consumes the already-computed trigger record only');
 
 (function testTraceFailsClosedAndKeepsSignalsSeparate() {

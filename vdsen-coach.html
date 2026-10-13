@@ -1598,6 +1598,7 @@
   <script src="assets/client-export/firestore-io.js"></script>
   <script src="assets/client-export/runner.js"></script>
   <script src="assets/client-export/ui.js"></script>
+  <script src="assets/sra-context.js"></script>
   <script src="assets/progression-magnitude-policy.js"></script>
   <script src="assets/progression-equipment-resolver.js"></script>
   <script src="assets/equipment-identity.js"></script>
@@ -17189,78 +17190,13 @@ El esfuerzo no es negociable.
   //  absolute/population threshold, no new clinical score.
   // ═══════════════════════════════════════════════════════════════════════════
   function _computeRecoverySensitivity(entries, planDoc, progressionHistory) {
-    entries = entries || {};
-    var deloadByWeek = {};
-    Object.keys(entries).forEach(function(k) {
-      var m = k.match(/^progrec_(\d+)_\d+$/);
-      if (!m) return;
-      var w = parseInt(m[1], 10);
-      var entry = entries[k];
-      var triggerCount = (entry && Array.isArray(entry.deloadTriggers)) ? entry.deloadTriggers.length : 0;
-      deloadByWeek[w] = Math.max(deloadByWeek[w] || 0, triggerCount);
-    });
-
-    var weekMap = _buildWeeklyExecutionSnapshots(planDoc, progressionHistory);
-    var weekStress = {};
-    Object.keys(weekMap).forEach(function(w) {
-      weekStress[w] = weekMap[w].exercises.reduce(function(sum, ex) { return sum + (ex.sets ? ex.sets.length : 0); }, 0);
-    });
-
-    var weeks = Object.keys(weekStress).map(Number).filter(function(w) { return deloadByWeek.hasOwnProperty(w); });
-    var n = weeks.length;
-    var confidence = _computeEvidenceConfidence(weeks.map(function() { return 1; }));
-
-    if (confidence === 'none' || confidence === 'low') {
-      return { pattern: 'INSUFFICIENT_DATA', confidence: confidence, weeksObserved: n,
-        classification: 'RULE', signal: 'INSUFFICIENT_DATA',
-        reason: 'No hay suficientes exposiciones persistidas y comparables para inferir recuperación.',
-        evidence: { persistedWeeks: n, deloadSignals: Object.keys(deloadByWeek).length },
-        dataStatus: 'INSUFFICIENT_DATA', reviewRequired: true };
-    }
-
-    var avgStress = weeks.reduce(function(sum, w) { return sum + weekStress[w]; }, 0) / n;
-    var highStressWeeks = weeks.filter(function(w) { return weekStress[w] > avgStress; });
-    var lowStressWeeks  = weeks.filter(function(w) { return weekStress[w] <= avgStress; });
-
-    var highDeloadRate = highStressWeeks.length ? highStressWeeks.filter(function(w) { return deloadByWeek[w] > 0; }).length / highStressWeeks.length : 0;
-    var lowDeloadRate  = lowStressWeeks.length  ? lowStressWeeks.filter(function(w) { return deloadByWeek[w] > 0; }).length / lowStressWeeks.length : 0;
-
-    var pattern = 'STABLE_AT_CURRENT_STRESS';
-    if (highStressWeeks.length && lowStressWeeks.length && highDeloadRate > lowDeloadRate && highDeloadRate >= 0.5) {
-      pattern = 'DECLINES_AT_HIGHER_STRESS';
-    }
-
-    var signal = pattern === 'DECLINES_AT_HIGHER_STRESS' ? 'RECOVERY_REVIEW' : 'RECOVERY_MONITOR';
-    return {
-      pattern: pattern, confidence: confidence, weeksObserved: n,
-      highStressDeloadRate: parseFloat(highDeloadRate.toFixed(2)),
-      lowStressDeloadRate:  parseFloat(lowDeloadRate.toFixed(2)),
-      // SRA is a contextual MONITOR over existing persisted evidence, never a prescription mutation.
-      classification: 'MONITOR', signal: signal,
-      reason: pattern === 'DECLINES_AT_HIGHER_STRESS'
-        ? 'Las señales existentes de recuperación coinciden más en semanas de mayor exposición; requiere revisión Coach.'
-        : 'Sin patrón persistido de deterioro relativo al nivel de exposición actual.',
-      evidence: { persistedWeeks: n, highStressWeeks: highStressWeeks.length, lowStressWeeks: lowStressWeeks.length },
-      dataStatus: 'PERSISTED_COMPARABLE_EVIDENCE', reviewRequired: pattern === 'DECLINES_AT_HIGHER_STRESS'
-    };
+    return window.VDSEN_SRA.computeRecoverySensitivity(entries, planDoc, progressionHistory);
   }
 
   // SRA trace is explanatory only: it preserves the existing progression signal
   // and never produces a prescription delta or a Firestore write.
   function _buildSraTrace(input) {
-    input = input || {};
-    var sra = input.sra || {};
-    var pid = input.prescriptionExerciseId;
-    if (!input.clientId || !pid) return { dataStatus: 'INSUFFICIENT_DATA', reviewRequired: true, reason: 'Identidad longitudinal incompleta.' };
-    return {
-      clientId: input.clientId, prescriptionExerciseId: pid,
-      inputEvidence: sra.evidence || {}, evidenceWindow: sra.weeksObserved || 0,
-      classification: sra.classification || 'RULE', ruleOrRange: sra.classification || 'RULE',
-      progressionSignal: input.progressionSignal || 'UNAVAILABLE', sraSignal: sra.signal || 'INSUFFICIENT_DATA',
-      agreementState: sra.reviewRequired ? 'CONFLICT_OR_REVIEW' : 'NO_CONFLICT_IDENTIFIED',
-      finalRecommendation: input.recommendation || 'REVIEW_REQUIRED', reason: sra.reason || 'Evidencia insuficiente.',
-      reviewRequired: sra.reviewRequired !== false, dataStatus: sra.dataStatus || 'INSUFFICIENT_DATA', mutation: 'NONE'
-    };
+    return window.VDSEN_SRA.buildSraTrace(input);
   }
 
   window.VDSEN_LEARNED = {
@@ -18374,7 +18310,15 @@ El esfuerzo no es negociable.
       const _learnedProgHist = window.VDSEN_BUILD._mapExerciseProgressionHistory(_learnedProgrecs);
       const _learnedVolTolerance = window.VDSEN_LEARNED.computeVolumeTolerance(p, _learnedProgHist, []);
       const _learnedExTolerance  = window.VDSEN_LEARNED.computeExerciseTolerance(p, _learnedProgHist);
-      const _learnedRecovery     = window.VDSEN_LEARNED.computeRecoverySensitivity(entries, p, _learnedProgHist);
+      const _sraEntries = logsData.planId === (c && c.activePlanId) && !(logsSnap.metadata && (logsSnap.metadata.hasPendingWrites || logsSnap.metadata.fromCache)) ? entries : {};
+      const _learnedRecovery     = window.VDSEN_LEARNED.computeRecoverySensitivity(_sraEntries, p, _learnedProgHist);
+
+      // SRA accepts only the same-plan, acknowledged server snapshot.
+      ((p && p.days) || []).forEach(day => (day.exercises || []).forEach(ex => {
+        const trace = window.VDSEN_SRA.buildContext({ clientId, prescriptionExerciseId: ex.prescriptionExerciseId,
+          entries: _sraEntries, planDoc: p });
+        html += window.VDSEN_SRA.renderTrace(trace, 'coach');
+      }));
 
       const _learnedPidNames = {};
       ((p && p.days) || []).forEach(d => (d.exercises || []).forEach(ex => {
