@@ -3238,13 +3238,26 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     }
   });
   
+  // PERF-20261013: compartir solo la consulta EN VUELO entre lista y selector.
+  // No cachear resultados: cada recarga posterior obtiene datos frescos.
+  let _coachClientsInFlight = null;
+  function _readCoachClientsInFlight() {
+    const uid = currentCoach && currentCoach.uid;
+    if (!uid) return Promise.reject(new Error('Coach no autenticado'));
+    if (_coachClientsInFlight && _coachClientsInFlight.uid === uid) return _coachClientsInFlight.request;
+    const entry = { uid, request: getDocs(query(collection(db, 'clients'), where('coachId', '==', uid))) };
+    _coachClientsInFlight = entry;
+    const clear = () => { if (_coachClientsInFlight === entry) _coachClientsInFlight = null; };
+    entry.request.then(clear, clear);
+    return entry.request;
+  }
+
   async function loadClientList() {
     if (!currentCoach) return;
     const container = document.getElementById("clientList");
     container.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando clientes...</div>`;
     try {
-      const q = query(collection(db, "clients"), where("coachId", "==", currentCoach.uid));
-      const snap = await getDocs(q);
+      const snap = await _readCoachClientsInFlight();
       container.innerHTML = "";
 
       if (snap.empty) {
@@ -6295,12 +6308,12 @@ Reporte:
 
   async function loadClientsSelect() {
     if (!currentCoach) return;
-    const snap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
     const select = document.getElementById("planClientSelect");
     // Defensive: the client picker lives inside a section that may not be present in this shell (a
     // parked or partial shell). init calls this unconditionally, so a missing element must be a no-op
     // rather than an uncaught TypeError that aborts the rest of the init sequence.
     if (!select) return;
+    const snap = await _readCoachClientsInFlight();
     select.innerHTML = '<option value="">-- Selecciona cliente --</option>';
     snap.forEach(d => { const _o = document.createElement('option'); _o.value = d.id; _o.textContent = d.data().displayName || d.id; select.appendChild(_o); });
     // T117-H: clear stale _importedPlan and planBuilder when the selected client changes.
