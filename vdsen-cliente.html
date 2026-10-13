@@ -1125,6 +1125,41 @@ button[role="switch"]::after{content:'';position:absolute;inset:-8px -6px}
 .tq-d [style*="width:"],.exercise-guide-body [style*="width:"]{width:auto!important;max-width:100%!important}
 .tq-b{overflow:hidden}
 .xc:not(.ss) .xc-tag{position:static;order:2;font-size:9.5px}
+/* ══ VISUAL REFINEMENT — simplify the athlete's decision surface ══
+   Presentation only: one primary action, quieter supporting surfaces and
+   stronger scan lines. Runtime hooks, IDs and interaction states stay intact. */
+.scroll{padding-top:20px}
+.hdr{min-height:56px}
+.brand-word{letter-spacing:.11em}
+.today-panel{padding:20px 18px 0;margin-bottom:22px;border-left-width:4px}
+.today-kicker{margin-bottom:12px}
+.today-session{max-width:15ch;font-size:clamp(34px,10vw,42px);line-height:.94}
+.today-meta{gap:14px;margin-top:14px;padding-top:12px;border-top:1px solid var(--rule)}
+.sess-status{margin-top:14px}
+.today-action{min-height:60px;margin-top:18px;letter-spacing:.14em}
+.today-action.sess-cta-pending,.today-action.sess-cta-live{box-shadow:none}
+.day-chips{margin-top:18px}
+.dc{min-height:48px}
+.stat-row{margin-bottom:18px}
+.stat{padding:14px 6px 12px}
+.stat-val{font-size:40px}
+.card{padding:18px 16px;margin-bottom:16px}
+.card-title{margin-bottom:10px}
+.tr-head{padding-top:22px}
+.tr-title{font-size:clamp(30px,9vw,38px);line-height:.94}
+.tr-acts{margin-top:16px}
+.set-save-primary{min-height:64px;letter-spacing:.14em}
+.bnav{background:var(--bg)}
+.nb{min-height:60px}
+.nb.on{background:var(--plate-lo)}
+@media(max-width:430px){
+  .scroll{padding-top:16px}
+  .today-panel{padding:18px 16px 0;margin-bottom:18px}
+  .today-session{font-size:34px}
+  .today-action{min-height:56px}
+  .card{padding:16px 14px;margin-bottom:14px}
+  .tr-head{padding-top:18px}
+}
 </style>
 </head>
 <body>
