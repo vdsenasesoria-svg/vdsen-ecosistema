@@ -3104,6 +3104,10 @@ async function loadPlan(user) {
         var _nutricionChanged = !!newData.nutritionPlan;
         if (newData.nutritionPlan) PLAN.nutricion = newData.nutritionPlan;
         if (newData.supplementPlan) PLAN.suplementacion = { texto: newData.supplementPlan.texto, items: [] };
+        // PERF-20261013: goTab(2) repinta Nutricion al entrar. No reconstruir
+        // el DOM de esa pantalla cuando el atleta esta en otro tab.
+        const _nutPanel = document.getElementById('tabNutr');
+        if (_nutricionChanged && _nutPanel && _nutPanel.style.display === 'none') _nutricionChanged = false;
         if (_nutricionChanged) { try { renderNutricion(); } catch(e){} }
         if (newData.profileType && newData.profileType !== PLAN.profileType) { PLAN.profileType = newData.profileType; try { renderPerfil(); } catch(e){} }
         CLIENT_ADVANCED = _buildClientAdvancedState(planData, newData);
