@@ -77,6 +77,8 @@ test('T553.U10 NEW EXECUTION after LEGACY_UNBOUND: saved through the plan-bound 
     const calls = [];
     const rt = new Function(`
       var USER = { uid: 'U' }, ACTIVE_PLAN_ID = 'planB', REAL_WEEK = 1, LOGS = { log_1_0_0_s0: { done: true, prescriptionExerciseId: 'p' } }, EXERCISE_UNITS = {}, EXERCISE_HISTORY = {};
+      var _sraSaveGeneration = 0, _sraPersisted = { version: 0, entries: {} };
+      ${fnSrc('_acceptSraPersisted')}
       var _saveLogsTimer = null, _logsWriteInFlight = 0, _logsReqSeq = 0, _logsAckedSeq = 0, _logsAuthorityUpdatedAt = 0, _rootLogUnbound = ${unbound}, calls = arguments[0];
       var document = { getElementById: function(){ return null; }, createElement: function(){ return { style:{}, addEventListener:function(){} }; }, body:{ appendChild:function(){} } };
       var navigator = { onLine: true }; function showToast() {} function _showSaveOk() {} function _maybeConsumeOverlays() {}
