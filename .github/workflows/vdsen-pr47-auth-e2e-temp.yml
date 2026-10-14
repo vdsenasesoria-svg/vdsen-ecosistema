@@ -40,14 +40,6 @@ jobs:
       - name: Run Coach authenticated E2E against demo emulators
         run: node scripts/coach-runtime-e2e.cjs --out pr47-coach-auth-e2e.json
 
-      - name: Upload Coach E2E result
-        if: always()
-        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce
-        with:
-          name: pr47-coach-auth-e2e
-          path: pr47-coach-auth-e2e.json
-          if-no-files-found: warn
-
   client-authenticated-coverage:
     name: Client authenticated demo coverage inventory
     runs-on: ubuntu-latest
