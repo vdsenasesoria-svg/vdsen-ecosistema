@@ -99,6 +99,10 @@ async function signUp(authPort, email, password) {
 function buildFirebaseSdk() {
   const out = path.join(runtime, 'sdk');
   fs.mkdirSync(out, { recursive: true });
+  // esbuild resolves bare imports from the entry file's ancestor directories.
+  // The disposable entries live under /tmp, so expose the already-isolated
+  // workflow dependencies there without copying or changing product files.
+  fs.symlinkSync(path.join(repo, 'node_modules'), path.join(runtime, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
   for (const [file, moduleName] of [['app.js', 'firebase/app'], ['auth.js', 'firebase/auth'], ['firestore.js', 'firebase/firestore']]) fs.writeFileSync(path.join(runtime, file), `export * from '${moduleName}';\n`);
   const esbuild = path.join(repo, 'node_modules', '.bin', process.platform === 'win32' ? 'esbuild.cmd' : 'esbuild');
   const build = spawnSync(esbuild, [path.join(runtime, 'app.js'), path.join(runtime, 'auth.js'), path.join(runtime, 'firestore.js'), '--bundle', '--format=esm', '--splitting', '--platform=browser', '--minify', `--outdir=${out}`], { cwd: repo, encoding: 'utf8' });
