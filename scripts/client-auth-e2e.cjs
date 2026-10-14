@@ -219,6 +219,11 @@ async function main() {
     await page.goto(appUrl, { waitUntil: 'domcontentloaded' }); await page.waitForSelector('#liEmail'); await login(accountA);
     check('C01', await page.evaluate(() => !!USER && USER.email === 'athlete-a@e2e.invalid'), 'authenticated synthetic Client');
     check('C02', browserErrors.length === 0 && await page.isVisible('#scrApp'), browserErrors.join(' | ').slice(0, 300));
+    // Treat the normal first-login acknowledgement as a user action before
+    // exercising logout/login. Direct goTab calls would otherwise leave its
+    // overlay above the real login control and invalidate that scenario.
+    const welcome = page.locator('#wnModal .sheet-go');
+    if (await welcome.isVisible().catch(() => false)) await welcome.click();
     const nav = await page.evaluate(() => { goTab(0); const home = getComputedStyle(document.getElementById('tabResumen')).display !== 'none'; goTab(1); const training = getComputedStyle(document.getElementById('tabEntr')).display !== 'none' && document.getElementById('tabEntr').innerText.includes('Sentadilla ALFA'); goTab(2); const nutrition = getComputedStyle(document.getElementById('tabNutr')).display !== 'none'; return { home, training, nutrition }; });
     check('C03', nav.home && nav.training && nav.nutrition, JSON.stringify(nav));
     check('C04', (await page.textContent('#tabNutr')).includes('NUTRITION_ALFA_INITIAL'), 'initial nutrition rendered');
@@ -250,6 +255,8 @@ async function main() {
     const listenersAfterTabs = await page.evaluate(() => ({ ...window.__qaSnapshotStats }));
     check('C11', listenersAfterTabs.active === 3 && listenersAfterTabs.created === listenersBeforeTabs.created, `before=${JSON.stringify(listenersBeforeTabs)} after=${JSON.stringify(listenersAfterTabs)}`);
 
+    await page.waitForTimeout(750);
+    if (await welcome.isVisible().catch(() => false)) await welcome.click();
     await page.evaluate(() => doLogout());
     await page.waitForFunction(() => document.getElementById('scrLogin')?.classList.contains('on') && window.__qaSnapshotStats.active === 0);
     await login(accountB); await page.evaluate(() => goTab(2));
