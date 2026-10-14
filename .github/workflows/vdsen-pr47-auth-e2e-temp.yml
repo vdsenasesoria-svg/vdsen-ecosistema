@@ -1,6 +1,8 @@
 name: VDSEN PR47 authenticated E2E temporary
 
 on:
+  push:
+    branches: [qa/pr47-auth-e2e-20261013]
   workflow_dispatch:
 
 permissions:
