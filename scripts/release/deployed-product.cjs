@@ -34,6 +34,16 @@ const SERVED = [
   '.firebaserc',
   'firestore.rules',
   'firestore.indexes.json',
+  // Coach exercise image upload (image-upload-v2). Registered on purpose: the served surface is
+  // explicitly enumerated so a new path cannot ship without a deliberate edit here.
+  'assets/coach-image-upload/controller.js',
+  'assets/coach-image-upload/firebase-adapter.js',
+  'assets/coach-image-upload/mount.js',
+  'assets/coach-image-upload/paths.js',
+  'assets/coach-image-upload/photo-section.js',
+  'assets/coach-image-upload/process.js',
+  'assets/coach-image-upload/sniff.js',
+  'assets/coach-image-upload/validate.js',
   'assets/equipment-context.js',
   'assets/equipment-identity.js',
   'assets/exercise-visual-catalog.js',
@@ -62,6 +72,14 @@ const SERVED = [
   'assets/client-export/firestore-io.js',
   'assets/client-export/runner.js',
   'assets/client-export/ui.js',
+  'assets/coach-image-upload/controller.js',
+  'assets/coach-image-upload/firebase-adapter.js',
+  'assets/coach-image-upload/mount.js',
+  'assets/coach-image-upload/paths.js',
+  'assets/coach-image-upload/photo-section.js',
+  'assets/coach-image-upload/process.js',
+  'assets/coach-image-upload/sniff.js',
+  'assets/coach-image-upload/validate.js',
 ];
 
 // Paths the CANDIDATE intends to serve but that are NOT yet in production.
@@ -91,6 +109,15 @@ const CANDIDATE_ONLY = [
   'assets/client-export/firestore-io.js',
   'assets/client-export/runner.js',
   'assets/client-export/ui.js',
+
+  'assets/coach-image-upload/controller.js',
+  'assets/coach-image-upload/firebase-adapter.js',
+  'assets/coach-image-upload/mount.js',
+  'assets/coach-image-upload/paths.js',
+  'assets/coach-image-upload/photo-section.js',
+  'assets/coach-image-upload/process.js',
+  'assets/coach-image-upload/sniff.js',
+  'assets/coach-image-upload/validate.js',
 ];
 
 const DEPLOYED = SERVED.filter((f) => !CANDIDATE_ONLY.includes(f));

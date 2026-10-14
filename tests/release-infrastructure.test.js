@@ -364,9 +364,15 @@ test('product CI does not require a production deploy to carry a candidate-only 
   assert.equal(deployedProduct.DEPLOYED.length, 26);
   // The client export registers its browser assets as CANDIDATE-ONLY: the candidate intends to serve
   // them, production does not yet, and the frozen manifest must stay honest about that difference.
-  assert.equal(deployedProduct.CANDIDATE_ONLY.length, 11, 'el export aporta 11 rutas candidatas');
+  // 11 client-export routes + 8 Coach image-upload routes (image-upload-v2).
+  assert.equal(deployedProduct.CANDIDATE_ONLY.length, 19, 'el export aporta 11 y la subida de imagenes 8');
   for (const f of deployedProduct.CANDIDATE_ONLY) {
-    assert.ok(f.startsWith('assets/client-export/'), 'solo el export es candidato por ahora: ' + f);
+    // Explicit namespace allow-list. A candidate-only path may only come from a namespace that is
+    // deliberately undeployed yet: the client export and the Coach image upload.
+    assert.ok(
+      f.startsWith('assets/client-export/') || f.startsWith('assets/coach-image-upload/'),
+      'namespace candidato no permitido: ' + f
+    );
     assert.ok(deployedProduct.SERVED.includes(f), 'una ruta candidata tambien es parte de la superficie servida');
     assert.ok(!deployedProduct.DEPLOYED.includes(f), 'una ruta candidata NO puede estar desplegada');
   }
