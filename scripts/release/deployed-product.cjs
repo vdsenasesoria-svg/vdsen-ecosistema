@@ -44,6 +44,7 @@ const SERVED = [
   'assets/progression-effective-prescription.js',
   'assets/progression-equipment-resolver.js',
   'assets/progression-magnitude-policy.js',
+  'assets/sra-context.js',
   'assets/vdsen-logo-official.jpg',
   'fonts/BigShouldersDisplay-800.ttf',
   'fonts/CourierPrime-Bold.ttf',
@@ -80,6 +81,9 @@ const SERVED = [
 // A path moves OUT of this list only when it is genuinely deployed, at which point the manifest is
 // regenerated as part of an authorized release.
 const CANDIDATE_ONLY = [
+  // SRA is shipped only by this candidate. It must not be asserted against the
+  // frozen production manifest until an authorized release proves it live.
+  'assets/sra-context.js',
   'assets/client-export/util.js',
   'assets/client-export/security.js',
   'assets/client-export/collect.js',

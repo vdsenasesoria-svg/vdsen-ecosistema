@@ -364,9 +364,9 @@ test('product CI does not require a production deploy to carry a candidate-only 
   assert.equal(deployedProduct.DEPLOYED.length, 26);
   // The client export registers its browser assets as CANDIDATE-ONLY: the candidate intends to serve
   // them, production does not yet, and the frozen manifest must stay honest about that difference.
-  assert.equal(deployedProduct.CANDIDATE_ONLY.length, 11, 'el export aporta 11 rutas candidatas');
+  assert.equal(deployedProduct.CANDIDATE_ONLY.length, 12, 'el export y SRA aportan 12 rutas candidatas');
   for (const f of deployedProduct.CANDIDATE_ONLY) {
-    assert.ok(f.startsWith('assets/client-export/'), 'solo el export es candidato por ahora: ' + f);
+    assert.ok(f === 'assets/sra-context.js' || f.startsWith('assets/client-export/'), 'solo SRA y el export son candidatos por ahora: ' + f);
     assert.ok(deployedProduct.SERVED.includes(f), 'una ruta candidata tambien es parte de la superficie servida');
     assert.ok(!deployedProduct.DEPLOYED.includes(f), 'una ruta candidata NO puede estar desplegada');
   }
