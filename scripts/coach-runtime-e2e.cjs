@@ -72,13 +72,13 @@ function buildStaticAssets() {
   const bin = n => path.join(runtime, 'node_modules', '.bin', n), out = path.join(runtime, 'sdk');
   fs.mkdirSync(out, { recursive: true });
   spawnSync(process.execPath, [path.join(runtime, 'node_modules', 'esbuild', 'install.js')], { stdio: 'ignore' });
-  for (const [f, mod] of [['e-app.js', 'firebase/app'], ['e-auth.js', 'firebase/auth'], ['e-fs.js', 'firebase/firestore']]) fs.writeFileSync(path.join(runtime, f), "export * from '" + mod + "';\n");
-  let r = spawnSync(bin('esbuild'), [path.join(runtime, 'e-app.js'), path.join(runtime, 'e-auth.js'), path.join(runtime, 'e-fs.js'), '--bundle', '--format=esm', '--splitting', '--platform=browser', '--minify', '--outdir=' + out], { cwd: runtime, encoding: 'utf8' });
+  for (const [f, mod] of [['e-app.js', 'firebase/app'], ['e-auth.js', 'firebase/auth'], ['e-fs.js', 'firebase/firestore'], ['e-storage.js', 'firebase/storage']]) fs.writeFileSync(path.join(runtime, f), "export * from '" + mod + "';\n");
+  let r = spawnSync(bin('esbuild'), [path.join(runtime, 'e-app.js'), path.join(runtime, 'e-auth.js'), path.join(runtime, 'e-fs.js'), path.join(runtime, 'e-storage.js'), '--bundle', '--format=esm', '--splitting', '--platform=browser', '--minify', '--outdir=' + out], { cwd: runtime, encoding: 'utf8' });
   if (r.status !== 0) throw new Error('esbuild failed: ' + (r.stderr || '').slice(0, 300));
   fs.writeFileSync(path.join(runtime, 'tw-in.css'), '@tailwind base;\n@tailwind components;\n@tailwind utilities;\n');
   r = spawnSync(bin('tailwindcss'), ['-i', path.join(runtime, 'tw-in.css'), '-o', path.join(runtime, 'tw.css'), '--content', path.join(repo, 'vdsen-coach.html')], { cwd: runtime, encoding: 'utf8' });
   if (r.status !== 0) throw new Error('tailwind build failed: ' + (r.stderr || '').slice(0, 300));
-  const names = { 'firebase-app.js': 'e-app.js', 'firebase-auth.js': 'e-auth.js', 'firebase-firestore.js': 'e-fs.js' };
+  const names = { 'firebase-app.js': 'e-app.js', 'firebase-auth.js': 'e-auth.js', 'firebase-firestore.js': 'e-fs.js', 'firebase-storage.js': 'e-storage.js' };
   const base = 'https://www.gstatic.com/firebasejs/10.12.0/';
   const local = url => {
     if (url.startsWith(base)) { const n = url.slice(base.length).split('?')[0], f = names[n] || (/^chunk-[A-Za-z0-9]+\.js$/.test(n) ? n : null); if (f && fs.existsSync(path.join(out, f))) return { body: fs.readFileSync(path.join(out, f)), contentType: 'text/javascript' }; }
@@ -158,25 +158,41 @@ async function main() {
       blocked.push(url); return route.abort();
     });
     const p = await ctx.newPage(); p.setDefaultTimeout(30000);
-    p.errors = []; p.on('pageerror', e => p.errors.push(e.message));
+    p.errors = [];
+    p.on('pageerror', e => p.errors.push('pageerror:' + e.message));
+    p.__expectAuthRejection = false;
+    p.on('console', m => { if (m.type() === 'error' && !p.__expectAuthRejection) p.errors.push('console:' + m.text()); });
+    p.on('requestfailed', r => {
+      const expectedListenerClose = /google\.firestore\.v1\.Firestore\/Listen\/channel/.test(r.url());
+      if (!p.__expectAuthRejection && !expectedListenerClose) p.errors.push('requestfailed:' + r.url() + ' ' + (r.failure()?.errorText || 'unknown'));
+    });
+    p.on('response', r => { if (r.status() >= 400 && !p.__expectAuthRejection) p.errors.push('http:' + r.status() + ' ' + r.url()); });
     return { ctx, p };
   }
   const LIST = '#clientList button[onclick*="showClientDetail"]';
   const ids = async p => (await p.$$eval(LIST, bs => bs.map(b => (b.getAttribute('onclick').match(/showClientDetail\('([^']+)'\)/) || [])[1]))).filter(Boolean);
-  const loginUi = async (p, email, pass) => { await p.fill('#loginEmail', email); await p.fill('#loginPass', pass); await p.click('#loginBtn'); };
-  const logoutUi = async p => { await p.evaluate(() => window._vdsenSignOut()); await p.waitForSelector('#loginEmail'); };
+  const loginUi = async (p, email, pass, expectRejection = false) => { p.__expectAuthRejection = expectRejection; await p.fill('#loginEmail', email); await p.fill('#loginPass', pass); await p.click('#loginBtn'); };
+  const waitForLogin = async p => {
+    try { await p.waitForSelector('#loginEmail'); }
+    catch (error) {
+      const body = await p.evaluate(() => document.body.innerText.slice(0, 500)).catch(() => '(body unavailable)');
+      throw new Error('Coach login did not render; page errors=' + p.errors.join(' | ').slice(0, 500) + '; body=' + body + '; ' + error.message);
+    }
+  };
+  const logoutUi = async p => { await p.evaluate(() => window._vdsenSignOut()); await waitForLogin(p); };
   const bodyText = p => p.evaluate(() => document.body.innerText);
   const bodyHtml = p => p.evaluate(() => document.body.innerHTML);
 
   try {
     const { ctx, p } = await newPage();
     // ---------------- BUG 1: login without reload ----------------
-    await p.goto(APP + '/vdsen-coach.html'); await p.waitForSelector('#loginEmail');
+    await p.goto(APP + '/vdsen-coach.html'); await waitForLogin(p);
     await p.evaluate(() => { window.__noReloadMarker = 1; });
     check('L0_LOGGED_OUT_SCREEN', await p.isVisible('#loginBtn') && !(await p.$('#clientList')));
     // auth failure first: stays on the login screen with a message, no shell, no page error
-    await loginUi(p, emailA, 'wrong-password-1');
+    await loginUi(p, emailA, 'wrong-password-1', true);
     await p.waitForFunction(() => (document.getElementById('loginErr') || {}).textContent.trim().length > 0, null, { timeout: 15000 });
+    p.__expectAuthRejection = false;
     check('L5_AUTH_FAILURE_BEHAVES', await p.isVisible('#loginEmail') && !(await p.$('#clientList')) && p.errors.length === 0, (await p.textContent('#loginErr')).trim().slice(0, 60));
     await loginUi(p, emailA, PASS);
     await p.waitForSelector(LIST, { timeout: 30000 });
