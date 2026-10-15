@@ -13,6 +13,10 @@ name: VDSEN client app lane diagnostics (read-only)
 on:
   workflow_dispatch:
     inputs:
+      runtime_sha:
+        description: 'Exact 40-char candidate SHA to inspect (read-only; never deploys)'
+        required: true
+        type: string
       note:
         description: 'Optional note for this diagnostic run'
         required: false
@@ -40,6 +44,17 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
+      - name: Validate runtime_sha (exact 40-char commit SHA that exists in this repository)
+        # Fails BEFORE any credential is used. Rejects HEAD, latest, branch names, short or
+        # uppercase SHAs, and a well-formed SHA that is not a commit of this repository.
+        env:
+          RUNTIME_SHA: ${{ inputs.runtime_sha }}
+        run: |
+          if [[ ! "$RUNTIME_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::runtime_sha must be exactly 40 lowercase hexadecimal characters"
+            exit 1
+          fi
+          git cat-file -e "${RUNTIME_SHA}^{commit}" || { echo "::error::runtime_sha is not a commit of this repository"; exit 1; }
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Probe endpoint health (independent of the lane code)
         run: node scripts/release/app-diagnostics.cjs
@@ -50,7 +65,7 @@ jobs:
         # APP_TRACE_READS so each request is logged by parameter NAME and value LENGTH only.
         # No token, no parameter value and no response body is printed.
         env:
-          APP_RUNTIME_SHA: c3e78380d3a076e643a1957203c093260851210e
+          APP_RUNTIME_SHA: ${{ inputs.runtime_sha }}
           APP_EXPECTED_MAIN_SHA: f6596ba5207dc158b8a9b01483cd0fe0ebeb274c
           APP_TRACE_READS: 'true'
         run: |
@@ -69,7 +84,7 @@ jobs:
         # (target, readyState, state, ready, isRollbackCandidate) as booleans/names only.
         if: always()
         env:
-          APP_RUNTIME_SHA: c3e78380d3a076e643a1957203c093260851210e
+          APP_RUNTIME_SHA: ${{ inputs.runtime_sha }}
         run: node scripts/release/app-candidate-check.cjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()

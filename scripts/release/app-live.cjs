@@ -314,17 +314,43 @@ async function deployment(s, id) { return vercel(s, '/v13/deployments/' + encode
 
 // Resolve the candidate by EXACT metadata. Chronology is never a selection criterion.
 async function resolveCandidate(s, runtime) {
-  const all = await listDeployments(s);
-  const exact = all.filter((d) => d.meta?.githubCommitSha === runtime && (d.projectId === s.production_project));
-  assert.ok(exact.length > 0, 'No deployment found for the exact candidate SHA in this project');
+  const { deployments, truncated } = await listDeploymentPages(s);
+  const sel = selectCandidate(deployments, runtime, s);
+  assert.notEqual(sel.status, 'AMBIGUOUS', 'Ambiguous candidates for one SHA');
+  assert.ok(sel.status === 'OK', 'No deployment found for the exact candidate SHA in this project' + (truncated ? ' (deployment list truncated at the page cap)' : ''));
+  return sel.candidate;
+}
+
+// Follows Vercel's pagination.next cursor (until) up to a hard page cap. A candidate beyond the cap
+// is reported as truncated, never silently treated as nonexistent.
+async function listDeploymentPages(s, maxPages = 10) {
+  const out = [];
+  let until = null, pages = 0;
+  while (pages < maxPages) {
+    const list = await vercel(s, DEPLOYMENTS_LIST + '?projectId=' + encodeURIComponent(s.production_project) + '&limit=' + LIST_LIMIT + (until ? '&until=' + encodeURIComponent(until) : ''));
+    assert.ok(list && Array.isArray(list.deployments), 'Deployment list response is incomplete');
+    out.push(...list.deployments.map(normalizeDeployment));
+    pages += 1;
+    const next = list.pagination && list.pagination.next;
+    if (next === null || next === undefined || String(next) === until) return { deployments: out, truncated: false, pages };
+    until = String(next);
+  }
+  return { deployments: out, truncated: true, pages };
+}
+
+// Pure selection shared by the release lane and the read-only diagnostics, so both always judge the
+// SAME candidate. Exact Git identity + project; two distinct READY deployments for one SHA is
+// ambiguous and refused rather than silently picked by order.
+function selectCandidate(all, runtime, s) {
+  const exact = all.filter((d) => d && d.meta?.githubCommitSha === runtime && (d.projectId === s.production_project));
+  if (exact.length === 0) return { status: 'NOT_FOUND', candidate: null, matches: 0 };
   const previews = exact.filter((d) => d.target !== 'production');
   const usable = previews.length ? previews : exact;
-  // If several share the exact SHA, prefer READY, then the most recently created among those.
   const ready = usable.filter((d) => (d.readyState || d.ready) === 'READY');
   const pool = ready.length ? ready : usable;
-  pool.sort((a, b) => (b.created || 0) - (a.created || 0));
-  assert.equal(new Set(pool.map((d) => d.meta.githubCommitSha)).size, 1, 'Ambiguous candidates for one SHA');
-  return pool[0];
+  const ids = new Set(pool.map((d) => d.id));
+  if (ids.size !== 1) return { status: 'AMBIGUOUS', candidate: null, matches: ids.size };
+  return { status: 'OK', candidate: pool[0], matches: 1 };
 }
 
 async function productionEnv(s) {
@@ -940,7 +966,7 @@ module.exports = {
   assertExplicitRuntime, assertKillSwitch, assertAppOnlySources, assertCandidate,
   assertCandidateNotAlreadyProduction, assertBaseline, assertEnvironment,
   assertFirebaseProject, assertPromoted, assertRollbackArtifact,
-  resolveCandidate, currentApp, listDeployments, normalizeDeployment, deployment, productionEnv, promote, revertApp,
+  resolveCandidate, selectCandidate, listDeploymentPages, currentApp, listDeployments, normalizeDeployment, deployment, productionEnv, promote, revertApp,
   verifyPublicBytes, servedSurface, httpServedSurface, NOT_HTTP_SERVED, verifyProductIdentity, readOnlyPreflight, preflight, apply, rollbackApp, releaseResult, preflightSummary, redactUrl, vercelUrl, preflightSummary,
   REQUIRED_PROD_ENV, FORBIDDEN_RUNTIME_VALUES, setOut, getOut,
   observeProduction, decideRecovery,
