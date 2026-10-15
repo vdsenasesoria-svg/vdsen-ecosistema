@@ -162,7 +162,10 @@ async function main() {
     p.on('pageerror', e => p.errors.push('pageerror:' + e.message));
     p.__expectAuthRejection = false;
     p.on('console', m => { if (m.type() === 'error' && !p.__expectAuthRejection) p.errors.push('console:' + m.text()); });
-    p.on('requestfailed', r => { if (!p.__expectAuthRejection) p.errors.push('requestfailed:' + r.url() + ' ' + (r.failure()?.errorText || 'unknown')); });
+    p.on('requestfailed', r => {
+      const expectedListenerClose = /google\.firestore\.v1\.Firestore\/Listen\/channel/.test(r.url());
+      if (!p.__expectAuthRejection && !expectedListenerClose) p.errors.push('requestfailed:' + r.url() + ' ' + (r.failure()?.errorText || 'unknown'));
+    });
     p.on('response', r => { if (r.status() >= 400 && !p.__expectAuthRejection) p.errors.push('http:' + r.status() + ' ' + r.url()); });
     return { ctx, p };
   }
