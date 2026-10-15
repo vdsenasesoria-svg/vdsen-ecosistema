@@ -362,6 +362,9 @@ test('product CI does not require a production deploy to carry a candidate-only 
   const manifest = json(deployedProduct.MANIFEST);
   assert.equal(Object.keys(manifest.files).length, 26, 'produccion sigue sirviendo 26 rutas');
   assert.equal(deployedProduct.DEPLOYED.length, 26);
+  // A registry path must be listed once: a duplicate silently inflates SERVED.length and the candidate count.
+  assert.equal(new Set(deployedProduct.SERVED).size, deployedProduct.SERVED.length, 'SERVED no admite rutas duplicadas');
+  assert.equal(new Set(deployedProduct.CANDIDATE_ONLY).size, deployedProduct.CANDIDATE_ONLY.length, 'CANDIDATE_ONLY no admite rutas duplicadas');
   // The client export registers its browser assets as CANDIDATE-ONLY: the candidate intends to serve
   // them, production does not yet, and the frozen manifest must stay honest about that difference.
   // 11 client-export routes + 8 Coach image-upload routes (image-upload-v2).

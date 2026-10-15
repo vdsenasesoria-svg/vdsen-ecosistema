@@ -72,14 +72,6 @@ const SERVED = [
   'assets/client-export/firestore-io.js',
   'assets/client-export/runner.js',
   'assets/client-export/ui.js',
-  'assets/coach-image-upload/controller.js',
-  'assets/coach-image-upload/firebase-adapter.js',
-  'assets/coach-image-upload/mount.js',
-  'assets/coach-image-upload/paths.js',
-  'assets/coach-image-upload/photo-section.js',
-  'assets/coach-image-upload/process.js',
-  'assets/coach-image-upload/sniff.js',
-  'assets/coach-image-upload/validate.js',
 ];
 
 // Paths the CANDIDATE intends to serve but that are NOT yet in production.
