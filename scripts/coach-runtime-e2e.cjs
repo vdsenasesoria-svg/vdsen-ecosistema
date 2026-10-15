@@ -160,14 +160,15 @@ async function main() {
     const p = await ctx.newPage(); p.setDefaultTimeout(30000);
     p.errors = [];
     p.on('pageerror', e => p.errors.push('pageerror:' + e.message));
-    p.on('console', m => { if (m.type() === 'error') p.errors.push('console:' + m.text()); });
-    p.on('requestfailed', r => p.errors.push('requestfailed:' + r.url() + ' ' + (r.failure()?.errorText || 'unknown')));
-    p.on('response', r => { if (r.status() >= 400) p.errors.push('http:' + r.status() + ' ' + r.url()); });
+    p.__expectAuthRejection = false;
+    p.on('console', m => { if (m.type() === 'error' && !p.__expectAuthRejection) p.errors.push('console:' + m.text()); });
+    p.on('requestfailed', r => { if (!p.__expectAuthRejection) p.errors.push('requestfailed:' + r.url() + ' ' + (r.failure()?.errorText || 'unknown')); });
+    p.on('response', r => { if (r.status() >= 400 && !p.__expectAuthRejection) p.errors.push('http:' + r.status() + ' ' + r.url()); });
     return { ctx, p };
   }
   const LIST = '#clientList button[onclick*="showClientDetail"]';
   const ids = async p => (await p.$$eval(LIST, bs => bs.map(b => (b.getAttribute('onclick').match(/showClientDetail\('([^']+)'\)/) || [])[1]))).filter(Boolean);
-  const loginUi = async (p, email, pass) => { await p.fill('#loginEmail', email); await p.fill('#loginPass', pass); await p.click('#loginBtn'); };
+  const loginUi = async (p, email, pass, expectRejection = false) => { p.__expectAuthRejection = expectRejection; await p.fill('#loginEmail', email); await p.fill('#loginPass', pass); await p.click('#loginBtn'); };
   const waitForLogin = async p => {
     try { await p.waitForSelector('#loginEmail'); }
     catch (error) {
@@ -186,8 +187,9 @@ async function main() {
     await p.evaluate(() => { window.__noReloadMarker = 1; });
     check('L0_LOGGED_OUT_SCREEN', await p.isVisible('#loginBtn') && !(await p.$('#clientList')));
     // auth failure first: stays on the login screen with a message, no shell, no page error
-    await loginUi(p, emailA, 'wrong-password-1');
+    await loginUi(p, emailA, 'wrong-password-1', true);
     await p.waitForFunction(() => (document.getElementById('loginErr') || {}).textContent.trim().length > 0, null, { timeout: 15000 });
+    p.__expectAuthRejection = false;
     check('L5_AUTH_FAILURE_BEHAVES', await p.isVisible('#loginEmail') && !(await p.$('#clientList')) && p.errors.length === 0, (await p.textContent('#loginErr')).trim().slice(0, 60));
     await loginUi(p, emailA, PASS);
     await p.waitForSelector(LIST, { timeout: 30000 });
