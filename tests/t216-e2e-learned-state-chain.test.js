@@ -50,7 +50,7 @@ ok([musclesSrc, metaSrc, auditSrc, confSrc, snapSrc, volSrc, exSrc, patSrc, recS
   'prerequisite: every function this E2E chain needs extracts cleanly from vdsen-coach.html');
 
 function makeEngine() {
-  const win = {};
+  const win = { VDSEN_SRA: require('../assets/sra-context.js') };
   const factory = new Function('window',
     musclesSrc + ';\n' + metaSrc + ';\n' + auditSrc + ';\n' + confSrc + ';\n' + snapSrc + ';\n' +
     volSrc + ';\n' + exSrc + ';\n' + patSrc + ';\n' + recSrc + ';\n' +

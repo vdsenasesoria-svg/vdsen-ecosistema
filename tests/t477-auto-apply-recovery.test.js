@@ -81,11 +81,14 @@ test('root listener adopts newer same-count entries instead of leaving LOGS stal
   const f = fixture(old), map = new Map();
   const ctx = contextFor(f, { getItem: key => map.get(key) || null,
     setItem: (key, value) => map.set(key, value) });
+  ctx._sraPersisted = { version: 0, entries: {} };
+  vm.runInContext(functionSource(client, '_acceptSraPersisted'), ctx);
   ctx.LOGS = { progrec_1_0: old };
   ctx._logsAuthorityUpdatedAt = 100;
   ctx._logsLastSeen = 0;
   ctx.CURRENT_WEEK = 1;
   ctx.user = { uid: 'client-A' };
+  ctx.activePlanId = ctx.ACTIVE_PLAN_ID;
   ctx._rebuildLogsByWeek = () => {};
   ctx.renderEntrenamiento = () => {};
   ctx.renderResumen = () => {};

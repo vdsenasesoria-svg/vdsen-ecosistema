@@ -1311,6 +1311,7 @@ button[role="switch"]::after{content:'';position:absolute;inset:-8px -6px}
 </div>
 
 <script src="assets/exercise-visual-catalog.js"></script>
+<script src="assets/sra-context.js"></script>
 <script src="assets/progression-magnitude-policy.js"></script>
 <script src="assets/progression-auto-apply-shadow.js"></script>
 <script src="assets/progression-effective-prescription.js"></script>
@@ -1322,6 +1323,21 @@ button[role="switch"]::after{content:'';position:absolute;inset:-8px -6px}
 let USER = null;
 let PLAN = null;
 let LOGS = {};         // { "semana_dia_ejercicio": {carga, reps, rir} }
+var _sraPersisted = { clientId: null, planId: null, entries: {}, version: 0 };
+var _sraSaveGeneration = 0;
+function _acceptSraPersisted(clientId, planId, entries, version) {
+  if (!USER || USER.uid !== clientId || ACTIVE_PLAN_ID !== planId) return false;
+  if (_sraPersisted.clientId === clientId && _sraPersisted.planId === planId && version <= _sraPersisted.version) return false;
+  _sraPersisted = { clientId: clientId, planId: planId, entries: JSON.parse(JSON.stringify(entries || {})), version: version };
+  return true;
+}
+function _renderClientSra() {
+  if (!window.VDSEN_SRA || !PLAN || !USER) return '';
+  var e = _sraPersisted.clientId === USER.uid && _sraPersisted.planId === ACTIVE_PLAN_ID ? _sraPersisted.entries : {};
+  return getSesiones().map(function(day) { return (day.exercises || []).map(function(ex) {
+    return window.VDSEN_SRA.renderTrace(window.VDSEN_SRA.buildContext({ clientId: USER.uid, prescriptionExerciseId: ex.prescriptionExerciseId, entries: e, planDoc: { days: getSesiones() } }), 'client');
+  }).join(''); }).join('');
+}
 var _logsAuthorityUpdatedAt = 0; // version of the root/meso entries currently in LOGS
 var LOGS_BY_WEEK = { log: {}, progrec: {} }; // derived index: { w: [key1,...] } — rebuilt on bulk load, appended on writes
 let CURRENT_WEEK = 1;
@@ -2378,6 +2394,8 @@ async function doLogout() {
   _clearLiveListeners();
   await FB.signOut(FB.auth);
   PLAN = null; LOGS = {};
+  _sraPersisted = { clientId: null, planId: null, entries: {}, version: 0 };
+  _sraSaveGeneration++;
   _logsAuthorityUpdatedAt = 0;
   ACTIVE_PLAN_ID = null;
   LOGS_BY_WEEK = { log: {}, progrec: {} };
@@ -2672,6 +2690,8 @@ function _carryPerfSetFields(s) {
 
 async function loadPlan(user) {
   _clearLiveListeners();
+  _sraPersisted = { clientId: null, planId: null, entries: {}, version: 0 };
+  _sraSaveGeneration++;
   var _mySeq = ++_loadPlanSeq; // T127-C: capture generation — detect superseding concurrent calls
   USER = user;
   if (!user || !user.email) {
@@ -3041,6 +3061,7 @@ async function loadPlan(user) {
         } else {
           // Mismo plan: usar semana y entradas guardadas
           LOGS         = logData.entries || {};
+          if (!((_mesoSnap && _mesoSnap.metadata && (_mesoSnap.metadata.hasPendingWrites || _mesoSnap.metadata.fromCache)) || (rootSnap && rootSnap.metadata && (rootSnap.metadata.hasPendingWrites || rootSnap.metadata.fromCache)))) _acceptSraPersisted(user.uid, activePlanId, LOGS, Number(logData.updatedAt) || 0);
           CURRENT_WEEK = logData.currentWeek || 1;
           REAL_WEEK    = CURRENT_WEEK;
           _rebuildLogsByWeek();
@@ -3197,6 +3218,7 @@ async function loadPlan(user) {
             (newerRoot || (!ts && (newWeek !== REAL_WEEK || entriesCount !== localCount)))) {
           if (newWeek > REAL_WEEK) { REAL_WEEK = newWeek; CURRENT_WEEK = newWeek; }
           LOGS = d.entries || {};
+          if (!(snap.metadata && (snap.metadata.hasPendingWrites || snap.metadata.fromCache))) _acceptSraPersisted(user.uid, activePlanId, LOGS, Number(d.updatedAt) || 0);
           _logsAuthorityUpdatedAt = Number(d.updatedAt) || 0;
           _rebuildLogsByWeek();
           if (d.exerciseUnits)   EXERCISE_UNITS   = d.exerciseUnits;
@@ -4370,7 +4392,7 @@ function renderResumen() {
   const ci = LOGS['ci_sem_'+semActiva] || {};
   const ciDone = !!(ci.peso || ci.hrv);
   const _missingHintsHtml = _renderClientMissingHints(_detectMissingData(LOGS, PLAN, semActiva));
-  document.getElementById('tabResumen').innerHTML = `
+  document.getElementById('tabResumen').innerHTML = `${_renderClientSra()}
     <section class="today-panel">
       <div class="today-kicker">HOY — SEM ${semActiva}${semActiva===_totalWeeksGrid?' · DELOAD':''}</div>
       ${getTodaySummary()}
@@ -5349,6 +5371,7 @@ var _lastHiddenAt = 0;
 // dispositivos / pestañas del mismo usuario.
 async function _refreshLogsFromFirestore(reason) {
   if (!USER || !FB || _logsWriteInFlight > 0) return;
+  var _sraRefreshUid = USER.uid, _sraRefreshPlan = ACTIVE_PLAN_ID;
   try {
     const ref = FB.doc(FB.db, 'logs', USER.uid);
     const snap = await FB.getDoc(ref);
@@ -5376,6 +5399,7 @@ async function _refreshLogsFromFirestore(reason) {
     var entriesChanged = newerRoot || (!data.updatedAt && Object.keys(fsEntries).length !== Object.keys(LOGS || {}).length);
     if (entriesChanged && !_saveLogsTimer) {
       LOGS = fsEntries; _logsAuthorityUpdatedAt = Number(data.updatedAt) || 0; _rebuildLogsByWeek();
+      if (!(snap.metadata && (snap.metadata.hasPendingWrites || snap.metadata.fromCache))) _acceptSraPersisted(_sraRefreshUid, _sraRefreshPlan, fsEntries, Number(data.updatedAt) || 0);
     }
     if (data.exerciseUnits)   EXERCISE_UNITS   = data.exerciseUnits;
     if (data.exerciseHistory) EXERCISE_HISTORY = data.exerciseHistory;
@@ -11198,6 +11222,7 @@ function _logsPlanChanged(logData, activePlanId, flagSession, localPlanId) {
 async function _doSaveLogs() {
   if (!USER || !FB) return false;
   var _uidAtStart = USER.uid;
+  var _sraGenerationAtStart = ++_sraSaveGeneration;
   _saveLogsTimer = null; // limpiar ID del timer que ya disparó (evita false-positive en visibilitychange)
   var _seqAtStart = typeof _logsReqSeq === 'number' ? _logsReqSeq : 0;
   _logsWriteInFlight++;
@@ -11229,6 +11254,7 @@ async function _doSaveLogs() {
     }
     if (!USER || USER.uid !== _uidAtStart) return false;
     if (ACTIVE_PLAN_ID === _payload.planId) _logsAuthorityUpdatedAt = _payload.updatedAt;
+    if (_sraGenerationAtStart === _sraSaveGeneration) _acceptSraPersisted(_uidAtStart, _payload.planId, _safeEntries, _payload.updatedAt);
     if (typeof _logsAckedSeq === 'number') _logsAckedSeq = Math.max(_logsAckedSeq, _seqAtStart);   // T548: the server acknowledged every write requested up to this point
     // Limpiar indicador de error si estaba
     const errEl = document.getElementById('saveErrBadge');
