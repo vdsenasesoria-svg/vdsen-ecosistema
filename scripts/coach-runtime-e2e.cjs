@@ -164,14 +164,21 @@ async function main() {
   const LIST = '#clientList button[onclick*="showClientDetail"]';
   const ids = async p => (await p.$$eval(LIST, bs => bs.map(b => (b.getAttribute('onclick').match(/showClientDetail\('([^']+)'\)/) || [])[1]))).filter(Boolean);
   const loginUi = async (p, email, pass) => { await p.fill('#loginEmail', email); await p.fill('#loginPass', pass); await p.click('#loginBtn'); };
-  const logoutUi = async p => { await p.evaluate(() => window._vdsenSignOut()); await p.waitForSelector('#loginEmail'); };
+  const waitForLogin = async p => {
+    try { await p.waitForSelector('#loginEmail'); }
+    catch (error) {
+      const body = await p.evaluate(() => document.body.innerText.slice(0, 500)).catch(() => '(body unavailable)');
+      throw new Error('Coach login did not render; page errors=' + p.errors.join(' | ').slice(0, 500) + '; body=' + body + '; ' + error.message);
+    }
+  };
+  const logoutUi = async p => { await p.evaluate(() => window._vdsenSignOut()); await waitForLogin(p); };
   const bodyText = p => p.evaluate(() => document.body.innerText);
   const bodyHtml = p => p.evaluate(() => document.body.innerHTML);
 
   try {
     const { ctx, p } = await newPage();
     // ---------------- BUG 1: login without reload ----------------
-    await p.goto(APP + '/vdsen-coach.html'); await p.waitForSelector('#loginEmail');
+    await p.goto(APP + '/vdsen-coach.html'); await waitForLogin(p);
     await p.evaluate(() => { window.__noReloadMarker = 1; });
     check('L0_LOGGED_OUT_SCREEN', await p.isVisible('#loginBtn') && !(await p.$('#clientList')));
     // auth failure first: stays on the login screen with a message, no shell, no page error
