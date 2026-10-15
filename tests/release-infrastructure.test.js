@@ -362,11 +362,20 @@ test('product CI does not require a production deploy to carry a candidate-only 
   const manifest = json(deployedProduct.MANIFEST);
   assert.equal(Object.keys(manifest.files).length, 26, 'produccion sigue sirviendo 26 rutas');
   assert.equal(deployedProduct.DEPLOYED.length, 26);
+  // A registry path must be listed once: a duplicate silently inflates SERVED.length and the candidate count.
+  assert.equal(new Set(deployedProduct.SERVED).size, deployedProduct.SERVED.length, 'SERVED no admite rutas duplicadas');
+  assert.equal(new Set(deployedProduct.CANDIDATE_ONLY).size, deployedProduct.CANDIDATE_ONLY.length, 'CANDIDATE_ONLY no admite rutas duplicadas');
   // The client export registers its browser assets as CANDIDATE-ONLY: the candidate intends to serve
   // them, production does not yet, and the frozen manifest must stay honest about that difference.
-  assert.equal(deployedProduct.CANDIDATE_ONLY.length, 12, 'el export y SRA aportan 12 rutas candidatas');
+  // 11 client-export routes + 1 SRA context + 8 Coach image-upload routes (image-upload-v2).
+  assert.equal(deployedProduct.CANDIDATE_ONLY.length, 20, 'el export aporta 11, SRA 1 y la subida de imagenes 8');
   for (const f of deployedProduct.CANDIDATE_ONLY) {
-    assert.ok(f === 'assets/sra-context.js' || f.startsWith('assets/client-export/'), 'solo SRA y el export son candidatos por ahora: ' + f);
+    // Explicit namespace allow-list. A candidate-only path may only come from a namespace that is
+    // deliberately undeployed yet: the client export, SRA context and the Coach image upload.
+    assert.ok(
+      f === 'assets/sra-context.js' || f.startsWith('assets/client-export/') || f.startsWith('assets/coach-image-upload/'),
+      'namespace candidato no permitido: ' + f
+    );
     assert.ok(deployedProduct.SERVED.includes(f), 'una ruta candidata tambien es parte de la superficie servida');
     assert.ok(!deployedProduct.DEPLOYED.includes(f), 'una ruta candidata NO puede estar desplegada');
   }
