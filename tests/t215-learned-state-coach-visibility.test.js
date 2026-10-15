@@ -27,7 +27,7 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 ok(COACH.includes('const _learnedProgHist = window.VDSEN_BUILD._mapExerciseProgressionHistory(_learnedProgrecs);'), 'reuses the real progressionHistory mapper (T160/166), not a reimplementation');
 ok(COACH.includes('const _learnedVolTolerance = window.VDSEN_LEARNED.computeVolumeTolerance(p, _learnedProgHist, []);'), 'calls the real T211 volume tolerance function');
 ok(COACH.includes('const _learnedExTolerance  = window.VDSEN_LEARNED.computeExerciseTolerance(p, _learnedProgHist);'), 'calls the real T212 exercise tolerance function');
-ok(COACH.includes('const _learnedRecovery     = window.VDSEN_LEARNED.computeRecoverySensitivity(entries, p, _learnedProgHist);'), 'calls the real T213 recovery sensitivity function');
+ok(COACH.includes('const _learnedRecovery     = window.VDSEN_LEARNED.computeRecoverySensitivity(_sraEntries, p, _learnedProgHist);'), 'calls the real T213 recovery sensitivity function');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Structural: NONE-confidence items are filtered out at every level.

@@ -16,6 +16,7 @@ test('T441: a save started by A never writes A payload to B after logout/login',
   const runtime = new Function(`
     var USER = { uid: 'A' }, ACTIVE_PLAN_ID = 'plan-a', REAL_WEEK = 1;
     var LOGS = { log_a: { done: true } }, EXERCISE_UNITS = {}, EXERCISE_HISTORY = {};
+    var _sraSaveGeneration = 0;
     var _saveLogsTimer = null, _logsWriteInFlight = 0, calls = [];
     var document = { getElementById: function(){ return null; }, createElement: function(){ return { style:{}, addEventListener:function(){} }; }, body:{ appendChild:function(){} } };
     var navigator = { onLine: true };

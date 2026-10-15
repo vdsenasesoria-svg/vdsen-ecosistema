@@ -43,7 +43,7 @@ test('T127-C: loadPlan increments _loadPlanSeq and captures local _mySeq', funct
 // ── 3. The increment happens before the first await ─────────────────────────
 test('T127-C: _mySeq capture precedes first await inside loadPlan', function() {
   var loadPlanIdx = CLIENT.indexOf('async function loadPlan(user)');
-  var fnTop = CLIENT.slice(loadPlanIdx, loadPlanIdx + 600);
+  var fnTop = CLIENT.slice(loadPlanIdx, loadPlanIdx + 1000);
   var seqIdx   = fnTop.indexOf('var _mySeq = ++_loadPlanSeq');
   var awaitIdx = fnTop.indexOf('await ');
   assert.ok(seqIdx   !== -1, '_mySeq capture not found in loadPlan');
