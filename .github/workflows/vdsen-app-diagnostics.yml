@@ -44,6 +44,17 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
+      - name: Validate runtime_sha (exact 40-char commit SHA that exists in this repository)
+        # Fails BEFORE any credential is used. Rejects HEAD, latest, branch names, short or
+        # uppercase SHAs, and a well-formed SHA that is not a commit of this repository.
+        env:
+          RUNTIME_SHA: ${{ inputs.runtime_sha }}
+        run: |
+          if [[ ! "$RUNTIME_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::runtime_sha must be exactly 40 lowercase hexadecimal characters"
+            exit 1
+          fi
+          git cat-file -e "${RUNTIME_SHA}^{commit}" || { echo "::error::runtime_sha is not a commit of this repository"; exit 1; }
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Probe endpoint health (independent of the lane code)
         run: node scripts/release/app-diagnostics.cjs
