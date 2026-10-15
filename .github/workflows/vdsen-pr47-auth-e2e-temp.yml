@@ -23,8 +23,14 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: 31db835982417e876e2344eff57aadad5f801bad
           fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout exact consolidated Coach product candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 31db835982417e876e2344eff57aadad5f801bad
+          path: product-under-test
           persist-credentials: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -47,10 +53,12 @@ jobs:
 
       - name: Verify exact Coach product candidate
         run: |
-          test "$(git rev-parse HEAD)" = "31db835982417e876e2344eff57aadad5f801bad"
+          test "$(git -C product-under-test rev-parse HEAD)" = "31db835982417e876e2344eff57aadad5f801bad"
           test "$(git ls-remote origin refs/heads/codex/client-app-next | cut -f1)" = "31db835982417e876e2344eff57aadad5f801bad"
 
       - name: Run Coach authenticated E2E against demo emulators
+        env:
+          COACH_HTML: ${{ github.workspace }}/product-under-test/vdsen-coach.html
         run: node scripts/coach-runtime-e2e.cjs --out consolidated-coach-auth-e2e.json
 
   client-authenticated-e2e:
