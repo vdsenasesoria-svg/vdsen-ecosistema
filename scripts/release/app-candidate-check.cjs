@@ -1,53 +1,76 @@
 'use strict';
-// Read-only: does the deployment the preflight resolves actually exist, and can it be promoted?
-// Reports field NAMES / booleans only - never a token or a value.
+// READ-ONLY diagnostic: is the candidate the release lane would resolve for APP_RUNTIME_SHA the
+// deployment we think it is, and is it eligible?
+//
+// There is deliberately NO second implementation of candidate resolution here. This file calls the
+// same app-live.cjs functions (listDeploymentPages -> selectCandidate -> assertCandidate) that the
+// release preflight uses, so the diagnostic and the release always judge the SAME deployment.
+// No SHA or deployment id is hard-coded: the only input is APP_RUNTIME_SHA, validated as an exact
+// 40-hex commit. Only GET requests are issued. Output is names / booleans / counts: never a token,
+// a response body or an environment value.
 const path = require('node:path');
+const live = require(path.resolve('scripts/release/app-live.cjs'));
 const { json } = require(path.resolve('scripts/release/lib.cjs'));
-const s = json('.release/vdsen-client.json');
-const token = process.env.VERCEL_TOKEN;
-if (!token) { console.log('no token'); process.exit(1); }
-const base = 'https://api.vercel.com';
-const team = '&teamId=' + encodeURIComponent(s.vercel_team);
-const project = encodeURIComponent(s.production_project);
 
-const CANDIDATE_SHA = 'c3e78380d3a076e643a1957203c093260851210e';
+const SAFE_ERROR = /^API GET \S+ failed: HTTP (\d{3})$/;
+const category = (error) => {
+  const m = String(error && error.message || '');
+  const h = SAFE_ERROR.exec(m);
+  if (h) return 'HTTP_' + h[1];
+  if (/incomplete/i.test(m)) return 'INCOMPLETE_RESPONSE';
+  if (/credential/i.test(m)) return 'NO_CREDENTIAL';
+  return 'ERROR';
+};
 
-(async () => {
-  const names = (o) => Object.keys(o || {}).filter((k) => !/token|secret|key|env|value/i.test(k));
+async function check(s, runtime) {
+  const r = { runtime_sha: runtime, resolution: 'ERROR', matches: 0, list_pages: 0, list_truncated: false, error: 'NONE', eligible: false, checks: {} };
+  let sel;
+  try {
+    const listed = await live.listDeploymentPages(s);
+    r.list_pages = listed.pages; r.list_truncated = listed.truncated;
+    sel = live.selectCandidate(listed.deployments, runtime, s);
+  } catch (error) { r.error = category(error); return r; }
+  r.resolution = sel.status; r.matches = sel.matches;
+  if (sel.status !== 'OK') { r.error = r.list_truncated && sel.status === 'NOT_FOUND' ? 'LIST_TRUNCATED' : sel.status; return r; }
+  // Authoritative per-deployment read: the list entry is never trusted for eligibility.
+  let d;
+  try { d = live.normalizeDeployment(await live.deployment(s, sel.candidate.id)); } catch (error) { r.error = category(error); return r; }
+  r.checks = {
+    id_matches_list: d.id === sel.candidate.id || d.uid === sel.candidate.id,
+    project_matches: d.projectId === s.production_project,
+    sha_matches: d.meta?.githubCommitSha === runtime,
+    git_ref_present: d.meta?.githubCommitRef !== undefined,
+    target: String(d.target ?? 'preview'),
+    ready_state: String(d.readyState || d.ready),
+    state: String(d.state),
+    is_rollback_candidate: d.isRollbackCandidate === true,
+    alias_assigned: d.aliasAssigned === undefined ? null : Boolean(d.aliasAssigned),
+  };
+  try {
+    live.assertCandidate(live.normalizeDeployment({ ...d }), { runtime, project: s.production_project, team: s.vercel_team });
+    r.eligible = r.checks.id_matches_list; r.error = r.eligible ? 'NONE' : 'ID_MISMATCH';
+  } catch { r.error = 'NOT_ELIGIBLE'; }
+  return r;
+}
 
-  // 1. the candidate deployment the preflight resolved
-  const r1 = await fetch(base + '/v7/deployments?projectId=' + project + '&limit=60' + team, { headers: { Authorization: 'Bearer ' + token } });
-  const list = (await r1.json()).deployments || [];
-  const bySha = list.filter((d) => d.meta && d.meta.githubCommitSha === CANDIDATE_SHA);
-  console.log('list status   : ' + r1.status);
-  console.log('candidate SHA deployments found: ' + bySha.length);
-  for (const d of bySha.slice(0, 4)) {
-    console.log('  id=' + String(d.uid || d.id).slice(0, 30) +
-      '  target=' + String(d.target) +
-      '  readyState=' + String(d.readyState) +
-      '  state=' + String(d.state) +
-      '  ready=' + String(d.ready) +
-      '  isRollbackCandidate=' + String(d.isRollbackCandidate) +
-      '  aliasAssigned=' + String(d.aliasAssigned));
-    console.log('    field names: ' + names(d).join(' '));
-  }
+function lines(r) {
+  const out = ['candidate runtime_sha : ' + r.runtime_sha,
+    'resolution            : ' + r.resolution + '  matches=' + r.matches + '  pages=' + r.list_pages + '  truncated=' + r.list_truncated];
+  for (const [k, v] of Object.entries(r.checks)) out.push('  ' + k + '=' + String(v));
+  out.push('eligible              : ' + r.eligible + '  error=' + r.error);
+  return out;
+}
 
-  // 2. the deployment the workflow actually tried to promote
-  const TRIED = 'dpl_9rCu3FswEnseDvcgpf6FbrjzuJJS';
-  const r2 = await fetch(base + '/v13/deployments/' + encodeURIComponent(TRIED) + '?teamId=' + encodeURIComponent(s.vercel_team), { headers: { Authorization: 'Bearer ' + token } });
-  console.log('');
-  console.log('GET /v13/deployments/<tried> status: ' + r2.status);
-  if (r2.ok) {
-    const d = await r2.json();
-    console.log('  target=' + String(d.target) + '  readyState=' + String(d.readyState) + '  state=' + String(d.state) + '  ready=' + String(d.ready));
-    console.log('  projectId===ours: ' + (d.projectId === s.production_project));
-    console.log('  meta.githubCommitSha===candidate: ' + (d.meta && d.meta.githubCommitSha === CANDIDATE_SHA));
-    console.log('  meta.githubCommitRef: ' + String(d.meta && d.meta.githubCommitRef));
-  }
+async function main() {
+  const s = json('.release/vdsen-client.json');
+  if (!process.env.VERCEL_TOKEN) { console.log('no credential'); return 1; }
+  let runtime;
+  try { runtime = live.assertExplicitRuntime(process.env.APP_RUNTIME_SHA); }
+  catch { console.log('APP_RUNTIME_SHA must be an exact 40-char commit SHA'); return 1; }
+  const r = await check(s, runtime);
+  for (const l of lines(r)) console.log(l);
+  return r.eligible ? 0 : 1;
+}
 
-  // 3. Is the candidate perhaps ALREADY a production deployment?
-  const prod = list.filter((d) => d.target === 'production');
-  console.log('');
-  console.log('production deployments in list: ' + prod.length);
-  if (prod[0]) console.log('  newest production id=' + String(prod[0].uid || prod[0].id).slice(0, 30) + '  sha matches candidate: ' + (prod[0].meta && prod[0].meta.githubCommitSha === CANDIDATE_SHA));
-})();
+if (require.main === module) main().then((c) => { process.exitCode = c; }).catch(() => { console.log('candidate check failed; details withheld'); process.exitCode = 1; });
+module.exports = { check, lines, category };
