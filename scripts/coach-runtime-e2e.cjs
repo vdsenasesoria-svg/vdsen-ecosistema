@@ -158,7 +158,11 @@ async function main() {
       blocked.push(url); return route.abort();
     });
     const p = await ctx.newPage(); p.setDefaultTimeout(30000);
-    p.errors = []; p.on('pageerror', e => p.errors.push(e.message));
+    p.errors = [];
+    p.on('pageerror', e => p.errors.push('pageerror:' + e.message));
+    p.on('console', m => { if (m.type() === 'error') p.errors.push('console:' + m.text()); });
+    p.on('requestfailed', r => p.errors.push('requestfailed:' + r.url() + ' ' + (r.failure()?.errorText || 'unknown')));
+    p.on('response', r => { if (r.status() >= 400) p.errors.push('http:' + r.status() + ' ' + r.url()); });
     return { ctx, p };
   }
   const LIST = '#clientList button[onclick*="showClientDetail"]';
