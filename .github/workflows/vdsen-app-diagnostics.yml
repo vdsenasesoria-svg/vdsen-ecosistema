@@ -13,6 +13,10 @@ name: VDSEN client app lane diagnostics (read-only)
 on:
   workflow_dispatch:
     inputs:
+      runtime_sha:
+        description: 'Exact 40-char candidate SHA to inspect (read-only; never deploys)'
+        required: true
+        type: string
       note:
         description: 'Optional note for this diagnostic run'
         required: false
@@ -50,7 +54,7 @@ jobs:
         # APP_TRACE_READS so each request is logged by parameter NAME and value LENGTH only.
         # No token, no parameter value and no response body is printed.
         env:
-          APP_RUNTIME_SHA: c3e78380d3a076e643a1957203c093260851210e
+          APP_RUNTIME_SHA: ${{ inputs.runtime_sha }}
           APP_EXPECTED_MAIN_SHA: f6596ba5207dc158b8a9b01483cd0fe0ebeb274c
           APP_TRACE_READS: 'true'
         run: |
@@ -69,7 +73,7 @@ jobs:
         # (target, readyState, state, ready, isRollbackCandidate) as booleans/names only.
         if: always()
         env:
-          APP_RUNTIME_SHA: c3e78380d3a076e643a1957203c093260851210e
+          APP_RUNTIME_SHA: ${{ inputs.runtime_sha }}
         run: node scripts/release/app-candidate-check.cjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
