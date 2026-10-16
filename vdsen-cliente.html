@@ -11049,12 +11049,18 @@ async function markWeekCompleteFromHistory() {
   }
   if (!pendientes.length) { showToast('Todas las sesiones ya están completas'); return; }
 
+  if (globalThis._markWeekHistoryBusy) return;
+  globalThis._markWeekHistoryBusy = true;
+  try {
   var msg = '⚡ Rellenar SEM '+REAL_WEEK+' desde historial\n\n'+
     'Se tomarán los pesos, reps, RIR e ICS de la semana anterior (o tu histórico) '+
     'para completar las '+pendientes.length+' sesión(es) pendiente(s).\n\n'+
     'Los datos que ya registraste manualmente se respetan.\n\n¿Continuar?';
   if (!confirm(msg)) return;
 
+  // This path edits many in-memory entries before its single persistence write.  Do not let a
+  // second tap overlap that write: a second close could otherwise take a rollback snapshot of
+  // the first close's transient entries.
   var rollback = {}, rollbackHistory = {};
   var capture = function(key) {
     if (rollback[key]) return;
@@ -11163,6 +11169,10 @@ async function markWeekCompleteFromHistory() {
   await _autoAdvanceWeekIfDone(false);
   renderEntrenamiento();
   renderResumen();
+  } finally {
+    // A failed or stale close must remain retryable; this flag is UI-only and is never persisted.
+    globalThis._markWeekHistoryBusy = false;
+  }
 }
 window.markWeekCompleteFromHistory = markWeekCompleteFromHistory;
 
