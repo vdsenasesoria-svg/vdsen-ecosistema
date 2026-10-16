@@ -9,6 +9,11 @@ name: VDSEN Storage Rules live readback (read-only)
 # rejects every non-GET method, and apply/rollback are library-only (see docs/STORAGE_RULES_RELEASE_RUNBOOK.md).
 # Retention of the uploaded artifact is TEMPORARY (30 days); it is not an immutable store.
 on:
+  push:
+    branches:
+      - codex/client-app-next
+    paths:
+      - .github/workflows/vdsen-storage-readback.yml
   workflow_dispatch:
 permissions:
   contents: read

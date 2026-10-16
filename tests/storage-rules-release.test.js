@@ -105,11 +105,12 @@ test('read-only identity: no silent fallback to the release/mutating service acc
   assert.throws(() => S.assertReadonlyIdentity({ GCP_STORAGE_READONLY_SERVICE_ACCOUNT: 'someone@gmail.com' }), /unexpected/);
   assert.throws(() => S.assertReadonlyIdentity({ GCP_STORAGE_READONLY_SERVICE_ACCOUNT: ok, GCP_RELEASE_SERVICE_ACCOUNT: ok }), /release service account/);
 });
-test('readback workflow: dispatch-only, read-only identity and scope, no release variables, no mutating verbs', () => {
+test('readback workflow: canonical workflow-file push only, read-only identity and scope, no release variables, no mutating verbs', () => {
   const w = fs.readFileSync('.github/workflows/vdsen-storage-readback.yml', 'utf8').split('\r\n').join('\n');
   const code = w.split('\n').filter(l => !/^\s*#/.test(l)).join('\n');
   assert.match(code, /workflow_dispatch:/);
-  assert.ok(!/\bpush:|pull_request/.test(code));
+  assert.match(code, /push:\s*\n\s+branches:\s*\n\s+- codex\/client-app-next\s*\n\s+paths:\s*\n\s+- \.github\/workflows\/vdsen-storage-readback\.yml/);
+  assert.ok(!/pull_request/.test(code));
   assert.match(code, /service_account: \$\{\{ vars\.GCP_STORAGE_READONLY_SERVICE_ACCOUNT \}\}/);
   assert.ok(!/service_account: \$\{\{ vars\.GCP_RELEASE_SERVICE_ACCOUNT/.test(code), 'must not authenticate as the release bot');
   assert.match(code, /access_token_scopes: https:\/\/www\.googleapis\.com\/auth\/firebase\.readonly\s*\n/);
