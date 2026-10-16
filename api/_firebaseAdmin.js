@@ -13,20 +13,24 @@
 var _app = null;
 
 function getAdminApp() {
-  if (_app) return _app;
-
-  var admin = require('firebase-admin');
-  if (admin.apps && admin.apps.length) {
-    _app = admin.apps[0];
-    return _app;
-  }
-
   var projectId   = process.env.FIREBASE_PROJECT_ID;
   var clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   var privateKey  = process.env.FIREBASE_PRIVATE_KEY;
 
   if (!projectId || !clientEmail || !privateKey) {
     throw new Error('FIREBASE_ADMIN_NOT_CONFIGURED');
+  }
+
+  // Validate the request environment before accepting a cached SDK app.  The
+  // Firebase Admin module is process-global, so a neighbouring serverless
+  // handler (or test) may already have initialized it; that must not turn a
+  // misconfigured request into an authenticated one.
+  if (_app) return _app;
+
+  var admin = require('firebase-admin');
+  if (admin.apps && admin.apps.length) {
+    _app = admin.apps[0];
+    return _app;
   }
 
   _app = admin.initializeApp({
@@ -44,8 +48,8 @@ function getAdminApp() {
 // (signature, issuer, audience, expiry) -- the caller (_vdsenAuth.js) maps
 // any throw to a generic 401, never distinguishing the reason to the client.
 async function verifyIdToken(token) {
-  var admin = require('firebase-admin');
   var app = getAdminApp();
+  var admin = require('firebase-admin');
   var decoded = await admin.auth(app).verifyIdToken(token);
   return { uid: decoded.uid };
 }
@@ -56,8 +60,8 @@ async function verifyIdToken(token) {
 //     (firestore.rules forbid any client to create / change / drop it; see docs/COACH_API_ENTITLEMENT.md).
 // Missing document, missing field, false, or any non-boolean-true value => false. Errors propagate (the caller fails closed).
 async function isAuthorizedCoach(uid) {
-  var admin = require('firebase-admin');
   var app = getAdminApp();
+  var admin = require('firebase-admin');
   var snap = await admin.firestore(app).collection('coaches').doc(uid).get();
   return snap.exists === true && !!snap.data() && snap.data().apiAccessEnabled === true;
 }
