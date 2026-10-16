@@ -41,7 +41,9 @@ test('T537.3 the athlete app has NO canonical writer: no record creation, no que
   assert.ok(/recordConsumptionReceiptTransaction/.test(c));
   const cons = strip(read('assets/progression-application-consumer.js'));
   assert.ok(/function _commitReceipt\(tx, refs, payload\) \{ tx\.set\(refs\.meso, payload, \{ merge: true \}\); \}/.test(cons));
-  const fn = /async function recordConsumptionReceiptTransaction[\s\S]*?\n  \}\n/.exec(cons)[0];
+  // Use the shared balanced extractor: the function contains nested guards,
+  // so a newline/indentation regex can truncate it or fail after formatting.
+  const fn = functionSource(cons, 'recordConsumptionReceiptTransaction');
   assert.ok(/payload\.consumptionReceipts\[r\.key\] = receipt/.test(fn) && !/_commitLifecycle|progressionApplications\s*:/.test(fn), 'the receipt payload is the only thing the athlete path builds');
 });
 
