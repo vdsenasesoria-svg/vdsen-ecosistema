@@ -265,3 +265,9 @@ test('no workflow exposes Storage mutation; the CLI lists read-only commands onl
     assert.ok(!/storage-rules\.cjs\s+(apply|rollback)|STORAGE_RULES_RELEASE_ENABLED|STORAGE_RULES_APPROVED_SHA/.test(w), f);
   }
 });
+
+test('content-addressed Storage rules sources retain LF bytes in every checkout', () => {
+  const attributes = fs.readFileSync('.gitattributes', 'utf8');
+  assert.match(attributes, /^storage\.rules text eol=lf$/m);
+  assert.match(attributes, /^\.release\/storage-rollback\/\*\.rules text eol=lf$/m);
+});
