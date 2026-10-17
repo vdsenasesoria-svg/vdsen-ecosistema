@@ -19,7 +19,10 @@ async function canaryTargets(db) {
     var ids = Array.isArray(scope.clientIds) ? scope.clientIds.filter(function(x) { return typeof x === 'string' && x; }) : [];
     for (var j = 0; j < ids.length; j++) targets.push(ids[j]);
   }
-  return Array.from(new Set(targets));
+  // Second fence: only athletes the RELEASE system lists are even attempted (each is re-checked inside its transactions).
+  var rel = _data(await db.collection('releaseControl').doc('autonomousProgression').get());
+  var allowed = rel && rel.enabled === true && Array.isArray(rel.clientIds) ? rel.clientIds : [];
+  return Array.from(new Set(targets)).filter(function(id) { return allowed.indexOf(id) >= 0; });
 }
 
 async function runSweep(input) {

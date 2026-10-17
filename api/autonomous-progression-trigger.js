@@ -20,7 +20,7 @@ function makeHandler(deps) {
     try {
       var out = await executor.processProgression({ db: deps.db, clientId: uid, planId: planId,
         enabled: deps.enabled === true, numericApplyEnabled: deps.numericApplyEnabled === true });
-      return res.status(out.status === 'DISARMED' ? 202 : 200).json({ status: out.status, created: out.created || [], applied: out.applied || [] });
+      return res.status(out.status === 'DISARMED' ? 202 : 200).json({ status: out.status, created: out.created || [], applied: out.applied || [], consumed: out.consumed || [] });
     } catch (e) {
       // Deliberately no token, uid, plan or Firestore details in the response.
       return res.status(500).json({ error: 'PROGRESSION_PROCESSING_FAILED' });
@@ -29,8 +29,9 @@ function makeHandler(deps) {
 }
 
 async function defaultHandler(req, res) {
-  var admin = require('./_firebaseAdmin');
-  var app = admin.getAdminApp(), firebaseAdmin = require('firebase-admin');
+  var admin = require('./_firebaseAdmin'), app, firebaseAdmin;
+  // Missing Firebase Admin configuration must fail CLOSED with a clean response, never crash the function (Preview has no credentials).
+  try { app = admin.getAdminApp(); firebaseAdmin = require('firebase-admin'); } catch (_) { return res.status(503).json({ error: 'RUNTIME_NOT_CONFIGURED' }); }
   return makeHandler({ db: firebaseAdmin.firestore(app), verifyIdToken: admin.verifyIdToken, cronSecret: process.env.CRON_SECRET,
     enabled: process.env.AUTONOMOUS_PROGRESSION_ENABLED === 'true',
     numericApplyEnabled: process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED === 'true' })(req, res);

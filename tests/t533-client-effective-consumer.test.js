@@ -60,7 +60,7 @@ test('T533.1 shipped write flag false: nothing is consumed; T570-R: existing can
   assert.equal(direct.provenance, 'BASE_PLAN', 'without canonicalOverlayRead the shipped flag still forces the base plan');
   e.context.LOGS[LOGKEY] = FIRST;
   await vm.runInContext('_maybeConsumeOverlays("c")', e.context);
-  assert.equal(e.txCalls(), 0);
+  assert.equal(e.txCalls(), 1, 'T571: with the persisted first set the athlete appends exactly ONE receipt (never a canonical state); the server consumes');
 });
 
 test('T533.2 flag-on sandbox: an APPLIED overlay for the exact PID/week/day becomes the effective prescription; base sets are untouched', () => {

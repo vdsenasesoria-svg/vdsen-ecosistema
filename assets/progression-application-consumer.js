@@ -442,8 +442,9 @@
   // meso document; the owner Coach later turns a valid receipt into APPLIED -> CONSUMED (consumeOverlayTransaction). The receipt is a
   // non-authoritative acknowledgement of what was shown; it never carries or changes any prescription.
   async function recordConsumptionReceiptTransaction(tx, refs, input, guards) {
-    if (!NUMERIC_APPLY_ENABLED) return { written: false, reason: BLOCKERS.NUMERIC_APPLY_DISABLED };
     guards = guards || {};
+    // T571: acknowledging an overlay that ALREADY exists is not applying one: it is an append-only receipt the athlete's rules already allow.
+    if (!NUMERIC_APPLY_ENABLED && guards.canonicalOverlayRead !== true) return { written: false, reason: BLOCKERS.NUMERIC_APPLY_DISABLED };
     if (guards.isCurrent && !guards.isCurrent()) return { written: false, reason: BLOCKERS.STALE_CALLBACK };
     var eff = _effective();
     if (!eff) return _fail('LIFECYCLE_UNAVAILABLE');
@@ -471,8 +472,8 @@
 
   // APPLIED -> CONSUMED (OWNER COACH): needs the athlete's receipt AND persisted execution evidence, both re-read inside the transaction.
   async function consumeOverlayTransaction(tx, refs, input, guards) {
-    if (!NUMERIC_APPLY_ENABLED) return { written: false, reason: BLOCKERS.NUMERIC_APPLY_DISABLED };
     guards = guards || {};
+    if (!NUMERIC_APPLY_ENABLED && guards.trustedServerNumericApply !== true) return { written: false, reason: BLOCKERS.NUMERIC_APPLY_DISABLED };
     if (guards.isCurrent && !guards.isCurrent()) return { written: false, reason: BLOCKERS.STALE_CALLBACK };
     var shadow = _shadow(), eff = _effective();
     if (!shadow || !eff) return _fail('LIFECYCLE_UNAVAILABLE');
