@@ -123,8 +123,9 @@ test('T513.6 (flag forced on) every tamper prevents application: canApply is fal
 
 test('T513.7 a decision whose blockers were bypassed still cannot apply: canApply also requires guard.ok', () => {
   const src = consumerSrc.replace(/\/\*[\s\S]*?\*\//g, '');
-  assert.ok(/out\.canApply = out\.wouldApply && NUMERIC_APPLY_ENABLED && blockers\.length === 0 && !!out\.guard && out\.guard\.ok === true;/.test(src));
+  assert.ok(/out\.canApply = out\.wouldApply && numericApplyEnabled && blockers\.length === 0 && !!out\.guard && out\.guard\.ok === true;/.test(src));
   assert.ok(/verifyActivationPreconditions\(\{ record: record, overlay: out\.overlay, context: ctx \}\)/.test(src));
+  assert.ok(/var numericApplyEnabled = NUMERIC_APPLY_ENABLED \|\| ctx\.trustedServerNumericApply === true;/.test(src), 'T570-R: only the server-only trusted executor can lift the flag');
   assert.equal(consumerSrc.split('var NUMERIC_APPLY_ENABLED = false;').length - 1, 1, 'single flag declaration');
 });
 

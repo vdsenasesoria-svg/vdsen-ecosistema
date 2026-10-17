@@ -18,7 +18,7 @@ test('T527.2 overlays have exactly one writer (tx.set); the client never writes 
   assert.equal((src.match(/tx\.set\(/g) || []).length, 2);   // canonical commit (Coach) + athlete receipt
   // T533: the athlete app READS overlays (flag-gated capture) but never writes them: only the consumer module writes.
   assert.ok(!/nextExposureOverlays\s*:/.test(read('vdsen-cliente.html')));
-  assert.ok(src.indexOf('if (!NUMERIC_APPLY_ENABLED) return { written: false, reason: BLOCKERS.NUMERIC_APPLY_DISABLED };') < src.indexOf("status: 'APPLIED'"), 'overlays only become APPLIED behind the flag');
+  assert.ok(src.indexOf('if (!NUMERIC_APPLY_ENABLED && !(guards && guards.trustedServerNumericApply === true)) return { written: false, reason: BLOCKERS.NUMERIC_APPLY_DISABLED };') < src.indexOf("status: 'APPLIED'"), 'overlays only become APPLIED behind the flag');
 });
 test('T527.3 all three flags are false; guard has 19 checks; no science gaps remain', () => {
   assert.deepEqual([shadow.NUMERIC_APPLY_ENABLED, policy.NUMERIC_APPLY_ENABLED, consumer.NUMERIC_APPLY_ENABLED, require('../assets/progression-effective-prescription.js').NUMERIC_APPLY_ENABLED], [false, false, false, false]);

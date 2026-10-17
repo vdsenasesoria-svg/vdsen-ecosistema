@@ -127,7 +127,9 @@
       return Object.assign({ provenance: prov || PROVENANCE.BASE_PLAN, reason: reason, overlayKey: null, dimension: null, previousValue: null, appliedValue: null, unit: null, presentation: null,
         sets: baseSets.map(function(s) { return { base: _copy(s), effective: _copy(s), adjusted: false }; }) }, extra || {});
     }
-    if (!NUMERIC_APPLY_ENABLED) return base('NUMERIC_APPLY_DISABLED');
+    // T570-R: READING a canonical overlay is not applying one. Overlays are writable only by the trusted server executor (Firestore rules
+    // reject every athlete/Coach write), so a reader that passes canonicalOverlayRead may display what exists; with none it is the base plan.
+    if (!NUMERIC_APPLY_ENABLED && input.canonicalOverlayRead !== true) return base('NUMERIC_APPLY_DISABLED');
     var ev = evaluateOverlay(input);
     if (!ev.usable) return base(ev.reason, ev.provenance);
     var o = ev.overlay;

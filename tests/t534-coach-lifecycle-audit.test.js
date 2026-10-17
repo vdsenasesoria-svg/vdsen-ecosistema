@@ -67,7 +67,7 @@ test('T534.5 PENDING items keep their previous presentation (review / candidate 
 });
 
 test('T534.6 reconciliation runs ONLY when the summary counts an APPLIED record (flag off => never), and only through the consumer transactions', () => {
-  assert.ok(/autoSummary\.counts && autoSummary\.counts\.APPLIED > 0/.test(coach));
+  assert.ok(!/autoSummary\.counts && autoSummary\.counts\.APPLIED > 0/.test(coach), 'T570-R: opening the Coach monitor never triggers reconciliation');
   const rec = fn('_reconcileAppliedOverlays', 'async function');
   assert.ok(/cons\.overrideOverlayTransaction/.test(rec) && /cons\.staleOverlayTransaction/.test(rec) && !/tx\.set\(|setDoc|updateDoc/.test(rec));
   const rev = fn('_onRevertApplied', 'async function');

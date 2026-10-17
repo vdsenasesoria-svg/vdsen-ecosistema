@@ -170,7 +170,10 @@
     p = p || {};
     if (!record || !p.operationKey || !STATES[to] || to === STATES.PENDING) return { ok: false, reasonCode: REASONS.INVALID_TRANSITION };
     if ((record.events || []).some(function(e) { return e.operationKey === p.operationKey; })) return { ok: true, idempotent: true, record: record };
-    if (to === STATES.APPLIED && !NUMERIC_APPLY_ENABLED) return { ok: false, reasonCode: REASONS.NUMERIC_APPLY_DISABLED };
+    // Browser clients never receive this capability: the sole override is for
+    // the authenticated trusted executor, after it has re-read every guard in
+    // its own transaction.  The public/runtime flag remains false.
+    if (to === STATES.APPLIED && !NUMERIC_APPLY_ENABLED && p.trustedServer !== true) return { ok: false, reasonCode: REASONS.NUMERIC_APPLY_DISABLED };
     if (record.revision !== p.expectedRevision) return { ok: false, reasonCode: REASONS.REVISION_CONFLICT };
     if (!(ALLOWED_TRANSITIONS[record.state] || []).some(function(t) { return t === to; })) return { ok: false, reasonCode: REASONS.INVALID_TRANSITION };
     var reason = p.reasonCode || record.reasonCode;

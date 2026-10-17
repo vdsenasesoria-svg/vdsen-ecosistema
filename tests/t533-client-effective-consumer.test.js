@@ -50,10 +50,14 @@ function env({ flagOn = true, state = 'APPLIED', week = 2, persisted = false, lo
 }
 const resolve = (e, unit = 'KG') => { const c = e.context; c.__ej = e.ej; return vm.runInContext('_resolveOverlayForExercise(__ej, 0, ' + JSON.stringify(unit) + ')', c); };
 
-test('T533.1 shipped flag false: nothing is captured, nothing is resolved, nothing is rendered, nothing is consumed', async () => {
+test('T533.1 shipped write flag false: nothing is consumed; T570-R: existing canonical overlays are READ-only, and only with canonicalOverlayRead', async () => {
   const e = env({ flagOn: false }), st = e.context.LIFECYCLE_STATE;
-  assert.deepEqual([Object.keys(st.records).length, Object.keys(st.overlays).length, st.planDoc], [0, 0, null]);
-  assert.equal(resolve(e), null);
+  // T570-R: capture is read-only; the trusted server is the only overlay writer, so displaying one that exists is safe.
+  assert.deepEqual([Object.keys(st.records).length, Object.keys(st.overlays).length], [1, 1]);
+  assert.equal(resolve(e).provenance, 'CANONICAL_OVERLAY');
+  const direct = F.off.effective.resolveEffective({ clientId: 'c', planId: 'p', activePlanId: 'p', pid: 'pid-1', week: 2, dayIndex: 0, records: st.records, overlays: st.overlays,
+    interventions: [], plan: e.sc.plan, entries: e.context.LOGS, baseSets: F.baseSets() });
+  assert.equal(direct.provenance, 'BASE_PLAN', 'without canonicalOverlayRead the shipped flag still forces the base plan');
   e.context.LOGS[LOGKEY] = FIRST;
   await vm.runInContext('_maybeConsumeOverlays("c")', e.context);
   assert.equal(e.txCalls(), 0);

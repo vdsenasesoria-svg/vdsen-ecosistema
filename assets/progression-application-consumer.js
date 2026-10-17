@@ -226,8 +226,11 @@
 
   function planApplication(input) {
     input = input || {}; var record = input.record, ctx = input.context || {}, blockers = [];
+    // This is intentionally an input of the server-only transaction adapter,
+    // never a browser feature flag. Browser callers retain the hard false.
+    var numericApplyEnabled = NUMERIC_APPLY_ENABLED || ctx.trustedServerNumericApply === true;
     var out = { mode: 'DRY_RUN', schema: SCHEMA, canApply: false, wouldApply: false, blockers: blockers, overlay: null, equipment: null,
-      numericApplyEnabled: NUMERIC_APPLY_ENABLED, applied: false, recordKey: record && record.key || null, audit: null };
+      numericApplyEnabled: numericApplyEnabled, applied: false, recordKey: record && record.key || null, audit: null };
     var m = record && record.magnitude;
     if (!record || !record.key || !m || m.mode !== 'SHADOW' || m.numericApplyAllowed !== false || m.schema !== 'vdsen-magnitude-shadow-v1' ||
         !record.prescriptionExerciseId || !record.source || !record.nextExposure) {
@@ -296,8 +299,8 @@
       out.guard = verifyActivationPreconditions({ record: record, overlay: out.overlay, context: ctx });
       if (!out.guard.ok) { blockers.push(BLOCKERS.ACTIVATION_GUARD_FAILED); out.wouldApply = false; out.overlay = null; }
     }
-    if (!NUMERIC_APPLY_ENABLED) blockers.push(BLOCKERS.NUMERIC_APPLY_DISABLED);
-    out.canApply = out.wouldApply && NUMERIC_APPLY_ENABLED && blockers.length === 0 && !!out.guard && out.guard.ok === true;
+    if (!numericApplyEnabled) blockers.push(BLOCKERS.NUMERIC_APPLY_DISABLED);
+    out.canApply = out.wouldApply && numericApplyEnabled && blockers.length === 0 && !!out.guard && out.guard.ok === true;
     var er = ctx.equipmentResolution;
     if (er && m && (m.candidates || []).some(function(cd) { return cd && cd.dimension === 'LOAD'; })) {
       out.equipment = { equipmentId: er.equipmentId || null, equipmentType: er.equipmentType || null, unit: er.unit || null,
@@ -393,7 +396,7 @@
   }
 
   async function applyOverlayTransaction(tx, refs, input, guards) {
-    if (!NUMERIC_APPLY_ENABLED) return { written: false, reason: BLOCKERS.NUMERIC_APPLY_DISABLED };
+    if (!NUMERIC_APPLY_ENABLED && !(guards && guards.trustedServerNumericApply === true)) return { written: false, reason: BLOCKERS.NUMERIC_APPLY_DISABLED };
     guards = guards || {};
     if (guards.isCurrent && !guards.isCurrent()) return { written: false, reason: BLOCKERS.STALE_CALLBACK };
     var shadow = _shadow(), eff = _effective();
@@ -414,6 +417,7 @@
       canaryScope: normalizeCanaryScope(scope), safetyConflict: safety,
       plan: st.plan, interventions: st.client.coachInterventions, entries: entries,
       existingOverlays: meso.nextExposureOverlays, activePlanId: st.client.activePlanId,
+      trustedServerNumericApply: guards.trustedServerNumericApply === true,
       transactionCurrent: guards.isCurrent ? guards.isCurrent() : true }) });
     if (!decision.canApply) return { written: false, reason: decision.blockers[0], decision: decision };
     if (input.expectedRevision !== undefined && record.revision !== input.expectedRevision) return { written: false, reason: BLOCKERS.REVISION_CONFLICT };
@@ -421,7 +425,7 @@
     if (!at) return _fail('TIMESTAMP_MISSING');
     var overlay = Object.assign({}, decision.overlay, { status: 'APPLIED', appliedAt: at, operationKey: op });
     var t = shadow.lifecycleTransition(record, 'APPLIED', { expectedRevision: record.revision, operationKey: op, at: at, actorId: input.actorId || null,
-      reasonCode: 'APPLIED_BY_POLICY', patch: { overlayKey: overlay.key, appliedAt: at, target: overlay.target,
+      reasonCode: 'APPLIED_BY_POLICY', trustedServer: guards.trustedServerNumericApply === true, patch: { overlayKey: overlay.key, appliedAt: at, target: overlay.target,
         // self-contained audit facts for the Coach feed (before -> after, and the equipment resolution used)
         change: { dimension: overlay.dimension, previousValue: overlay.previousValue, appliedValue: overlay.appliedValue, unit: overlay.unit, ruleId: overlay.provenance && overlay.provenance.ruleId || null },
         equipment: overlay.equipmentId ? { equipmentId: overlay.equipmentId, roundingReason: overlay.roundingReason || null,
