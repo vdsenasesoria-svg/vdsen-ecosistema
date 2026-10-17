@@ -1,0 +1,10 @@
+{
+  "label": "current",
+  "requests": {
+    "login": {
+      "auth": 2,
+      "listen": 22
+    }
+  },
+  "totalNavRequests": 0
+}
