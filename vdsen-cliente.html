@@ -1251,6 +1251,11 @@ input,select,textarea{border-radius:12px}
 :root.light-mode #exPanel div[style*="opacity:.65"]{opacity:1!important}
 :root.light-mode .sp-gl small,:root.light-mode .sp-gl .sp-opt{color:#555;opacity:1}
 button[onclick="guardarCI()"]{border-radius:14px!important;min-height:56px;font-size:15px!important;letter-spacing:.08em!important;text-transform:uppercase}
+/* short viewports (on-screen keyboard open): the sticky save bar would cover the fields being typed into -> it flows with the form instead */
+@media (max-height:560px){
+  .workout-set-current .set-actions,.setpanel .set-actions{position:static;background:transparent;margin:10px 0 0;padding:0}
+  .setpanel{padding-bottom:12px}
+}
 /* training: calmer header, scannable exercise strip */
 .tr-head{padding:16px 14px 12px}
 .tr-title{font-size:clamp(23px,7.2vw,29px);line-height:1.08;letter-spacing:-.03em;text-transform:none;margin:6px 0 4px}
@@ -2534,7 +2539,7 @@ async function doLogout() {
   USER = null;
   _clearLiveListeners();
   await FB.signOut(FB.auth);
-  PLAN = null; LOGS = {};
+  PLAN = null; LOGS = {}; _SET_DRAFTS = Object.create(null);
   _sraPersisted = { clientId: null, planId: null, entries: {}, version: 0 };
   _sraSaveGeneration++;
   _logsAuthorityUpdatedAt = 0;
@@ -11544,6 +11549,30 @@ async function _maybeConsumeOverlays(uid) {
     finally { delete st.consumeBusy[r.key]; }
   }
 }
+
+// T576: values typed into a set but NOT yet saved survive tab switches and re-renders (previously the Training tab rebuilt its inputs empty).
+// In-memory only (never persisted, so it can never resurrect stale data in another session); identity = the exact input id (week/day/exercise/set);
+// a draft is dropped once that set is saved (LOGS says done), when the field is emptied by the athlete, and on logout.
+var _SET_DRAFTS = Object.create(null);
+(function() {
+  var RX = /^(carga|reps|ics)_log_\d+_\d+_\d+_s\d+$/;
+  document.addEventListener('input', function(e) {
+    var t = e.target; if (!t || !t.id || !RX.test(t.id)) return;
+    if (t.value === '' || t.value == null) delete _SET_DRAFTS[t.id]; else _SET_DRAFTS[t.id] = t.value;
+  }, true);
+  document.addEventListener('click', function(e) {
+    var b = e.target && e.target.closest && e.target.closest('.set-save-primary'); if (!b) return;
+    var panel = b.closest('.setpanel,.workout-set-current') || document, ids = [];
+    panel.querySelectorAll('input[id]').forEach(function(i) { if (RX.test(i.id)) ids.push(i.id); });
+    setTimeout(function() { ids.forEach(function(id) { var k = id.replace(/^(carga|reps|ics)_/, ''); if (typeof LOGS === 'object' && LOGS && LOGS[k] && LOGS[k].done === true) delete _SET_DRAFTS[id]; }); }, 1500);
+  }, true);
+  var pending = false;
+  function restore() {
+    pending = false; if (!Object.keys(_SET_DRAFTS).length) return;
+    document.querySelectorAll('input[id]').forEach(function(i) { if (!i.value && RX.test(i.id) && _SET_DRAFTS[i.id] !== undefined) i.value = _SET_DRAFTS[i.id]; });
+  }
+  new MutationObserver(function() { if (!pending) { pending = true; requestAnimationFrame(restore); } }).observe(document.documentElement, { childList: true, subtree: true });
+})();
 
 function _showSaveOk() {
   var el = document.getElementById('saveOkBadge');
