@@ -11364,7 +11364,8 @@ function _autoAdjustHtml(ej) {
 }
 async function _maybeConsumeOverlays(uid) {
   var eff = window.VDSEN_EFFECTIVE_PRESCRIPTION, cons = window.VDSEN_APPLICATION_CONSUMER, st = LIFECYCLE_STATE;
-  if (!_lifecycleEnabled() || !cons || !FB || !USER || USER.uid !== uid || !st || st.uid !== uid || st.planId !== ACTIVE_PLAN_ID || !st.planDoc) return;
+  // T571: acknowledging an overlay that already exists (append-only receipt); the trusted server performs APPLIED -> CONSUMED.
+  if (!cons || !FB || !USER || USER.uid !== uid || !st || st.uid !== uid || st.planId !== ACTIVE_PLAN_ID || !st.planDoc) return;
   var mesoRef = FB.doc(FB.db, 'logs', uid, 'mesos', st.planId), rootRef = FB.doc(FB.db, 'logs', uid);
   var keys = Object.keys(st.overlays);
   for (var i = 0; i < keys.length; i++) {
@@ -11374,15 +11375,15 @@ async function _maybeConsumeOverlays(uid) {
     var day = (st.planDoc.days || []).filter(function(d){ return d.dayIndex === o.target.dayIndex; })[0];
     var pex = ((day && day.exercises) || []).filter(function(e){ return e.prescriptionExerciseId === r.prescriptionExerciseId; })[0];
     var shownEff = eff.resolveEffective({ clientId: uid, planId: st.planId, activePlanId: ACTIVE_PLAN_ID, pid: r.prescriptionExerciseId, week: o.target.week, dayIndex: o.target.dayIndex,
-      records: st.records, overlays: st.overlays, interventions: st.interventions, plan: st.planDoc, entries: LOGS, baseSets: (pex && pex.sets) || [] });
+      records: st.records, overlays: st.overlays, interventions: st.interventions, plan: st.planDoc, entries: LOGS, baseSets: (pex && pex.sets) || [], canonicalOverlayRead: true });
     if (shownEff.provenance !== 'CANONICAL_OVERLAY') continue;
     st.consumeBusy[r.key] = true;
     try {
-      // T537: the athlete can only ACKNOWLEDGE (append-only receipt); the owner Coach turns it into APPLIED -> CONSUMED.
+      // T537/T571: the athlete can only ACKNOWLEDGE (append-only receipt); the trusted server turns it into APPLIED -> CONSUMED.
       var res = await FB.runTransaction(FB.db, function(tx) {
         return cons.recordConsumptionReceiptTransaction(tx, { meso: mesoRef, root: rootRef }, { recordKey: r.key, clientId: uid, now: new Date().toISOString(),
           shown: { provenance: shownEff.provenance, overlayKey: shownEff.overlayKey, dimension: shownEff.dimension, appliedValue: shownEff.appliedValue } },
-          { isCurrent: function() { return !!USER && USER.uid === uid && ACTIVE_PLAN_ID === st.planId; } });
+          { isCurrent: function() { return !!USER && USER.uid === uid && ACTIVE_PLAN_ID === st.planId; }, canonicalOverlayRead: true });
       });
       if (res && (res.written || res.idempotent) && LIFECYCLE_STATE === st) st.receipts[r.key] = res.receipt || { recordKey: r.key };
     } catch (e) { console.warn('[lifecycle] receipt:', e && e.code, e && e.message); }

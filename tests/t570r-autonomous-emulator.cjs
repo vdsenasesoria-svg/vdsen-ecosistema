@@ -35,18 +35,22 @@ function evidence(opts) {
   opts = opts || {};
   const logs = {};
   [[1, 0], [1, 2]].forEach(([w, d]) => [0, 1, 2].forEach(s => {
-    logs['log_' + w + '_' + d + '_0_s' + s] = { done: true, carga: '100', reps: '10', unit: 'KG', rir: opts.rirTarget === undefined ? 1 : opts.rirTarget, rir_real: opts.rirReal === undefined ? 3 : opts.rirReal, prescriptionExerciseId: PID, ts: T0 + d * 1000 + s };
+    logs['log_' + w + '_' + d + '_0_s' + s] = { done: true, carga: '100', reps: opts.restScenario && d === 2 ? '9' : '10', unit: 'KG', rir: opts.rirTarget === undefined ? 1 : opts.rirTarget, rir_real: opts.restScenario ? 1 : (opts.rirReal === undefined ? 3 : opts.rirReal), prescriptionExerciseId: PID, ts: T0 + d * 1000 + s };
   }));
-  if (!opts.noRec) logs.progrec_1_2 = { calculatedAt: '2026-09-27T12:00:00.000Z', recommendations: [{ prescriptionExerciseId: PID, exerciseId: opts.exerciseId || 'ex-1', exerciseName: 'Press', action: opts.exerciseId ? 'increase_load' : 'increase_reps', newReps: opts.exerciseId ? 10 : 11 }].map(r => opts.exerciseId ? Object.assign(r, { newLoad: 5 }) : r) };
+  if (!opts.noRec) logs.progrec_1_2 = { calculatedAt: '2026-09-27T12:00:00.000Z', recommendations: [{ prescriptionExerciseId: PID, exerciseId: opts.exerciseId || 'ex-1', exerciseName: 'Press', action: opts.restScenario ? 'maintain' : (opts.exerciseId ? 'increase_load' : 'increase_reps'), newReps: opts.exerciseId ? 10 : 11 }].map(r => opts.exerciseId ? Object.assign(r, { newLoad: 5 }) : r) };
   return logs;
 }
 function planDoc(uid, coachId, rirTarget, exerciseId) {
   return { clientId: uid, coachId, status: 'active', weeks: 3, createdAt: '2026-09-26T00:00:00.000Z', updatedAt: '2026-09-26T00:00:00.000Z',
     days: [0, 2].map(dayIndex => ({ dayIndex, exercises: [{ prescriptionExerciseId: PID, exerciseId: exerciseId || 'ex-1', exerciseName: 'Press', repsRange: { min: 8, max: 12 }, sets: [0, 1, 2].map(setIndex => ({ setIndex, repsTarget: 10, rirTarget: rirTarget === undefined ? 1 : rirTarget, restSeconds: 90 })) }] })) };
 }
+// T571: the RELEASE-owned allowlist (second fence). Fixtures list their athlete unless the test says otherwise; at most 8 recent athletes.
+const ALLOWED = [];
+const setRelease = (ids, extra) => db.doc('releaseControl/autonomousProgression').set(Object.assign({ schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: ids }, extra || {}));
 async function fixture(o) {
   o = o || {};
   const athlete = await signedIn(), coach = await signedIn();
+  if (!o.noRelease) { ALLOWED.push(athlete.uid); await setRelease(ALLOWED.slice(-8)); }
   const planId = 'plan-' + athlete.uid, logs = evidence(o);
   await db.doc('coaches/' + coach.uid).set(Object.assign({ role: 'coach' }, o.equipmentIncrements ? { equipmentIncrements: o.equipmentIncrements } : {}, { autoApplyCanary: o.canary === false ? { enabled: false, clientIds: [] } : { enabled: true, clientIds: o.canaryOther ? ['someone-else'] : [athlete.uid], prescriptionExerciseIds: [] } }));
   await db.doc('clients/' + athlete.uid).set({ coachId: coach.uid, activePlanId: planId, coachInterventions: o.interventions || [] });
@@ -285,4 +289,123 @@ test('LOAD: with verified (synthetic, test-only) equipment increments the LOAD o
   assert.deepEqual(b.applied.map(x => [x.written, x.blocked]), [[false, 'BLOCKED_EQUIPMENT_DATA']]); assert.deepEqual(await overlays(noCfg), []);
   const reps = await fixture(); const c = await run(reps);
   assert.deepEqual(c.applied.map(x => [x.written, x.blocked]), [[true, null]], 'REPS is not paralysed by missing equipment data');
+});
+
+// ---- T571 -----------------------------------------------------------------------------------------------------------------------------
+const C = require('../assets/progression-application-consumer.js');
+const { runTransaction } = require('firebase/firestore');
+const closed = async (f, label) => {
+  const before = await snapshotAll(f); const out = await run(f);
+  assert.ok(['OUT_OF_ALLOWLIST'].includes(out.status), label + ' ' + JSON.stringify(out)); assert.deepEqual(out.applied, []);
+  assert.equal(await snapshotAll(f), before, label + ': zero canonical writes');
+};
+
+test('ALLOWLIST second fence: absent / empty / disabled / malformed / wildcard / oversized / unlisted => zero writes, even with the Coach canary open', { timeout: 120000 }, async () => {
+  const f = await fixture({ noRelease: true });                               // Coach canary enabled for this athlete, release allowlist ABSENT
+  await db.doc('releaseControl/autonomousProgression').delete().catch(() => {});
+  await closed(f, 'absent');
+  const bad = [[[], 'empty'], [[f.athlete.uid, 5], 'non-string entry'], [['*'], 'wildcard'], [Array.from({ length: 11 }, (_, i) => 'u' + i).concat(f.athlete.uid), 'oversized'], [['someone-else'], 'unlisted']];
+  for (const [ids, label] of bad) { await setRelease(ids); await closed(f, label); }
+  await setRelease([f.athlete.uid], { enabled: false }); await closed(f, 'disabled');
+  await setRelease([f.athlete.uid], { schema: 'wrong' }); await closed(f, 'wrong schema');
+  await db.doc('releaseControl/autonomousProgression').set({ clientIds: 'not-an-array', enabled: true, schema: 'vdsen-autonomous-release-v1' }); await closed(f, 'not an array');
+  await setRelease([f.athlete.uid]);                                          // only now both fences are open
+  assert.equal((await run(f)).status, 'MATERIALIZED');
+});
+
+test('ALLOWLIST: the Coach cannot widen production scope from their own document or by writing the release doc', { timeout: 60000 }, async () => {
+  const f = await fixture({ noRelease: true }); await setRelease(['somebody-else']);
+  await assert.rejects(() => setDoc(doc(f.coach.db, 'releaseControl', 'autonomousProgression'), { schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [f.athlete.uid] }), /PERMISSION_DENIED|permission/i);
+  await assert.rejects(() => setDoc(doc(f.athlete.db, 'releaseControl', 'autonomousProgression'), { schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [f.athlete.uid] }), /PERMISSION_DENIED|permission/i);
+  await closed(f, 'coach canary alone');
+});
+
+test('ALLOWLIST: revocation between the pending read and the apply transaction rejects the operation', { timeout: 90000 }, async () => {
+  const f = await fixture(); await run(f, { numericApplyEnabled: false });
+  const racing = Object.create(db); racing.collection = n => db.collection(n);
+  racing.runTransaction = async fn => { await setRelease(['revoked']); return db.runTransaction(fn); };
+  const out = await executor.applyPending(racing, f.athlete.uid, f.planId, () => '2026-09-28T00:00:00.000Z');
+  assert.deepEqual(out.map(x => [x.written, x.reason]), [[false, 'OUT_OF_ALLOWLIST']]); assert.deepEqual(await overlays(f), []);
+});
+
+test('CONCURRENCY: two simultaneous POSTs, and a cron sweep racing a POST, yield exactly one application', { timeout: 120000 }, async () => {
+  const f = await fixture();
+  await Promise.all([run(f), run(f)]);
+  assert.equal((await overlays(f)).length, 1);
+  const g = await fixture();
+  await Promise.all([run(g), sweep.runSweep({ db, enabled: true, numericApplyEnabled: true, clock: () => '2026-09-28T00:00:00.000Z' })]);
+  const rs = await recs(g); assert.equal(rs.length, 1); assert.equal((await overlays(g)).length, 1);
+  assert.equal(rs[0].events.filter(e => e.state === 'APPLIED').length, 1);
+});
+
+test('IDENTITY: invalid tokens/uids and a uid without a client never write', { timeout: 60000 }, async () => {
+  const f = await fixture(); const before = await snapshotAll(f);
+  const mk = uid => trigger.makeHandler({ db, enabled: true, numericApplyEnabled: true, verifyIdToken: async () => { if (uid === 'THROW') throw new Error('x'); return { uid }; } });
+  const res = () => ({ statusCode: 0, body: null, status(n) { this.statusCode = n; return this; }, json(v) { this.body = v; return this; } });
+  for (const [uid, code] of [['THROW', 401], [undefined, 400], ['', 400], [null, 400]]) { const r = res(); await mk(uid)({ method: 'POST', headers: { authorization: 'Bearer t' }, body: { planId: f.planId } }, r); assert.equal(r.statusCode, code, String(uid)); }
+  let r = res(); await mk('ghost-uid-without-client')({ method: 'POST', headers: { authorization: 'Bearer t' }, body: { planId: f.planId } }, r); assert.equal(r.body.status, 'PLAN_MISMATCH');
+  r = res(); await mk(f.athlete.uid)({ method: 'POST', headers: { authorization: 'Bearer t' }, body: { planId: 12345 } }, r); assert.equal(r.statusCode, 400);
+  assert.equal(await snapshotAll(f), before);
+});
+
+const startTarget = async (f, reps) => {                                        // the athlete persists the FIRST working set of the target exposure
+  const t = (await overlays(f))[0].target, entries = {};
+  entries['log_' + t.week + '_' + t.dayIndex + '_0_s0'] = { done: true, carga: '100', reps: String(reps || 11), unit: 'KG', rir: 1, rir_real: 2, prescriptionExerciseId: PID, ts: T0 + 9e6 };
+  await setDoc(doc(f.athlete.db, 'logs', f.athlete.uid, 'mesos', f.planId), { planId: f.planId, entries }, { merge: true });
+  await setDoc(doc(f.athlete.db, 'logs', f.athlete.uid), { planId: f.planId, entries }, { merge: true });
+};
+const ackReceipt = async (f) => {                                               // exactly what the client does (real consumer module, real rules)
+  const [r] = await recs(f), [o] = await overlays(f);
+  return runTransaction(f.athlete.db, tx => C.recordConsumptionReceiptTransaction(tx, { meso: doc(f.athlete.db, 'logs', f.athlete.uid, 'mesos', f.planId), root: doc(f.athlete.db, 'logs', f.athlete.uid) },
+    { recordKey: r.key, clientId: f.athlete.uid, now: new Date().toISOString(), shown: { provenance: 'CANONICAL_OVERLAY', overlayKey: o.key, dimension: o.dimension, appliedValue: o.appliedValue } },
+    { isCurrent: () => true, canonicalOverlayRead: true }));
+};
+
+test('CONSUMED: APPLIED -> first persisted working set -> athlete receipt -> SERVER transition; no Monitor, idempotent, prescription never rewritten', { timeout: 120000 }, async () => {
+  const f = await fixture(); await run(f);
+  const [applied] = await overlays(f); assert.equal(applied.status, 'APPLIED');
+  const early = await ackReceipt(f);
+  assert.equal(early.written, false); assert.equal(early.reason, 'TARGET_NOT_STARTED', 'no receipt before the exposure started');
+  await startTarget(f);
+  const ack = await ackReceipt(f); assert.equal(ack.written, true, JSON.stringify(ack));
+  assert.equal((await recs(f))[0].state, 'APPLIED', 'a receipt alone changes nothing canonical');
+  const out = await run(f); assert.deepEqual(out.consumed.map(x => [x.written, x.reason]), [[true, null]], JSON.stringify(out.consumed));
+  await run(f); await Promise.all([run(f), run(f)]);
+  const [r] = await recs(f), [o] = await overlays(f);
+  assert.equal(r.state, 'CONSUMED'); assert.equal(o.status, 'CONSUMED');
+  assert.equal(r.events.filter(e => e.state === 'CONSUMED').length, 1); assert.equal(r.events.filter(e => e.state === 'APPLIED').length, 1);
+  assert.equal(o.appliedValue, applied.appliedValue, 'prescription unchanged'); assert.equal(o.previousValue, applied.previousValue);
+  const m = await meso(f), plan = (await db.doc('plans/' + f.planId).get()).data();
+  const eff = F.on.effective.resolveEffective({ clientId: f.athlete.uid, planId: f.planId, activePlanId: f.planId, pid: PID, week: o.target.week, dayIndex: o.target.dayIndex,
+    records: m.progressionApplications, overlays: m.nextExposureOverlays, interventions: [], plan, entries: m.entries, baseSets: F.baseSets() });
+  assert.equal(eff.provenance, 'CANONICAL_OVERLAY', 'the started exposure keeps the prescription it started with');
+  assert.equal(Object.values(m.entries).filter(e => e.reps === '11').length, 1, 'executed value recorded independently of the overlay');
+});
+
+test('CONSUMED: a forged/mismatched receipt or a receipt without persisted execution never consumes', { timeout: 90000 }, async () => {
+  const f = await fixture(); await run(f); const [r] = await recs(f), [o] = await overlays(f);
+  const forged = { recordKey: r.key, overlayKey: o.key, dimension: o.dimension, appliedValue: o.appliedValue + 3, provenance: 'CANONICAL_OVERLAY', ackAt: new Date().toISOString() };
+  await updateDoc(doc(f.athlete.db, 'logs', f.athlete.uid, 'mesos', f.planId), { ['consumptionReceipts.' + r.key]: forged });   // the athlete may write receipts (and only receipts)
+  let out = await run(f); assert.deepEqual(out.consumed.map(x => [x.written, x.reason]), [[false, 'TARGET_NOT_STARTED']], 'receipt without persisted execution');
+  await startTarget(f); out = await run(f);
+  assert.deepEqual(out.consumed.map(x => [x.written, x.reason]), [[false, 'RECEIPT_MISMATCH']]); assert.equal((await recs(f))[0].state, 'APPLIED');
+});
+
+test('CONSUMED is fenced like every canonical write: revoked allowlist / closed canary / out-of-scope PID => no transition', { timeout: 120000 }, async () => {
+  for (const mode of ['allowlist', 'canary', 'pid']) {
+    const f = await fixture(); await run(f); await startTarget(f); await ackReceipt(f);
+    if (mode === 'allowlist') await setRelease(['revoked']);
+    if (mode === 'canary') await setCanary(f, { enabled: false, clientIds: [f.athlete.uid] });
+    if (mode === 'pid') await setCanary(f, { enabled: true, clientIds: [f.athlete.uid], prescriptionExerciseIds: ['other'] });
+    const out = await executor.consumePending(db, f.athlete.uid, f.planId, () => '2026-09-28T00:00:00.000Z');
+    assert.ok(out.every(x => x.written === false), mode);
+    assert.equal((await recs(f))[0].state, 'APPLIED', mode);
+  }
+});
+
+test('REST (Regla C) applies automatically', { timeout: 90000 }, async () => {
+  const f = await fixture({ restScenario: true }); const out = await run(f);
+  const dims = (await overlays(f)).map(o => o.dimension);
+  console.log('REST scenario ->', JSON.stringify({ status: out.status, applied: out.applied, dims }));
+  assert.deepEqual(dims, ['REST']);
 });

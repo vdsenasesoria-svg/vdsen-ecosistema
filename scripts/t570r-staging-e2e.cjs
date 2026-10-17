@@ -34,7 +34,8 @@ function leafPaths(obj, prefix) {
   }
   return out;
 }
-const gToken = () => execSync('gcloud auth print-access-token', { encoding: 'utf8', shell: true }).trim();
+let _tok = null, _tokAt = 0;
+const gToken = () => { if (!_tok || Date.now() - _tokAt > 600000) { _tok = execSync('gcloud auth print-access-token', { encoding: 'utf8', shell: true }).trim(); _tokAt = Date.now(); } return _tok; };
 async function http(method, url, token, body, extra) {
   const r = await fetch(url, { method, headers: Object.assign({ 'content-type': 'application/json' }, token ? { authorization: 'Bearer ' + token } : {}, extra || {}), body: body === undefined ? undefined : JSON.stringify(body) });
   const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch (e) { /* not json */ }
@@ -116,6 +117,14 @@ const mkRes = () => ({ statusCode: 0, body: null, status(n) { this.statusCode = 
   const A = await provision('reactive'), B = await provision('cron');
   const created = [A, B];
   try {
+    const relDoc = { schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [A.athlete.uid, B.athlete.uid] };
+    const relBody = { fields: Object.fromEntries(Object.entries(relDoc).map(([k, v]) => [k, enc(v)])) };
+    const forgedRel = await asUser(A.athTok, 'PATCH', 'releaseControl/autonomousProgression', relBody);
+    const forgedRelCoach = await asUser(A.coachTok, 'PATCH', 'releaseControl/autonomousProgression', relBody);
+    check('STG00 release allowlist cannot be written by an athlete or a Coach (deployed rules)', forgedRel.s === 403 && forgedRelCoach.s === 403, forgedRel.s + '/' + forgedRelCoach.s);
+    const noList = mkRes(); await handler({ method: 'POST', headers: { authorization: 'Bearer ' + A.athTok }, body: { planId: A.planId } }, noList);
+    check('STG00b without the release allowlist the endpoint performs no canonical write', noList.body && noList.body.status === 'OUT_OF_ALLOWLIST', noList.body && noList.body.status);
+    await http('PATCH', DOCS + '/releaseControl/autonomousProgression', gToken(), relBody, adminHdr);      // the release system lists the two synthetic athletes
     await setCanary(A, { enabled: true, clientIds: [A.athlete.uid], prescriptionExerciseIds: [] });
     await setCanary(B, { enabled: true, clientIds: [B.athlete.uid], prescriptionExerciseIds: [] });
 
@@ -153,6 +162,13 @@ const mkRes = () => ({ statusCode: 0, body: null, status(n) { this.statusCode = 
     const eff2 = effective.resolveEffective(effIn({ entries: m2.entries, records: m2.progressionApplications, overlays: m2.nextExposureOverlays }));
     const executed = Object.keys(m2.entries).filter(k => k.startsWith('log_2_0_0_')).map(k => m2.entries[k].reps);
     check('STG09 next exposure: executed reps recorded independently; overlay not rewritten; still shown for the started exposure', w2.every(s => s === 200) && executed.join() === '11,11,11' && eff2.provenance === 'CANONICAL_OVERLAY' && Object.values(m2.nextExposureOverlays)[0].appliedValue === ov.appliedValue, executed.join());
+    // CONSUMED: the athlete appends a receipt (deployed rules), the SERVER validates it against the persisted first set and transitions
+    const rcpt = { recordKey: rec.key, overlayKey: ov.key, dimension: ov.dimension, appliedValue: ov.appliedValue, provenance: 'CANONICAL_OVERLAY', ackAt: new Date().toISOString() };
+    const rr = await asUser(A.athTok, 'PATCH', 'logs/' + A.athlete.uid + '/mesos/' + A.planId, { fields: fieldsOf({ consumptionReceipts: { [rec.key]: rcpt } }) }, '?updateMask.fieldPaths=consumptionReceipts.' + rec.key);
+    check('STG09b athlete appends the consumption receipt through deployed rules', rr.s === 200, String(rr.s));
+    res = mkRes(); await handler({ method: 'POST', headers: { authorization: 'Bearer ' + A.athTok }, body: { planId: A.planId } }, res);
+    const afterC = await readMeso(A), recC = Object.values(afterC.progressionApplications)[0], ovC = Object.values(afterC.nextExposureOverlays)[0];
+    check('STG09c server performs APPLIED -> CONSUMED (no Monitor); prescription unchanged; one CONSUMED event', res.body.consumed && res.body.consumed[0] && res.body.consumed[0].written === true && recC.state === 'CONSUMED' && ovC.status === 'CONSUMED' && ovC.appliedValue === ov.appliedValue && recC.events.filter(e => e.state === 'CONSUMED').length === 1, JSON.stringify({ consumed: res.body.consumed, state: recC.state, ov: ovC.status, events: recC.events.map(e => e.state) }));
     res = mkRes(); await handler({ method: 'POST', headers: { authorization: 'Bearer ' + A.athTok }, body: { planId: A.planId } }, res);
     const after = await readMeso(A);
     check('STG10 reprocessing is idempotent: still one record, one overlay, one APPLIED event', Object.keys(after.progressionApplications).length >= 1 && Object.keys(after.nextExposureOverlays).length === 1 && Object.values(after.progressionApplications).filter(r => r.state === 'APPLIED').every(r => r.events.filter(e => e.state === 'APPLIED').length === 1), JSON.stringify({ recs: Object.keys(after.progressionApplications).length, ovs: Object.keys(after.nextExposureOverlays).length }));
@@ -175,6 +191,7 @@ const mkRes = () => ({ statusCode: 0, body: null, status(n) { this.statusCode = 
   } catch (e) {
     check('STG_ERROR', false, String(e && e.message).slice(0, 300));
   } finally {
+    await http('DELETE', DOCS + '/releaseControl/autonomousProgression', gToken(), undefined, adminHdr);
     for (const x of created) {
       try { const c = await x.cleanup(); console.log('cleanup', x.label, JSON.stringify(c)); } catch (e) { console.log('cleanup failed', x.label, e.message); }
       // belt and braces: the operator identity removes the two synthetic Auth users (only the UIDs created by this run)

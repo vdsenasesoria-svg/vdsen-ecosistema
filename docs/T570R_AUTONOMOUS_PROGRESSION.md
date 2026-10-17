@@ -26,3 +26,9 @@ Producción (`vdsen-ecosistema`), staging y `firestore.rules` del repositorio so
 - Emulador: `tests/t570r-autonomous-emulator.cjs` (20 pruebas) dentro de `scripts/test-auto-apply-emulator.cjs`.
 - Staging real (`vdsen-ecosistema-staging`, cuentas sintéticas, reglas desplegadas): `scripts/t570r-staging-e2e.cjs` → `docs/t570r-staging-e2e-results.json`.
 - Limitación declarada: en staging el ejecutor corrió localmente con identidad IAM del operador (controlador REST de transacciones); la función de Vercel no se desplegó contra staging.
+
+## T571 — segunda frontera, consumo y runtime
+- **Allowlist de lanzamiento** `releaseControl/autonomousProgression` = `{ schema:'vdsen-autonomous-release-v1', enabled:true, clientIds:[≤10 uids] }`. Sólo Admin la escribe (ninguna regla la expone). Se relee dentro de cada transacción canónica (materializar, aplicar, consumir). Ausente/vacía/inválida/comodín ⇒ cero escrituras. El cron sólo intenta a los uids de la allowlist.
+- **APPLIED → CONSUMED**: el atleta añade un recibo (append-only, reglas ya existentes) tras persistir la primera serie de la exposición objetivo; el servidor lo valida (registro, overlay, PID, plan, exposición, ejecución persistida) y hace la transición. El overlay sigue mostrándose en la exposición iniciada.
+- **Runtime Vercel (Hobby)**: la lectura de variables de entorno del proyecto está denegada a este operador (403) y no hay Vercel CLI; no se verificaron FIREBASE_*/CRON_SECRET/AUTONOMOUS_* en producción. Preview no tiene credenciales de Firebase Admin (la función ahora responde 503 `RUNTIME_NOT_CONFIGURED`). Sin credenciales de staging seguras en Preview no se hizo la prueba hospedada.
+- Orden de activación sugerido (cuando se pueda verificar el entorno): 1) variables en Vercel con `AUTONOMOUS_PROGRESSION_ENABLED=false`; 2) desplegar; 3) crear `releaseControl/autonomousProgression` con el uid sintético; 4) canario en el Coach sintético; 5) habilitar `ENABLED` y `NUMERIC_APPLY_ENABLED`.
