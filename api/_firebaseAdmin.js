@@ -11,8 +11,60 @@
  */
 
 var _app = null;
+var _oidcToken = null;   // per-request Vercel OIDC token (header x-vercel-oidc-token); never logged, never persisted beyond the function's /tmp
+
+// ---- Workload Identity Federation (Vercel OIDC -> Google STS -> service-account impersonation) ---------------------------------
+// Opt-in ONLY with FIREBASE_AUTH_MODE=wif plus NON-secret identifiers. No private key exists anywhere in this mode. The production project
+// ids are refused outright: this mode exists for the isolated staging runtime.
+var WIF_FORBIDDEN_PROJECTS = ['vdsen-ecosistema', 'vdsen-planes'];
+// The ONE Vercel project that may run in federated mode is the isolated staging project; it is recognised by its (public) project id, either
+// from the platform-provided VERCEL_PROJECT_ID or from the project_id claim of the OIDC token it receives. The claim is only a mode selector:
+// the actual authorisation is Google's (STS verifies the token signature and the provider condition pins the exact project subject).
+var STAGING_VERCEL_PROJECT_ID = 'prj_ZefsZK0hyGe7WxNqenR7MO9f2H8O';
+var STAGING_WIF_DEFAULTS = { FIREBASE_PROJECT_ID: 'vdsen-ecosistema-staging', GCP_PROJECT_NUMBER: '436059785391', GCP_WIF_POOL_ID: 'vercel-staging',
+  GCP_WIF_PROVIDER_ID: 'vercel-t573', GCP_RUNTIME_SERVICE_ACCOUNT: 'vdsen-t573-runtime@vdsen-ecosistema-staging.iam.gserviceaccount.com' };
+function _oidcProjectId(token) {
+  try { return JSON.parse(Buffer.from(String(token).split('.')[1], 'base64').toString('utf8')).project_id || null; } catch (_) { return null; }
+}
+function isFederatedMode(env, token) {
+  return env.FIREBASE_AUTH_MODE === 'wif' || env.VERCEL_PROJECT_ID === STAGING_VERCEL_PROJECT_ID || (!!token && _oidcProjectId(token) === STAGING_VERCEL_PROJECT_ID);
+}
+function setRequestOidcToken(token) { _oidcToken = typeof token === 'string' && token.length > 20 ? token : null; }
+
+// Pure: validates the environment and returns the external-account configuration (public identifiers only).
+function buildFederatedConfig(env, tokenPath) {
+  var projectId = env.FIREBASE_PROJECT_ID, number = env.GCP_PROJECT_NUMBER, pool = env.GCP_WIF_POOL_ID, provider = env.GCP_WIF_PROVIDER_ID, sa = env.GCP_RUNTIME_SERVICE_ACCOUNT;
+  if (!projectId || !number || !pool || !provider || !sa) throw new Error('FIREBASE_WIF_NOT_CONFIGURED');
+  if (WIF_FORBIDDEN_PROJECTS.indexOf(projectId) >= 0 || !/-staging$/.test(projectId)) throw new Error('FIREBASE_WIF_FORBIDDEN_PROJECT');
+  if (!/^\d{6,20}$/.test(number) || !/^[a-z0-9-]{4,32}$/.test(pool) || !/^[a-z0-9-]{4,32}$/.test(provider)) throw new Error('FIREBASE_WIF_BAD_IDENTIFIER');
+  if (sa.indexOf('@' + projectId + '.iam.gserviceaccount.com') < 0) throw new Error('FIREBASE_WIF_SERVICE_ACCOUNT_OUTSIDE_PROJECT');
+  return { projectId: projectId, config: {
+    type: 'external_account',
+    audience: '//iam.googleapis.com/projects/' + number + '/locations/global/workloadIdentityPools/' + pool + '/providers/' + provider,
+    subject_token_type: 'urn:ietf:params:oauth:token-type:jwt',
+    token_url: 'https://sts.googleapis.com/v1/token',
+    service_account_impersonation_url: 'https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/' + sa + ':generateAccessToken',
+    credential_source: { file: tokenPath, format: { type: 'text' } }
+  } };
+}
+
+function getFederatedApp() {
+  var os = require('os'), path = require('path'), fs = require('fs');
+  var tokenPath = path.join(os.tmpdir(), 'vdsen-wif-subject-token'), cfgPath = path.join(os.tmpdir(), 'vdsen-wif-config.json');
+  var built = buildFederatedConfig(Object.assign({}, STAGING_WIF_DEFAULTS, process.env), tokenPath);
+  if (!_oidcToken) throw new Error('FIREBASE_WIF_NO_OIDC_TOKEN');
+  // The credential reader re-reads this file whenever it must refresh the Google access token, so it is rewritten on every request.
+  fs.writeFileSync(tokenPath, _oidcToken, { mode: 0o600 });
+  fs.writeFileSync(cfgPath, JSON.stringify(built.config), { mode: 0o600 });
+  process.env.GOOGLE_APPLICATION_CREDENTIALS = cfgPath;
+  if (_app) return _app;
+  var admin = require('firebase-admin');
+  _app = admin.initializeApp({ credential: admin.credential.applicationDefault(), projectId: built.projectId }, 'vdsen-wif');
+  return _app;
+}
 
 function getAdminApp() {
+  if (isFederatedMode(process.env, _oidcToken)) return getFederatedApp();
   var projectId   = process.env.FIREBASE_PROJECT_ID;
   var clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   var privateKey  = process.env.FIREBASE_PRIVATE_KEY;
@@ -67,6 +119,9 @@ async function isAuthorizedCoach(uid) {
 }
 
 module.exports = {
+  setRequestOidcToken:  setRequestOidcToken,
+  isFederatedMode:      isFederatedMode,
+  buildFederatedConfig: buildFederatedConfig,
   getAdminApp:       getAdminApp,
   verifyIdToken:      verifyIdToken,
   isAuthorizedCoach:  isAuthorizedCoach
