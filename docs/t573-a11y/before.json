@@ -1,0 +1,19 @@
+{
+  "label": "before",
+  "tabs": {
+    "home": [],
+    "training": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": 9
+      }
+    ],
+    "nutrition": [],
+    "checkin": [],
+    "profile": []
+  },
+  "totals": {
+    "color-contrast:serious": 9
+  }
+}

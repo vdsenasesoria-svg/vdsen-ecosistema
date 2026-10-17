@@ -325,10 +325,11 @@ function _mapPreviousPlan(planDoc) {
 
 function _mapLogs(logsDoc) {
   var result = {
-    trainingLogs:  null,
-    checkins:      null,
-    engineState:   null,
-    _diagnostics:  {}
+    trainingLogs:       null,
+    checkins:           null,
+    engineState:        null,
+    progressionHistory: null,
+    _diagnostics:       {}
   };
 
   if (!logsDoc || !logsDoc.entries) {
@@ -390,6 +391,10 @@ function _mapLogs(logsDoc) {
   // engineState block
   result.engineState = engineState || null;
 
+  // progressionHistory block (T160) — PID-indexed longitudinal summary,
+  // built from the same raw progrecs already collected above.
+  result.progressionHistory = _mapExerciseProgressionHistory(progrecs);
+
   // diagnostics
   result._diagnostics = {
     logsAvailable:  true,
@@ -401,6 +406,122 @@ function _mapLogs(logsDoc) {
   };
 
   return result;
+}
+
+// ─── EXERCISE PROGRESSION HISTORY mapping (T160) ─────────────────────────────
+// Closes the longitudinal chain per exercise: builds a prescriptionExerciseId
+// -indexed summary from the raw progrec_W_D entries (each recommendation
+// already carries prescriptionExerciseId/exerciseId/prescribedRIR/observedRIR/
+// repRangeTarget/trend since the T159 persistence fix). Pure structural
+// adapter — no invented data, no recalculation, no LLM involvement.
+//
+// PID-first, no silent association: a recommendation with no
+// prescriptionExerciseId (pre-T159 legacy logs, or a plan that predates PID
+// stamping) is counted in unindexedCount but never guessed into a bucket by
+// name or position — ambiguity/absence of identity means no association,
+// not a best-effort match.
+// T203 — HIGH/MEDIUM/LOW/NONE per-exercise (PID-scoped) execution fidelity,
+// classifying the SAME setCompletionRate the T205 confidence fix averages.
+// Never called with a name-matched rate -- only ever with one already
+// resolved by prescriptionExerciseId (see the PID-first rule above).
+function _classifyExerciseExecutionFidelity(setCompletionRate) {
+  if (typeof setCompletionRate !== 'number' || setCompletionRate <= 0) return 'NONE';
+  if (setCompletionRate < 0.5) return 'LOW';
+  if (setCompletionRate < 0.8) return 'MEDIUM';
+  return 'HIGH';
+}
+
+function _mapExerciseProgressionHistory(progrecs) {
+  var byPID = {};
+  var unindexedCount = 0;
+
+  var weekKeys = Object.keys(progrecs || {}).sort(function(a, b) {
+    var wa = parseInt(a.split('_')[1], 10) || 0;
+    var wb = parseInt(b.split('_')[1], 10) || 0;
+    return wa - wb;
+  });
+
+  weekKeys.forEach(function(key) {
+    var entry = progrecs[key];
+    var week  = parseInt(key.split('_')[1], 10) || null;
+    var recs  = (entry && Array.isArray(entry.recommendations)) ? entry.recommendations : [];
+
+    recs.forEach(function(rec) {
+      if (!rec || !rec.prescriptionExerciseId) { unindexedCount++; return; }
+      var pid = rec.prescriptionExerciseId;
+      if (!byPID[pid]) {
+        byPID[pid] = {
+          prescriptionExerciseId: pid,
+          exerciseId:   rec.exerciseId   || null,
+          exerciseName: rec.exerciseName || null,
+          history: []
+        };
+      }
+      // Keep the most recent non-empty name/exerciseId (catalog/name can evolve).
+      if (rec.exerciseName) byPID[pid].exerciseName = rec.exerciseName;
+      if (rec.exerciseId)   byPID[pid].exerciseId   = rec.exerciseId;
+
+      byPID[pid].history.push({
+        week:               week,
+        action:             rec.action !== undefined ? rec.action : null,
+        newLoad:            rec.newLoad !== undefined ? rec.newLoad : null,
+        newReps:            rec.newReps !== undefined ? rec.newReps : null,
+        newSets:            rec.newSets !== undefined ? rec.newSets : null,
+        rirTarget:          rec.rirTarget !== undefined ? rec.rirTarget : null,
+        prescribedRIR:      rec.prescribedRIR !== undefined ? rec.prescribedRIR : null,
+        observedRIR:        rec.observedRIR !== undefined ? rec.observedRIR : null,
+        repRangeTarget:     rec.repRangeTarget || null,
+        trend:              rec.trend || null,
+        reason:             rec.reason || '',
+        // T205 — execution fidelity for THIS week's recommendation, sourced
+        // from the already-computed, already-PID-scoped, already-autoFilled-
+        // excluding setMetrics (see calculateProgression). null when a
+        // legacy recommendation predates setMetrics (unknown, not poor).
+        setCompletionRate:  (rec.setMetrics && typeof rec.setMetrics.setCompletionRate === 'number') ? rec.setMetrics.setCompletionRate : null,
+        // T203 — this week's HIGH/MEDIUM/LOW/NONE execution fidelity label.
+        fidelity:           _classifyExerciseExecutionFidelity((rec.setMetrics && typeof rec.setMetrics.setCompletionRate === 'number') ? rec.setMetrics.setCompletionRate : null),
+        // T212 — whether THIS week's session (the one this exercise was
+        // performed in) had a reported articular-pain flag. Session-scoped,
+        // not exercise-specific (calculateProgression attaches it to every
+        // exercise recommended that day) -- a coarse but real, already-
+        // computed signal, not a new clinical measure.
+        hadPainFlag:        !!rec.substituteExercise
+      });
+    });
+  });
+
+  // Per-exercise confidence — how much longitudinal evidence exists for THIS
+  // specific exercise (distinct from engineState's plan-wide confidence).
+  // learned_state can only outrank general priors once evidence is real;
+  // this is the count that gates that, per exercise.
+  //
+  // T205 — week COUNT alone cannot justify high confidence: a recommendation
+  // must never read as well-evidenced from weeks where only a fraction of the
+  // prescribed sets were actually executed (e.g. 1-of-4 sets/week for several
+  // weeks must never yield 'high'). Average setCompletionRate across the
+  // weeks that have it gates/downgrades the count-based tier. Weeks without
+  // the field (legacy data) are excluded from the average, not treated as
+  // poor execution.
+  Object.keys(byPID).forEach(function(pid) {
+    var hist = byPID[pid].history;
+    var n = hist.length;
+    var rates = hist
+      .map(function(h) { return h.setCompletionRate; })
+      .filter(function(r) { return typeof r === 'number'; });
+    var avgCompletion = rates.length ? (rates.reduce(function(a, b) { return a + b; }, 0) / rates.length) : null;
+
+    var tier = n === 0 ? 'none' : n <= 2 ? 'low' : n <= 4 ? 'medium' : 'high';
+    if (avgCompletion !== null) {
+      if (avgCompletion < 0.5 && tier !== 'none') tier = 'low';
+      else if (avgCompletion < 0.75 && tier === 'high') tier = 'medium';
+    }
+
+    byPID[pid].confidence = tier;
+    byPID[pid].executionCompleteness = avgCompletion;
+    byPID[pid].latest = hist.length ? hist[hist.length - 1] : null;
+  });
+
+  return { byPrescriptionExerciseId: byPID, unindexedCount: unindexedCount };
 }
 
 // ─── NUTRITION CONTEXT mapping ────────────────────────────────────────────────
@@ -473,6 +594,10 @@ function summarizeGenerationRequest(req, validationResult) {
   if (req.checkins)      summary.fields['checkins']      = 'present';
   if (req.engineState)   summary.fields['engineState']   = 'present';
   if (req.previousPlan)  summary.fields['previousPlan']  = 'present';
+  if (req.progressionHistory) {
+    var _pidCount = Object.keys(req.progressionHistory.byPrescriptionExerciseId || {}).length;
+    summary.fields['progressionHistory'] = 'exercises[' + _pidCount + '] unindexed=' + (req.progressionHistory.unindexedCount || 0);
+  }
 
   // MODULE_CRITICALITY gap scan for REQUIRED fields
   var modules = ['training', 'nutritionTargets', 'nutritionMenu', 'supplementation'];
@@ -588,6 +713,7 @@ function buildGenerationRequest(params) {
     trainingLogs:      logsResult.trainingLogs,
     checkins:          logsResult.checkins,
     engineState:       logsResult.engineState,
+    progressionHistory:logsResult.progressionHistory,
     attachments:       [],  // multimodal upload not yet implemented (Phase B stub)
     options:           Object.assign({}, options, eqResult.gymInfo ? { gymInfo: eqResult.gymInfo } : {})
   };
@@ -623,6 +749,8 @@ module.exports = {
   _mapEquipment:        _mapEquipment,
   _mapPreviousPlan:     _mapPreviousPlan,
   _mapLogs:             _mapLogs,
+  _mapExerciseProgressionHistory: _mapExerciseProgressionHistory,
+  _classifyExerciseExecutionFidelity: _classifyExerciseExecutionFidelity,
   _mapNutritionContext: _mapNutritionContext,
   _mapSupplementContext:_mapSupplementContext,
 };

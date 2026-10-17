@@ -1,0 +1,59 @@
+name: VDSEN read-only OIDC validation
+on:
+  push:
+    branches: [codex/client-app-next]
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  validate:
+    if: github.repository == 'vdsenasesoria-svg/vdsen-ecosistema' && github.ref == 'refs/heads/codex/client-app-next'
+    environment: Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_RELEASE_SERVICE_ACCOUNT: ${{ vars.GCP_RELEASE_SERVICE_ACCOUNT }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      PRODUCTION_RELEASE_ENABLED: ${{ vars.PRODUCTION_RELEASE_ENABLED }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Initialize result and validate canonical configuration (read-only)
+        run: node scripts/release/oidc-validate.cjs init
+      - id: google
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_RELEASE_SERVICE_ACCOUNT }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          token_format: access_token
+          create_credentials_file: false
+          access_token_scopes: https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/firebase
+      - name: Read Google and Vercel metadata only
+        id: metadata
+        run: node scripts/release/oidc-validate.cjs run
+        env:
+          OIDC_AUTH_OUTCOME: ${{ steps.google.outcome }}
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      - name: Finalize result even after configuration or authentication failure
+        if: always()
+        run: node scripts/release/oidc-validate.cjs finalize
+        env:
+          OIDC_AUTH_OUTCOME: ${{ steps.google.outcome }}
+          VALIDATION_OUTCOME: ${{ steps.metadata.outcome }}
+      - name: Read-only validation result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: oidc-validation-${{ github.run_id }}
+          path: release-output/oidc-validation.json
+          if-no-files-found: error
+          retention-days: 30

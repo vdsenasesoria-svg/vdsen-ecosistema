@@ -1,0 +1,71 @@
+{
+  "label": "after",
+  "light": false,
+  "project": "vdsen-ecosistema-staging",
+  "widths": {
+    "320": {
+      "overflow": {
+        "login": true,
+        "10-home": true,
+        "20-training": true,
+        "30-nutrition": true,
+        "40-checkin": true,
+        "50-profile": true,
+        "21-training-top": true
+      },
+      "smallTargets": {
+        "login": [],
+        "10-home": [],
+        "20-training": [],
+        "30-nutrition": [],
+        "40-checkin": [],
+        "50-profile": [],
+        "21-training-top": []
+      },
+      "errors": []
+    },
+    "390": {
+      "overflow": {
+        "login": true,
+        "10-home": true,
+        "20-training": true,
+        "30-nutrition": true,
+        "40-checkin": true,
+        "50-profile": true,
+        "21-training-top": true
+      },
+      "smallTargets": {
+        "login": [],
+        "10-home": [],
+        "20-training": [],
+        "30-nutrition": [],
+        "40-checkin": [],
+        "50-profile": [],
+        "21-training-top": []
+      },
+      "errors": []
+    },
+    "430": {
+      "overflow": {
+        "login": true,
+        "10-home": true,
+        "20-training": true,
+        "30-nutrition": true,
+        "40-checkin": true,
+        "50-profile": true,
+        "21-training-top": true
+      },
+      "smallTargets": {
+        "login": [],
+        "10-home": [],
+        "20-training": [],
+        "30-nutrition": [],
+        "40-checkin": [],
+        "50-profile": [],
+        "21-training-top": []
+      },
+      "errors": []
+    }
+  },
+  "at": "2026-10-17T05:40:04.785Z"
+}
