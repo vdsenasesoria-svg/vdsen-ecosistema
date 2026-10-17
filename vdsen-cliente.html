@@ -1206,7 +1206,7 @@ body{font-feature-settings:'cv11','ss01';letter-spacing:-.003em}
 .stat{padding:14px 4px 12px}.stat:last-child{border-right:0}
 .stat-val{font-size:28px}
 .stat-lbl{font-size:10px;letter-spacing:.14em}
-.progress-bar{height:6px;border-radius:99px;background:var(--acero);overflow:hidden}
+.progress-bar{height:6px;border-radius:99px;background:var(--rule-strong);overflow:hidden}
 .pb-fill{border-radius:99px;background:var(--accent-fill);transition:width var(--dur-2) var(--ease)}
 .week-grid .wk{border-radius:12px}
 /* SRA: one compact, informational summary instead of one card per exercise */
@@ -4636,7 +4636,17 @@ function _muscleVolStatus(muscle) {
   return { vol: vol, mm: mm, status: status, col: col };
 }
 
-function buildVolumenWidget() {
+// T573: the two heaviest below-the-fold Home widgets (~27 ms of the ~44 ms Home render) are built after first paint, in idle time.
+// Same HTML, same data; the placeholder is replaced only if it is still attached (a newer render simply builds its own).
+function _lazyHomeWidget(kind, build) {
+  var id = 'lazyw_' + kind + '_' + (++_lazyWidgetSeq);
+  var run = function() { var el = document.getElementById(id); if (!el || !el.isConnected) return; try { el.outerHTML = build(); } catch (e) { el.remove(); } };
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 1200 }); else setTimeout(run, 30);
+  return '<div id="' + id + '" class="lazy-widget" aria-busy="true"></div>';
+}
+var _lazyWidgetSeq = 0;
+function buildVolumenWidget() { return _lazyHomeWidget('vol', _buildVolumenWidgetNow); }
+function _buildVolumenWidgetNow() {
   if (!PLAN || typeof MEV_MRV_BY_MUSCLE === 'undefined') return '';
   var order = ['pectoral','dorsal_ancho','trapecio_medio','delt_anterior','delt_lateral','delt_posterior','biceps','braquial','triceps','cuadriceps','isquios','gluteo_mayor','gluteo_medio','gastrocnemio','soleo','erectores','recto_abdominal','oblicuos','serrato'];
   var rows = '';
@@ -4669,7 +4679,8 @@ function buildVolumenWidget() {
 // principal según su estado MEV/MRV de la semana — misma clasificación que la tabla
 // de barras, en formato visual. Los grupos secundarios (delt lateral/posterior, glúteo
 // medio, sóleo, braquial, serrato) quedan solo en la tabla por simplicidad del dibujo.
-function buildBodyMapWidget() {
+function buildBodyMapWidget() { return _lazyHomeWidget('map', _buildBodyMapWidgetNow); }
+function _buildBodyMapWidgetNow() {
   if (!PLAN || typeof MEV_MRV_BY_MUSCLE === 'undefined') return '';
   var mapped = ['pectoral','delt_anterior','biceps','recto_abdominal','oblicuos','cuadriceps','dorsal_ancho','trapecio_medio','triceps','erectores','gluteo_mayor','isquios','gastrocnemio'];
   var status = {};
