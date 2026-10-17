@@ -182,3 +182,21 @@ test('durable recovery: the cron sweep processes pending evidence when the brows
   assert.equal((await overlays(f)).length, 1); assert.ok(again.processed >= 1);
   assert.deepEqual(await sweep.runSweep({ db, enabled: false, numericApplyEnabled: true }), { status: 'DISARMED', processed: 0 });
 });
+
+test('E06 a failed save persists no evidence: the executor creates no record and no overlay', { timeout: 60000 }, async () => {
+  const f = await fixture();
+  await db.doc('logs/' + f.athlete.uid + '/mesos/' + f.planId).set({ planId: f.planId, entries: {} });
+  await db.doc('logs/' + f.athlete.uid).set({ planId: f.planId, entries: {} });
+  const out = await run(f);
+  assert.deepEqual(await overlays(f), [], JSON.stringify(out)); assert.deepEqual(await recs(f), []);
+});
+
+test('E08 an unfavorable articular signal never authorizes an increase (SRA trace stays NONE)', { timeout: 60000 }, async () => {
+  const f = await fixture();
+  const withPain = Object.assign({}, f.logs, { postsession_1_2: { articular: 'si', patron: 'press', eimd: 2, sleep: 5, rpe: 9 } });
+  await db.doc('logs/' + f.athlete.uid + '/mesos/' + f.planId).set({ planId: f.planId, entries: withPain });
+  await db.doc('logs/' + f.athlete.uid).set({ planId: f.planId, entries: withPain });
+  const out = await run(f);
+  assert.deepEqual(await overlays(f), [], JSON.stringify(out));
+  (await recs(f)).forEach(r => assert.equal(r.sraTrace.mutation, 'NONE'));
+});
