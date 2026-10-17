@@ -106,6 +106,16 @@ test('WIF: without FIREBASE_AUTH_MODE=wif the key-based path is unchanged (still
     try { mod.getAdminApp(); return false; } catch (e) { return e.message === 'FIREBASE_ADMIN_NOT_CONFIGURED'; }
   }));
 
+function jwt(claims) { return 'h.' + Buffer.from(JSON.stringify(claims)).toString('base64') + '.s'; }
+test('WIF: federated mode is selected ONLY for the isolated staging Vercel project (id or OIDC project_id claim), never for the production project', function() {
+  var mod = freshModule(), STG = 'prj_ZefsZK0hyGe7WxNqenR7MO9f2H8O', PROD = 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN';
+  return mod.isFederatedMode({ VERCEL_PROJECT_ID: STG }, null) === true
+      && mod.isFederatedMode({}, jwt({ project_id: STG })) === true
+      && mod.isFederatedMode({ VERCEL_PROJECT_ID: PROD }, jwt({ project_id: PROD })) === false
+      && mod.isFederatedMode({}, null) === false && mod.isFederatedMode({}, 'not-a-jwt') === false
+      && mod.isFederatedMode({ FIREBASE_AUTH_MODE: 'wif' }, null) === true;
+});
+
 // ─── Run ─────────────────────────────────────────────────────────────────────
 
 async function runTests() {

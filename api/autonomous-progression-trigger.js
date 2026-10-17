@@ -15,6 +15,11 @@ function makeHandler(deps) {
     if (!token) return res.status(401).json({ error: 'AUTH_MISSING' });
     var identity;
     try { identity = await deps.verifyIdToken(token[1]); } catch (_) { return res.status(401).json({ error: 'AUTH_INVALID' }); }
+    // Read-only runtime probe for the isolated staging runtime (any authenticated staging user; returns a boolean-like status, never data).
+    if (deps.allowProbe === true && req.query && req.query.check === 'firestore') {
+      try { await deps.db.collection('releaseControl').doc('autonomousProgression').get(); return res.status(200).json({ firestore: 'READ_OK' }); }
+      catch (_) { return res.status(502).json({ firestore: 'READ_FAILED' }); }
+    }
     var uid = identity && identity.uid, planId = req.body && req.body.planId;
     if (!uid || typeof planId !== 'string' || !planId) return res.status(400).json({ error: 'REQUEST_INVALID' });
     try {
@@ -33,6 +38,7 @@ async function defaultHandler(req, res) {
   // Missing Firebase Admin configuration must fail CLOSED with a clean response, never crash the function (Preview has no credentials).
   try { admin.setRequestOidcToken(req.headers && req.headers['x-vercel-oidc-token']); app = admin.getAdminApp(); firebaseAdmin = require('firebase-admin'); } catch (_) { return res.status(503).json({ error: 'RUNTIME_NOT_CONFIGURED' }); }
   return makeHandler({ db: firebaseAdmin.firestore(app), verifyIdToken: admin.verifyIdToken, cronSecret: process.env.CRON_SECRET,
+    allowProbe: admin.isFederatedMode(process.env, req.headers && req.headers['x-vercel-oidc-token']),
     enabled: process.env.AUTONOMOUS_PROGRESSION_ENABLED === 'true',
     numericApplyEnabled: process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED === 'true' })(req, res);
 }
