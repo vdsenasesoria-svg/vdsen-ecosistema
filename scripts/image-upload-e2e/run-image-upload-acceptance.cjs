@@ -26,6 +26,9 @@ const repo = path.resolve(__dirname, '..', '..');
 const arg = (n) => process.argv.includes('--' + n);
 const KEEP_RUNTIME = arg('keep-runtime');
 const SKIP_EMULATORS = arg('skip-emulators');
+const COACH_SOURCE = fs.readFileSync(path.join(repo, 'vdsen-coach.html'), 'utf8');
+const IMAGE_UPLOAD_UI_DISABLED = /var COACH_IMAGE_UPLOAD_ENABLED = false;/.test(COACH_SOURCE) &&
+  /if \(COACH_IMAGE_UPLOAD_ENABLED && window\.VDSEN_COACH_IMAGE_MOUNT/.test(COACH_SOURCE);
 
 // Pinned, exact: the product loads firebase 10.12.0 from the CDN, the workflow pins firebase-tools
 // 15.32.1, and Playwright's version decides the Chromium build (reproducible browser).
@@ -145,17 +148,21 @@ async function main() {
 
   const env = { HARNESS_URL: 'http://127.0.0.1:' + SERVER_PORT, CDP_URL: 'http://127.0.0.1:' + CDP_PORT };
 
-  // 3) desktop acceptance
-  const desktop = runNode([path.join(__dirname, 'browser-acceptance.cjs'), '--view', '1280x800'], env);
-  step('DESKTOP_ACCEPTANCE_1280x800', desktop);
+  // 3-5) The browser lifecycle matrix applies only while the feature is exposed. When
+  // production intentionally disarms its UI because Storage Rules deny all access, prove
+  // that exact gate and retain the module + real-emulator contract below.
+  if (IMAGE_UPLOAD_UI_DISABLED) {
+    step('IMAGE_UPLOAD_UI_DISABLED', true, 'Coach does not mount a Storage upload surface');
+  } else {
+    const desktop = runNode([path.join(__dirname, 'browser-acceptance.cjs'), '--view', '1280x800'], env);
+    step('DESKTOP_ACCEPTANCE_1280x800', desktop);
 
-  // 4) mobile acceptance (fresh page load; same browser, different metrics)
-  const mobile = runNode([path.join(__dirname, 'browser-acceptance.cjs'), '--view', '390x844'], env);
-  step('MOBILE_ACCEPTANCE_390x844', mobile);
+    const mobile = runNode([path.join(__dirname, 'browser-acceptance.cjs'), '--view', '390x844'], env);
+    step('MOBILE_ACCEPTANCE_390x844', mobile);
 
-  // 5) deterministic failure injection + POST_COMMIT_UI_ISOLATION barriers
-  const failures = runNode([path.join(__dirname, 'failure-injection.cjs')], env);
-  step('FAILURE_INJECTION_F01_F12', failures);
+    const failures = runNode([path.join(__dirname, 'failure-injection.cjs')], env);
+    step('FAILURE_INJECTION_F01_F12', failures);
+  }
 
   // 6) real-emulator positive path (Auth + Firestore + Storage, storage.rules enforced)
   let emulator = true;
