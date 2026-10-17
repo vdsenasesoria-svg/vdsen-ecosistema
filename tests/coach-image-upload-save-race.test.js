@@ -18,6 +18,11 @@ const PS_SRC = fs.readFileSync(path.join(ROOT, 'assets', 'coach-image-upload', '
 const COACH_A = 'coachA000000000000000001';
 const EX_A = 'exA';
 
+test('production keeps the image-upload surface disabled while Storage Rules are deny-all', () => {
+  assert.match(COACH, /var COACH_IMAGE_UPLOAD_ENABLED = false;/);
+  assert.match(COACH, /if \(COACH_IMAGE_UPLOAD_ENABLED && window\.VDSEN_COACH_IMAGE_MOUNT/);
+});
+
 // Minimal DOM double. It records what the preview receives, which is how the injection regression is
 // proven without any product test global.
 function fakeDom() {

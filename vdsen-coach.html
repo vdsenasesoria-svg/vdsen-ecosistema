@@ -4148,6 +4148,9 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   };
   var _vdsenPhotoExercise = null;
   var _vdsenPhotoMount = null;
+  // Production Storage Rules are deny-all. Keep the upload UI unavailable until that separate
+  // publication lane is explicitly enabled and verified.
+  var COACH_IMAGE_UPLOAD_ENABLED = false;
   function _visualEditorClose() {
     try { if (_vdsenPhotoMount) _vdsenPhotoMount.destroy(); } catch (e) {}
     _vdsenPhotoMount = null;
@@ -4209,7 +4212,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     // the editor save below is stopped. With nothing staged, persist() answers { handled:false } and
     // the editor save runs exactly as it always did.
     try {
-      if (window.VDSEN_COACH_IMAGE_MOUNT && window.VDSEN_COACH_IMAGE_UI && window.VDSEN_IMG_CONTROLLER) {
+      if (COACH_IMAGE_UPLOAD_ENABLED && window.VDSEN_COACH_IMAGE_MOUNT && window.VDSEN_COACH_IMAGE_UI && window.VDSEN_IMG_CONTROLLER) {
         var _imgAdapter = _vdsenImageAdapter();
         var _imgController = window.VDSEN_IMG_CONTROLLER.createController({
           process: function (file) { return window.VDSEN_IMG_PROCESS.processImage(file, window.VDSEN_IMG_PROCESS.browserEnv(window)); },
