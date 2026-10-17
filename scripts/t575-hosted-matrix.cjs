@@ -138,7 +138,8 @@ async function phaseOff(ctx) {
   if (ctx.previewBase) {
     const saved = [BASE, COOKIE]; BASE = ctx.previewBase; COOKIE = readFile(ctx.previewCookieFile);
     const pr = await call('POST', EP + '?check=firestore', { authorization: 'Bearer ' + aOK.token }); [BASE, COOKIE] = saved;
-    check('N04 Preview deployment (OIDC environment:preview) cannot reach Firestore', pr.s === 502 && pr.j && pr.j.firestore === 'READ_FAILED', pr.s + ' ' + JSON.stringify(pr.j));
+    const walled = pr.s === 401 || pr.s === 302 || pr.s === 403;   // Vercel Authentication answered, the function never ran: not evidence either way
+    check('N04 Preview deployment (OIDC environment:preview) cannot reach Firestore', walled ? null : pr.s === 502 && pr.j && pr.j.firestore === 'READ_FAILED', walled ? 'NOT_TESTED: blocked by the Vercel Authentication wall (no valid access cookie for the preview host)' : pr.s + ' ' + JSON.stringify(pr.j));
   } else check('N04 Preview rejection', null, 'NOT_TESTED (no --preview-base)');
   // deactivation procedure: remove allowlist + canary and prove it
   await adminDel(RELEASE); await adminSet('coaches/' + coach.uid, { autoApplyCanary: { enabled: false, clientIds: [], prescriptionExerciseIds: [] } }, ['autoApplyCanary']);
@@ -218,7 +219,7 @@ async function phaseOn(ctx) {
     const outAfter = await snap(aOut); check('H09b cron leaves the out-of-allowlist athlete untouched', outAfter.records.length === 0 && outAfter.overlays.length === 0);
   } else { check('H08 cron wrong secret', null, 'NOT_TESTED (no cron secret available)'); check('H09 cron valid secret', null, 'NOT_TESTED (no cron secret available)'); }
   // H27 preview
-  if (ctx.previewBase) { const saved = [BASE, COOKIE]; BASE = ctx.previewBase; COOKIE = readFile(ctx.previewCookieFile); const pr2 = await call('POST', EP + '?check=firestore', { authorization: 'Bearer ' + aOK.token }); [BASE, COOKIE] = saved; check('H27 Preview rejected by OIDC', pr2.s === 502, String(pr2.s)); } else check('H27 Preview rejected', null, 'NOT_TESTED (no --preview-base)');
+  if (ctx.previewBase) { const saved = [BASE, COOKIE]; BASE = ctx.previewBase; COOKIE = readFile(ctx.previewCookieFile); const pr2 = await call('POST', EP + '?check=firestore', { authorization: 'Bearer ' + aOK.token }); [BASE, COOKIE] = saved; check('H27 Preview rejected by OIDC', [401, 302, 403].includes(pr2.s) ? null : pr2.s === 502, [401, 302, 403].includes(pr2.s) ? 'NOT_TESTED: Vercel Authentication wall' : String(pr2.s)); } else check('H27 Preview rejected', null, 'NOT_TESTED (no --preview-base)');
   // H28 integrity across every athlete
   let integ = true; const notes = [];
   for (const x of inScope.concat([aOut])) { const s = await snap(x); const m2 = s.meso || {}; const recs = Object.values(m2.progressionApplications || {}), ovs = Object.values(m2.nextExposureOverlays || {});
