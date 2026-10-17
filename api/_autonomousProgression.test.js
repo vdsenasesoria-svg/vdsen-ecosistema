@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const executor = require('./autonomous-progression');
+const executor = require('./_autonomousProgression');
 const trigger = require('./autonomous-progression-trigger');
 
 function fakeDb(seed) {
@@ -47,4 +47,11 @@ test('T570-R trigger authenticates the athlete token and never accepts body clie
   const response = { statusCode: 0, body: null, status(n) { this.statusCode = n; return this; }, json(v) { this.body = v; return this; } };
   await handler({ method: 'POST', headers: { authorization: 'Bearer verified-token' }, body: { planId: s.planId, clientId: 'other' } }, response);
   assert.equal(response.statusCode, 202); assert.equal(response.body.status, 'DISARMED'); assert.deepEqual(calls, ['verified-token']);
+});
+test('T570-R cron GET on the single function requires CRON_SECRET and is disarmed by default', async () => {
+  const handler = trigger.makeHandler({ db: fakeDb({}), enabled: false, cronSecret: 's3cret', verifyIdToken: async () => { throw new Error('unused'); } });
+  const res = () => ({ statusCode: 0, body: null, status(n) { this.statusCode = n; return this; }, json(v) { this.body = v; return this; } });
+  let r = res(); await handler({ method: 'GET', headers: {} }, r); assert.equal(r.statusCode, 401);
+  r = res(); await handler({ method: 'GET', headers: { authorization: 'Bearer wrong!' } }, r); assert.equal(r.statusCode, 401);
+  r = res(); await handler({ method: 'GET', headers: { authorization: 'Bearer s3cret' } }, r); assert.equal(r.statusCode, 202);
 });

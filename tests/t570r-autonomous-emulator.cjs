@@ -8,9 +8,9 @@ const { initializeApp, deleteApp } = require('firebase/app');
 const { getFirestore, connectFirestoreEmulator, doc, setDoc, updateDoc } = require('firebase/firestore');
 const { initializeApp: initAdmin, deleteApp: deleteAdmin } = require('firebase-admin/app');
 const { getFirestore: getAdminFirestore } = require('firebase-admin/firestore');
-const executor = require('../api/autonomous-progression.js');
+const executor = require('../api/_autonomousProgression.js');
 const trigger = require('../api/autonomous-progression-trigger.js');
-const sweep = require('../api/autonomous-progression-sweep.js');
+const sweep = require('../api/_autonomousProgressionSweep.js');
 const F = require('./helpers/lifecycle-fixture.js');
 
 assert.ok(process.env.FIRESTORE_EMULATOR_HOST, 'Firestore emulator is required');

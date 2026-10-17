@@ -1,10 +1,14 @@
 'use strict';
 
-var executor = require('./autonomous-progression');
+var executor = require('./_autonomousProgression');
+var sweepLib = require('./_autonomousProgressionSweep');
 
 function makeHandler(deps) {
   deps = deps || {};
   return async function handler(req, res) {
+    // GET = scheduled recovery sweep (Vercel cron, CRON_SECRET). One function on purpose: the Hobby plan caps functions at 12.
+    if (req.method === 'GET') return sweepLib.makeHandler({ db: deps.db, cronSecret: deps.cronSecret, enabled: deps.enabled === true,
+      numericApplyEnabled: deps.numericApplyEnabled === true })(req, res);
     if (req.method !== 'POST') return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
     var header = req.headers && req.headers.authorization;
     var token = typeof header === 'string' && /^Bearer\s+(\S+)$/.exec(header.trim());
@@ -27,7 +31,7 @@ function makeHandler(deps) {
 async function defaultHandler(req, res) {
   var admin = require('./_firebaseAdmin');
   var app = admin.getAdminApp(), firebaseAdmin = require('firebase-admin');
-  return makeHandler({ db: firebaseAdmin.firestore(app), verifyIdToken: admin.verifyIdToken,
+  return makeHandler({ db: firebaseAdmin.firestore(app), verifyIdToken: admin.verifyIdToken, cronSecret: process.env.CRON_SECRET,
     enabled: process.env.AUTONOMOUS_PROGRESSION_ENABLED === 'true',
     numericApplyEnabled: process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED === 'true' })(req, res);
 }

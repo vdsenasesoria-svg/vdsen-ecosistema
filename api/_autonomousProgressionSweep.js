@@ -7,7 +7,7 @@
 // never "all clients".  Processing is idempotent, so overlap with the browser
 // trigger or a retried sweep cannot double-apply.
 var crypto = require('crypto');
-var executor = require('./autonomous-progression');
+var executor = require('./_autonomousProgression');
 
 function _data(snap) { return snap && snap.exists === true ? snap.data() : null; }
 
@@ -52,7 +52,7 @@ function _secretOk(header, secret) {
 function makeHandler(deps) {
   deps = deps || {};
   return async function handler(req, res) {
-    if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
+    if (req.method !== 'GET') return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
     if (!_secretOk(req.headers && req.headers.authorization, deps.cronSecret)) return res.status(401).json({ error: 'AUTH_INVALID' });
     try {
       var out = await runSweep({ db: deps.db, enabled: deps.enabled === true, numericApplyEnabled: deps.numericApplyEnabled === true });

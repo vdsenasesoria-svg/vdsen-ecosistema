@@ -48,7 +48,7 @@ test('T537.3 the athlete app has NO canonical writer: no record creation, no que
 });
 
 test('T570-R PENDING records have exactly one runtime writer: the trusted executor; Coach monitor is passive', () => {
-  const executor = read('api/autonomous-progression.js');
+  const executor = read('api/_autonomousProgression.js');
   assert.ok(/shadow\.materializeRecords\(/.test(executor));
   assert.ok(/client\.activePlanId !== requestedPlanId/.test(executor), 'server binds requested plan to the authenticated client');
   assert.ok(/Never write entries, plan, client/.test(executor));
