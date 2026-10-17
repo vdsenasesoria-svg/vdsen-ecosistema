@@ -11332,6 +11332,8 @@ function _captureLifecycleState(uid, planId, planData, clientData, mesoSnap) {
   if (typeof setTimeout === 'function' && typeof _scheduleTrustedProgression === 'function') setTimeout(function() { try { _scheduleTrustedProgression(uid, planId); } catch(_e) {} }, 1500);
   var m = (mesoSnap && typeof mesoSnap.exists === 'function' && mesoSnap.exists()) ? mesoSnap.data() : null;
   if (!m || m.planId !== planId) return;
+  // T570-R.2: a cache-served snapshot is never authority for a prescription change; only a server-confirmed read may show an overlay.
+  if (mesoSnap.metadata && mesoSnap.metadata.fromCache === true) return;
   LIFECYCLE_STATE.planDoc = planData || null;
   LIFECYCLE_STATE.records = m.progressionApplications || {};
   LIFECYCLE_STATE.overlays = m.nextExposureOverlays || {};

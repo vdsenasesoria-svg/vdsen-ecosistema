@@ -165,3 +165,21 @@ test('T533.12 REST overlay reaches the rest timers (both completion paths); flag
   assert.equal(vm.runInContext('_withOverlayRest(__ej, 0, 0)', off.context), off.ej);
   assert.ok(/var _ejCur = _withOverlayRest\(\(_EJERCICIOS_DIA \|\| \[\]\)\[ei\] \|\| null, di, ei\);/.test(client) && (client.match(/_withOverlayRest\(/g) || []).length >= 3);
 });
+
+test('T570-R.2 a cache-served meso snapshot is never authority: no overlay is captured or shown; forged/inconsistent pairs fall back to the base plan', () => {
+  const e = env();
+  const sc = F.scenario(), a = F.applied(sc, { state: 'APPLIED' });
+  const cacheSnap = { exists: () => true, metadata: { fromCache: true }, data: () => ({ planId: 'p', progressionApplications: a.records, nextExposureOverlays: a.overlays }) };
+  const c = e.context; Object.assign(c, { PLANDOC: sc.plan, SNAP2: cacheSnap });
+  vm.runInContext('_captureLifecycleState("c", "p", PLANDOC, { coachInterventions: [] }, SNAP2)', c);
+  assert.deepEqual([Object.keys(c.LIFECYCLE_STATE.overlays).length, c.LIFECYCLE_STATE.planDoc], [0, null]);
+  assert.equal(resolve({ context: c, ej: e.ej }), null);
+  // forged: overlay present but its record is PENDING / missing / belongs to another client => base plan
+  const input = x => F.effectiveInput(a, x);
+  const real = F.on.effective;
+  assert.equal(real.resolveEffective(input({ records: {} })).provenance, 'BASE_PLAN');
+  const pending = Object.assign({}, a.record, { state: 'PENDING' });
+  assert.equal(real.resolveEffective(input({ records: { [a.record.key]: pending } })).provenance, 'BASE_PLAN');
+  assert.equal(real.resolveEffective(input({ clientId: 'someone-else' })).provenance, 'BASE_PLAN');
+  assert.equal(real.resolveEffective(input({ planId: 'other-plan', activePlanId: 'other-plan' })).provenance, 'BASE_PLAN');
+});

@@ -183,20 +183,92 @@ test('durable recovery: the cron sweep processes pending evidence when the brows
   assert.deepEqual(await sweep.runSweep({ db, enabled: false, numericApplyEnabled: true }), { status: 'DISARMED', processed: 0 });
 });
 
-test('E06 a failed save persists no evidence: the executor creates no record and no overlay', { timeout: 60000 }, async () => {
+// ---- T570-R.2 -------------------------------------------------------------------------------------------------------------------------
+const snapshotAll = async f => JSON.stringify([(await db.doc('logs/' + f.athlete.uid + '/mesos/' + f.planId).get()).data(), (await db.doc('logs/' + f.athlete.uid).get()).data(),
+  (await db.doc('plans/' + f.planId).get()).data(), (await db.doc('clients/' + f.athlete.uid).get()).data()]);
+const setCanary = (f, v) => db.doc('coaches/' + f.coach.uid).set({ role: 'coach', autoApplyCanary: v });
+const setClientCoachCanaryAbsent = f => db.doc('coaches/' + f.coach.uid).set({ role: 'coach' });
+
+test('CANARY boundary: absent / disabled / out-of-client => ZERO writes of any kind (materialize included)', { timeout: 90000 }, async () => {
+  const absent = await fixture(); await setClientCoachCanaryAbsent(absent);
+  const disabled = await fixture(); await setCanary(disabled, { enabled: false, clientIds: [disabled.athlete.uid] });
+  const other = await fixture({ canaryOther: true });
+  for (const f of [absent, disabled, other]) {
+    const before = await snapshotAll(f);
+    const out = await run(f);
+    assert.equal(out.status, 'OUT_OF_CANARY'); assert.deepEqual(out.applied, []);
+    assert.equal(await snapshotAll(f), before, 'not a single byte changed');
+  }
+});
+
+test('CANARY boundary: PID outside scope => no record, no application; in-scope PID processes normally', { timeout: 60000 }, async () => {
+  const f = await fixture(); await setCanary(f, { enabled: true, clientIds: [f.athlete.uid], prescriptionExerciseIds: ['some-other-pid'] });
+  const before = await snapshotAll(f); const out = await run(f);
+  assert.deepEqual(await recs(f), [], JSON.stringify(out)); assert.deepEqual(await overlays(f), []); assert.equal(await snapshotAll(f), before);
+  await setCanary(f, { enabled: true, clientIds: [f.athlete.uid], prescriptionExerciseIds: [PID] });
+  await run(f); assert.equal((await overlays(f)).length, 1, 'authorized athlete + PID processes normally');
+});
+
+test('CANARY boundary: disabling the canary between the pending read and the apply transaction rejects the operation', { timeout: 60000 }, async () => {
+  const f = await fixture(); await run(f, { numericApplyEnabled: false });
+  assert.equal((await recs(f))[0].state, 'PENDING');
+  let txCount = 0;
+  const racing = Object.create(db);
+  racing.collection = n => db.collection(n);
+  racing.runTransaction = async fn => { txCount++; await setCanary(f, { enabled: false, clientIds: [f.athlete.uid] }); return db.runTransaction(fn); };
+  const out = await executor.applyPending(racing, f.athlete.uid, f.planId, () => '2026-09-28T00:00:00.000Z');
+  assert.ok(txCount >= 1); assert.deepEqual(out.map(x => x.written), [false]); assert.equal(out[0].reason, 'OUT_OF_CANARY_SCOPE');
+  assert.deepEqual(await overlays(f), []); assert.equal((await recs(f))[0].state, 'PENDING');
+});
+
+test('E08 causal safety: identical evidence applies; adding ONLY a pain report blocks the increase with the exact SAFETY code; SRA stays NONE', { timeout: 60000 }, async () => {
+  const clean = await fixture(); const a = await run(clean);
+  assert.deepEqual(a.applied.map(x => x.written), [true]);
+  const [applied] = await recs(clean); assert.equal(applied.sraTrace.mutation, 'NONE');
+  const pain = await fixture();
+  const entries = Object.assign({}, pain.logs, { postsession_1_2: { articular: 'si', patron: 'press', eimd: 1, sleep: 8, rpe: 7 } });
+  assert.deepEqual(Object.keys(entries).filter(k => !(k in pain.logs)), ['postsession_1_2'], 'the ONLY difference is the pain report');
+  await db.doc('logs/' + pain.athlete.uid + '/mesos/' + pain.planId).set({ planId: pain.planId, entries });
+  await db.doc('logs/' + pain.athlete.uid).set({ planId: pain.planId, entries });
+  const b = await run(pain);
+  assert.deepEqual(await overlays(pain), [], JSON.stringify(b));
+  const codes = b.applied.map(x => x.reason);
+  assert.ok(codes.length === 0 || codes.every(c => /SAFETY_CONFLICT|NOT_ELIGIBLE/.test(c)), JSON.stringify(codes));
+  console.log('E08 blocking codes:', JSON.stringify(codes), 'records:', JSON.stringify((await recs(pain)).map(r => [r.state, r.reasonCode, r.magnitude && r.magnitude.reasonCodes])));
+  // an informational SRA trace is never presented as an operative veto
+  const t = (await recs(clean))[0].sraTrace;
+  assert.equal(t.mutation, 'NONE'); assert.ok(!('veto' in t) && !('blocked' in t), 'SRA trace carries no veto field');
+});
+
+test('E06 real failed save: a denied athlete write persists nothing; the executor ignores it; the successful retry yields ONE operation', { timeout: 90000 }, async () => {
   const f = await fixture();
   await db.doc('logs/' + f.athlete.uid + '/mesos/' + f.planId).set({ planId: f.planId, entries: {} });
   await db.doc('logs/' + f.athlete.uid).set({ planId: f.planId, entries: {} });
-  const out = await run(f);
-  assert.deepEqual(await overlays(f), [], JSON.stringify(out)); assert.deepEqual(await recs(f), []);
+  const foreign = await signedIn();
+  // 1) the save is DENIED (athlete writing into someone else's log): the write is not confirmed
+  await assert.rejects(() => setDoc(doc(foreign.db, 'logs', f.athlete.uid, 'mesos', f.planId), { planId: f.planId, entries: f.logs }, { merge: true }), /PERMISSION_DENIED|permission/i);
+  const out1 = await run(f);
+  assert.deepEqual(await recs(f), [], JSON.stringify(out1)); assert.deepEqual(await overlays(f), []);
+  assert.deepEqual(Object.keys((await meso(f)).entries), [], 'no local data became evidence');
+  // 2) the retry by the legitimate athlete succeeds (twice: duplicate retry)
+  for (let i = 0; i < 2; i++) {
+    await setDoc(doc(f.athlete.db, 'logs', f.athlete.uid, 'mesos', f.planId), { planId: f.planId, entries: f.logs }, { merge: true });
+    await setDoc(doc(f.athlete.db, 'logs', f.athlete.uid), { planId: f.planId, entries: f.logs }, { merge: true });
+    await run(f);
+  }
+  assert.equal((await recs(f)).length, 1); assert.equal((await overlays(f)).length, 1);
+  assert.equal((await recs(f))[0].events.filter(e => e.state === 'APPLIED').length, 1);
+  assert.equal(Object.keys((await meso(f)).entries).filter(k => k.startsWith('log_')).length, 6, 'no duplicated series');
 });
 
-test('E08 an unfavorable articular signal never authorizes an increase (SRA trace stays NONE)', { timeout: 60000 }, async () => {
-  const f = await fixture();
-  const withPain = Object.assign({}, f.logs, { postsession_1_2: { articular: 'si', patron: 'press', eimd: 2, sleep: 5, rpe: 9 } });
-  await db.doc('logs/' + f.athlete.uid + '/mesos/' + f.planId).set({ planId: f.planId, entries: withPain });
-  await db.doc('logs/' + f.athlete.uid).set({ planId: f.planId, entries: withPain });
-  const out = await run(f);
-  assert.deepEqual(await overlays(f), [], JSON.stringify(out));
-  (await recs(f)).forEach(r => assert.equal(r.sraTrace.mutation, 'NONE'));
+test('CLIENT forgery: the athlete cannot create/flip APPLIED records or overlays by any write shape (set, update, dotted paths, root summary)', { timeout: 60000 }, async () => {
+  const f = await fixture(); await run(f); // a legitimate APPLIED pair exists
+  const [r] = await recs(f), [o] = await overlays(f), mesoRef = doc(f.athlete.db, 'logs', f.athlete.uid, 'mesos', f.planId);
+  let _n = 0; const denied = p => assert.rejects(p, /PERMISSION_DENIED|permission/i, 'write shape #' + (++_n));
+  await denied(updateDoc(mesoRef, { ['progressionApplications.' + r.key + '.state']: 'CONSUMED' }));
+  await denied(updateDoc(mesoRef, { ['nextExposureOverlays.' + o.key + '.appliedValue']: 99 }));
+  await denied(updateDoc(mesoRef, { ['nextExposureOverlays.forged']: Object.assign({}, o, { key: 'forged' }) }));
+  await denied(setDoc(doc(f.athlete.db, 'logs', f.athlete.uid), { progressionApplicationSummary: { counts: { APPLIED: 9 } } }, { merge: true }));
+  await denied(updateDoc(doc(f.athlete.db, 'clients', f.athlete.uid), { coachInterventions: [{ id: 'forged', targetType: 'EXERCISE', targetId: PID, action: 'NO_CHANGE', decidedAt: '2026-09-29T00:00:00.000Z' }] }));
+  assert.equal((await overlays(f))[0].appliedValue, o.appliedValue, 'canonical overlay unchanged');
 });

@@ -18,6 +18,7 @@ function seed() {
   logs.progrec_1_2 = { calculatedAt: '2026-01-02T00:00:00.000Z', recommendations: [{ prescriptionExerciseId: pid, exerciseId: 'ex-1', exerciseName: 'Press', action: 'increase_reps', newReps: 11 }] };
   return { uid, planId, docs: {
     ['clients/' + uid]: { activePlanId: planId, coachId: 'coach-1' },
+    'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: [] } },
     ['plans/' + planId]: { clientId: uid, weeks: 3, updatedAt: '2026-01-01T00:00:00.000Z', days: [0, 2].map(dayIndex => ({ dayIndex, exercises: [{ prescriptionExerciseId: pid, exerciseId: 'ex-1', exerciseName: 'Press', sets: [0, 1, 2].map(setIndex => ({ setIndex, repsTarget: 10, rirTarget: 2, restSeconds: 90 })) }] })) },
     ['logs/' + uid]: { planId, entries: logs, updatedAt: 2 },
     ['logs/' + uid + '/mesos/' + planId]: { planId, entries: logs, updatedAt: 2 }
@@ -54,4 +55,9 @@ test('T570-R cron GET on the single function requires CRON_SECRET and is disarme
   let r = res(); await handler({ method: 'GET', headers: {} }, r); assert.equal(r.statusCode, 401);
   r = res(); await handler({ method: 'GET', headers: { authorization: 'Bearer wrong!' } }, r); assert.equal(r.statusCode, 401);
   r = res(); await handler({ method: 'GET', headers: { authorization: 'Bearer s3cret' } }, r); assert.equal(r.statusCode, 202);
+});
+test('T570-R no canary document => OUT_OF_CANARY and zero writes (fake db)', async () => {
+  const s = seed(); delete s.docs['coaches/coach-1']; const db = fakeDb(s.docs), before = structuredClone([...db.docs]);
+  const out = await executor.processProgression({ db, clientId: s.uid, planId: s.planId, enabled: true, numericApplyEnabled: true });
+  assert.equal(out.status, 'OUT_OF_CANARY'); assert.deepEqual([...db.docs], before);
 });

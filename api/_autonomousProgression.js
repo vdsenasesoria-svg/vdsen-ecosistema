@@ -29,6 +29,11 @@ async function materialize(db, clientId, requestedPlanId, clock) {
     // the browser is only an equality assertion against the canonical client.
     if (!client || !client.activePlanId || client.activePlanId !== requestedPlanId) return { status: 'PLAN_MISMATCH' };
     var refs = _refs(db, clientId, requestedPlanId, client.coachId);
+    // Release-controlled canary: re-read INSIDE this transaction, before any read of evidence or any write.
+    // No canary document / disabled / athlete not listed => zero writes of any kind.
+    var coachData = refs.coach ? _data(await tx.get(refs.coach)) : null;
+    var scope = consumer.normalizeCanaryScope(coachData && coachData.autoApplyCanary);
+    if (!scope.enabled || scope.clientIds.indexOf(clientId) < 0) return { status: 'OUT_OF_CANARY' };
     var snaps = await Promise.all([tx.get(refs.plan), tx.get(refs.meso), tx.get(refs.root)]);
     var plan = _data(snaps[0]), meso = _data(snaps[1]), root = _data(snaps[2]);
     if (!plan || !root || (plan.clientId && plan.clientId !== clientId) || root.planId !== requestedPlanId || (meso && meso.planId !== requestedPlanId)) return { status: 'SOURCE_INVALID' };
@@ -41,6 +46,14 @@ async function materialize(db, clientId, requestedPlanId, clock) {
     });
     // SRA is attached as a read-only provenance trace, not a second decision
     // engine and never a gate for an otherwise valid progression candidate.
+    // PID-level scope: a record for a PID outside the canary is never created.
+    var createdBefore = out.created.length;
+    out.created = out.created.filter(function(key) {
+      var inScope = consumer.inCanaryScope(coachData.autoApplyCanary, clientId, out.records[key].prescriptionExerciseId);
+      if (!inScope) delete out.records[key];
+      return inScope;
+    });
+    if (createdBefore && !out.created.length) out.changed = false;
     out.created.forEach(function(key) {
       var record = out.records[key];
       out.records[key] = Object.assign({}, record, { sraTrace: sra.buildContext({ clientId: clientId, prescriptionExerciseId: record.prescriptionExerciseId,
@@ -59,8 +72,13 @@ async function materialize(db, clientId, requestedPlanId, clock) {
 async function applyPending(db, clientId, planId, clock) {
   var snap = await db.collection('logs').doc(clientId).collection('mesos').doc(planId).get();
   var meso = _data(snap);
+  var clientDoc = _data(await db.collection('clients').doc(clientId).get());
+  var coachDoc = clientDoc && clientDoc.coachId ? _data(await db.collection('coaches').doc(clientDoc.coachId).get()) : null;
+  var canary = coachDoc && coachDoc.autoApplyCanary;
+  // Cheap pre-filter only; the authoritative scope check is repeated inside each transaction by the consumer.
   var keys = Object.keys((meso && meso.progressionApplications) || {}).filter(function(key) {
-    return meso.progressionApplications[key] && meso.progressionApplications[key].state === shadow.STATES.PENDING;
+    var r = meso.progressionApplications[key];
+    return r && r.state === shadow.STATES.PENDING && consumer.inCanaryScope(canary, clientId, r.prescriptionExerciseId);
   });
   var results = [];
   for (var i = 0; i < keys.length; i++) {
@@ -92,7 +110,7 @@ async function processProgression(input) {
   input = input || {};
   if (!input.enabled) return { status: 'DISARMED', writes: 0 };
   var m = await materialize(input.db, input.clientId, input.planId, input.clock);
-  if (m.status === 'PLAN_MISMATCH' || m.status === 'SOURCE_INVALID' || !input.numericApplyEnabled) return Object.assign({}, m, { applied: [] });
+  if (m.status === 'PLAN_MISMATCH' || m.status === 'SOURCE_INVALID' || m.status === 'OUT_OF_CANARY' || !input.numericApplyEnabled) return Object.assign({}, m, { applied: [] });
   return Object.assign({}, m, { applied: await applyPending(input.db, input.clientId, input.planId, input.clock) });
 }
 
