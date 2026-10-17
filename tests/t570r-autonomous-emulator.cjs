@@ -37,20 +37,20 @@ function evidence(opts) {
   [[1, 0], [1, 2]].forEach(([w, d]) => [0, 1, 2].forEach(s => {
     logs['log_' + w + '_' + d + '_0_s' + s] = { done: true, carga: '100', reps: '10', unit: 'KG', rir: opts.rirTarget === undefined ? 1 : opts.rirTarget, rir_real: opts.rirReal === undefined ? 3 : opts.rirReal, prescriptionExerciseId: PID, ts: T0 + d * 1000 + s };
   }));
-  if (!opts.noRec) logs.progrec_1_2 = { calculatedAt: '2026-09-27T12:00:00.000Z', recommendations: [{ prescriptionExerciseId: PID, exerciseId: 'ex-1', exerciseName: 'Press', action: 'increase_reps', newReps: 11 }] };
+  if (!opts.noRec) logs.progrec_1_2 = { calculatedAt: '2026-09-27T12:00:00.000Z', recommendations: [{ prescriptionExerciseId: PID, exerciseId: opts.exerciseId || 'ex-1', exerciseName: 'Press', action: opts.exerciseId ? 'increase_load' : 'increase_reps', newReps: opts.exerciseId ? 10 : 11 }].map(r => opts.exerciseId ? Object.assign(r, { newLoad: 5 }) : r) };
   return logs;
 }
-function planDoc(uid, coachId, rirTarget) {
+function planDoc(uid, coachId, rirTarget, exerciseId) {
   return { clientId: uid, coachId, status: 'active', weeks: 3, createdAt: '2026-09-26T00:00:00.000Z', updatedAt: '2026-09-26T00:00:00.000Z',
-    days: [0, 2].map(dayIndex => ({ dayIndex, exercises: [{ prescriptionExerciseId: PID, exerciseId: 'ex-1', exerciseName: 'Press', repsRange: { min: 8, max: 12 }, sets: [0, 1, 2].map(setIndex => ({ setIndex, repsTarget: 10, rirTarget: rirTarget === undefined ? 1 : rirTarget, restSeconds: 90 })) }] })) };
+    days: [0, 2].map(dayIndex => ({ dayIndex, exercises: [{ prescriptionExerciseId: PID, exerciseId: exerciseId || 'ex-1', exerciseName: 'Press', repsRange: { min: 8, max: 12 }, sets: [0, 1, 2].map(setIndex => ({ setIndex, repsTarget: 10, rirTarget: rirTarget === undefined ? 1 : rirTarget, restSeconds: 90 })) }] })) };
 }
 async function fixture(o) {
   o = o || {};
   const athlete = await signedIn(), coach = await signedIn();
   const planId = 'plan-' + athlete.uid, logs = evidence(o);
-  await db.doc('coaches/' + coach.uid).set({ role: 'coach', autoApplyCanary: o.canary === false ? { enabled: false, clientIds: [] } : { enabled: true, clientIds: o.canaryOther ? ['someone-else'] : [athlete.uid], prescriptionExerciseIds: [] } });
+  await db.doc('coaches/' + coach.uid).set(Object.assign({ role: 'coach' }, o.equipmentIncrements ? { equipmentIncrements: o.equipmentIncrements } : {}, { autoApplyCanary: o.canary === false ? { enabled: false, clientIds: [] } : { enabled: true, clientIds: o.canaryOther ? ['someone-else'] : [athlete.uid], prescriptionExerciseIds: [] } }));
   await db.doc('clients/' + athlete.uid).set({ coachId: coach.uid, activePlanId: planId, coachInterventions: o.interventions || [] });
-  await db.doc('plans/' + planId).set(planDoc(athlete.uid, coach.uid, o.rirTarget));
+  await db.doc('plans/' + planId).set(planDoc(athlete.uid, coach.uid, o.rirTarget, o.exerciseId));
   await db.doc('logs/' + athlete.uid).set({ planId, entries: logs });
   await db.doc('logs/' + athlete.uid + '/mesos/' + planId).set({ planId, entries: logs });
   return { athlete, coach, planId, logs };
@@ -138,7 +138,8 @@ test('E12/E13/E14 disarmed, out-of-scope and disabled canary perform zero mutati
 test('E19 a LOAD candidate with no verified equipment increment is blocked: no overlay, no invented load', { timeout: 60000 }, async () => {
   const f = await fixture({ rirTarget: 2 }); const out = await run(f);
   assert.deepEqual(await overlays(f), [], JSON.stringify(out));
-  assert.deepEqual(out.applied.map(a => a.reason), ['UNRESOLVED_EQUIPMENT_INCREMENT']);
+  assert.ok(out.applied.every(a => a.written === false && /EQUIPMENT/.test(a.reason)), JSON.stringify(out.applied));
+  assert.deepEqual(out.applied.map(a => a.blocked), ['BLOCKED_EQUIPMENT_DATA'], 'classified as an equipment-data block, not a failure');
 });
 
 test('E20 a Coach intervention prevails and never loads a LOAD overlay', { timeout: 60000 }, async () => {
@@ -271,4 +272,17 @@ test('CLIENT forgery: the athlete cannot create/flip APPLIED records or overlays
   await denied(setDoc(doc(f.athlete.db, 'logs', f.athlete.uid), { progressionApplicationSummary: { counts: { APPLIED: 9 } } }, { merge: true }));
   await denied(updateDoc(doc(f.athlete.db, 'clients', f.athlete.uid), { coachInterventions: [{ id: 'forged', targetType: 'EXERCISE', targetId: PID, action: 'NO_CHANGE', decidedAt: '2026-09-29T00:00:00.000Z' }] }));
   assert.equal((await overlays(f))[0].appliedValue, o.appliedValue, 'canonical overlay unchanged');
+});
+
+test('LOAD: with verified (synthetic, test-only) equipment increments the LOAD overlay is realizable; without them it is BLOCKED_EQUIPMENT_DATA while REPS stays independent', { timeout: 90000 }, async () => {
+  const DB_EX = 'legacy-remo-mancuerna-unilateral';
+  const SYNTH = { shared: { 'functional-dumbbells': { kind: 'STEP', step: 2.5, unit: 'KG', source: 'COACH_CONFIGURED' } }, gyms: {} };
+  const withCfg = await fixture({ rirTarget: 2, exerciseId: DB_EX, equipmentIncrements: SYNTH });
+  const noCfg = await fixture({ rirTarget: 2, exerciseId: DB_EX });
+  const a = await run(withCfg), b = await run(noCfg);
+  assert.deepEqual(a.applied.map(x => [x.written, x.blocked]), [[true, null]], JSON.stringify(a.applied));
+  const [o] = await overlays(withCfg); assert.equal(o.dimension, 'LOAD'); assert.equal(o.unit, 'KG'); assert.ok(o.appliedValue % 2.5 === 0, 'a realizable multiple of the configured step: ' + o.appliedValue);
+  assert.deepEqual(b.applied.map(x => [x.written, x.blocked]), [[false, 'BLOCKED_EQUIPMENT_DATA']]); assert.deepEqual(await overlays(noCfg), []);
+  const reps = await fixture(); const c = await run(reps);
+  assert.deepEqual(c.applied.map(x => [x.written, x.blocked]), [[true, null]], 'REPS is not paralysed by missing equipment data');
 });
