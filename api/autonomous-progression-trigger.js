@@ -31,7 +31,7 @@ function makeHandler(deps) {
 async function defaultHandler(req, res) {
   var admin = require('./_firebaseAdmin'), app, firebaseAdmin;
   // Missing Firebase Admin configuration must fail CLOSED with a clean response, never crash the function (Preview has no credentials).
-  try { app = admin.getAdminApp(); firebaseAdmin = require('firebase-admin'); } catch (_) { return res.status(503).json({ error: 'RUNTIME_NOT_CONFIGURED' }); }
+  try { admin.setRequestOidcToken(req.headers && req.headers['x-vercel-oidc-token']); app = admin.getAdminApp(); firebaseAdmin = require('firebase-admin'); } catch (_) { return res.status(503).json({ error: 'RUNTIME_NOT_CONFIGURED' }); }
   return makeHandler({ db: firebaseAdmin.firestore(app), verifyIdToken: admin.verifyIdToken, cronSecret: process.env.CRON_SECRET,
     enabled: process.env.AUTONOMOUS_PROGRESSION_ENABLED === 'true',
     numericApplyEnabled: process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED === 'true' })(req, res);

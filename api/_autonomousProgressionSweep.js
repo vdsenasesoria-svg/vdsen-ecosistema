@@ -57,6 +57,11 @@ function makeHandler(deps) {
   return async function handler(req, res) {
     if (req.method !== 'GET') return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
     if (!_secretOk(req.headers && req.headers.authorization, deps.cronSecret)) return res.status(401).json({ error: 'AUTH_INVALID' });
+    // Read-only runtime probe (authenticated by the same secret): proves the Firestore credential works without writing anything.
+    if (req.query && req.query.check === 'firestore') {
+      try { await deps.db.collection('releaseControl').doc('autonomousProgression').get(); return res.status(200).json({ firestore: 'READ_OK' }); }
+      catch (_) { return res.status(502).json({ firestore: 'READ_FAILED' }); }
+    }
     try {
       var out = await runSweep({ db: deps.db, enabled: deps.enabled === true, numericApplyEnabled: deps.numericApplyEnabled === true });
       return res.status(out.status === 'DISARMED' ? 202 : 200).json({ status: out.status, processed: out.processed });
