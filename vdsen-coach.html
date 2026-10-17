@@ -18047,34 +18047,9 @@ El esfuerzo no es negociable.
     const currentWeek = logsData.currentWeek || 1;
     const ci = entries['ci_sem_' + currentWeek] || {};
     let autoSummary = logsData.progressionApplicationSummary;
-    // T537: PENDING records are materialized HERE (owner Coach) from the athlete's persisted progrec_* evidence; the athlete app cannot write them.
-    if (c && c.activePlanId && currentCoach && c.coachId === currentCoach.uid) {
-      try {
-        const _mat = await _materializeShadowRecords(clientId, c.activePlanId);
-        if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;
-        if (_mat) autoSummary = _mat;
-      } catch(e) { console.warn('AUTO shadow materialization failed:', e); }
-    }
-    if (autoSummary && autoSummary.planId === (c && c.activePlanId) &&
-        (autoSummary.autoCount > 0 || (autoSummary.items || []).some(function(item) {
-          return item.state === 'REJECTED' && item.reasonCode === 'COACH_KEEP_ORIGINAL';
-        }))) {
-      try {
-        autoSummary = await _reconcileShadowAuto(clientId, autoSummary.planId) || autoSummary;
-      } catch(e) {
-        console.warn('AUTO shadow reconciliation failed:', e);
-      }
-      if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;
-    }
-    // T534: APPLIED overlays that a Coach decision / plan change invalidated before their target started become OVERRIDDEN / STALE
-    // (safety valves; with NUMERIC_APPLY_ENABLED=false no APPLIED record exists, so this never runs and never reads).
-    if (autoSummary && autoSummary.planId === (c && c.activePlanId) && autoSummary.counts && autoSummary.counts.APPLIED > 0) {
-      try {
-        autoSummary = await _reconcileAppliedOverlays(clientId, autoSummary.planId, autoSummary);
-      } catch(e) { console.warn('Applied overlay reconciliation failed:', e); }
-      if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;
-    }
-
+    // The Coach monitor is read-only. Materialization/reconciliation happens
+    // in the trusted executor after confirmed athlete evidence, never when a
+    // Coach opens this screen.
     // Última sesión completada
     let lastDoneW = 0, lastDoneD = 0;
     Object.keys(entries).forEach(k => {

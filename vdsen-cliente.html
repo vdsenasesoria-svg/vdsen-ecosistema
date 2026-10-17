@@ -40,7 +40,7 @@ window.addEventListener('appinstalled', function() {
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, setPersistence, browserLocalPersistence }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { initializeFirestore, persistentLocalCache, doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc, orderBy, limit, onSnapshot, runTransaction }
+import { initializeFirestore, persistentLocalCache, doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc, orderBy, limit, onSnapshot, runTransaction, waitForPendingWrites }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ══════════════════════════════════════════════════
@@ -64,7 +64,7 @@ setPersistence(auth, browserLocalPersistence).catch(() => {});
 window._fb = { auth, db, signInWithEmailAndPassword, signOut, onAuthStateChanged,
                sendPasswordResetEmail,
                doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs,
-               addDoc, orderBy, limit, onSnapshot, runTransaction };
+               addDoc, orderBy, limit, onSnapshot, runTransaction, waitForPendingWrites };
 window._fbReady = true;
 window.dispatchEvent(new Event('fbReady'));
 
@@ -11272,6 +11272,10 @@ async function _doSaveLogs() {
     // Indicador breve de guardado exitoso
     _showSaveOk();
     try { _maybeConsumeOverlays(_uidAtStart); } catch(_ce) {}
+    // The trusted executor is notified only after Firestore confirms the
+    // pending write. It receives no evidence payload and re-reads the
+    // canonical documents itself; a disabled endpoint is an intentional no-op.
+    try { _scheduleTrustedProgression(_uidAtStart, _payload.planId); } catch(_pe) {}
     return true;
   } catch(e) {
     if (!USER || USER.uid !== _uidAtStart) return false;
@@ -11296,8 +11300,26 @@ async function _doSaveLogs() {
   }
 }
 
-// T537: the athlete app NO LONGER creates progression application records (no shadow queue, no recovery drain): Firestore rules reserve every
-// canonical progression field to the owner Coach, which materializes PENDING records from the persisted progrec_* evidence.
+var _trustedProgressionPending = Object.create(null);
+function _scheduleTrustedProgression(uid, planId) {
+  if (!uid || !planId || !USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId || !FB || typeof FB.waitForPendingWrites !== 'function') return;
+  var key = uid + ':' + planId;
+  if (_trustedProgressionPending[key]) return;
+  _trustedProgressionPending[key] = true;
+  FB.waitForPendingWrites(FB.db).then(function() {
+    if (!USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId) return null;
+    return USER.getIdToken().then(function(token) {
+      return fetch('/api/autonomous-progression-trigger', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ planId: planId }) });
+    });
+  }).catch(function(err) {
+    // Saving execution evidence never depends on this background service.
+    console.warn('[progression executor] deferred:', err && err.message);
+  }).finally(function() { delete _trustedProgressionPending[key]; });
+}
+
+// T570-R: the athlete app never creates canonical records. It may only notify
+// the trusted server after confirmed execution evidence; Firestore rules still
+// deny every canonical write from the athlete session.
 
 // ── T533: APPLICATION LIFECYCLE on the athlete app (behind NUMERIC_APPLY_ENABLED; false in production => every helper is a no-op) ──
 // One authority decides the effective prescription (VDSEN_EFFECTIVE_PRESCRIPTION); the only lifecycle write the athlete app can make is
@@ -11305,9 +11327,13 @@ async function _doSaveLogs() {
 function _lifecycleEnabled() { var e = window.VDSEN_EFFECTIVE_PRESCRIPTION; return !!(e && e.NUMERIC_APPLY_ENABLED === true); }
 function _captureLifecycleState(uid, planId, planData, clientData, mesoSnap) {
   LIFECYCLE_STATE = { uid: uid, planId: planId, planDoc: null, records: {}, overlays: {}, receipts: {}, interventions: [], consumeBusy: {} };
-  if (!_lifecycleEnabled()) return;
+  // T570-R: capture is read-only and always on; the trusted executor is the only writer of overlays.
+  // A returning athlete also recovers any evidence whose post-save notification was lost (tab closed / offline).
+  if (typeof setTimeout === 'function' && typeof _scheduleTrustedProgression === 'function') setTimeout(function() { try { _scheduleTrustedProgression(uid, planId); } catch(_e) {} }, 1500);
   var m = (mesoSnap && typeof mesoSnap.exists === 'function' && mesoSnap.exists()) ? mesoSnap.data() : null;
   if (!m || m.planId !== planId) return;
+  // T570-R.2: a cache-served snapshot is never authority for a prescription change; only a server-confirmed read may show an overlay.
+  if (mesoSnap.metadata && mesoSnap.metadata.fromCache === true) return;
   LIFECYCLE_STATE.planDoc = planData || null;
   LIFECYCLE_STATE.records = m.progressionApplications || {};
   LIFECYCLE_STATE.overlays = m.nextExposureOverlays || {};
@@ -11315,12 +11341,12 @@ function _captureLifecycleState(uid, planId, planData, clientData, mesoSnap) {
   LIFECYCLE_STATE.interventions = Array.isArray(clientData && clientData.coachInterventions) ? clientData.coachInterventions : [];
 }
 function _resolveOverlayForExercise(ej, di, unit) {
-  if (!_lifecycleEnabled() || !USER || !ej || !ej.prescriptionExerciseId) return null;
+  if (!USER || !ej || !ej.prescriptionExerciseId) return null;
   var st = LIFECYCLE_STATE;
   if (!st || st.uid !== USER.uid || st.planId !== ACTIVE_PLAN_ID || !st.planDoc) return null;
   var r = window.VDSEN_EFFECTIVE_PRESCRIPTION.resolveEffective({ clientId: USER.uid, planId: ACTIVE_PLAN_ID, activePlanId: ACTIVE_PLAN_ID,
     pid: ej.prescriptionExerciseId, week: CURRENT_WEEK, dayIndex: di, records: st.records, overlays: st.overlays, interventions: st.interventions,
-    plan: st.planDoc, entries: LOGS, baseSets: ej.sets || [], unit: unit });
+    plan: st.planDoc, entries: LOGS, baseSets: ej.sets || [], unit: unit, canonicalOverlayRead: true });
   return r.provenance === 'CANONICAL_OVERLAY' ? r : null;
 }
 // Rest timers follow the effective prescription too (REST overlay). Returns the SAME object when no overlay applies (flag off => always).

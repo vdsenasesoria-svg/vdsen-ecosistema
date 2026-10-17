@@ -47,12 +47,13 @@ test('T537.3 the athlete app has NO canonical writer: no record creation, no que
   assert.ok(/payload\.consumptionReceipts\[r\.key\] = receipt/.test(fn) && !/_commitLifecycle|progressionApplications\s*:/.test(fn), 'the receipt payload is the only thing the athlete path builds');
 });
 
-test('T537.4 PENDING records have exactly one writer: the owner-Coach materializer (guards: coach ownership, active plan, client identity, no LOG rewrite, no plan write)', () => {
-  const body = functionSource(coach, '_materializeShadowRecords');
-  assert.ok(/clientData\.coachId !== actorId/.test(body) && /clientData\.activePlanId !== planId/.test(body) && /_detailClientId !== clientId/.test(body));
-  assert.ok(!/entries\s*:/.test(body.replace(/entries: auth\.entries \|\| \{\}/, '')) && !/tx\.set\(planRef|tx\.update\(/.test(body));
-  const allCoachWriters = coach.match(/buildRecord\(|materializeRecords\(/g) || [];
-  assert.equal(allCoachWriters.length, 1, 'materializeRecords is called once, from the materializer');
+test('T570-R PENDING records have exactly one runtime writer: the trusted executor; Coach monitor is passive', () => {
+  const executor = read('api/_autonomousProgression.js');
+  assert.ok(/shadow\.materializeRecords\(/.test(executor));
+  assert.ok(/client\.activePlanId !== requestedPlanId/.test(executor), 'server binds requested plan to the authenticated client');
+  assert.ok(/Never write entries, plan, client/.test(executor));
+  const monitor = coach.slice(coach.indexOf('async function _renderClientTabMonitor('), coach.indexOf('async function _materializeShadowRecords('));
+  assert.ok(!/_materializeShadowRecords\(|_reconcileShadowAuto\(|_reconcileAppliedOverlays\(/.test(monitor), 'opening Coach monitor cannot create or reconcile progression state');
 });
 
 test('T537.5 shadow.materializeRecords: creates PENDING from persisted evidence, idempotent, stales an exposure that started, supersedes an older PENDING, rejects key collisions', () => {

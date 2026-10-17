@@ -50,10 +50,14 @@ function env({ flagOn = true, state = 'APPLIED', week = 2, persisted = false, lo
 }
 const resolve = (e, unit = 'KG') => { const c = e.context; c.__ej = e.ej; return vm.runInContext('_resolveOverlayForExercise(__ej, 0, ' + JSON.stringify(unit) + ')', c); };
 
-test('T533.1 shipped flag false: nothing is captured, nothing is resolved, nothing is rendered, nothing is consumed', async () => {
+test('T533.1 shipped write flag false: nothing is consumed; T570-R: existing canonical overlays are READ-only, and only with canonicalOverlayRead', async () => {
   const e = env({ flagOn: false }), st = e.context.LIFECYCLE_STATE;
-  assert.deepEqual([Object.keys(st.records).length, Object.keys(st.overlays).length, st.planDoc], [0, 0, null]);
-  assert.equal(resolve(e), null);
+  // T570-R: capture is read-only; the trusted server is the only overlay writer, so displaying one that exists is safe.
+  assert.deepEqual([Object.keys(st.records).length, Object.keys(st.overlays).length], [1, 1]);
+  assert.equal(resolve(e).provenance, 'CANONICAL_OVERLAY');
+  const direct = F.off.effective.resolveEffective({ clientId: 'c', planId: 'p', activePlanId: 'p', pid: 'pid-1', week: 2, dayIndex: 0, records: st.records, overlays: st.overlays,
+    interventions: [], plan: e.sc.plan, entries: e.context.LOGS, baseSets: F.baseSets() });
+  assert.equal(direct.provenance, 'BASE_PLAN', 'without canonicalOverlayRead the shipped flag still forces the base plan');
   e.context.LOGS[LOGKEY] = FIRST;
   await vm.runInContext('_maybeConsumeOverlays("c")', e.context);
   assert.equal(e.txCalls(), 0);
@@ -160,4 +164,22 @@ test('T533.12 REST overlay reaches the rest timers (both completion paths); flag
   const off = env({ flagOn: false }); off.context.__ej = off.ej;
   assert.equal(vm.runInContext('_withOverlayRest(__ej, 0, 0)', off.context), off.ej);
   assert.ok(/var _ejCur = _withOverlayRest\(\(_EJERCICIOS_DIA \|\| \[\]\)\[ei\] \|\| null, di, ei\);/.test(client) && (client.match(/_withOverlayRest\(/g) || []).length >= 3);
+});
+
+test('T570-R.2 a cache-served meso snapshot is never authority: no overlay is captured or shown; forged/inconsistent pairs fall back to the base plan', () => {
+  const e = env();
+  const sc = F.scenario(), a = F.applied(sc, { state: 'APPLIED' });
+  const cacheSnap = { exists: () => true, metadata: { fromCache: true }, data: () => ({ planId: 'p', progressionApplications: a.records, nextExposureOverlays: a.overlays }) };
+  const c = e.context; Object.assign(c, { PLANDOC: sc.plan, SNAP2: cacheSnap });
+  vm.runInContext('_captureLifecycleState("c", "p", PLANDOC, { coachInterventions: [] }, SNAP2)', c);
+  assert.deepEqual([Object.keys(c.LIFECYCLE_STATE.overlays).length, c.LIFECYCLE_STATE.planDoc], [0, null]);
+  assert.equal(resolve({ context: c, ej: e.ej }), null);
+  // forged: overlay present but its record is PENDING / missing / belongs to another client => base plan
+  const input = x => F.effectiveInput(a, x);
+  const real = F.on.effective;
+  assert.equal(real.resolveEffective(input({ records: {} })).provenance, 'BASE_PLAN');
+  const pending = Object.assign({}, a.record, { state: 'PENDING' });
+  assert.equal(real.resolveEffective(input({ records: { [a.record.key]: pending } })).provenance, 'BASE_PLAN');
+  assert.equal(real.resolveEffective(input({ clientId: 'someone-else' })).provenance, 'BASE_PLAN');
+  assert.equal(real.resolveEffective(input({ planId: 'other-plan', activePlanId: 'other-plan' })).provenance, 'BASE_PLAN');
 });
