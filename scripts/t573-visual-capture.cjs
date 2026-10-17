@@ -57,7 +57,8 @@ const report = { label, light, project: null, widths: {}, at: new Date().toISOSt
       }
       // training: open the first exercise card if present
       await p.click('#nb1'); await p.waitForTimeout(500);
-      await p.evaluate(() => { const e = Array.from(document.querySelectorAll('.scroll')).filter(x => x.offsetParent !== null)[0]; if (e) e.scrollTop = 0; });
+      await p.evaluate(() => { document.querySelectorAll('*').forEach(e => { if (e.scrollTop > 0) e.scrollTop = 0; }); });
+      await p.waitForTimeout(250); await shot('21-training-top'); await audit('21-training-top');
       await ctx.close();
     }
   } finally {

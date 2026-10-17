@@ -1244,6 +1244,34 @@ input,select,textarea{border-radius:12px}
 /* header */
 .hdr{background:var(--bg)}
 :root.light-mode .hdr{background:var(--bg)}
+/* training: calmer header, scannable exercise strip */
+.tr-head{padding:16px 14px 12px}
+.tr-title{font-size:clamp(23px,7.2vw,29px);line-height:1.08;letter-spacing:-.03em;text-transform:none;margin:6px 0 4px}
+.xh-name{font-size:clamp(19px,5.8vw,23px);line-height:1.14;letter-spacing:-.025em;text-transform:none}
+.xh-idx{font-size:30px;color:var(--acero);line-height:1}
+:root.light-mode .xh-idx{color:rgba(0,0,0,.22)}
+.ro-cell .ro-v{font-size:21px}
+.xnav{border:0;gap:8px;padding:2px 14px 6px;margin:14px -14px 0}
+.xc{width:104px;min-height:72px;border:1px solid var(--rule);border-radius:14px;background:var(--plate);border-bottom:1px solid var(--rule)}
+.xc-n{color:var(--mt)}
+.spec{border-radius:var(--r-2);overflow:hidden}
+.spec-v{font-size:26px}
+/* nutrition: meals as clear cards, quantities in mono */
+.nu-head{padding:18px 14px 6px}
+.nu-head .sec-kicker{font-size:12px;letter-spacing:.12em}
+.nu-goal{font-family:var(--font-num);font-size:12px}
+.meal{border:1px solid var(--rule);border-radius:var(--r-2);background:linear-gradient(180deg,var(--plate-hi),var(--plate));margin:0 0 12px;overflow:hidden;box-shadow:var(--lift)}
+.meal-h{padding:14px 14px 4px;border:0}
+.meal-no{font-family:var(--font-num);font-size:10.5px;font-weight:500;letter-spacing:.14em;color:var(--mt)}
+.meal-nm{font-size:19px;font-weight:800;letter-spacing:-.02em;text-transform:none;color:var(--tx)}
+.meal-b{padding:0 14px}
+.fr{min-height:48px;align-items:center}
+.fr-name{font-size:15px;font-weight:500}
+.fr-qty{font-family:var(--font-num);font-size:16px;font-weight:600;letter-spacing:-.02em;color:var(--tx);white-space:nowrap}
+.meal-tot{margin:10px 0 14px;display:inline-flex;align-items:baseline;gap:6px;padding:6px 12px;border-radius:99px;background:rgba(var(--accent-rgb),.10);border:1px solid rgba(var(--accent-rgb),.35);color:var(--tx)}
+.nu-panel,.sup-blk{border-radius:var(--r-2);border:1px solid var(--rule);background:linear-gradient(180deg,var(--plate-hi),var(--plate));box-shadow:var(--lift)}
+.nutri-target{border-radius:12px}
+.nt-v{font-family:var(--font-num);font-weight:600}
 /* small phones */
 @media (max-width:359px){
   .today-session{font-size:25px}
