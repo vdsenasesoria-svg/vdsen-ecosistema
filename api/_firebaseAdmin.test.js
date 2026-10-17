@@ -116,6 +116,84 @@ test('WIF: federated mode is selected ONLY for the isolated staging Vercel proje
       && mod.isFederatedMode({ FIREBASE_AUTH_MODE: 'wif' }, null) === true;
 });
 
+// ─── T575: OIDC token hardening (verification, no downgrade, atomic file, concurrency, no leakage) ───────────────────────────────────────
+var crypto = require('crypto'), fsx = require('fs'), osx = require('os'), pathx = require('path');
+var STG = 'prj_ZefsZK0hyGe7WxNqenR7MO9f2H8O', TEAM = 'vdsenasesoria-svgs-projects';
+var KP = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 }), OTHER = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+var JWK = Object.assign(KP.publicKey.export({ format: 'jwk' }), { kid: 'k1', alg: 'RS256', use: 'sig' });
+var JWKS = async function() { return [JWK]; };
+function b64u(o) { return Buffer.from(typeof o === 'string' ? o : JSON.stringify(o)).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_'); }
+function mint(over, key, kid) {
+  var now = Math.floor(Date.now() / 1000);
+  var payload = Object.assign({ iss: 'https://oidc.vercel.com/' + TEAM, aud: 'https://vercel.com/' + TEAM, project_id: STG, sub: 'owner:' + TEAM + ':project:vdsen-ecosistema-staging-t573:environment:production', iat: now, nbf: now - 5, exp: now + 3600 }, over || {});
+  var h = b64u({ alg: 'RS256', kid: kid || 'k1', typ: 'JWT' }), body = b64u(payload), data = h + '.' + body;
+  return data + '.' + crypto.sign('RSA-SHA256', Buffer.from(data), (key || KP).privateKey).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+test('OIDC: a genuinely signed token with the pinned claims is accepted', async function() {
+  var mod = freshModule(); mod._internal.resetForTest();
+  return (await mod.verifyOidcToken(mint(), { jwks: JWKS })) !== null && (await mod.acceptRequestOidcToken(mint(), { jwks: JWKS })) === true;
+});
+
+test('OIDC: forged / foreign / wrong-claim / expired / malformed tokens are all rejected', async function() {
+  var mod = freshModule(); mod._internal.resetForTest();
+  var now = Math.floor(Date.now() / 1000);
+  var bad = [mint({}, OTHER),                                  // signed by someone else (same kid)
+    mint({}, KP, 'unknown-kid'), mint({ project_id: 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN' }),   // the PRODUCTION project's claim
+    mint({ iss: 'https://oidc.vercel.com/someone-else' }), mint({ aud: 'https://vercel.com/someone-else' }),
+    mint({ exp: now - 10 }), mint({ exp: now + 5 }), mint({ nbf: now + 600 }), 'not-a-jwt', 'a.b.c', '', null, undefined, 123, 'x'.repeat(9000)];
+  for (var i = 0; i < bad.length; i++) { if ((await mod.verifyOidcToken(bad[i], { jwks: JWKS })) !== null) return false; }
+  return true;
+});
+
+test('OIDC: absent / invalid / expired / OLDER tokens never clear or downgrade a good one; the farthest expiry wins', async function() {
+  var mod = freshModule(); mod._internal.resetForTest();
+  var now = Math.floor(Date.now() / 1000), good = mint({ exp: now + 3000 }), later = mint({ exp: now + 3500 }), older = mint({ exp: now + 1000 });
+  var o = { jwks: JWKS }, tmp = pathx.join(osx.tmpdir(), 'vdsen-t575-' + process.pid + '-a'); fsx.rmSync(tmp, { force: true });
+  if (!(await mod.acceptRequestOidcToken(good, o))) return false;
+  if (!(await mod.acceptRequestOidcToken(undefined, o)) || !(await mod.acceptRequestOidcToken('garbage', o)) || !(await mod.acceptRequestOidcToken(mint({}, OTHER), o))) return false;
+  mod._internal.writeSubjectToken(tmp); if (fsx.readFileSync(tmp, 'utf8') !== good) return false;
+  await mod.acceptRequestOidcToken(older, o); mod._internal.writeSubjectToken(tmp); if (fsx.readFileSync(tmp, 'utf8') !== good) return false;
+  await mod.acceptRequestOidcToken(later, o); mod._internal.writeSubjectToken(tmp);
+  var ok = fsx.readFileSync(tmp, 'utf8') === later; fsx.rmSync(tmp, { force: true }); return ok;
+});
+
+test('OIDC: with no verified token the federated app fails closed (NO_OIDC_TOKEN), an expired held token fails EXPIRED', withEnv({ FIREBASE_AUTH_MODE: 'wif' }, async function() {
+  var mod = freshModule(); mod._internal.resetForTest();
+  try { mod.getAdminApp(); return false; } catch (e) { if (e.message !== 'FIREBASE_WIF_NO_OIDC_TOKEN') return false; }
+  await mod.acceptRequestOidcToken(mint({}, OTHER), { jwks: JWKS });                          // invalid: still nothing held
+  try { mod.getAdminApp(); return false; } catch (e) { return e.message === 'FIREBASE_WIF_NO_OIDC_TOKEN'; }
+}));
+
+test('OIDC concurrency: 400 interleaved requests (valid, later, forged, expired, absent) never leave a partial/forged/empty subject-token file', async function() {
+  var mod = freshModule(); mod._internal.resetForTest();
+  var now = Math.floor(Date.now() / 1000), valids = [mint({ exp: now + 3000 }), mint({ exp: now + 3300 }), mint({ exp: now + 3600 })];
+  var o = { jwks: JWKS }, tmp = pathx.join(osx.tmpdir(), 'vdsen-t575-' + process.pid + '-c'); fsx.rmSync(tmp, { force: true });
+  var forged = mint({}, OTHER), expired = mint({ exp: now - 5 }), garbage = 'zzz.yyy.xxx';
+  var seen = new Set(), torn = 0, jobs = [];
+  for (var i = 0; i < 400; i++) {
+    var k = Math.floor(i / 6), t = [valids[k % 3], forged, expired, undefined, garbage, valids[(k + 1) % 3]][i % 6];
+    jobs.push((async function(tok) { await new Promise(function(r) { setImmediate(r); }); await mod.acceptRequestOidcToken(tok, o); mod._internal.writeSubjectToken(tmp); })(t));
+    jobs.push((async function() { await new Promise(function(r) { setImmediate(r); }); try { var c = fsx.readFileSync(tmp, 'utf8'); if (c) { seen.add(c); if (valids.indexOf(c) < 0) torn++; } else torn++; } catch (e) { /* not created yet */ } })());
+  }
+  await Promise.all(jobs);
+  var final = fsx.readFileSync(tmp, 'utf8'); fsx.rmSync(tmp, { force: true });
+  return torn === 0 && final === valids[2] && Array.from(seen).every(function(c) { return valids.indexOf(c) >= 0; });
+});
+
+test('OIDC: tokens and temp-file paths never appear in console output or error messages', async function() {
+  var mod = freshModule(); mod._internal.resetForTest();
+  var tok = mint(), logs = [], orig = { log: console.log, warn: console.warn, error: console.error };
+  ['log', 'warn', 'error'].forEach(function(k) { console[k] = function() { logs.push(Array.prototype.slice.call(arguments).join(' ')); }; });
+  var msgs = [];
+  try {
+    await mod.acceptRequestOidcToken(tok, { jwks: JWKS }); await mod.acceptRequestOidcToken(tok.slice(0, -4) + 'AAAA', { jwks: JWKS });
+    try { process.env.FIREBASE_AUTH_MODE = 'wif'; mod._internal.resetForTest(); mod.getAdminApp(); } catch (e) { msgs.push(e.message); }
+  } finally { delete process.env.FIREBASE_AUTH_MODE; ['log', 'warn', 'error'].forEach(function(k) { console[k] = orig[k]; }); }
+  var all = logs.concat(msgs).join('\n');
+  return all.indexOf(tok.slice(0, 40)) < 0 && all.indexOf('vdsen-wif-subject-token') < 0;
+});
+
 // ─── Run ─────────────────────────────────────────────────────────────────────
 
 async function runTests() {

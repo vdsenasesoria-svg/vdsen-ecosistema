@@ -11,7 +11,11 @@
  */
 
 var _app = null;
-var _oidcToken = null;   // per-request Vercel OIDC token (header x-vercel-oidc-token); never logged, never persisted beyond the function's /tmp
+// Vercel OIDC token state. The token identifies the DEPLOYMENT (not the end user), so one token per instance is correct; what must hold is that
+// (a) only a token Vercel actually signed is ever accepted (the header is client-reachable and an unverified value written to the shared file would
+// poison every later credential refresh), (b) an absent / invalid / expired / older token never clears or downgrades a good one, (c) the file the
+// credential reader consumes is replaced atomically. Never logged.
+var _oidcToken = null, _oidcExp = 0, _writtenToken = null;
 
 // ---- Workload Identity Federation (Vercel OIDC -> Google STS -> service-account impersonation) ---------------------------------
 // Opt-in ONLY with FIREBASE_AUTH_MODE=wif plus NON-secret identifiers. No private key exists anywhere in this mode. The production project
@@ -29,7 +33,53 @@ function _oidcProjectId(token) {
 function isFederatedMode(env, token) {
   return env.FIREBASE_AUTH_MODE === 'wif' || env.VERCEL_PROJECT_ID === STAGING_VERCEL_PROJECT_ID || (!!token && _oidcProjectId(token) === STAGING_VERCEL_PROJECT_ID);
 }
-function setRequestOidcToken(token) { _oidcToken = typeof token === 'string' && token.length > 20 ? token : null; }
+// ---- OIDC token verification (RS256 against Vercel's published JWKS; claims pinned to the isolated staging project) -------------------------
+var OIDC_TEAM = 'vdsenasesoria-svgs-projects';
+var OIDC_ISSUER = 'https://oidc.vercel.com/' + OIDC_TEAM, OIDC_AUDIENCE = 'https://vercel.com/' + OIDC_TEAM;
+var _jwksCache = { at: 0, keys: null };
+async function _fetchJwks() {
+  if (_jwksCache.keys && Date.now() - _jwksCache.at < 600000) return _jwksCache.keys;
+  var res = await fetch(OIDC_ISSUER + '/.well-known/jwks');
+  if (!res.ok) throw new Error('FIREBASE_WIF_JWKS_UNAVAILABLE');
+  _jwksCache = { at: Date.now(), keys: (await res.json()).keys || [] };
+  return _jwksCache.keys;
+}
+function _b64(s) { return Buffer.from(String(s).replace(/-/g, '+').replace(/_/g, '/'), 'base64'); }
+// -> verified payload or null. Never throws, never logs the token.
+async function verifyOidcToken(token, opts) {
+  try {
+    opts = opts || {};
+    if (typeof token !== 'string' || token.length < 40 || token.length > 8192) return null;
+    var parts = token.split('.'); if (parts.length !== 3) return null;
+    var header = JSON.parse(_b64(parts[0]).toString('utf8')), payload = JSON.parse(_b64(parts[1]).toString('utf8'));
+    if (header.alg !== 'RS256' || !header.kid) return null;
+    var keys = await (opts.jwks || _fetchJwks)(), jwk = (keys || []).filter(function(k) { return k.kid === header.kid && k.kty === 'RSA'; })[0];
+    if (!jwk) return null;
+    var crypto = require('crypto');
+    var ok = crypto.verify('RSA-SHA256', Buffer.from(parts[0] + '.' + parts[1]), crypto.createPublicKey({ key: jwk, format: 'jwk' }), _b64(parts[2]));
+    if (!ok) return null;
+    var now = Math.floor((opts.now || Date.now()) / 1000);
+    if (payload.iss !== OIDC_ISSUER || payload.aud !== OIDC_AUDIENCE || payload.project_id !== STAGING_VERCEL_PROJECT_ID) return null;
+    if (typeof payload.exp !== 'number' || payload.exp <= now + 30 || (typeof payload.nbf === 'number' && payload.nbf > now + 5)) return null;
+    return payload;
+  } catch (_) { return null; }
+}
+// Accepts a request's token only if verified; keeps whichever verified token expires last. Returns whether a usable token is now held.
+async function acceptRequestOidcToken(token, opts) {
+  var p = await verifyOidcToken(token, opts);
+  if (p && p.exp > _oidcExp) { _oidcToken = token; _oidcExp = p.exp; }
+  return !!_oidcToken && _oidcExp > Math.floor(((opts && opts.now) || Date.now()) / 1000) + 30;
+}
+// Atomic replacement of the file the external-account reader consumes (write temp, rename); only when the token changed.
+function _writeSubjectToken(tokenPath) {
+  var fs = require('fs');
+  if (!_oidcToken || _writtenToken === _oidcToken) return;
+  var tmp = tokenPath + '.' + process.pid + '.' + require('crypto').randomBytes(6).toString('hex');
+  fs.writeFileSync(tmp, _oidcToken, { mode: 0o600 });
+  fs.renameSync(tmp, tokenPath);
+  _writtenToken = _oidcToken;
+}
+function _resetOidcStateForTest() { _oidcToken = null; _oidcExp = 0; _writtenToken = null; _jwksCache = { at: 0, keys: null }; _app = null; }
 
 // Pure: validates the environment and returns the external-account configuration (public identifiers only).
 function buildFederatedConfig(env, tokenPath) {
@@ -53,9 +103,10 @@ function getFederatedApp() {
   var tokenPath = path.join(os.tmpdir(), 'vdsen-wif-subject-token'), cfgPath = path.join(os.tmpdir(), 'vdsen-wif-config.json');
   var built = buildFederatedConfig(Object.assign({}, STAGING_WIF_DEFAULTS, process.env), tokenPath);
   if (!_oidcToken) throw new Error('FIREBASE_WIF_NO_OIDC_TOKEN');
-  // The credential reader re-reads this file whenever it must refresh the Google access token, so it is rewritten on every request.
-  fs.writeFileSync(tokenPath, _oidcToken, { mode: 0o600 });
-  fs.writeFileSync(cfgPath, JSON.stringify(built.config), { mode: 0o600 });
+  if (_oidcExp <= Math.floor(Date.now() / 1000) + 30) throw new Error('FIREBASE_WIF_OIDC_EXPIRED');
+  // The credential reader re-reads this file whenever it must refresh the Google access token; it only ever sees a complete, verified token.
+  _writeSubjectToken(tokenPath);
+  if (!fs.existsSync(cfgPath)) { fs.writeFileSync(cfgPath + '.tmp', JSON.stringify(built.config), { mode: 0o600 }); fs.renameSync(cfgPath + '.tmp', cfgPath); }
   process.env.GOOGLE_APPLICATION_CREDENTIALS = cfgPath;
   if (_app) return _app;
   var admin = require('firebase-admin');
@@ -119,7 +170,9 @@ async function isAuthorizedCoach(uid) {
 }
 
 module.exports = {
-  setRequestOidcToken:  setRequestOidcToken,
+  acceptRequestOidcToken: acceptRequestOidcToken,
+  verifyOidcToken:      verifyOidcToken,
+  _internal:            { writeSubjectToken: _writeSubjectToken, resetForTest: _resetOidcStateForTest },
   isFederatedMode:      isFederatedMode,
   buildFederatedConfig: buildFederatedConfig,
   getAdminApp:       getAdminApp,

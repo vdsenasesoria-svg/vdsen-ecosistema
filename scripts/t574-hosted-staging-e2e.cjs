@@ -11,6 +11,7 @@ const cfg = H.stagingConfig();
 if (cfg.projectId !== 'vdsen-ecosistema-staging') throw new Error('REFUSING: not staging');
 const arg = (n, d) => { const i = process.argv.indexOf('--' + n); return i > 0 ? process.argv[i + 1] : d; };
 const base = arg('base'), cookieFile = arg('cookie-file', null), cookie = cookieFile && fs.existsSync(cookieFile) ? fs.readFileSync(cookieFile, 'utf8').trim() : '', secretFile = arg('cron-secret-file', null), writes = process.argv.includes('--writes');
+if (writes) throw new Error('The write phase now lives in scripts/t575-hosted-matrix.cjs (--phase on): this script performs the no-write cases only.');
 if (!/^https:\/\/vdsen-ecosistema-staging-t573[a-z0-9-]*\.vercel\.app$/.test(base || '')) throw new Error('REFUSING: base must be a vdsen-ecosistema-staging-t573 deployment host');
 const EP = base + '/api/autonomous-progression-trigger';
 const results = [];
