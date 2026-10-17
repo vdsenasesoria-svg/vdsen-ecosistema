@@ -19,3 +19,14 @@ Canónica al iniciar: `17216aaab205f8d56c496bc9991ff31a01157688` · `main` `f659
 2. **Barra "GUARDAR SERIE" fija cubría el campo con el teclado abierto**: medido a 420 px de alto: 23 % del input cubierto → 0 % tras la corrección (`scripts/t576-keyboard-overlap.cjs`, antes/después).
 3. **Tráfico Firestore**: navegar entre pestañas = **0** peticiones; 3 listeners en vivo (cliente, plan, logs) + 2 de la fase de espera, todos liberados en `_clearLiveListeners`/logout. Sin lecturas redundantes por navegación (`docs/t576-perf/`).
 4. Estados verificados con capturas (`docs/t576-shots/`): sin plan (pantalla "FICHA ENVIADA"), sin conexión (banner), descanso activo, teclado corto. Sin overflow horizontal a 320/390/430.
+
+## Checkpoint 2 — 2026-10-17 ~17:30 UTC
+- PR #67 (UI 3.1: borradores de serie + barra segura con teclado) fusionada: canónica `c3d123948f52c6a90a6746c20c39b2210dad4557`; CI posterior: release check 39048702203 y OIDC validation 39048702133, éxito. `main` intacta (`f6596ba`).
+- Prueba de estrés visual (`scripts/t576-stress-capture.cjs`, plan sintético editado con IAM del operador): día de 12 ejercicios, nombre de 140 caracteres con palabras largas, etiqueta de técnica larga. Resultado a 320/390/430 en Inicio y Entrenamiento: **0 desbordamientos, 0 textos recortados, 0 objetivos táctiles < 40 px** (`docs/t576-shots/stress-after/`). **No se halló defecto: no se cambió código** (no se inventan mejoras).
+- Estado de la ventana: lo medible y seguro está integrado. Pendiente que NO depende del código: matriz hospedada con escrituras (permiso de variables de Vercel).
+
+## Siguiente lista priorizada (basada en hallazgos)
+1. (Propietario) Configurar las variables del proyecto Vercel staging y ejecutar `scripts/t575-hosted-matrix.cjs --phase on` (instrucciones en `docs/T575_HOSTED_WRITE_MATRIX.md`).
+2. Cubrir RIR/Pump seleccionados (no sólo carga/reps/ICS) en el borrador de serie si el uso real muestra pérdida de esos chips al cambiar de pestaña (no medido todavía).
+3. Habilitar la prueba hospedada de rechazo de Preview con acceso persistente (hoy depende de enlaces compartibles de un solo uso).
+4. Retirar de la línea base los fallos de Windows/EOL (7 de release) una vez confirmados en Ubuntu.
