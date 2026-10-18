@@ -1,6 +1,6 @@
 {
   "project": "vdsen-ecosistema-staging",
-  "at": "2026-10-17T15:55:30.647Z",
+  "at": "2026-10-18T13:40:00.004Z",
   "phase": "off",
   "mode": "HOSTED",
   "results": [
@@ -25,13 +25,13 @@
       "note": "202 DISARMED",
       "evidence": {
         "before": {
-          "digest": "f985bd41a41d",
+          "digest": "5af1b6915124",
           "records": [],
           "overlays": [],
           "receipts": 0
         },
         "after": {
-          "digest": "f985bd41a41d",
+          "digest": "5af1b6915124",
           "records": [],
           "overlays": [],
           "receipts": 0
@@ -44,13 +44,13 @@
       "note": "202",
       "evidence": {
         "before": {
-          "digest": "7541460323d8",
+          "digest": "cc0d199814d7",
           "records": [],
           "overlays": [],
           "receipts": 0
         },
         "after": {
-          "digest": "7541460323d8",
+          "digest": "cc0d199814d7",
           "records": [],
           "overlays": [],
           "receipts": 0
@@ -63,9 +63,9 @@
       "note": "401/401"
     },
     {
-      "id": "N04 Preview deployment (OIDC environment:preview) cannot reach Firestore",
+      "id": "N04 Preview rejection",
       "pass": null,
-      "note": "NOT_TESTED: blocked by the Vercel Authentication wall (no valid access cookie for the preview host)"
+      "note": "NOT_TESTED (no --preview-base)"
     },
     {
       "id": "N05 deactivation procedure: allowlist removed + canary emptied => still zero writes",
@@ -85,7 +85,7 @@
     {
       "id": "ZERO production access: every Firestore/Auth call targeted vdsen-ecosistema-staging",
       "pass": true,
-      "note": "identitytoolkit.googleapis.com | firestore.googleapis.com [project=vdsen-ecosistema-staging] | vdsen-ecosistema-staging-t573-vdsenasesoria-svgs-projects.vercel.app | vdsen-ecosistema-staging-t573-59r7mvhfz.vercel.app | identitytoolkit.googleapis.com [project=vdsen-ecosistema-staging]"
+      "note": "identitytoolkit.googleapis.com | firestore.googleapis.com [project=vdsen-ecosistema-staging] | vdsen-ecosistema-staging-t573.vercel.app | identitytoolkit.googleapis.com [project=vdsen-ecosistema-staging]"
     }
   ],
   "pass": 10,
