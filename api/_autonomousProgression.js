@@ -127,7 +127,11 @@ async function applyPending(db, clientId, planId, clock) {
         var coachDoc = refs.coach ? _data(await tx.get(refs.coach)) : null, planDoc = _data(await tx.get(refs.plan));
         var pex = null;
         ((planDoc && planDoc.days) || []).forEach(function(d) { (d.exercises || []).forEach(function(e) { if (!pex && e.prescriptionExerciseId === precord.prescriptionExerciseId) pex = e; }); });
-        var ref = pex && pex.exerciseId ? equipmentContext.equipmentRefForExercise({ catalog: visualCatalog, exerciseId: pex.exerciseId, config: coachDoc && coachDoc.equipmentIncrements }) : null;
+        // Identity of the prescribed exercise: the plan's own exerciseId, else the Coach's EXPLICIT link for this exact prescriptionExerciseId
+        // (coaches/{uid}.exerciseLinks, written by that Coach only). Never inferred from the exercise name or position; an unknown id stays unresolved.
+        var links = coachDoc && coachDoc.exerciseLinks && typeof coachDoc.exerciseLinks === 'object' ? coachDoc.exerciseLinks : null;
+        var linkedId = pex ? (pex.exerciseId || (links && typeof links[pex.prescriptionExerciseId] === 'string' ? links[pex.prescriptionExerciseId] : null)) : null;
+        var ref = linkedId ? equipmentContext.equipmentRefForExercise({ catalog: visualCatalog, exerciseId: linkedId, config: coachDoc && coachDoc.equipmentIncrements }) : null;
         equipmentResolution = ref ? equipment.resolveForCandidate({ magnitude: precord.magnitude, equipment: ref }) : null;
       }
       // The consumer was written against the web SDK, where `snap.exists` is a

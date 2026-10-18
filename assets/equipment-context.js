@@ -225,6 +225,55 @@
     return { ok: true, errors: [], rows: rows, counts: counts, nextConfig: work };
   }
 
+  // ---- T581: EXPLICIT plan <-> catalog LINKS (coaches/{uid}.exerciseLinks: prescriptionExerciseId -> catalog exerciseId) -------------------
+  // The autonomous LOAD path identifies equipment ONLY through an exact exerciseId. Plans built by the Motor / importers do not carry one, so the Coach
+  // links each prescribed exercise (by its stable prescriptionExerciseId) to a catalog entry. Never inferred from a name. CSV or JSON, all-or-nothing.
+  //   CSV columns: prescriptionExerciseId, catalogExerciseId  (+ optional `aprobar`: when the column exists only rows marked SI/YES/1/X are imported)
+  //   JSON: { links: { "<pid>": "<catalogExerciseId>", ... } }  or  [ { prescriptionExerciseId, catalogExerciseId } ]
+  // -> { ok, errors: [string], rows: [{ line, prescriptionExerciseId, exerciseId, equipmentId, equipmentName }], links: { pid: exerciseId }|null, skipped }
+  function parseLinksImport(text, opts) {
+    opts = opts || {};
+    var errors = [], items = [], skipped = 0;
+    text = String(text === undefined || text === null ? '' : text).replace(/^﻿/, '').trim();
+    var fail = function() { return { ok: false, errors: errors, rows: [], links: null, skipped: skipped }; };
+    if (!text) { errors.push('El archivo está vacío.'); return fail(); }
+    var known = {}, byEx = {};
+    Object.keys((opts.catalog && opts.catalog.gyms) || {}).forEach(function(k) {
+      var g = opts.catalog.gyms[k];
+      (g.entries || []).concat(g.legacyEntries || []).forEach(function(e) { if (e && e.exerciseId) known[e.exerciseId] = true; });
+    });
+    try {
+      if (text[0] === '{' || text[0] === '[') {
+        var j = JSON.parse(text), list = Array.isArray(j) ? j : (j && j.links && typeof j.links === 'object' ? Object.keys(j.links).map(function(p) { return { prescriptionExerciseId: p, catalogExerciseId: j.links[p] }; }) : null);
+        if (!list) throw new Error('JSON sin "links".');
+        list.forEach(function(r, i) { items.push({ line: i + 1, pid: r && r.prescriptionExerciseId, ex: r && (r.catalogExerciseId || r.exerciseId) }); });
+      } else {
+        var rows = _parseCsv(text), head = rows.shift().map(function(h) { return String(h).trim(); });
+        var ip = head.indexOf('prescriptionExerciseId'), ie = head.indexOf('catalogExerciseId'), ia = head.indexOf('aprobar');
+        if (ie < 0) ie = head.indexOf('exerciseId');
+        if (ip < 0 || ie < 0) throw new Error('Faltan las columnas prescriptionExerciseId y catalogExerciseId.');
+        rows.forEach(function(r, i) {
+          if (ia >= 0 && !/^(si|sí|yes|1|x)$/i.test(String(r[ia] === undefined ? '' : r[ia]).trim())) { skipped++; return; }
+          items.push({ line: i + 2, pid: r[ip], ex: r[ie] });
+        });
+      }
+    } catch (e) { errors.push('Formato inválido: ' + e.message); return fail(); }
+    var links = {}, out = [];
+    items.forEach(function(it) {
+      var pid = typeof it.pid === 'string' ? it.pid.trim() : '', ex = typeof it.ex === 'string' ? it.ex.trim() : '';
+      if (!pid || pid.length > 200 || /[.\/\\\u0000-\u001f]/.test(pid) || /^__.*__$/.test(pid)) { errors.push('Fila ' + it.line + ': prescriptionExerciseId vacío o inválido.'); return; }
+      if (!ex) { errors.push('Fila ' + it.line + ': falta el catalogExerciseId.'); return; }
+      if (!known[ex]) { errors.push('Fila ' + it.line + ': el ejercicio "' + ex + '" no existe en el catálogo.'); return; }
+      if (links[pid] && links[pid] !== ex) { errors.push('Fila ' + it.line + ': el mismo prescriptionExerciseId aparece con dos ejercicios distintos.'); return; }
+      links[pid] = ex;
+      var ref = equipmentRefForExercise({ catalog: opts.catalog, exerciseId: ex, config: opts.config, gymId: opts.gymId });
+      out.push({ line: it.line, prescriptionExerciseId: pid, exerciseId: ex, equipmentId: ref.identity.canonicalEquipmentId || null, equipmentName: ref.identity.canonicalName || null });
+    });
+    if (!out.length && !errors.length) errors.push('No hay filas para importar (ninguna aprobada).');
+    if (errors.length) return fail();
+    return { ok: true, errors: [], rows: out, links: links, skipped: skipped };
+  }
+
   // ---- T518: CHANGE IMPACT PREVIEW (local data only) ----------------------------------------------------------------------
   // candidates: [{ key, exerciseId, exerciseDoc?, magnitude }]  (the LOAD candidates currently visible to the Coach).
   // "READY" here is the equipment gate (RESOLVED realizable load); the other readiness gates are unaffected by metadata.
@@ -330,5 +379,6 @@
   return { SCOPES: SCOPES, emptyConfig: emptyConfig, normalizeConfig: normalizeConfig, resolveIncrementMetadata: resolveIncrementMetadata,
     setEquipmentIncrement: setEquipmentIncrement, equipmentRefForExercise: equipmentRefForExercise,
     QUEUE_STATUS: QUEUE_STATUS, buildEquipmentQueue: buildEquipmentQueue, stampProvenance: stampProvenance, exportTemplate: exportTemplate, parseImport: parseImport,
-    previewImpact: previewImpact, describeImpact: describeImpact, BULK_SCHEMA: BULK_SCHEMA, BULK_FIELDS: BULK_FIELDS };
+    previewImpact: previewImpact, describeImpact: describeImpact, BULK_SCHEMA: BULK_SCHEMA, BULK_FIELDS: BULK_FIELDS,
+    parseLinksImport: parseLinksImport };
 });

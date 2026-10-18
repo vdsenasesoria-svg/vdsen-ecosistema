@@ -4423,6 +4423,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       + '<textarea id="eqqText" class="input-field w-full" rows="4" style="margin-top:6px;font-size:11px" placeholder="Pega aquí el JSON o CSV completado"></textarea>'
       + '<div style="margin-top:4px"><button type="button" class="btn-secondary text-xs" id="eqqPreview">Previsualizar</button> <button type="button" class="btn-primary text-xs" id="eqqCommit" disabled>Confirmar importación</button></div>'
       + '<div id="eqqOut" style="font-size:11px;color:#9ab;margin-top:6px;white-space:pre-wrap"></div></div>'
+      + '<div style="margin:8px 0"><button type="button" class="btn-secondary text-xs" id="eqqLinks">Vínculos plan ↔ catálogo…</button></div>'
       + '<ul style="list-style:none;margin:0;padding:0">' + rows + '</ul></div>';
     document.getElementById('eqqClose').onclick = function() { el.remove(); };
     var _download = function(name, text, type) { var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: type })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); };
@@ -4444,9 +4445,48 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       try { await updateDoc(doc(db, 'coaches', currentCoach.uid), { equipmentIncrements: _pending }); _coachEquipmentConfig = _pending; showToast('Importación guardada'); openEquipmentReadinessQueue(); }
       catch (e) { out.textContent = 'No se pudo guardar: ' + (e.message || e); btn.disabled = false; }
     };
+    document.getElementById('eqqLinks').onclick = function() { openExerciseLinksImporter(); };
     el.querySelectorAll('[data-eq-cfg]').forEach(function(b) { b.onclick = function() { var r = queue[Number(b.getAttribute('data-eq-cfg'))]; openEquipmentIncrementEditor({ equipmentId: r.equipmentId, name: r.name, gymId: r.gymId }); }; });
   }
   window.openEquipmentReadinessQueue = openEquipmentReadinessQueue;
+  // T581: explicit plan <-> catalog links (coaches/{uid}.exerciseLinks: prescriptionExerciseId -> catalog exerciseId). Written field by field (dotted paths), never replacing the map.
+  function openExerciseLinksImporter() {
+    var old = document.getElementById('exerciseLinksImporter'); if (old) old.remove();
+    var el = document.createElement('div'); el.id = 'exerciseLinksImporter';
+    el.style.cssText = 'position:fixed;inset:0;z-index:9100;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:12px';
+    el.innerHTML = '<div style="background:#171717;border:1px solid #444;max-width:680px;width:100%;max-height:90vh;overflow:auto;padding:20px;border-radius:10px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0;color:#f4f4f0">Vínculos plan ↔ catálogo</h3><button id="eqlClose" class="btn-secondary">Cerrar</button></div>'
+      + '<p style="color:#888;font-size:11px;margin:8px 0">Los planes del Motor no traen el ejercicio del catálogo, y sin él no se puede saber qué máquina es. Aquí vinculas cada ejercicio prescrito (por su ID de prescripción) con una entrada del catálogo. CSV con columnas <b>prescriptionExerciseId, catalogExerciseId</b> (opcional <b>aprobar</b> = SI: solo se importan esas filas). Nunca se infiere por nombre; no modifica el plan.</p>'
+      + '<input type="file" id="eqlFile" accept=".json,.csv,text/csv,application/json" style="font-size:11px">'
+      + '<textarea id="eqlText" class="input-field w-full" rows="5" style="margin-top:6px;font-size:11px" placeholder="Pega aquí el CSV o JSON de vínculos aprobados"></textarea>'
+      + '<div style="margin-top:4px"><button type="button" class="btn-secondary text-xs" id="eqlPreview">Previsualizar vínculos</button> <button type="button" class="btn-primary text-xs" id="eqlCommit" disabled>Confirmar vínculos</button></div>'
+      + '<div id="eqlOut" style="font-size:11px;color:#9ab;margin-top:6px;white-space:pre-wrap"></div></div>';
+    document.body.appendChild(el);
+    var _pendingLinks = null;
+    document.getElementById('eqlClose').onclick = function() { el.remove(); };
+    document.getElementById('eqlFile').onchange = function(ev) { var f = ev.target.files && ev.target.files[0]; if (!f) return; var rd = new FileReader(); rd.onload = function() { document.getElementById('eqlText').value = String(rd.result || ''); }; rd.readAsText(f); };
+    document.getElementById('eqlPreview').onclick = function() {
+      var out = document.getElementById('eqlOut'), commit = document.getElementById('eqlCommit'); _pendingLinks = null; commit.disabled = true;
+      var r = window.VDSEN_EQUIPMENT_CONTEXT.parseLinksImport(document.getElementById('eqlText').value, { catalog: window.VDSEN_EXERCISE_VISUAL_CATALOG, config: window.VDSEN_EQUIPMENT_CONTEXT.normalizeConfig(typeof _coachEquipmentConfig !== 'undefined' ? _coachEquipmentConfig : null) });
+      if (!r.ok) { out.textContent = 'No se importó nada. Corrige lo siguiente:
+• ' + r.errors.join('
+• '); return; }
+      var noInc = r.rows.filter(function(x) { return !x.equipmentName; }).length;
+      out.textContent = 'Vista previa — vínculos a guardar: ' + r.rows.length + (r.skipped ? ' · filas no aprobadas omitidas: ' + r.skipped : '') + (noInc ? ' · sin equipo identificado: ' + noInc + ' (LOAD seguirá bloqueado)' : '') + '
+'
+        + r.rows.map(function(x) { return '• ' + x.prescriptionExerciseId.slice(0, 8) + '… → ' + x.exerciseId + ' · ' + (x.equipmentName || 'sin equipo identificado'); }).join('
+');
+      _pendingLinks = r.links; commit.disabled = false;
+    };
+    document.getElementById('eqlCommit').onclick = async function() {
+      if (!_pendingLinks) return; var out = document.getElementById('eqlOut'); var btn = document.getElementById('eqlCommit'); btn.disabled = true;
+      try {
+        var upd = {}; Object.keys(_pendingLinks).forEach(function(pid) { upd['exerciseLinks.' + pid] = _pendingLinks[pid]; });
+        await updateDoc(doc(db, 'coaches', currentCoach.uid), upd); showToast('Vínculos guardados'); el.remove();
+      } catch (e) { out.textContent = 'No se pudo guardar: ' + (e.message || e); btn.disabled = false; }
+    };
+  }
+  window.openExerciseLinksImporter = openExerciseLinksImporter;
   window._onEquipmentConfigChanged = function() { if (document.getElementById('equipmentReadinessQueue')) openEquipmentReadinessQueue(); };
   
   // FASE 15 — Helpers de navegación semanal (0 Firestore reads)
