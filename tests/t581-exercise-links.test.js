@@ -76,3 +76,25 @@ test('T581.8 Firestore rules need no change: a coach may update its own document
   const m = rules.match(/function protectedCoachKeys\(\)\s*\{\s*return \[([^\]]*)\]/);
   assert.ok(m, 'protectedCoachKeys found'); assert.ok(!/exerciseLinks/.test(m[1]));
 });
+
+test('T581.9 the offline proposal script: exact names are pre-approved, similar ones are left for review, the output feeds the importer, nothing is written elsewhere', () => {
+  const { spawnSync } = require('node:child_process');
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vdsen-t581-'));
+  const planFile = path.join(dir, 'plan.json'), outFile = path.join(dir, 'proposal.csv');
+  fs.writeFileSync(planFile, JSON.stringify({ days: [{ label: 'D1', exercises: [
+    { exerciseName: 'Jalón al pecho agarre prono', prescriptionExerciseId: 'pid-exact' },
+    { exerciseName: 'Hip thrust máquina', prescriptionExerciseId: 'pid-similar' },
+    { exerciseName: 'Vacuum abdominal', prescriptionExerciseId: 'pid-none' }] }] }));
+  const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'propose-plan-catalog-links.cjs'), planFile, '--out', outFile], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const csv = fs.readFileSync(outFile, 'utf8');
+  assert.match(csv, /pid-exact,EXACTA,1,legacy-jalon-prono,.*,SI/);
+  assert.match(csv, /pid-similar,CANDIDATA \(revisar\)/);
+  assert.match(csv, /pid-none,SIN COINCIDENCIA/);
+  const imp = parse(csv);
+  assert.equal(imp.ok, true, imp.errors.join('|'));
+  assert.deepEqual(Object.keys(imp.links), ['pid-exact'], 'only the pre-approved exact match imports; candidates need an explicit SI');
+  assert.equal(spawnSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'propose-plan-catalog-links.cjs')], { encoding: 'utf8' }).status, 2);
+  assert.ok(!/firebase|fetch\(|https?:\/\//.test(fs.readFileSync(path.join(__dirname, '..', 'scripts', 'propose-plan-catalog-links.cjs'), 'utf8').replace(/^\/\/.*$/gm, '')));
+});
