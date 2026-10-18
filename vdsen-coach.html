@@ -4468,14 +4468,10 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     document.getElementById('eqlPreview').onclick = function() {
       var out = document.getElementById('eqlOut'), commit = document.getElementById('eqlCommit'); _pendingLinks = null; commit.disabled = true;
       var r = window.VDSEN_EQUIPMENT_CONTEXT.parseLinksImport(document.getElementById('eqlText').value, { catalog: window.VDSEN_EXERCISE_VISUAL_CATALOG, config: window.VDSEN_EQUIPMENT_CONTEXT.normalizeConfig(typeof _coachEquipmentConfig !== 'undefined' ? _coachEquipmentConfig : null) });
-      if (!r.ok) { out.textContent = 'No se importó nada. Corrige lo siguiente:
-• ' + r.errors.join('
-• '); return; }
+      if (!r.ok) { out.textContent = 'No se importó nada. Corrige lo siguiente:\n• ' + r.errors.join('\n• '); return; }
       var noInc = r.rows.filter(function(x) { return !x.equipmentName; }).length;
-      out.textContent = 'Vista previa — vínculos a guardar: ' + r.rows.length + (r.skipped ? ' · filas no aprobadas omitidas: ' + r.skipped : '') + (noInc ? ' · sin equipo identificado: ' + noInc + ' (LOAD seguirá bloqueado)' : '') + '
-'
-        + r.rows.map(function(x) { return '• ' + x.prescriptionExerciseId.slice(0, 8) + '… → ' + x.exerciseId + ' · ' + (x.equipmentName || 'sin equipo identificado'); }).join('
-');
+      out.textContent = 'Vista previa — vínculos a guardar: ' + r.rows.length + (r.skipped ? ' · filas no aprobadas omitidas: ' + r.skipped : '') + (noInc ? ' · sin equipo identificado: ' + noInc + ' (LOAD seguirá bloqueado)' : '') + '\n'
+        + r.rows.map(function(x) { return '• ' + x.prescriptionExerciseId.slice(0, 8) + '… → ' + x.exerciseId + ' · ' + (x.equipmentName || 'sin equipo identificado'); }).join('\n');
       _pendingLinks = r.links; commit.disabled = false;
     };
     document.getElementById('eqlCommit').onclick = async function() {
