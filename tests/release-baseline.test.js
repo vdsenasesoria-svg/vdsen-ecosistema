@@ -136,7 +136,7 @@ test('rollback rules provenance is decoupled from the app rollback runtime and f
   const missingPath = clone(state); delete missingPath.rules_transition.rollback_source_path;
   assert.throws(() => rollbackRulesProvenance({ package_sha: PACKAGE_SHA, state: missingPath, old_rules: { sha256: hash(content), source: { files: [{ content }] } } }), /content-addressed/);
   // 7. missing file at snapshot.package_sha -> FAIL
-  assert.throws(() => rollbackRulesProvenance(snap({}, state.rollback_runtime_sha)), /does not exist|exists on disk|unknown revision|invalid object|Path .* does not exist/i);
+  assert.throws(() => rollbackRulesProvenance(snap({}, 'd7bb71521d750eafd46a15fdd3c6ee157d4bd4cf')), /does not exist|exists on disk|unknown revision|invalid object|Path .* does not exist/i);
   // 8. malformed / missing snapshot.package_sha -> FAIL
   for (const bad of ['', 'notasha', 'A'.repeat(40), 'a'.repeat(39), 'a'.repeat(41)]) {
     assert.throws(() => rollbackRulesProvenance(snap({}, bad)), /package SHA/, 'package_sha must be validated: ' + bad);
@@ -158,7 +158,7 @@ test('rollback rules reference is immutable to the release package SHA, not the 
   rollbackRulesProvenance(hist);
   // a bogus package SHA cannot substitute a different reference, even if the worktree has one
   assert.equal(hash(worktreeCopy), rules.rollback_sha256);
-  assert.throws(() => rollbackRulesProvenance({ ...hist, package_sha: state.rollback_runtime_sha }), /does not exist|exists on disk|unknown revision|invalid object|Path .* does not exist/i);
+  assert.throws(() => rollbackRulesProvenance({ ...hist, package_sha: 'd7bb71521d750eafd46a15fdd3c6ee157d4bd4cf' }), /does not exist|exists on disk|unknown revision|invalid object|Path .* does not exist/i);
   // 11. deleting the reference from a LATER branch state does not invalidate the historical package
   //     (the gate reads git history at package_sha, never the current worktree)
   const src = fs.readFileSync('scripts/release/live.cjs', 'utf8');
