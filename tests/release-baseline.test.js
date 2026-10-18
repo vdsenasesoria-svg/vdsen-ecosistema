@@ -90,7 +90,7 @@ test('environment identifiers must match pinned projects, identity provider and 
   } finally { for (const k of Object.keys(process.env)) if (!(k in before)) delete process.env[k]; Object.assign(process.env, before); }
 });
 test('current production is distinct from rollback and advance never promotes a preview', () => {
-  assert.equal(state.production_deployment, 'dpl_4xAS5kXuny7APpaRjozGeNdPETMj');
+  assert.equal(state.production_deployment, 'dpl_2c8QmmGjnRrEwq4zaXPfBPppXYXk');
   assert.notEqual(state.production_deployment, state.rollback_deployment);
   // After the first app release the state describes an APP release, so the mode is app_only. This
   // does NOT relax the rules lane: the assertions below still prove live.cjs cannot deploy,
@@ -117,8 +117,8 @@ test('rollback rules provenance is decoupled from the app rollback runtime and f
   // 3. the app rollback pair stays pinned and independently verifiable. It is now the deployment
   // that was serving production before the first app release, which is what a recovery would
   // actually restore.
-  assert.equal(state.rollback_deployment, 'dpl_FngrtpodSKHZ9aPk75aA5SS7JGnB');
-  assert.equal(state.rollback_runtime_sha, 'd7bb71521d750eafd46a15fdd3c6ee157d4bd4cf');
+  assert.equal(state.rollback_deployment, 'dpl_4xAS5kXuny7APpaRjozGeNdPETMj');
+  assert.equal(state.rollback_runtime_sha, '8365410cf7f09427c79ead77aa4f769c16e9a803');
   // 4. tampered captured live source -> FAIL
   assert.throws(() => rollbackRulesProvenance({ package_sha: PACKAGE_SHA, state, old_rules: { sha256: hash(content), source: { files: [{ content: content + '\n// tampered' }] } } }), /own hash/);
   const other = git('show', state.runtime_sha + ':firestore.rules');
@@ -136,7 +136,7 @@ test('rollback rules provenance is decoupled from the app rollback runtime and f
   const missingPath = clone(state); delete missingPath.rules_transition.rollback_source_path;
   assert.throws(() => rollbackRulesProvenance({ package_sha: PACKAGE_SHA, state: missingPath, old_rules: { sha256: hash(content), source: { files: [{ content }] } } }), /content-addressed/);
   // 7. missing file at snapshot.package_sha -> FAIL
-  assert.throws(() => rollbackRulesProvenance(snap({}, state.rollback_runtime_sha)), /does not exist|exists on disk|unknown revision|invalid object|Path .* does not exist/i);
+  assert.throws(() => rollbackRulesProvenance(snap({}, 'd7bb71521d750eafd46a15fdd3c6ee157d4bd4cf')), /does not exist|exists on disk|unknown revision|invalid object|Path .* does not exist/i);
   // 8. malformed / missing snapshot.package_sha -> FAIL
   for (const bad of ['', 'notasha', 'A'.repeat(40), 'a'.repeat(39), 'a'.repeat(41)]) {
     assert.throws(() => rollbackRulesProvenance(snap({}, bad)), /package SHA/, 'package_sha must be validated: ' + bad);
@@ -158,7 +158,7 @@ test('rollback rules reference is immutable to the release package SHA, not the 
   rollbackRulesProvenance(hist);
   // a bogus package SHA cannot substitute a different reference, even if the worktree has one
   assert.equal(hash(worktreeCopy), rules.rollback_sha256);
-  assert.throws(() => rollbackRulesProvenance({ ...hist, package_sha: state.rollback_runtime_sha }), /does not exist|exists on disk|unknown revision|invalid object|Path .* does not exist/i);
+  assert.throws(() => rollbackRulesProvenance({ ...hist, package_sha: 'd7bb71521d750eafd46a15fdd3c6ee157d4bd4cf' }), /does not exist|exists on disk|unknown revision|invalid object|Path .* does not exist/i);
   // 11. deleting the reference from a LATER branch state does not invalidate the historical package
   //     (the gate reads git history at package_sha, never the current worktree)
   const src = fs.readFileSync('scripts/release/live.cjs', 'utf8');
