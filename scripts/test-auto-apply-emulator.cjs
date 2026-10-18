@@ -35,7 +35,8 @@ const SUITES = [
   { name: 'self-coach topology', file: path.join('tests', 't558-self-coach-topology.cjs') },
   { name: 'autonomous progression', file: path.join('tests', 't570r-autonomous-emulator.cjs') },
   { name: 'admin applyPending', file: path.join('tests', 't576-admin-apply-emulator.cjs') },
-  { name: 'verified equipment LOAD', file: path.join('tests', 't578-verified-load-emulator.cjs') }
+  { name: 'verified equipment LOAD', file: path.join('tests', 't578-verified-load-emulator.cjs') },
+  { name: 'exercise links LOAD', file: path.join('tests', 't581-links-load-emulator.cjs') }
 ].filter(x => fs.existsSync(path.join(__dirname, '..', x.file)));
 const ONLY = process.env.VDSEN_EMU_ONLY;   // e.g. "rules" to run a single suite (used for RED demonstrations)
 const isWin = process.platform === 'win32';
