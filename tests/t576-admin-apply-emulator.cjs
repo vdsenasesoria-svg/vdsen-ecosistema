@@ -1,11 +1,10 @@
 'use strict';
 // T576: the trusted executor against the REAL Firebase Admin SDK (Firestore emulator). The fake/REST drivers used elsewhere do not enforce
 // Admin semantics (undefined values, read-before-write in transactions), which is where the hosted APPLIED path failed.
-// Runs only with FIRESTORE_EMULATOR_HOST (e.g. `firebase emulators:exec --only firestore "node --test api/_autonomousProgression.admin.test.js"`).
+// Emulator suite: run by scripts/test-auto-apply-emulator.cjs (CI 'canonical emulator gate'); needs FIRESTORE_EMULATOR_HOST.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const EMU = process.env.FIRESTORE_EMULATOR_HOST;
-const skip = EMU ? false : 'FIRESTORE_EMULATOR_HOST not set';
+assert.ok(process.env.FIRESTORE_EMULATOR_HOST, 'Firestore emulator is required');
 const T0 = Date.parse('2026-09-27T12:00:00.000Z');
 
 async function seed(db, o) {
@@ -26,10 +25,10 @@ async function seed(db, o) {
 }
 const mesoOf = async (db, s) => (await db.doc('logs/' + s.uid + '/mesos/' + s.planId).get()).data();
 
-test('T576 Admin SDK: PENDING -> APPLIED (REPS overlay) and idempotent repeat', { skip }, async () => {
+test('T576 Admin SDK: PENDING -> APPLIED (REPS overlay) and idempotent repeat', async () => {
   const admin = require('firebase-admin');
-  const app = admin.initializeApp({ projectId: 'demo-t576' }, 't576-a');
-  const db = admin.firestore(app), executor = require('./_autonomousProgression');
+  const app = admin.initializeApp({ projectId: process.env.GCLOUD_PROJECT || 'demo-vdsen-shadow' }, 't576-a');
+  const db = admin.firestore(app), executor = require('../api/_autonomousProgression');
   const s = await seed(db);
   const clock = () => '2026-10-01T00:00:00.000Z';
   const out = await executor.processProgression({ db, clientId: s.uid, planId: s.planId, enabled: true, numericApplyEnabled: true, clock });
