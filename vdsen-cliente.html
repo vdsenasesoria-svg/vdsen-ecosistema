@@ -787,6 +787,10 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .rt-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .rt-last{min-height:18px;font-size:13px;font-weight:700;color:var(--grn);letter-spacing:.02em;text-align:center}
 .rt-last:empty{display:none}
+.rt-cur{padding:2px 0 2px 12px;border-left:3px solid var(--rule-strong);text-align:left}
+.rt-cur:empty{display:none}
+.rt-cur-k{font-size:11px;font-weight:800;letter-spacing:.12em;color:var(--mt)}
+.rt-cur-t{font-size:16px;font-weight:800;line-height:1.2;color:var(--tx);margin-top:2px;overflow-wrap:break-word}
 .rt-main{display:flex;align-items:center;gap:14px}
 .rt-ring{position:relative;width:112px;height:112px;flex:0 0 auto}
 .rt-ring svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)}
@@ -5458,7 +5462,11 @@ function _restAdvanceDecision(ctx, st, action) {
   if (action.type === 'SESSION_DONE') return { advance: false, reason: 'SESSION_READY', kind: 'SESSION_DONE' };
   return { advance: false, reason: 'NO_TARGET' };
 }
+// At zero the rest sheet / pill close by themselves (the DESCANSO TERMINADO alert takes over); the ctx stays until the advance decision is final.
 function _restFinishFlow() {
+  var ovl = document.getElementById('restTimerOverlay'); if (ovl) ovl.style.display = 'none';
+  var pil = document.getElementById('timerPill'); if (pil) pil.style.display = 'none';
+  if (typeof _restTimer !== 'undefined' && _restTimer) { clearInterval(_restTimer); _restTimer = null; }   // stop counting past zero
   var ctx = _restCtx;
   if (!ctx) { var c0 = _restDoneCopy('NONE'); _restAnnounce(c0.primary, c0.secondary); return; }   // e.g. restored after a reload: alert only, never navigate
   var action = null;
@@ -5475,8 +5483,7 @@ function _restFinishFlow() {
     stopRestTimer(); _tapGuard(350);
     if (d.kind === 'NEXT_EXERCISE') { if (EJ_ACTIVO !== d.ei) setEjActivo(d.ei); else _scrollToNextPendingSet(); } else _scrollToNextPendingSet();
   } else {
-    var pill = document.getElementById('timerPill');
-    if (pill && pill.style.display !== 'none') maximizeTimer();   // legacy: bring a minimized timer back
+    stopRestTimer();   // no auto-navigation here, but the rest is over: the sheet stays closed and the alert below is the only signal
   }
   _restAnnounce(copy.primary, copy.secondary);
 }
@@ -9221,6 +9228,7 @@ function renderEntrenamiento() {
         '<div class="rt-top"><span class="kick">DESCANSO ACTIVO</span>'+
           '<button onclick="event.stopPropagation();minimizeTimer()" class="btn-mini" aria-label="Minimizar temporizador"><svg class="ico sm" aria-hidden="true" focusable="false"><use href="#i-chev-d"/></svg> MINIMIZAR</button>'+
         '</div>'+
+        '<div id="restCurrentEx" class="rt-cur" aria-live="polite"></div>'+
         '<div id="restLastSet" class="rt-last" aria-live="polite"></div>'+
         '<div class="rt-main">'+
           '<div class="rt-ring">'+
@@ -10262,6 +10270,7 @@ function _ensureRestTimerOverlay() {
       '</div>'+
       '<div class="rtc-body">'+
         '<div class="kick">DESCANSO ACTIVO</div>'+
+        '<div id="restCurrentEx" class="rt-cur" aria-live="polite"></div>'+
         '<div id="restLastSet" class="rt-last" aria-live="polite"></div>'+
         '<div id="nextActionHintCompact" class="rt-next" style="display:none"></div>'+
         '<div class="rtc-acts">'+
@@ -10503,6 +10512,21 @@ function startRestTimer(seconds, lastSetKey) {
       lsEl.textContent = '';
     }
   }
+  // Ejercicio del que se está descansando (el bloque SIGUIENTE ya indica la serie o el ejercicio que sigue).
+  var curEl = document.getElementById('restCurrentEx');
+  if (curEl) {
+    curEl.textContent = '';
+    var cej = (_EJERCICIOS_DIA || [])[_ctxEi];
+    var cname = cej ? (cej.exerciseName || cej.nombre || '') : '';
+    if (cname) {
+      var cn = 0;
+      try { cn = getEffectiveSets(cej, _restCtx.week, getTotalWeeks()).length || (cej.sets ? cej.sets.length : 0); } catch (_e) { cn = cej.sets ? cej.sets.length : 0; }
+      var ck = document.createElement('div'); ck.className = 'rt-cur-k';
+      ck.textContent = 'DESCANSANDO DE' + (_km && cn ? ' · SERIE ' + (_lastSi + 1) + ' DE ' + cn : '');
+      var ct = document.createElement('div'); ct.className = 'rt-cur-t'; ct.textContent = cname;
+      curEl.appendChild(ck); curEl.appendChild(ct);
+    }
+  }
   updateTimerDisplay();
   _restTimer = setInterval(_restTimerTick, 1000);
 }
@@ -10616,6 +10640,8 @@ function stopRestTimer() {
     var e = document.getElementById(id);
     if (e) { e.textContent = ''; e.style.display = 'none'; }
   });
+  var curEx = document.getElementById('restCurrentEx');
+  if (curEx) curEx.textContent = '';
 }
 
 function selDia(i) {
