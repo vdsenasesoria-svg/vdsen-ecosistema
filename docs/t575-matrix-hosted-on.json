@@ -1,6 +1,6 @@
 {
   "project": "vdsen-ecosistema-staging",
-  "at": "2026-10-18T13:37:36.017Z",
+  "at": "2026-10-18T15:54:59.386Z",
   "phase": "on",
   "mode": "HOSTED",
   "results": [
@@ -10,13 +10,13 @@
       "note": "200 OUT_OF_ALLOWLIST",
       "evidence": {
         "before": {
-          "digest": "f7afb9619ccc",
+          "digest": "73eb825b7dd2",
           "records": [],
           "overlays": [],
           "receipts": 0
         },
         "after": {
-          "digest": "f7afb9619ccc",
+          "digest": "73eb825b7dd2",
           "records": [],
           "overlays": [],
           "receipts": 0
@@ -29,13 +29,13 @@
       "note": "200 OUT_OF_ALLOWLIST",
       "evidence": {
         "before": {
-          "digest": "55a24d078c65",
+          "digest": "933bf33bc98f",
           "records": [],
           "overlays": [],
           "receipts": 0
         },
         "after": {
-          "digest": "55a24d078c65",
+          "digest": "933bf33bc98f",
           "records": [],
           "overlays": [],
           "receipts": 0
@@ -48,13 +48,13 @@
       "note": "200 OUT_OF_CANARY",
       "evidence": {
         "before": {
-          "digest": "55a24d078c65",
+          "digest": "933bf33bc98f",
           "records": [],
           "overlays": [],
           "receipts": 0
         },
         "after": {
-          "digest": "55a24d078c65",
+          "digest": "933bf33bc98f",
           "records": [],
           "overlays": [],
           "receipts": 0
@@ -67,13 +67,13 @@
       "note": "200 NO_CHANGE",
       "evidence": {
         "before": {
-          "digest": "60cf70e3533c",
+          "digest": "ca12c4ba52bb",
           "records": [],
           "overlays": [],
           "receipts": 0
         },
         "after": {
-          "digest": "60cf70e3533c",
+          "digest": "ca12c4ba52bb",
           "records": [],
           "overlays": [],
           "receipts": 0
@@ -91,13 +91,13 @@
       "note": "{\"state\":\"APPLIED\",\"events\":[\"PENDING\",\"APPLIED\"],\"sra\":\"NONE\",\"reasons\":[\"NUMERIC_ACTIVATION_DISABLED\"]}",
       "evidence": {
         "before": {
-          "digest": "0970ea1bb1cc",
+          "digest": "3592fa5a906d",
           "records": [],
           "overlays": [],
           "receipts": 0
         },
         "after": {
-          "digest": "0dba2cbfd38b",
+          "digest": "684bf4e8a57e",
           "records": [
             {
               "state": "APPLIED",
@@ -124,7 +124,7 @@
     {
       "id": "H16/H23 APPLIED REPS overlay; execution evidence, plan and client untouched",
       "pass": true,
-      "note": "[{\"dim\":\"REPS\",\"status\":\"APPLIED\",\"applied\":12,\"prev\":10,\"rec\":\"v1_0fd5ad29a73d4c3b\",\"key\":\"ovl_v1_0fd5ad29a73d4c3b\"}]"
+      "note": "[{\"dim\":\"REPS\",\"status\":\"APPLIED\",\"applied\":12,\"prev\":10,\"rec\":\"v1_b65527b869b356f0\",\"key\":\"ovl_v1_b65527b869b356f0\"}]"
     },
     {
       "id": "H17 athlete (own token, deployed rules) resolves the effective prescription",
@@ -137,7 +137,7 @@
       "note": "[\"PENDING\",\"APPLIED\",\"CONSUMED\"]",
       "evidence": {
         "before": {
-          "digest": "f949410c19f7",
+          "digest": "d9c244377420",
           "records": [
             {
               "state": "APPLIED",
@@ -160,7 +160,7 @@
           "receipts": 1
         },
         "after": {
-          "digest": "c88961bbcc64",
+          "digest": "41bcf3aff555",
           "records": [
             {
               "state": "CONSUMED",
@@ -188,16 +188,16 @@
     {
       "id": "H19/H26 3 concurrent POSTs + a cron sweep => exactly ONE record, ONE APPLIED event, ONE overlay",
       "pass": true,
-      "note": "[[\"PENDING\",\"APPLIED\"]]",
+      "note": "[[\"PENDING\",\"APPLIED\"]] (cron leg skipped: no secret)",
       "evidence": {
         "before": {
-          "digest": "55a24d078c65",
+          "digest": "933bf33bc98f",
           "records": [],
           "overlays": [],
           "receipts": 0
         },
         "after": {
-          "digest": "26b7e6ddd636",
+          "digest": "e879c35fffcf",
           "records": [
             {
               "state": "APPLIED",
@@ -227,13 +227,13 @@
       "note": "denied=403",
       "evidence": {
         "before": {
-          "digest": "8d15644d367e",
+          "digest": "afd15ced55f5",
           "records": [],
           "overlays": [],
           "receipts": 0
         },
         "after": {
-          "digest": "389c7aeaa066",
+          "digest": "39f26526cd0e",
           "records": [
             {
               "state": "APPLIED",
@@ -260,28 +260,16 @@
     {
       "id": "H21 E08 SAFETY_CONFLICT: increase blocked, no overlay, SRA mutation NONE",
       "pass": true,
-      "note": "[{\"recordKey\":\"v1_013a6a9d0f03488b\",\"written\":false,\"reason\":\"SAFETY_CONFLICT\",\"blocked\":null}]",
+      "note": "[{\"recordKey\":\"v1_3e471959ec489be7\",\"written\":false,\"reason\":\"SAFETY_CONFLICT\",\"blocked\":null}]",
       "evidence": {
         "before": {
-          "digest": "0be9ab0ff3d5",
-          "records": [
-            {
-              "state": "PENDING",
-              "events": [
-                "PENDING"
-              ],
-              "sra": "NONE",
-              "reasons": [
-                "NUMERIC_ACTIVATION_DISABLED",
-                "SAFETY_CONFLICT"
-              ]
-            }
-          ],
+          "digest": "5db4458eeb64",
+          "records": [],
           "overlays": [],
           "receipts": 0
         },
         "after": {
-          "digest": "0be9ab0ff3d5",
+          "digest": "bf0a9b7ba13b",
           "records": [
             {
               "state": "PENDING",
@@ -303,28 +291,16 @@
     {
       "id": "H22 LOAD without verified increments => BLOCKED_EQUIPMENT_DATA, no overlay",
       "pass": true,
-      "note": "[{\"recordKey\":\"v1_082c8d55cafa5c8d\",\"written\":false,\"reason\":\"EQUIPMENT_IDENTITY_UNRESOLVED\",\"blocked\":\"BLOCKED_EQUIPMENT_DATA\"}]",
+      "note": "[{\"recordKey\":\"v1_f9a5eee4a2506060\",\"written\":false,\"reason\":\"EQUIPMENT_IDENTITY_UNRESOLVED\",\"blocked\":\"BLOCKED_EQUIPMENT_DATA\"}]",
       "evidence": {
         "before": {
-          "digest": "37b7589a07ca",
-          "records": [
-            {
-              "state": "PENDING",
-              "events": [
-                "PENDING"
-              ],
-              "sra": "NONE",
-              "reasons": [
-                "NUMERIC_ACTIVATION_DISABLED",
-                "EQUIPMENT_INCREMENT_POLICY_MISSING"
-              ]
-            }
-          ],
+          "digest": "c54a2fb0991e",
+          "records": [],
           "overlays": [],
           "receipts": 0
         },
         "after": {
-          "digest": "37b7589a07ca",
+          "digest": "18bddbd12893",
           "records": [
             {
               "state": "PENDING",
@@ -342,37 +318,98 @@
           "receipts": 0
         }
       }
+    },
+    {
+      "id": "H29 LOAD verified increment: APPLIED 100 -> 105 KG, evidence/plan/client untouched",
+      "pass": true,
+      "note": "[{\"dim\":\"LOAD\",\"status\":\"APPLIED\",\"applied\":105,\"prev\":100,\"rec\":\"v1_e8b779f77b8e0449\",\"key\":\"ovl_v1_e8b779f77b8e0449\"}] [{\"recordKey\":\"v1_e8b779f77b8e0449\",\"written\":true,\"reason\":null,\"blocked\":null}]",
+      "evidence": {
+        "before": {
+          "digest": "a55d0919a6ac",
+          "records": [],
+          "overlays": [],
+          "receipts": 0
+        },
+        "after": {
+          "digest": "045f5f3be382",
+          "records": [
+            {
+              "state": "APPLIED",
+              "events": [
+                "PENDING",
+                "APPLIED"
+              ],
+              "sra": "NONE",
+              "reasons": [
+                "NUMERIC_ACTIVATION_DISABLED",
+                "EQUIPMENT_INCREMENT_POLICY_MISSING"
+              ]
+            }
+          ],
+          "overlays": [
+            {
+              "dim": "LOAD",
+              "status": "APPLIED"
+            }
+          ],
+          "receipts": 0
+        }
+      }
+    },
+    {
+      "id": "H29b overlay carries unit, equipment identity and increment snapshot",
+      "pass": true,
+      "note": "{\"unit\":\"KG\",\"eq\":\"sf-sd-converging-lat-pulldown-plate-loaded\",\"snap\":{\"configuredAt\":\"2026-09-26T00:00:00.000Z\",\"source\":\"COACH_CONFIGURED\",\"scope\":\"SHARED_EQUIPMENT\",\"revision\":1,\"kind\":\"STEP\",\"unit\":\"KG\"}}"
+    },
+    {
+      "id": "H30 LOAD, known equipment WITHOUT increments => BLOCKED_EQUIPMENT_DATA, record PENDING, no overlay",
+      "pass": true,
+      "note": "[{\"recordKey\":\"v1_9305189cfe0e48fc\",\"written\":false,\"reason\":\"UNRESOLVED_EQUIPMENT_INCREMENT\",\"blocked\":\"BLOCKED_EQUIPMENT_DATA\"}]",
+      "evidence": {
+        "before": {
+          "digest": "037588abe5fc",
+          "records": [],
+          "overlays": [],
+          "receipts": 0
+        },
+        "after": {
+          "digest": "5cb09812e8ea",
+          "records": [
+            {
+              "state": "PENDING",
+              "events": [
+                "PENDING"
+              ],
+              "sra": "NONE",
+              "reasons": [
+                "NUMERIC_ACTIVATION_DISABLED",
+                "EQUIPMENT_INCREMENT_POLICY_MISSING"
+              ]
+            }
+          ],
+          "overlays": [],
+          "receipts": 0
+        }
+      }
+    },
+    {
+      "id": "H31 LOAD CONSUMED once (receipt + persisted first set); 3 concurrent repeats => ONE record, ONE overlay, applied value unchanged",
+      "pass": true,
+      "note": "[\"PENDING\",\"APPLIED\",\"CONSUMED\"]"
     },
     {
       "id": "H24 REST (rule C) applied automatically",
       "pass": true,
-      "note": "[{\"dim\":\"REST\",\"status\":\"APPLIED\",\"applied\":120,\"prev\":90,\"rec\":\"v1_cc5673d110daf0bb\",\"key\":\"ovl_v1_cc5673d110daf0bb\"}]",
+      "note": "[{\"dim\":\"REST\",\"status\":\"APPLIED\",\"applied\":120,\"prev\":90,\"rec\":\"v1_af14cd0b16574a87\",\"key\":\"ovl_v1_af14cd0b16574a87\"}]",
       "evidence": {
         "before": {
-          "digest": "55912af5ecf9",
-          "records": [
-            {
-              "state": "APPLIED",
-              "events": [
-                "PENDING",
-                "APPLIED"
-              ],
-              "sra": "NONE",
-              "reasons": [
-                "NUMERIC_ACTIVATION_DISABLED"
-              ]
-            }
-          ],
-          "overlays": [
-            {
-              "dim": "REST",
-              "status": "APPLIED"
-            }
-          ],
+          "digest": "2d23713e8379",
+          "records": [],
+          "overlays": [],
           "receipts": 0
         },
         "after": {
-          "digest": "55912af5ecf9",
+          "digest": "146303eb2954",
           "records": [
             {
               "state": "APPLIED",
@@ -397,67 +434,14 @@
       }
     },
     {
-      "id": "H08 cron with a wrong secret => 401, zero writes",
-      "pass": true,
-      "note": null
+      "id": "H08 cron wrong secret",
+      "pass": null,
+      "note": "NOT_TESTED (no cron secret available)"
     },
     {
-      "id": "H09 cron with the valid secret recovers evidence nobody notified about (no browser/POST)",
-      "pass": true,
-      "note": "200 {\"status\":\"SWEPT\",\"processed\":8}",
-      "evidence": {
-        "before": {
-          "digest": "85c479d74068",
-          "records": [
-            {
-              "state": "APPLIED",
-              "events": [
-                "PENDING",
-                "APPLIED"
-              ],
-              "sra": "NONE",
-              "reasons": [
-                "NUMERIC_ACTIVATION_DISABLED"
-              ]
-            }
-          ],
-          "overlays": [
-            {
-              "dim": "REPS",
-              "status": "APPLIED"
-            }
-          ],
-          "receipts": 0
-        },
-        "after": {
-          "digest": "85c479d74068",
-          "records": [
-            {
-              "state": "APPLIED",
-              "events": [
-                "PENDING",
-                "APPLIED"
-              ],
-              "sra": "NONE",
-              "reasons": [
-                "NUMERIC_ACTIVATION_DISABLED"
-              ]
-            }
-          ],
-          "overlays": [
-            {
-              "dim": "REPS",
-              "status": "APPLIED"
-            }
-          ],
-          "receipts": 0
-        }
-      }
-    },
-    {
-      "id": "H09b cron leaves the out-of-allowlist athlete untouched",
-      "pass": true,
-      "note": null
+      "id": "H09 cron valid secret",
+      "pass": null,
+      "note": "NOT_TESTED (no cron secret available)"
     },
     {
       "id": "H27 Preview rejected",
@@ -472,7 +456,7 @@
     {
       "id": "CLEANUP all synthetic docs and users removed and verified absent",
       "pass": true,
-      "note": "{\"docsDeleted\":39,\"docsRemaining\":[],\"usersDeleted\":11,\"usersRemaining\":[]}"
+      "note": "{\"docsDeleted\":48,\"docsRemaining\":[],\"usersDeleted\":14,\"usersRemaining\":[]}"
     },
     {
       "id": "ZERO production access: every Firestore/Auth call targeted vdsen-ecosistema-staging",
@@ -480,7 +464,7 @@
       "note": "identitytoolkit.googleapis.com | firestore.googleapis.com [project=vdsen-ecosistema-staging] | vdsen-ecosistema-staging-t573.vercel.app | identitytoolkit.googleapis.com [project=vdsen-ecosistema-staging]"
     }
   ],
-  "pass": 20,
+  "pass": 21,
   "fail": 0,
-  "skipped": 1
+  "skipped": 3
 }

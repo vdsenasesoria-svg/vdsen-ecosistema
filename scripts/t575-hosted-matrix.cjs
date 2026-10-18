@@ -46,8 +46,8 @@ const planDoc = (coachId, clientId, o) => ({ schema: 'vdsen-plan-v2', coachId, c
     sets: [0, 1, 2].map(setIndex => ({ setIndex, repsTarget: 10, rirTarget: o.rirTarget === undefined ? 1 : o.rirTarget, restSeconds: 90, load: 0 })) }] })) });
 function evidence(o) {
   const logs = {};
-  [[1, 0], [1, 2]].forEach(([w, d]) => [0, 1, 2].forEach(s => { logs['log_' + w + '_' + d + '_0_s' + s] = { done: true, carga: '100', reps: o.restScenario && d === 2 ? '9' : '10', unit: 'KG', rir: o.rirTarget === undefined ? 1 : o.rirTarget, rir_real: o.restScenario ? 1 : 3, prescriptionExerciseId: o.pid, ts: T0 + d * 1000 + s }; }));
-  const rec = { prescriptionExerciseId: o.pid, exerciseId: 'ex-t575', exerciseName: 'Press T575', action: o.restScenario ? 'maintain' : (o.rirTarget === 2 ? 'increase_load' : 'increase_reps'), newReps: o.rirTarget === 2 ? 10 : 11 };
+  [[1, 0], [1, 2]].forEach(([w, d]) => [0, 1, 2].forEach(s => { logs['log_' + w + '_' + d + '_0_s' + s] = { done: true, carga: '100', reps: o.restScenario && d === 2 ? '9' : '10', unit: 'KG', rir: o.rirTarget === undefined ? 1 : o.rirTarget, rir_real: o.rirReal !== undefined ? o.rirReal : (o.restScenario ? 1 : 3), prescriptionExerciseId: o.pid, ts: T0 + d * 1000 + s }; }));
+  const rec = { prescriptionExerciseId: o.pid, exerciseId: o.exerciseId || 'ex-t575', exerciseName: 'Press T575', action: o.restScenario ? 'maintain' : (o.rirTarget === 2 ? 'increase_load' : 'increase_reps'), newReps: o.rirTarget === 2 ? 10 : 11 };
   if (o.rirTarget === 2) rec.newLoad = 5;
   logs.progrec_1_2 = { calculatedAt: new Date(T0 + 60000).toISOString(), recommendations: [rec] };
   if (o.pain) logs.postsession_1_2 = { articular: 'si', patron: 'press', eimd: 1, sleep: 8, rpe: 7 };
@@ -61,7 +61,7 @@ async function mkAthlete(coach, tag, o) {
   const a = await signUp('ath-' + tag); a.planId = 'plan-t575-' + tag + '-' + crypto.randomBytes(3).toString('hex'); a.tag = tag; a.pid = o.pid || PID_IN;
   await adminSet('clients/' + a.uid, { coachId: coach.uid, role: 'client', displayName: 'Atleta T575 ' + tag, activePlanId: a.planId, coachInterventions: [] });
   await adminSet('plans/' + a.planId, planDoc(coach.uid, a.uid, { pid: a.pid, rirTarget: o.rirTarget, exerciseId: o.exerciseId }));
-  if (!o.noEvidence) { const w = await athleteWrite(a, evidence({ pid: a.pid, rirTarget: o.rirTarget, restScenario: o.restScenario, pain: o.pain })); if (w.some(s => s !== 200)) throw new Error('evidence write ' + w); }
+  if (!o.noEvidence) { const w = await athleteWrite(a, evidence({ pid: a.pid, rirTarget: o.rirTarget, restScenario: o.restScenario, pain: o.pain, exerciseId: o.exerciseId, rirReal: o.rirReal })); if (w.some(s => s !== 200)) throw new Error('evidence write ' + w); }
   created.docs.push('logs/' + a.uid + '/mesos/' + a.planId, 'logs/' + a.uid, 'plans/' + a.planId, 'clients/' + a.uid); return a;
 }
 const setCanary = (coach, v) => adminSet('coaches/' + coach.uid, { autoApplyCanary: v }, ['autoApplyCanary']);
@@ -152,8 +152,12 @@ async function phaseOn(ctx) {
   const coach = await mkCoach(), mk = (t, o) => mkAthlete(coach, t, o || {});
   const aOK = await mk('ok'), aOut = await mk('out'), aPid = await mk('pid', { pid: PID_OUT }), aPain = await mk('pain', { pain: true }), aLoad = await mk('load', { rirTarget: 2 });
   const aRest = await mk('rest', { restScenario: true }), aCron = await mk('cron'), aE06 = await mk('e06', { noEvidence: true }), aTog = await mk('tog');
-  const inScope = [aOK, aPid, aPain, aLoad, aRest, aCron, aE06, aTog];
-  const arm = async () => { await setRelease(inScope.map(a => a.uid)); await setCanary(coach, { enabled: true, clientIds: inScope.concat([aOut]).map(a => a.uid), prescriptionExerciseIds: [PID_IN] }); };
+  // T578: verified-equipment LOAD. Equipment IDENTITY = public catalog entry; the INCREMENT is a SYNTHETIC Coach-configured fixture (no real gym data).
+  const LV_EX = 'sf-sd-converging-lat-pulldown-plate-loaded', coach2 = await mkCoach();
+  await adminSet('coaches/' + coach.uid, { equipmentIncrements: { shared: { [LV_EX]: { kind: 'STEP', step: 5, min: 0, unit: 'KG', source: 'COACH_CONFIGURED', scope: 'SHARED_EQUIPMENT', configuredAt: '2026-09-26T00:00:00.000Z', configuredBy: 'synthetic-t578', revision: 1 } }, gyms: {} } }, ['equipmentIncrements']);
+  const aLV = await mk('lv', { rirTarget: 2, rirReal: 4, exerciseId: LV_EX }), aLVT = await mkAthlete(coach2, 'lvtwin', { rirTarget: 2, rirReal: 4, exerciseId: LV_EX });
+  const inScope = [aOK, aPid, aPain, aLoad, aRest, aCron, aE06, aTog, aLV, aLVT];
+  const arm = async () => { await setRelease(inScope.map(a => a.uid)); await setCanary(coach, { enabled: true, clientIds: inScope.concat([aOut]).map(a => a.uid), prescriptionExerciseIds: [PID_IN] }); await setCanary(coach2, { enabled: true, clientIds: [aLVT.uid], prescriptionExerciseIds: [PID_IN] }); };
   await arm();
   // H12 client outside the allowlist
   let b = await snap(aOut), r = await post(aOut), a = await snap(aOut);
@@ -207,6 +211,19 @@ async function phaseOn(ctx) {
   // H22 LOAD
   b = await snap(aLoad); r = await post(aLoad); a = await snap(aLoad);
   check('H22 LOAD without verified increments => BLOCKED_EQUIPMENT_DATA, no overlay', a.overlays.length === 0 && r.j && r.j.applied && r.j.applied.length === 1 && r.j.applied[0].blocked === 'BLOCKED_EQUIPMENT_DATA', JSON.stringify(r.j && r.j.applied), { before: brief(b), after: brief(a) });
+  // H29 (T578) LOAD with VERIFIED equipment: applied, base plan/evidence untouched, then consumed; H30 twin WITHOUT increments stays blocked; repeats idempotent
+  b = await snap(aLV); r = await post(aLV); a = await snap(aLV);
+  const lvOv = a.overlays[0];
+  check('H29 LOAD verified increment: APPLIED 100 -> 105 KG, evidence/plan/client untouched', a.records.length === 1 && a.records[0].state === 'APPLIED' && a.overlays.length === 1 && lvOv.dim === 'LOAD' && lvOv.status === 'APPLIED' && lvOv.prev === 100 && lvOv.applied === 105 && a.entriesDigest === b.entriesDigest && a.planDigest === b.planDigest && a.clientDigest === b.clientDigest, JSON.stringify(a.overlays) + ' ' + JSON.stringify(r.j && r.j.applied), { before: brief(b), after: brief(a) });
+  const lvFull = Object.values(a.meso.nextExposureOverlays)[0], lvRec = Object.values(a.meso.progressionApplications)[0];
+  check('H29b overlay carries unit, equipment identity and increment snapshot', lvFull.unit === 'KG' && lvFull.equipmentId === LV_EX && lvFull.equipmentSnapshot && lvFull.equipmentSnapshot.kind === 'STEP' && lvFull.equipmentSnapshot.source === 'COACH_CONFIGURED' && lvFull.prescriptionExerciseId === PID_IN, JSON.stringify({ unit: lvFull.unit, eq: lvFull.equipmentId, snap: lvFull.equipmentSnapshot }));
+  b = await snap(aLVT); r = await post(aLVT); a = await snap(aLVT);
+  check('H30 LOAD, known equipment WITHOUT increments => BLOCKED_EQUIPMENT_DATA, record PENDING, no overlay', a.overlays.length === 0 && a.records.length === 1 && a.records[0].state === 'PENDING' && r.j && r.j.applied && r.j.applied.length === 1 && r.j.applied[0].blocked === 'BLOCKED_EQUIPMENT_DATA' && a.entriesDigest === b.entriesDigest, JSON.stringify(r.j && r.j.applied), { before: brief(b), after: brief(a) });
+  const lvT = lvFull.target, lvFirst = {}; lvFirst['log_' + lvT.week + '_' + lvT.dayIndex + '_0_s0'] = { done: true, carga: '105', reps: '10', unit: 'KG', rir: 2, rir_real: 2, prescriptionExerciseId: PID_IN, ts: T0 + 9e6 };
+  await athleteWrite(aLV, Object.assign({}, a.meso && (await adminGet('logs/' + aLV.uid + '/mesos/' + aLV.planId)).entries, lvFirst));
+  const lvRr = await asUser(aLV.token, 'PATCH', 'logs/' + aLV.uid + '/mesos/' + aLV.planId, { fields: fieldsOf({ consumptionReceipts: { [lvRec.key]: { recordKey: lvRec.key, overlayKey: lvFull.key, dimension: 'LOAD', appliedValue: 105, provenance: 'CANONICAL_OVERLAY', ackAt: new Date().toISOString() } } }) }, '?updateMask.fieldPaths=consumptionReceipts.' + lvRec.key);
+  await Promise.all([post(aLV), post(aLV), post(aLV)]); a = await snap(aLV);
+  check('H31 LOAD CONSUMED once (receipt + persisted first set); 3 concurrent repeats => ONE record, ONE overlay, applied value unchanged', lvRr.s === 200 && a.records.length === 1 && a.records[0].state === 'CONSUMED' && a.overlays.length === 1 && a.overlays[0].status === 'CONSUMED' && a.overlays[0].applied === 105 && a.records[0].events.filter(e => e === 'CONSUMED').length === 1 && a.records[0].events.filter(e => e === 'APPLIED').length === 1, JSON.stringify(a.records[0].events));
   // H24 REST
   b = await snap(aRest); r = await post(aRest); a = await snap(aRest);
   check('H24 REST (rule C) applied automatically', a.overlays.length === 1 && a.overlays[0].dim === 'REST' && a.overlays[0].status === 'APPLIED', JSON.stringify(a.overlays), { before: brief(b), after: brief(a) });
