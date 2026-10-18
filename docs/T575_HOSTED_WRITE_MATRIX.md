@@ -22,7 +22,7 @@ Veredictos calculados con **instantáneas de Firestore** (identidad IAM del oper
 | off | **HOSTED** (despliegue production del proyecto staging, commit `f4ec326`) | 10 PASS, 0 FAIL, 1 NOT_TESTED (rechazo Preview: muro de Vercel Authentication sin cookie válida; el rechazo ya se demostró en T574) | `docs/t575-matrix-hosted-off.json` |
 | off | LOCAL_SHIM | 10 PASS, 1 NOT_TESTED | `docs/t575-matrix-local-shim-off.json` |
 | on | **LOCAL_SHIM** (mismo handler/ejecutor, datos de staging, NO la función hospedada) | 20 PASS, 0 FAIL, 1 NOT_TESTED | `docs/t575-matrix-local-shim-on.json` |
-| on | **HOSTED** | **NOT_TESTED — BLOQUEADO** (ver §3) | — |
+| on | **HOSTED** | **NOT_TESTED — BLOQUEADO** (ver §3) — *estado histórico de T575; superado por T576: ON hospedado 20 PASS / 0 FAIL / 1 SKIP, ver `docs/T576_HOSTED_APPLY_ROOT_CAUSE.md`* | `docs/t575-matrix-hosted-on.json` |
 El shim sólo valida que el script y las aserciones son correctas; **no cuenta como evidencia hospedada**.
 
 ## 3. Bloqueo y acción exacta para el propietario
