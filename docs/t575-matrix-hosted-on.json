@@ -1,0 +1,142 @@
+{
+  "project": "vdsen-ecosistema-staging",
+  "at": "2026-10-18T04:08:24.054Z",
+  "phase": "on",
+  "mode": "HOSTED",
+  "results": [
+    {
+      "id": "H12 client outside the allowlist => OUT_OF_ALLOWLIST, zero writes",
+      "pass": true,
+      "note": "200 OUT_OF_ALLOWLIST",
+      "evidence": {
+        "before": {
+          "digest": "6fe3a6add000",
+          "records": [],
+          "overlays": [],
+          "receipts": 0
+        },
+        "after": {
+          "digest": "6fe3a6add000",
+          "records": [],
+          "overlays": [],
+          "receipts": 0
+        }
+      }
+    },
+    {
+      "id": "H10 allowlist ABSENT => OUT_OF_ALLOWLIST, zero writes",
+      "pass": true,
+      "note": "200 OUT_OF_ALLOWLIST",
+      "evidence": {
+        "before": {
+          "digest": "0b081edeadee",
+          "records": [],
+          "overlays": [],
+          "receipts": 0
+        },
+        "after": {
+          "digest": "0b081edeadee",
+          "records": [],
+          "overlays": [],
+          "receipts": 0
+        }
+      }
+    },
+    {
+      "id": "H11/H25 canary disabled (revoked) => OUT_OF_CANARY, zero writes",
+      "pass": true,
+      "note": "200 OUT_OF_CANARY",
+      "evidence": {
+        "before": {
+          "digest": "0b081edeadee",
+          "records": [],
+          "overlays": [],
+          "receipts": 0
+        },
+        "after": {
+          "digest": "0b081edeadee",
+          "records": [],
+          "overlays": [],
+          "receipts": 0
+        }
+      }
+    },
+    {
+      "id": "H13 PID outside the canary => no record, no application, zero writes",
+      "pass": true,
+      "note": "200 NO_CHANGE",
+      "evidence": {
+        "before": {
+          "digest": "93d97230b2a3",
+          "records": [],
+          "overlays": [],
+          "receipts": 0
+        },
+        "after": {
+          "digest": "93d97230b2a3",
+          "records": [],
+          "overlays": [],
+          "receipts": 0
+        }
+      }
+    },
+    {
+      "id": "H14 persisted evidence present, no canonical state before",
+      "pass": true,
+      "note": null
+    },
+    {
+      "id": "H15 PENDING materialized (record history starts with PENDING)",
+      "pass": true,
+      "note": "{\"state\":\"PENDING\",\"events\":[\"PENDING\"],\"sra\":\"NONE\",\"reasons\":[\"NUMERIC_ACTIVATION_DISABLED\"]}",
+      "evidence": {
+        "before": {
+          "digest": "af257ce306c4",
+          "records": [],
+          "overlays": [],
+          "receipts": 0
+        },
+        "after": {
+          "digest": "be5938cbb425",
+          "records": [
+            {
+              "state": "PENDING",
+              "events": [
+                "PENDING"
+              ],
+              "sra": "NONE",
+              "reasons": [
+                "NUMERIC_ACTIVATION_DISABLED"
+              ]
+            }
+          ],
+          "overlays": [],
+          "receipts": 0
+        }
+      }
+    },
+    {
+      "id": "H16/H23 APPLIED REPS overlay; execution evidence, plan and client untouched",
+      "pass": false,
+      "note": "[]"
+    },
+    {
+      "id": "MATRIX_ERROR",
+      "pass": false,
+      "note": "Cannot convert undefined or null to object"
+    },
+    {
+      "id": "CLEANUP all synthetic docs and users removed and verified absent",
+      "pass": true,
+      "note": "{\"docsDeleted\":39,\"docsRemaining\":[],\"usersDeleted\":10,\"usersRemaining\":[]}"
+    },
+    {
+      "id": "ZERO production access: every Firestore/Auth call targeted vdsen-ecosistema-staging",
+      "pass": true,
+      "note": "identitytoolkit.googleapis.com | firestore.googleapis.com [project=vdsen-ecosistema-staging] | vdsen-ecosistema-staging-t573.vercel.app | identitytoolkit.googleapis.com [project=vdsen-ecosistema-staging]"
+    }
+  ],
+  "pass": 8,
+  "fail": 2,
+  "skipped": 0
+}

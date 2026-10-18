@@ -9,6 +9,9 @@ var equipment = require('../assets/progression-equipment-resolver.js');
 var sra = require('../assets/sra-context.js');
 var equipmentContext = require('../assets/equipment-context.js');
 var visualCatalog = require('../assets/exercise-visual-catalog.js');
+// The consumer loads this module through an injected require (_req), which Vercel's file tracer cannot follow: without this literal
+// require it is absent from the deployed function and applyPending throws MODULE_NOT_FOUND (hosted-only; see _functionBundleTrace.test.js).
+require('../assets/progression-effective-prescription.js');
 
 // Reasons that mean "the engine proposed a LOAD change but verified equipment data cannot realize it". Only the LOAD dimension is
 // blocked; REPS / REST candidates never depend on equipment data.
