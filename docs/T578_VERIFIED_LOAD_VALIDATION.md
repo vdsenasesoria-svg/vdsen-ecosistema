@@ -1,6 +1,6 @@
 # T578 — Verified-equipment LOAD: local validation (Admin SDK + Firestore Emulator)
 
-Status: **LOCAL_LOAD_VALIDATED_HOSTED_PENDING**. No hosted/staging/production action was taken by T578. The only hosted evidence about LOAD remains T576's: LOAD *blocked* (`BLOCKED_EQUIPMENT_DATA`), never applied.
+Status: **HOSTED_LOAD_VALIDATED** (staging, with the owner's authorization — see §4b). Sections 1–3 are the local (emulator) evidence, produced first; §4b is the later hosted evidence. T576's hosted evidence remains the *blocked* LOAD case only.
 
 Baseline: canonical `4830affb1777971ac80696284dfe600fa1655333`, `main` `f6596ba5207dc158b8a9b01483cd0fe0ebeb274c`. No product code was changed: the audit found no defect.
 
@@ -39,8 +39,17 @@ REPS and REST regressions: `tests/t570r-autonomous-emulator.cjs` (REPS, REST rul
 
 Limits: the athlete's first-set log and receipt were written with the Admin SDK (engine-level test); the rules-level athlete write path is covered by the existing rules suites and the T576 hosted matrix (H18). The hosted bundle has not been exercised with LOAD.
 
-## 4. Hosted validation — prepared, NOT executed
-Requires specific owner authorization (staging only). Nothing below was run.
+## 4b. Hosted result (executed after owner authorization)
+Matrix `scripts/t575-hosted-matrix.cjs --phase on` (new cases H29–H31, branch `test/t578-hosted-load-matrix`), HOSTED against `vdsen-ecosistema-staging` via the Production env of the staging Vercel project (flags enabled only there; Preview untouched; no CRON secret, so H08/H09 are NOT_TESTED): **21 PASS, 0 FAIL, 3 SKIP** (`docs/t575-matrix-hosted-on.json`).
+- H29 LOAD with a verified (synthetic, Coach-configured STEP 5 kg) increment: `PENDING -> APPLIED`, 100 -> 105 KG; evidence, base plan and client untouched. H29b: overlay carries unit KG, the catalog equipment id and the increment snapshot.
+- H30 same equipment with no increments configured: `BLOCKED_EQUIPMENT_DATA`, record stays `PENDING`, no overlay.
+- H31 athlete receipt (own token, deployed rules) => `CONSUMED` once; 3 concurrent repeats => ONE record, ONE overlay, applied value unchanged.
+- REPS, REST, E06, E08, idempotency, scope and integrity cases kept passing. SKIPs: cron (no secret), Preview rejection (no base).
+- Afterwards staging was disarmed (flags `false`, redeployed), `--phase off` = 10 PASS / 0 FAIL / 1 SKIP (`docs/t575-matrix-hosted-off.json`), allowlist document absent (HTTP 404), synthetic data removed. Production and `main` untouched.
+Caveat: the hosted runs used a build of this branch (canonical + the T578 test/doc commits; no runtime change). The increment data is synthetic; nothing here describes any real gym's equipment.
+
+## 4. Hosted validation procedure (as prepared before the run)
+The run in §4b followed this procedure.
 1. **Preflight (read-only):** canonical HEAD = deployed SHA; Vercel project `prj_ZefsZK0hyGe7WxNqenR7MO9f2H8O` (staging), Firebase `vdsen-ecosistema-staging`; Preview flags `false`; no `releaseControl/autonomousProgression`; no non-synthetic clients in the allowlist; OIDC/WIF OK; `scripts/t575-hosted-matrix.cjs --phase off` = PASS.
 2. **Identity/isolation:** synthetic coach + athlete users created by the matrix (`@staging-ui.invalid`), allowlist containing only those UIDs, canary limited to explicit synthetic PIDs.
 3. **Fixtures:** add to the hosted matrix (separate change, with the authorization) an athlete whose plan uses a catalog `exerciseId` with equipment identity and a coach doc `equipmentIncrements.shared[<equipmentId>] = STEP 5 KG COACH_CONFIGURED` (synthetic), evidence load 100 kg, RIR gap 2; plus a twin without increments.
