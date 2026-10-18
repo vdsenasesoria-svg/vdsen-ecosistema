@@ -4,7 +4,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const equipmentContext = require('../../assets/equipment-context.js');
+const identity = require('../../assets/equipment-identity.js');
 const catalog = require('../../assets/exercise-visual-catalog.js');
 
 const COACH = fs.readFileSync(path.join(__dirname, '..', '..', 'vdsen-coach.html'), 'utf8');
@@ -31,11 +31,11 @@ const HELPERS = ['_perfScalar', '_perfType', '_perfEffType', '_perfHasNoSetsOk',
 function coachSandbox(idPrefix, extra) {
   let n = 0;
   const ctx = Object.assign({ console, JSON, Object, Array, String, Number, Math, parseInt, parseFloat, isNaN, Date,
-    window: { VDSEN_EQUIPMENT_CONTEXT: equipmentContext, VDSEN_EXERCISE_VISUAL_CATALOG: catalog },
+    window: { VDSEN_EQUIPMENT_IDENTITY: identity, VDSEN_EXERCISE_VISUAL_CATALOG: catalog },
     crypto: { randomUUID: () => (idPrefix || 'pid') + '-' + (++n) } }, extra || {});
   vm.createContext(ctx);
   vm.runInContext(consts() + '\n' + HELPERS.map(fnSrc).join('\n') + '\n' + fnSrc('_normalizeTrainingPlan') +
-    '\nthis._normalizeTrainingPlan = _normalizeTrainingPlan; this._stampPrescriptionIds = _stampPrescriptionIds;', ctx);
+    '\nthis._normalizeTrainingPlan = _normalizeTrainingPlan; this._stampPrescriptionIds = _stampPrescriptionIds; this._carryExerciseIdentity = _carryExerciseIdentity;', ctx);
   return ctx;
 }
 

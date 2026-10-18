@@ -10409,12 +10409,23 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   // for an explicit Coach link). Never derives or touches prescriptionExerciseId; never similarity. Fail-closed: any problem => {} (plan imports as before).
   function _carryExerciseIdentity(ex) {
     try {
-      var C = window.VDSEN_EQUIPMENT_CONTEXT, cat = window.VDSEN_EXERCISE_VISUAL_CATALOG;
-      if (!C || !cat || typeof C.identifyPlanExercise !== 'function') return {};
-      var known = [];
-      try { known = (typeof _allExercises !== 'undefined' ? _allExercises : []).map(function(x) { return x && (x.documentId || x.id); }).filter(Boolean); } catch (e) { known = []; }
-      var r = C.identifyPlanExercise(ex, { catalog: cat, knownIds: known });
-      return r && r.exerciseId ? { exerciseId: r.exerciseId, exerciseIdSource: r.status === 'SOURCE' ? 'SOURCE' : 'CATALOG_EXACT_NAME' } : {};
+      var cat = window.VDSEN_EXERCISE_VISUAL_CATALOG, idn = window.VDSEN_EQUIPMENT_IDENTITY;
+      if (!cat || !idn || typeof idn.normalizeLabel !== 'function' || !ex || typeof ex !== 'object') return {};
+      var entries = [];
+      Object.keys(cat.gyms || {}).forEach(function(k) { var g = cat.gyms[k]; (g.entries || []).concat(g.legacyEntries || []).forEach(function(e) { if (e && e.exerciseId) entries.push(e); }); });
+      var known = {};
+      entries.forEach(function(e) { known[e.exerciseId] = true; });
+      try { (typeof _allExercises !== 'undefined' ? _allExercises : []).forEach(function(x) { var id = x && (x.documentId || x.id); if (typeof id === 'string' && id) known[id] = true; }); } catch (e) { /* Coach catalog not loaded: only the shipped catalog counts */ }
+      var own = typeof ex.exerciseId === 'string' ? ex.exerciseId.trim() : '';
+      if (own) return known[own] ? { exerciseId: own, exerciseIdSource: 'SOURCE' } : {};   // an unknown source id is dropped: neither trusted nor replaced by a name match
+      var key = idn.normalizeLabel(ex.exerciseName);
+      if (!key) return {};
+      var ids = {};
+      entries.forEach(function(e) {
+        if ([e.exerciseName, e.name].concat(e.aliases || []).some(function(l) { return typeof l === 'string' && idn.normalizeLabel(l) === key; })) ids[e.exerciseId] = true;
+      });
+      var hit = Object.keys(ids);
+      return hit.length === 1 ? { exerciseId: hit[0], exerciseIdSource: 'CATALOG_EXACT_NAME' } : {};   // ambiguous (2+ ids) or unknown => nothing written
     } catch (e) { return {}; }
   }
   function _genPrescriptionId() {
