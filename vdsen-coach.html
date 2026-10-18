@@ -6770,6 +6770,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           // instead of minting a brand-new one — new IDs would sever progression
           // history continuity for exercises the coach didn't actually change.
           ...(ex.prescriptionExerciseId ? { prescriptionExerciseId: String(ex.prescriptionExerciseId) } : {}),
+          ...(typeof _carryExerciseIdentity === 'function' ? _carryExerciseIdentity(ex) : {}),   // T581: canonical catalog exerciseId (source-known or exact catalog name only)
           sets: Array.isArray(ex.sets) && ex.sets.length > 0
             ? ex.sets.map((s, si) => ({
                 setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
@@ -9374,7 +9375,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           tempo: String(s.tempo || '').trim(),
           ..._perfCarrySet(s)
         })) : []
-      }, _carryPrescriptionId(ex), _perfCarryEx(ex))).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
+      }, _carryPrescriptionId(ex), _perfCarryEx(ex), (typeof _carryExerciseIdentity === 'function' ? _carryExerciseIdentity(ex) : {}))).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
     })).filter(d => d.exercises.length > 0);
     if (!days.length) return null;
     const _norm = { weeks: parseInt(obj.weeks) || 6, daysPerWeek: parseInt(obj.daysPerWeek) || days.length, days };
@@ -10402,6 +10403,19 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if (typeof v === 'string') return { prescriptionExerciseId: v };
     if (typeof v === 'number' && isFinite(v)) return { prescriptionExerciseId: String(v) };
     return {};
+  }
+  // T581: canonical catalog exerciseId for NEW plans (the engine's LOAD path identifies equipment ONLY through it). Carried when the source already has a KNOWN
+  // catalog id; otherwise set only on an EXACT normalized name/alias match to exactly ONE catalog exerciseId; ambiguous / unknown => nothing written (pending
+  // for an explicit Coach link). Never derives or touches prescriptionExerciseId; never similarity. Fail-closed: any problem => {} (plan imports as before).
+  function _carryExerciseIdentity(ex) {
+    try {
+      var C = window.VDSEN_EQUIPMENT_CONTEXT, cat = window.VDSEN_EXERCISE_VISUAL_CATALOG;
+      if (!C || !cat || typeof C.identifyPlanExercise !== 'function') return {};
+      var known = [];
+      try { known = (typeof _allExercises !== 'undefined' ? _allExercises : []).map(function(x) { return x && (x.documentId || x.id); }).filter(Boolean); } catch (e) { known = []; }
+      var r = C.identifyPlanExercise(ex, { catalog: cat, knownIds: known });
+      return r && r.exerciseId ? { exerciseId: r.exerciseId, exerciseIdSource: r.status === 'SOURCE' ? 'SOURCE' : 'CATALOG_EXACT_NAME' } : {};
+    } catch (e) { return {}; }
   }
   function _genPrescriptionId() {
     try { return crypto.randomUUID(); } catch(e) {}
@@ -22216,7 +22230,7 @@ El esfuerzo no es negociable.
             tempo: String(s.tempo || '').trim(),
             ..._perfCarrySet(s)
           })) : []
-        }, _carryPrescriptionId(ex), _perfCarryEx(ex))).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
+        }, _carryPrescriptionId(ex), _perfCarryEx(ex), (typeof _carryExerciseIdentity === 'function' ? _carryExerciseIdentity(ex) : {}))).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
       })).filter(d => d.exercises.length > 0);
       if (days.length !== curDays) {
         st.style.color='#c94a3a'; st.textContent=`Tras normalizar quedaron ${days.length} días válidos (esperaba ${curDays}). Revisa que cada día tenga ejercicios.`;

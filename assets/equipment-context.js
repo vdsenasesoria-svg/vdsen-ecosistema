@@ -274,6 +274,40 @@
     return { ok: true, errors: [], rows: out, links: links, skipped: skipped };
   }
 
+  // ---- T581: canonical exerciseId for NEW plans ---------------------------------------------------------------------------
+  // Identity of a prescribed exercise = its catalog exerciseId. Order of authority, never position and never similarity:
+  //   1. the exerciseId the source (Motor / export / catalog substitution) already carries, ONLY when it is a known catalog id (else it is dropped, not trusted);
+  //   2. EXACT equality (identity.normalizeLabel) between the prescribed name and exactly ONE catalog exerciseId (its name, name or explicit aliases);
+  //   3. otherwise unresolved: no id is written (ambiguous / unknown names stay pending for an explicit Coach link).
+  // Pure: never writes, never touches prescriptionExerciseId (the identity of the prescribed INSTANCE).
+  function _catalogEntries(catalog) {
+    var out = [];
+    Object.keys((catalog && catalog.gyms) || {}).forEach(function(k) { var g = catalog.gyms[k]; (g.entries || []).concat(g.legacyEntries || []).forEach(function(e) { if (e && e.exerciseId) out.push(e); }); });
+    return out;
+  }
+  function resolveExerciseIdByName(catalog, name) {
+    var key = identity.normalizeLabel(name);
+    if (!key) return { status: 'UNKNOWN', exerciseId: null, matches: [] };
+    var ids = {};
+    _catalogEntries(catalog).forEach(function(e) {
+      var labels = [e.exerciseName, e.name].concat(e.aliases || []);
+      if (labels.some(function(l) { return typeof l === 'string' && identity.normalizeLabel(l) === key; })) ids[e.exerciseId] = true;
+    });
+    var matches = Object.keys(ids).sort();
+    if (matches.length === 1) return { status: 'EXACT_NAME', exerciseId: matches[0], matches: matches };
+    return { status: matches.length ? 'AMBIGUOUS' : 'UNKNOWN', exerciseId: null, matches: matches };
+  }
+  // opts: { catalog, knownIds?: object|array of additional valid ids (e.g. the Coach's own catalog documents) }
+  function identifyPlanExercise(ex, opts) {
+    opts = opts || {};
+    var known = {}; _catalogEntries(opts.catalog).forEach(function(e) { known[e.exerciseId] = true; });
+    [].concat(Array.isArray(opts.knownIds) ? opts.knownIds : Object.keys(opts.knownIds || {})).forEach(function(id) { if (typeof id === 'string' && id) known[id] = true; });
+    var own = ex && typeof ex.exerciseId === 'string' ? ex.exerciseId.trim() : '';
+    if (own) return known[own] ? { status: 'SOURCE', exerciseId: own } : { status: 'SOURCE_UNKNOWN', exerciseId: null };
+    var r = resolveExerciseIdByName(opts.catalog, ex && ex.exerciseName);
+    return { status: r.status, exerciseId: r.exerciseId };
+  }
+
   // ---- T518: CHANGE IMPACT PREVIEW (local data only) ----------------------------------------------------------------------
   // candidates: [{ key, exerciseId, exerciseDoc?, magnitude }]  (the LOAD candidates currently visible to the Coach).
   // "READY" here is the equipment gate (RESOLVED realizable load); the other readiness gates are unaffected by metadata.
@@ -380,5 +414,5 @@
     setEquipmentIncrement: setEquipmentIncrement, equipmentRefForExercise: equipmentRefForExercise,
     QUEUE_STATUS: QUEUE_STATUS, buildEquipmentQueue: buildEquipmentQueue, stampProvenance: stampProvenance, exportTemplate: exportTemplate, parseImport: parseImport,
     previewImpact: previewImpact, describeImpact: describeImpact, BULK_SCHEMA: BULK_SCHEMA, BULK_FIELDS: BULK_FIELDS,
-    parseLinksImport: parseLinksImport };
+    parseLinksImport: parseLinksImport, resolveExerciseIdByName: resolveExerciseIdByName, identifyPlanExercise: identifyPlanExercise };
 });
