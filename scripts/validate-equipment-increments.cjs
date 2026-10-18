@@ -19,9 +19,7 @@ const res = ctx.parseImport(text, { catalog, config: ctx.emptyConfig(), uid: 'of
 
 // exercises per canonical equipment id (how many catalog exercises each configured row would unlock for LOAD)
 const perEquipment = {};
-Object.keys(catalog.gyms || {}).forEach((k) => ((catalog.gyms[k].entries || []).concat(catalog.gyms[k].legacyEntries || [])).forEach((e) => {
-  if (e.equipmentId) perEquipment[e.equipmentId] = (perEquipment[e.equipmentId] || 0) + 1;
-}));
+ctx.buildEquipmentQueue({ catalog, config: ctx.emptyConfig() }).forEach((q) => { if (q.equipmentId) perEquipment[q.equipmentId] = q.exerciseCount; });
 
 console.log('Archivo: ' + path.basename(file));
 if (!res.ok) {

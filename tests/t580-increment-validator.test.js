@@ -33,7 +33,8 @@ test('T580.2 a valid synthetic file is accepted and reports the exercises each e
   const out = run(f, ['--out', outFile]);
   assert.equal(out.status, 0, out.stdout + out.stderr);
   assert.match(out.stdout, /VÁLIDO — agregados 3/);
-  assert.match(out.stdout, /ADDED\s+functional-dumbbells/);
+  assert.match(out.stdout, /ADDED\s+functional-dumbbells.*: 14/, 'counts come from the same queue that produced docs/EQUIPMENT_DATA_REQUIRED_NEXT.md');
+  assert.match(out.stdout, /ADDED\s+functional-olympic-barbell.*: 12/);
   const cfg = JSON.parse(fs.readFileSync(outFile, 'utf8'));
   assert.equal(Object.keys(cfg.shared).length, 3);
   assert.equal(cfg.shared['functional-cable-station'].source, 'COACH_CONFIGURED');
