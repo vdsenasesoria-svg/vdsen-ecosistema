@@ -686,7 +686,7 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .pw-i{font-family:var(--font-num);font-size:15px;letter-spacing:.02em;color:var(--tx);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .pw-i[hidden]{display:none}
 .pw-more{margin-top:4px;min-height:44px;padding:0 4px;background:none;border:0;color:var(--tx);font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer;text-align:left}
-.pw-ex{font-size:9.5px;font-weight:800;letter-spacing:.16em;color:var(--mt)}
+.pw-ex{font-size:10.5px;font-weight:800;letter-spacing:.16em;color:var(--mt);white-space:nowrap;flex:0 0 auto;margin-left:8px}
 .pw-use{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;width:100%;box-sizing:border-box;min-height:44px;margin:0 0 8px;padding:6px 10px;background:transparent;border:1px solid var(--rule-strong);color:var(--tx);text-align:left;font:inherit;cursor:pointer}
 .pw-use-a{font-size:11px;font-weight:800;letter-spacing:.12em}
 .pw-use-v{min-width:0;font-size:12px;color:var(--mt);overflow-wrap:anywhere}
@@ -716,16 +716,16 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .sp-t-v b{font-family:var(--font-num);font-size:26px;font-weight:800;color:var(--tx);margin-right:4px;line-height:1}
 .sp-t-r{margin-left:auto;font-family:var(--font-num);font-size:17px;font-weight:800;letter-spacing:.06em;color:var(--tx);white-space:nowrap}
 .sp-note{display:flex;flex-direction:column;gap:3px;margin:-6px 0 16px;padding:9px 12px;background:var(--plate-lo);border:1px solid var(--rule);border-left:2px solid var(--accent-fill)}
-.sp-n-l{font-size:9.5px;letter-spacing:.16em;font-weight:800;color:var(--mt)}
+.sp-n-l{font-size:10.5px;letter-spacing:.16em;font-weight:800;color:var(--mt)}
 .sp-n-t{font-size:14px;line-height:1.4;color:var(--tx);overflow-wrap:anywhere}
 .sp-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .sp-f{display:flex;flex-direction:column;gap:6px;min-width:0}
-.sp-fl{font-size:10px;font-weight:800;letter-spacing:.14em;color:var(--mt);text-transform:uppercase}
+.sp-fl{font-size:11px;font-weight:800;letter-spacing:.14em;color:var(--mt);text-transform:uppercase}
 .sp-fl.hot{color:var(--accent)}
 .num-in{width:100%;padding:6px;text-align:center;background:var(--input-bg);border:1px solid var(--rule-strong);border-radius:var(--r-1);color:var(--tx);font-family:var(--font-num);font-size:42px;font-weight:800;font-variant-numeric:tabular-nums lining-nums;letter-spacing:.01em;outline:none;-moz-appearance:textfield;appearance:textfield}
 #exPanel .num-in{min-height:66px}
 #exPanel .num-in.sm{min-height:56px}
-.num-in::placeholder{color:var(--ink);font-size:20px;letter-spacing:.12em;text-transform:uppercase;font-weight:700}
+.num-in::placeholder{color:var(--mt);opacity:.7;font-size:20px;letter-spacing:.12em;text-transform:uppercase;font-weight:700}
 .num-in:focus,#exPanel .num-in:focus{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 0 0 4px rgba(var(--accent-rgb),.16)}
 :root.light-mode .num-in:focus,:root.light-mode #exPanel .num-in:focus{border-color:#245500;box-shadow:0 0 0 1px #245500,0 0 0 4px rgba(36,85,0,.16)}
 .num-in.sm{font-size:32px}
@@ -744,12 +744,12 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .sp-plates:empty{display:none}
 .sp-grp{margin-top:18px}
 .sp-gl{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:8px}
-.sp-gl span{font-size:10px;font-weight:800;letter-spacing:.14em;color:var(--mt)}
+.sp-gl span{font-size:11px;font-weight:800;letter-spacing:.14em;color:var(--mt)}
 .sp-gl small{font-size:11px;color:var(--mt);opacity:.8}
 .rir-row{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
 .rirb{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:62px;padding:6px 2px;background:transparent;border:1px solid var(--rule-strong);border-radius:var(--r-1);color:var(--mt);cursor:pointer;-webkit-tap-highlight-color:transparent}
 .rirb b{font-family:var(--font-num);font-size:28px;line-height:1;font-weight:800;color:var(--tx)}
-.rirb small{font-size:9.5px;font-weight:600;line-height:1.1;color:var(--mt)}
+.rirb small{font-size:10.5px;font-weight:600;line-height:1.1;color:var(--mt)}
 .rirb.on{border-color:var(--accent);background:rgba(var(--accent-rgb),.1);box-shadow:inset 0 -3px 0 var(--accent-fill)}
 .rirb.on small{color:var(--tx)}
 .rirb.on.pre{border-style:dashed;background:transparent;box-shadow:none}
@@ -768,6 +768,7 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .setdone-v{font-family:var(--font-num);font-size:36px;font-weight:800;color:var(--tx);line-height:1.02;font-variant-numeric:tabular-nums}
 .setdone-m{margin-top:8px;font-size:12.5px;color:var(--mt)}
 .chip.zone{margin-left:auto}
+.sp-hd-l .chip.zone{margin-left:0}
 /* warm-up reference */
 .wu{margin-bottom:14px;border:1px solid var(--rule);background:var(--plate)}
 .wu-h{width:100%;min-height:44px;padding:0 12px;display:flex;align-items:center;gap:8px;background:none;border:0;color:var(--mt);font-size:var(--fs-micro);font-weight:800;letter-spacing:.14em;text-align:left;cursor:pointer}
@@ -7121,7 +7122,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       }
       setsHtml += '<div id="setrow_'+key+'" class="workout-set workout-set-current" data-exname="'+_escHTml(nombre)+'" data-pending="1" style="padding:14px;margin-bottom:8px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
-          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent)">'+(_ejTechLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+_setSubLabel+_getZonaBadge(_psReps || repsTarget)+'</div>'+
+          '<div class="sp-hd-l" style="display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;flex:1 1 auto;min-width:0;font-size:11px;font-weight:800;letter-spacing:1.5px;color:var(--accent)">'+(_ejTechLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+_setSubLabel+_getZonaBadge(_psReps || repsTarget)+'</div>'+
           '<div class="pw-ex">TU EJECUCIÓN</div>'+
         '</div>'+
         (setSpecBlock ? setSpecBlock : '')+
