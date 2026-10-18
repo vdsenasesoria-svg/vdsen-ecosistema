@@ -4,7 +4,24 @@ Scope: `vdsen-cliente.html` presentation only. No data, security, progression, P
 The single-file architecture is kept; the whole system lives in `<style id="vdsen-ds3">` (appended after the legacy CSS so legacy anchors that
 tests pin stay intact) plus a single inline SVG sprite.
 
-## Language
+## Effective visual language today — "Premium layer" (T573) supersedes parts of v3
+The v3 block (`<style id="vdsen-ds3">`) is still the structural system (components, spacing, status language, tap targets), but a later `VDSEN 3.0 · PREMIUM LAYER (T573)` block in `vdsen-cliente.html` **overrides its visual tokens**. Where this section and the v3 text below disagree, this section is what ships (verified against the computed styles of the running app):
+
+| Topic | v3 text below | What the app uses now |
+| --- | --- | --- |
+| Accent | Acid Lime `#C6FF00` | Lima ácido `#B7F400` (`--accent`, `--accent-fill`), on-accent text `#0A0A0A` |
+| Display + body type | Big Shoulders Display (display), Inter (body) | **Inter** for display and body (`--font-display`); Big Shoulders Display only for the wordmark (`.brand-word`) |
+| Numeric type | Big Shoulders, tabular | **IBM Plex Mono**, tabular (`--font-num`), loaded with Inter and Big Shoulders in the single Google Fonts request |
+| Corners | squared 2px (`--r-1:2px`, `--r-2:4px`) | rounded: `--r-1:12px`, `--r-2:16px` |
+| Surfaces | flat, "no gradient fills, no glow" | subtle graphite gradients and an inset/soft lift shadow on cards, `.today-panel`, `.setpanel`, `.spec` (`--lift`); lime radial wash on the hero. Still no blur/glass, no emoji in navigation |
+| Extra brand tokens | — | `--gris:#1E1E1E`, `--acero:#2B2B2B`, `--detalle:#D9E6FF` (info / review / sync) |
+| Tertiary text | `--mt2` `#86867F` | `--ink:#8E8E88` on dark (≥ 5.5:1 on `#141414`), `#5E5E58` in light mode |
+
+Light mode exists (`:root.light-mode`): plates white / `#F6F6F2`, lime accent text replaced by `#245500` where contrast requires it. Rules that did not change: lime means current action / selection / progress, red only for real error or destructive state, chips are glyph + text (never colour only), tap targets ≥ 44px, reduced motion honoured.
+
+Micro-type floor (T579 polish): labels in the set panel are 10.5–11px (`.sp-fl`, `.sp-gl span`, `.rirb small`, `.sp-n-l`, `.pw-ex`); the header brand lines (`.brand-coach` 9.5px, `.brand-sub` 10px) are intentionally unchanged because of the 320–389px header-overlap fix in T545.
+
+## Language (v3 baseline — see the table above for the values that ship)
 Off-Black `#0A0A0A` canvas, Bone `#F4F4F0`, Acid Lime `#C6FF00` (current action, selection, progress only), graphite plates, warm gray text.
 Red only for a real error / destructive state. Squared 2px corners, hairline rules, no glass / blur / glow, no gradient fills, no emoji in
 navigation or controls. Recurring motifs: the lime index tick (`.kick::before`), spec-sheet plates (`.spec`, `.readouts`, `.ro-strip`),
