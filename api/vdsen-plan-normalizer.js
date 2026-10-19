@@ -17,6 +17,7 @@ var ERROR_CODES = {
   INVALID_VARIACION_VERTICAL: 'INVALID_VARIACION_VERTICAL',
   INVALID_SET:                'INVALID_SET',
   INVALID_LOAD:               'INVALID_LOAD',
+  INVALID_REPS_RANGE:         'INVALID_REPS_RANGE',
   MISSING_NUTRITION:          'MISSING_NUTRITION',
   MISSING_SUPPLEMENTATION:    'MISSING_SUPPLEMENTATION'
 };
@@ -160,6 +161,23 @@ function validateVdsenPlan(normalized) {
         if (typeof ex.variacion_vertical !== 'object' || Array.isArray(ex.variacion_vertical)) {
           return { ok: false, error: ERROR_CODES.INVALID_VARIACION_VERTICAL,
                    message: 'variacion_vertical debe ser un objeto en "' + (ex.exerciseName || '?') + '"' };
+        }
+      }
+      // T583: repsRange is OPTIONAL. When the Motor states one it must be a real range ({min,max} integers, min < max) and every set target must sit inside it.
+      // Fixed-rep prescriptions simply omit it; a missing range is never an error and is never invented.
+      var rr = ex.repsRange;
+      if (rr !== undefined && rr !== null) {
+        var rrOk = typeof rr === 'object' && !Array.isArray(rr) && Number.isInteger(rr.min) && Number.isInteger(rr.max) && rr.min >= 1 && rr.max <= 100 && rr.min < rr.max;
+        if (!rrOk) {
+          return { ok: false, error: ERROR_CODES.INVALID_REPS_RANGE,
+                   message: 'repsRange debe ser {min,max} enteros con min < max en "' + (ex.exerciseName || '?') + '"' };
+        }
+        for (var ri = 0; ri < ex.sets.length; ri++) {
+          var rt = ex.sets[ri] && ex.sets[ri].repsTarget;
+          if (typeof rt === 'number' && (rt < rr.min || rt > rr.max)) {
+            return { ok: false, error: ERROR_CODES.INVALID_REPS_RANGE,
+                     message: 'repsTarget fuera de repsRange en "' + (ex.exerciseName || '?') + '" set ' + ri };
+          }
         }
       }
       for (var si = 0; si < ex.sets.length; si++) {
