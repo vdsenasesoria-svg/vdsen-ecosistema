@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=Inter:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=Inter:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=IBM+Plex+Mono:wght@400;500;600&family=Saira:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <!-- Service Worker (offline support) -->
 <script>
@@ -1352,6 +1352,25 @@ button,.btn,.nb,.xc,.dt,.chip,a{-webkit-tap-highlight-color:transparent;touch-ac
 /* modals and sheets: deeper scrim, larger radius, same content */
 .dlg,.sheet,.modal-box{border-radius:20px;border:1px solid rgba(244,244,240,.10);box-shadow:0 30px 60px -24px rgba(0,0,0,.9)}
 :root.light-mode .dlg,:root.light-mode .sheet,:root.light-mode .modal-box{border-color:rgba(0,0,0,.1);box-shadow:0 24px 48px -24px rgba(0,0,0,.35)}
+/* typography: one professional, VDSEN-identity system. Saira (squared, technical, athletic: it echoes the official wordmark) for display and titles; Inter for reading;
+   IBM Plex Mono for measured data. Hero and session titles lean italic like the official lockup. */
+:root{--font-display:'Saira','Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}
+.t-display,.today-session,.tr-title,.xh-name,.card-title,.meal-nm,.hdr-user strong,.sec-kicker,.dc-lbl,.wk-num,.set-save-primary,.today-action,.nb-lbl,.stat-lbl,.chip{font-family:var(--font-display)}
+.today-session,.tr-title{font-style:italic;font-weight:800;letter-spacing:-.01em}
+.xh-name,.meal-nm,.card-title{font-weight:700;letter-spacing:-.005em}
+.today-action,.set-save-primary,.nb-lbl,.stat-lbl{font-weight:700}
+/* official logo everywhere: the header / loading / state-screen lockups crop the SAME official artwork the login uses (emblem + wordmark),
+   so there is one VDSEN identity; the SVG mark and the typeset wordmark stay in the DOM for assistive tech but are not painted */
+.brand-mark{display:none}
+.brand{gap:0}
+.brand-txt{gap:0}
+.brand-word{position:relative;display:block;font-size:0;line-height:0;color:transparent;letter-spacing:0;height:30px;aspect-ratio:1155/185;background:url(assets/vdsen-logo-official.jpg) no-repeat 48% 74.8%/110.82% auto;mix-blend-mode:screen;overflow:hidden}
+.brand-word i{display:none}
+.brand-line{flex-direction:column;align-items:flex-start;gap:3px}
+.brand-coach{margin-left:2px}
+.brand-sub{margin-top:2px;margin-left:2px}
+:root.light-mode .brand-word{mix-blend-mode:multiply;filter:invert(1) hue-rotate(180deg)}
+@media (max-width:389px){.brand-word{height:26px}}
 @media (prefers-reduced-motion:reduce){#tabResumen,#tabEntr,#tabNutr,#tabCheckin,#tabPerfil{animation:none}.set-save-primary:active{transform:none}}
 
 </style>
