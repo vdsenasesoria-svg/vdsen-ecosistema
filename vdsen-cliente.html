@@ -1298,6 +1298,61 @@ button[onclick="guardarCI()"]{border-radius:14px!important;min-height:56px;font-
   .hdr-user{max-width:46vw}
 }
 @media (prefers-reduced-motion:reduce){.today-action:active,.btn:active,.nb:active,.xc:active,.dt:active{transform:none}}
+/* ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
+   VDSEN · ELITE LAYER (T585) — presentation only. No markup, data, contract or behaviour changes: every rule below is appended
+   after the premium layer and only refines surfaces, rhythm, depth and motion with the existing tokens (dark + light mode).
+   ═════════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
+button,.btn,.nb,.xc,.dt,.chip,a{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+::selection{background:rgba(var(--accent-rgb),.32);color:var(--tx)}
+.scroll{scrollbar-width:thin;scrollbar-color:var(--rule-strong) transparent}
+/* tab entrance: one calm 220ms rise, never on reduced motion */
+@keyframes eliteRise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+#tabResumen,#tabEntr,#tabNutr,#tabCheckin,#tabPerfil{animation:eliteRise .24s var(--ease) both}
+/* header: hairline that fades out at both ends, athlete context with more presence */
+.hdr{border-bottom:0;position:sticky;background:linear-gradient(180deg,var(--bg) 0%,var(--bg) 100%)}
+.hdr::after{content:'';position:absolute;left:0;right:0;bottom:0;height:1px;background:linear-gradient(90deg,transparent,var(--rule-strong) 14%,var(--rule-strong) 86%,transparent)}
+.hdr-user strong{font-size:15px;letter-spacing:.05em}
+/* surfaces: a brighter top edge and a softer, deeper drop so plates read as layered instrumentation */
+:root{--lift:0 1px 0 rgba(244,244,240,.06) inset,0 0 0 1px rgba(244,244,240,.02),0 18px 36px -22px rgba(0,0,0,.9)}
+:root.light-mode{--lift:0 1px 0 rgba(255,255,255,.9) inset,0 12px 28px -20px rgba(20,20,10,.35)}
+.card,.ci-card,.notice,.setpanel,.pw,.spec,.meal,.nu-panel,.sup-blk,.sra-summary{border-color:rgba(244,244,240,.10)}
+:root.light-mode .card,:root.light-mode .ci-card,:root.light-mode .notice,:root.light-mode .setpanel,:root.light-mode .pw,:root.light-mode .spec,:root.light-mode .meal,:root.light-mode .nu-panel,:root.light-mode .sup-blk,:root.light-mode .sra-summary{border-color:rgba(0,0,0,.09)}
+/* hero: kicker with the lime index tick, bone title, a CTA with tactile depth */
+.today-kicker::before{content:'';display:inline-block;width:14px;height:2px;margin-right:8px;vertical-align:middle;background:var(--accent-fill);border-radius:2px}
+.today-session{color:var(--tx);font-size:clamp(27px,8.4vw,33px)}
+.today-action{box-shadow:0 1px 0 rgba(255,255,255,.35) inset,0 -2px 0 rgba(0,0,0,.14) inset,0 14px 24px -16px rgba(var(--accent-rgb),.55)}
+:root.light-mode .today-action{box-shadow:0 1px 0 rgba(255,255,255,.45) inset,0 -2px 0 rgba(0,0,0,.12) inset,0 12px 20px -16px rgba(0,0,0,.4)}
+.today-action:active{box-shadow:0 1px 0 rgba(255,255,255,.2) inset}
+.set-save-primary{border-radius:14px;min-height:56px;letter-spacing:.12em;box-shadow:0 1px 0 rgba(255,255,255,.35) inset,0 -2px 0 rgba(0,0,0,.14) inset;transition:transform var(--dur-1) var(--ease),box-shadow var(--dur-2) var(--ease),filter var(--dur-2) var(--ease)}
+.set-save-primary:active{transform:scale(.98);filter:brightness(.96)}
+/* key metrics earn the accent (lime = current progress), the rest stays bone */
+.stat:last-child .stat-val{color:var(--accent)}
+:root.light-mode .stat:last-child .stat-val{color:#245500}
+.stat-row{box-shadow:var(--lift)}
+.stat+.stat{border-left:1px solid var(--rule)}
+.progress-bar{height:5px}
+.pb-fill{background:linear-gradient(90deg,rgba(var(--accent-rgb),.78),var(--accent-fill))}
+/* bottom navigation: lime index bar on the active item, calmer fill */
+.bnav{background:linear-gradient(180deg,rgba(13,13,13,.98),#0A0A0A);border-top:1px solid var(--rule-strong)}
+:root.light-mode .bnav{background:#FFFFFF}
+.nb.on{background:rgba(var(--accent-rgb),.08)}
+.nb.on::before{display:block;content:'';position:absolute;top:3px;left:50%;width:20px;height:3px;margin-left:-10px;border-radius:3px;background:var(--accent-fill)}
+:root.light-mode .nb.on::before{background:#245500}
+.nb.on .nb-lbl{color:var(--tx);font-weight:800}
+/* chips and tabs: crisper micro-typography */
+.chip{letter-spacing:.08em;font-weight:700}
+.dt,.xc{border-color:rgba(244,244,240,.10)}
+.dt.on,.xc.on{box-shadow:0 0 0 1px var(--accent) inset}
+/* inputs: confident focus, tabular numerals */
+.num-in,.setpanel input{font-variant-numeric:tabular-nums;transition:border-color var(--dur-1) var(--ease),box-shadow var(--dur-2) var(--ease),background var(--dur-1) var(--ease)}
+/* empty states: the leading glyph sits in a quiet ring instead of floating */
+#tabNutr>div[style*="padding:48px"]>div:first-child{width:72px;height:72px;display:flex;align-items:center;justify-content:center;font-size:30px!important;opacity:1!important;border-radius:50%;border:1px solid var(--rule-strong);background:radial-gradient(circle at 50% 30%,rgba(var(--accent-rgb),.10),transparent 70%),var(--plate);filter:grayscale(.35)}
+/* modals and sheets: deeper scrim, larger radius, same content */
+.dlg,.sheet,.modal-box{border-radius:20px;border:1px solid rgba(244,244,240,.10);box-shadow:0 30px 60px -24px rgba(0,0,0,.9)}
+:root.light-mode .dlg,:root.light-mode .sheet,:root.light-mode .modal-box{border-color:rgba(0,0,0,.1);box-shadow:0 24px 48px -24px rgba(0,0,0,.35)}
+@media (prefers-reduced-motion:reduce){#tabResumen,#tabEntr,#tabNutr,#tabCheckin,#tabPerfil{animation:none}.set-save-primary:active{transform:none}}
 
 </style>
 </head>
