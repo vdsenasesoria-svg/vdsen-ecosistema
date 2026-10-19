@@ -11,8 +11,8 @@ const path = require('node:path');
 const app = require('../scripts/release/app-live.cjs');
 
 const RUNTIME = 'c3e78380d3a076e643a1957203c093260851210e';
-const PROD_DEPLOYMENT = 'dpl_9pSMURG8tKXFhRvqXudvNqV1TRaE';
-const PROD_RUNTIME = '31b0567be79525b6e0122ea3d832f01af0031ea9';
+const PROD_DEPLOYMENT = 'dpl_GKbJwsMkKia1UZqxH7tNXS1Vsjhc';
+const PROD_RUNTIME = '872ed38972fc70738bede80acc936191a86f52f1';
 const PROJECT = 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN';
 const TEAM = 'team_VZc5H7Q1DBIJ3g0mwrSBz1o8';
 const MAIN = 'f6596ba5207dc158b8a9b01483cd0fe0ebeb274c';
