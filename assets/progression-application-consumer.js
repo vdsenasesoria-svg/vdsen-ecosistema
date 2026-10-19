@@ -28,7 +28,7 @@
     NOT_ELIGIBLE: 'NOT_ELIGIBLE', MAGNITUDE_BRANCH_UNRESOLVED: 'MAGNITUDE_BRANCH_UNRESOLVED',
     UNRESOLVED_EQUIPMENT_INCREMENT: 'UNRESOLVED_EQUIPMENT_INCREMENT', EQUIPMENT_RESOLUTION_MISMATCH: 'EQUIPMENT_RESOLUTION_MISMATCH',
     DIRECTION_NOT_REALIZABLE: 'DIRECTION_NOT_REALIZABLE', UNIT_MISMATCH: 'UNIT_MISMATCH', EQUIPMENT_OUT_OF_RANGE: 'EQUIPMENT_OUT_OF_RANGE',
-    EQUIPMENT_INPUT_INVALID: 'EQUIPMENT_INPUT_INVALID',
+    EQUIPMENT_INPUT_INVALID: 'EQUIPMENT_INPUT_INVALID', ADVISORY_LOAD_UNAVAILABLE: 'ADVISORY_LOAD_UNAVAILABLE',
     OUT_OF_CANARY_SCOPE: 'OUT_OF_CANARY_SCOPE',
     COACH_REVIEW_REQUIRED: 'COACH_REVIEW_REQUIRED', ACTIVATION_GUARD_FAILED: 'ACTIVATION_GUARD_FAILED', EQUIPMENT_IDENTITY_UNRESOLVED: 'EQUIPMENT_IDENTITY_UNRESOLVED', SCIENCE_POLICY_UNRESOLVED: 'SCIENCE_POLICY_UNRESOLVED',
     EVIDENCE_COUNT_INSUFFICIENT: 'EVIDENCE_COUNT_INSUFFICIENT', DIRECTION_CONFLICTING: 'DIRECTION_CONFLICTING',
@@ -51,7 +51,7 @@
     MAGNITUDE_BRANCH: [BLOCKERS.MAGNITUDE_BRANCH_UNRESOLVED, BLOCKERS.SCIENCE_POLICY_UNRESOLVED, BLOCKERS.NOT_ELIGIBLE, BLOCKERS.NO_ACTIONABLE_CANDIDATE, BLOCKERS.STRUCTURAL_DIMENSION_NOT_AUTHORIZED],
     EQUIPMENT_IDENTITY: [BLOCKERS.EQUIPMENT_IDENTITY_UNRESOLVED],
     EQUIPMENT_INCREMENT: [BLOCKERS.UNRESOLVED_EQUIPMENT_INCREMENT, BLOCKERS.DIRECTION_NOT_REALIZABLE, BLOCKERS.EQUIPMENT_OUT_OF_RANGE,
-      BLOCKERS.EQUIPMENT_INPUT_INVALID, BLOCKERS.EQUIPMENT_RESOLUTION_MISMATCH],
+      BLOCKERS.EQUIPMENT_INPUT_INVALID, BLOCKERS.EQUIPMENT_RESOLUTION_MISMATCH, BLOCKERS.ADVISORY_LOAD_UNAVAILABLE],
     UNIT: [BLOCKERS.UNIT_MISMATCH],
     TARGET_STARTED: [BLOCKERS.TARGET_ALREADY_STARTED],
     ACTIVATION_GUARD: [BLOCKERS.ACTIVATION_GUARD_FAILED]
@@ -66,7 +66,7 @@
       BLOCKERS.RECORD_NOT_PENDING, BLOCKERS.ALREADY_RECORDED, BLOCKERS.TARGET_EXPOSURE_CHANGED, BLOCKERS.TARGET_ALREADY_STARTED, BLOCKERS.COACH_OVERRIDE,
       BLOCKERS.COACH_KEEP_ORIGINAL, BLOCKERS.ACTIVATION_GUARD_FAILED, BLOCKERS.STALE_CALLBACK, BLOCKERS.REVISION_CONFLICT],
     BLOCKED_EVIDENCE: [BLOCKERS.EVIDENCE_COUNT_INSUFFICIENT, BLOCKERS.DIRECTION_CONFLICTING, BLOCKERS.DIRECTION_UNCONFIRMED, BLOCKERS.NOT_ELIGIBLE,
-      BLOCKERS.NO_ACTIONABLE_CANDIDATE, BLOCKERS.STRUCTURAL_DIMENSION_NOT_AUTHORIZED],
+      BLOCKERS.NO_ACTIONABLE_CANDIDATE, BLOCKERS.STRUCTURAL_DIMENSION_NOT_AUTHORIZED, BLOCKERS.ADVISORY_LOAD_UNAVAILABLE],
     COACH_REVIEW_REQUIRED: [BLOCKERS.COACH_REVIEW_REQUIRED],
     BLOCKED_POLICY_OTHER: [BLOCKERS.MAGNITUDE_BRANCH_UNRESOLVED, BLOCKERS.SCIENCE_POLICY_UNRESOLVED],
     BLOCKED_EQUIPMENT_DATA: [BLOCKERS.EQUIPMENT_IDENTITY_UNRESOLVED, BLOCKERS.UNRESOLVED_EQUIPMENT_INCREMENT, BLOCKERS.EQUIPMENT_RESOLUTION_MISMATCH, BLOCKERS.DIRECTION_NOT_REALIZABLE,
@@ -100,6 +100,7 @@
     'equipmentIncrementResolved', 'unitCompatible', 'physicallyRealizable', 'idempotencyKeyValid', 'transactionContextCurrent']);
   var _SOURCES = { EXERCISE_METADATA: true, GYM_METADATA: true, COACH_CONFIGURED: true };
   function _int(v) { return typeof v === 'number' && Number.isInteger(v) && v >= 0; }
+  function _isAdvisory(er) { return !!er && er.resolutionState === 'ADVISORY' && er.incrementSource === 'ADVISORY_GENERIC' && !er.equipmentId; }
 
   function verifyActivationPreconditions(input) {
     input = input || {};
@@ -126,8 +127,10 @@
     r.evidenceEligible = m.eligible === true && _num(m.comparableExposureCount) !== null && m.comparableExposureCount >= 2 && record.state === 'PENDING';
     r.directionConsistent = m.directionConsistency === 'CONSISTENT' || m.directionConsistency === 'NOT_APPLICABLE';
     r.magnitudeResolved = !m.unresolved && !!cand && m.mode === 'SHADOW' && m.numericApplyAllowed === false;
-    r.equipmentIdentityResolved = !isLoad || (typeof er.equipmentId === 'string' && er.equipmentId !== '' && overlay.equipmentId === er.equipmentId);
-    r.equipmentIncrementResolved = !isLoad || (er.resolutionState === 'RESOLVED' && !!_SOURCES[er.incrementSource]);
+    // T582: an ADVISORY load (no equipment claim at all) is a first-class resolution: equipment data is optional, so there is no identity / increment to verify.
+    var advisory = isLoad && _isAdvisory(er) && overlay.equipmentId === null;
+    r.equipmentIdentityResolved = !isLoad || advisory || (typeof er.equipmentId === 'string' && er.equipmentId !== '' && overlay.equipmentId === er.equipmentId);
+    r.equipmentIncrementResolved = !isLoad || advisory || (er.resolutionState === 'RESOLVED' && !!_SOURCES[er.incrementSource]);
     r.unitCompatible = !isLoad || (!!er.unit && !!m.evidence && String(er.unit).toUpperCase() === String(m.evidence.unit || '').toUpperCase() && overlay.unit === er.unit);
     r.physicallyRealizable = !!overlay && _num(overlay.appliedValue) !== null && overlay.appliedValue >= 0 &&
       (!isLoad || (_num(er.realizableLoad) === overlay.appliedValue && overlay.appliedValue > 0 &&
@@ -187,6 +190,12 @@
     var c = cands[0];
     if (c.dimension === 'LOAD') {
       var r = ctx.equipmentResolution;
+      if (_isAdvisory(r) && _num(r.realizableLoad) !== null) {
+        if (_num(r.requestedLoad) !== _num(c.rawCandidate)) { blockers.push(BLOCKERS.EQUIPMENT_RESOLUTION_MISMATCH); return null; }
+        return { dimension: 'LOAD', previousValue: _num(c.previousValue), requestedValue: _num(c.rawCandidate), appliedValue: _num(r.realizableLoad), unit: r.unit || null,
+          equipmentId: null, roundingReason: r.roundingReason || null, equipmentSnapshot: { source: 'ADVISORY_GENERIC', scope: null, revision: null, configuredAt: null, kind: null, unit: r.unit || null } };
+      }
+      if (r && r.resolutionState === 'ADVISORY_UNAVAILABLE') { blockers.push(BLOCKERS.ADVISORY_LOAD_UNAVAILABLE); return null; }
       if (!r || r.resolutionState !== 'RESOLVED' || _num(r.realizableLoad) === null) {
         var byState = { DIRECTION_NOT_REALIZABLE: BLOCKERS.DIRECTION_NOT_REALIZABLE, UNIT_MISMATCH: BLOCKERS.UNIT_MISMATCH,
           OUT_OF_RANGE: BLOCKERS.EQUIPMENT_OUT_OF_RANGE, INVALID_INPUT: BLOCKERS.EQUIPMENT_INPUT_INVALID,

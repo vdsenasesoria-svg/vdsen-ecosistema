@@ -13,8 +13,9 @@ var visualCatalog = require('../assets/exercise-visual-catalog.js');
 // require it is absent from the deployed function and applyPending throws MODULE_NOT_FOUND (hosted-only; see _functionBundleTrace.test.js).
 require('../assets/progression-effective-prescription.js');
 
-// Reasons that mean "the engine proposed a LOAD change but verified equipment data cannot realize it". Only the LOAD dimension is
-// blocked; REPS / REST candidates never depend on equipment data.
+// T582 (owner decision): equipment data is OPTIONAL. LOAD no longer blocks for lack of equipment identity / increments: it falls back to an advisory target
+// (see resolveAdvisoryLoad). These reasons remain only as classifications for a consumer that is handed an explicit equipment resolution, and
+// ADVISORY_LOAD_UNAVAILABLE (unknown unit / no usable executed load) is the only LOAD data block left. REPS / REST never depend on equipment.
 var EQUIPMENT_BLOCKERS = ['UNRESOLVED_EQUIPMENT_INCREMENT', 'EQUIPMENT_IDENTITY_UNRESOLVED', 'EQUIPMENT_RESOLUTION_MISMATCH', 'UNIT_MISMATCH',
   'EQUIPMENT_OUT_OF_RANGE', 'EQUIPMENT_INPUT_INVALID', 'DIRECTION_NOT_REALIZABLE'];
 
@@ -116,9 +117,7 @@ async function applyPending(db, clientId, planId, clock) {
       if (!client || client.activePlanId !== planId) return { written: false, reason: 'PLAN_MISMATCH' };
       var refs = _refs(db, clientId, planId, client.coachId);
       if (!(await _releaseGate(db, tx, clientId))) return { written: false, reason: 'OUT_OF_ALLOWLIST' };
-      // LOAD has no fallback or guessed increment: the existing resolver is
-      // intentionally given no equipment data unless a future trusted source
-      // supplies it, so that branch remains blocked fail-closed.
+      // T582: a verified equipment increment is used when available; otherwise the LOAD target is advisory (never a guessed machine increment).
       var equipmentResolution = null;
       var pre = _data(await tx.get(refs.meso)), precord = pre && pre.progressionApplications && pre.progressionApplications[key];
       if (precord && precord.magnitude && (precord.magnitude.candidates || []).some(function(c) { return c && c.dimension === 'LOAD'; })) {
@@ -133,6 +132,9 @@ async function applyPending(db, clientId, planId, clock) {
         var linkedId = pex ? (pex.exerciseId || (links && typeof links[pex.prescriptionExerciseId] === 'string' ? links[pex.prescriptionExerciseId] : null)) : null;
         var ref = linkedId ? equipmentContext.equipmentRefForExercise({ catalog: visualCatalog, exerciseId: linkedId, config: coachDoc && coachDoc.equipmentIncrements }) : null;
         equipmentResolution = ref ? equipment.resolveForCandidate({ magnitude: precord.magnitude, equipment: ref }) : null;
+        // T582: verified equipment, when it fully resolves, still gives the machine-exact load. Anything else (no id, no increment, a tie, a configured limit,
+        // a unit mismatch) is NOT a reason to withhold the progression: the athlete gets an advisory target and records the load they really use.
+        if (!equipmentResolution || equipmentResolution.resolutionState !== 'RESOLVED') equipmentResolution = equipment.resolveAdvisoryLoad({ magnitude: precord.magnitude });
       }
       // The consumer was written against the web SDK, where `snap.exists` is a
       // function; Admin snapshots expose a boolean. Adapt rather than touch the module.
@@ -142,7 +144,7 @@ async function applyPending(db, clientId, planId, clock) {
       } }, { isCurrent: function() { return true; }, trustedServerNumericApply: true });
     });
     var reason = r && r.reason || null;
-    results.push({ recordKey: key, written: r && r.written === true, reason: reason, blocked: reason && EQUIPMENT_BLOCKERS.indexOf(reason) >= 0 ? 'BLOCKED_EQUIPMENT_DATA' : null });
+    results.push({ recordKey: key, written: r && r.written === true, reason: reason, blocked: reason && EQUIPMENT_BLOCKERS.indexOf(reason) >= 0 ? 'BLOCKED_EQUIPMENT_DATA' : (reason === 'ADVISORY_LOAD_UNAVAILABLE' ? 'BLOCKED_LOAD_DATA' : null) });
   }
   return results;
 }

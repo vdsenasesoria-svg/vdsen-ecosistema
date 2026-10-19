@@ -161,6 +161,31 @@
       unit: m.evidence && m.evidence.unit, equipment: input.equipment, roundingMode: input.roundingMode });
   }
 
+  // T582: ADVISORY load target. The owner decision is that progressive overload must NOT depend on knowing the machine: equipment data is optional.
+  // When no verified equipment resolution is available the target is the policy's raw candidate (evidence-based: last executed load x rule %), only
+  // tidied to a generic display grain (0.5 KG / 1 LB; never an equipment claim). It is a suggestion: the athlete adapts it to what they have and the load
+  // they actually record becomes the evidence of the next evaluation. Needs a known unit (KG|LB), a positive executed load and a direction; otherwise it
+  // reports ADVISORY_UNAVAILABLE (the consumer then blocks with a precise reason; nothing is invented).
+  var ADVISORY = Object.freeze({ SOURCE: 'ADVISORY_GENERIC', RESOLVED: 'ADVISORY', UNAVAILABLE: 'ADVISORY_UNAVAILABLE', GRAIN: Object.freeze({ KG: 0.5, LB: 1 }) });
+  function resolveAdvisoryLoad(input) {
+    input = input || {};
+    var m = input.magnitude || {}, cands = Array.isArray(m.candidates) ? m.candidates : [];
+    var c = cands.filter(function(d) { return d && d.dimension === 'LOAD'; })[0];
+    if (!c) return null;
+    var unit = String((m.evidence && m.evidence.unit) || '').trim().toUpperCase();
+    var current = _num(c.previousValue), raw = _num(c.rawCandidate), dir = m.direction;
+    var out = { resolutionState: ADVISORY.UNAVAILABLE, equipmentId: null, unit: unit || null, requestedLoad: raw, currentLoad: current, realizableLoad: null,
+      delta: null, roundingReason: null, incrementSource: null, incrementScope: null, incrementRevision: null, incrementConfiguredAt: null, incrementKind: null, reasons: [] };
+    if (unit !== 'KG' && unit !== 'LB') { out.reasons.push('LOAD_UNIT_UNKNOWN'); return out; }
+    if (current === null || current <= 0 || raw === null || raw <= 0) { out.reasons.push('LOAD_BASE_INVALID'); return out; }
+    if (dir !== 'UP' && dir !== 'DOWN') { out.reasons.push('DIRECTION_UNKNOWN'); return out; }
+    var grain = ADVISORY.GRAIN[unit], target = _clean(Math.round(raw / grain) * grain), reason = 'ADVISORY_GRAIN_' + grain;
+    var moves = function(v) { return dir === 'UP' ? v > current : v < current; };
+    if (!moves(target)) { target = _clean(raw); reason = 'ADVISORY_RAW'; }   // a tiny rule step is never rounded away into "no change"
+    if (!moves(target) || target <= 0) { out.reasons.push('NO_ADVISORY_MOVE'); return out; }
+    return Object.assign(out, { resolutionState: ADVISORY.RESOLVED, realizableLoad: target, delta: _clean(target - current), roundingReason: reason, incrementSource: ADVISORY.SOURCE });
+  }
+
   // T502: strict Coach configuration input -> sourced metadata (or null to clear). Configuration data only:
   // nothing is defaulted, the equipment type never fills a value, the source is always COACH_CONFIGURED.
   var CONFIG_KINDS = { STEP: true, PLATE_LOADED_BAR: true, AVAILABLE_LOADS: true };
@@ -216,5 +241,5 @@
   return { STATES: STATES, MODES: MODES, SOURCES: Object.keys(SOURCES), INCREMENT_METADATA: INCREMENT_METADATA,
     lookupIncrement: lookupIncrement, describeGrid: describeGrid, resolveLoad: resolveLoad,
     equipmentRefFromCatalogEntry: equipmentRefFromCatalogEntry, normalizeLoadIncrementInput: normalizeLoadIncrementInput,
-    resolveForCandidate: resolveForCandidate };
+    resolveForCandidate: resolveForCandidate, ADVISORY: ADVISORY, resolveAdvisoryLoad: resolveAdvisoryLoad };
 });
