@@ -1,6 +1,6 @@
 {
   "schema": "vdsen-deployed-product-v1",
-  "runtime_sha": "872ed38972fc70738bede80acc936191a86f52f1",
+  "runtime_sha": "1b63208286c1a633ebc1018df4cacc40e8d35326",
   "note": "Frozen per-file sha256 of the served surface at the DEPLOYED runtime commit. Regenerate only as part of an authorized deploy.",
   "files": {
     "vdsen-cliente.html": "5d637dfd9fed0e170afc17ecce206774cd7728c3e364649a22b912c1a8d5e50a",
@@ -20,10 +20,10 @@
     "assets/exercise-visual-metadata-editor.js": "8bd0e54255fe1e921dbf5fce7b0b16990c83293635183802452d5c64ee8ce1a4",
     "assets/exercises/pending-license.svg": "565b92ebed2f0d6f0bcc4407e543e1f41914e51499aab6ab57ca8fb91cd38ab9",
     "assets/progression-application-consumer.js": "fbad8a9ed991bbd7ab3ba36cc630464838bbdb0d183b323897cd8f8b2dd26496",
-    "assets/progression-auto-apply-shadow.js": "442ea606a756735d5ef4375ff093887d83d24e7a0a2e626f797fa3a9e8f0ead5",
+    "assets/progression-auto-apply-shadow.js": "4bd08e0af7871dddfcb88e3a780e1fb29f04884b44c86d9089758263879e3eaa",
     "assets/progression-effective-prescription.js": "2d6694b9beddd435e90e564429eafb95007f6c6cef92504e08f99f2499f98a93",
     "assets/progression-equipment-resolver.js": "006da3b9061b26973e8463df17a0415ea404ee90bc02b92b34fd97bdd9bd3a42",
-    "assets/progression-magnitude-policy.js": "6f3634ef613359fa85d4120be185e17a9ed2d9ae66f129949c6534245f685adf",
+    "assets/progression-magnitude-policy.js": "f712ba354abe69217fb460975b9f88a14670fd7490005d1f1c0930306fbb470f",
     "assets/vdsen-logo-official.jpg": "95fc38d974cabab836aa59623781739c4cc0c585e68a784f69b82e30430d475b",
     "fonts/BigShouldersDisplay-800.ttf": "258e70cb546dd43bac15294c4e3fc49c05990f66b4aee23f19f3b6b65d96d32b",
     "fonts/CourierPrime-Bold.ttf": "ff1f38786c849d1c41fa8e447960abdb2bd75fdfb0cfcdeb524fad65a5af3638",

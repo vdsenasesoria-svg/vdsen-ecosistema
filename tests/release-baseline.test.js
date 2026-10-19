@@ -90,7 +90,7 @@ test('environment identifiers must match pinned projects, identity provider and 
   } finally { for (const k of Object.keys(process.env)) if (!(k in before)) delete process.env[k]; Object.assign(process.env, before); }
 });
 test('current production is distinct from rollback and advance never promotes a preview', () => {
-  assert.equal(state.production_deployment, 'dpl_GKbJwsMkKia1UZqxH7tNXS1Vsjhc');
+  assert.equal(state.production_deployment, 'dpl_DkVJC5h6KbgLrWeWxiKp9XG3JJP4');
   assert.notEqual(state.production_deployment, state.rollback_deployment);
   // After the first app release the state describes an APP release, so the mode is app_only. This
   // does NOT relax the rules lane: the assertions below still prove live.cjs cannot deploy,
@@ -117,8 +117,8 @@ test('rollback rules provenance is decoupled from the app rollback runtime and f
   // 3. the app rollback pair stays pinned and independently verifiable. It is now the deployment
   // that was serving production before the first app release, which is what a recovery would
   // actually restore.
-  assert.equal(state.rollback_deployment, 'dpl_9pSMURG8tKXFhRvqXudvNqV1TRaE');
-  assert.equal(state.rollback_runtime_sha, '31b0567be79525b6e0122ea3d832f01af0031ea9');
+  assert.equal(state.rollback_deployment, 'dpl_GKbJwsMkKia1UZqxH7tNXS1Vsjhc');
+  assert.equal(state.rollback_runtime_sha, '872ed38972fc70738bede80acc936191a86f52f1');
   // 4. tampered captured live source -> FAIL
   assert.throws(() => rollbackRulesProvenance({ package_sha: PACKAGE_SHA, state, old_rules: { sha256: hash(content), source: { files: [{ content: content + '\n// tampered' }] } } }), /own hash/);
   const other = git('show', state.runtime_sha + ':firestore.rules');

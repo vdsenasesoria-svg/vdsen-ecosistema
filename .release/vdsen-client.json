@@ -1,9 +1,9 @@
 {
-  "runtime_sha": "872ed38972fc70738bede80acc936191a86f52f1",
-  "production_deployment": "dpl_GKbJwsMkKia1UZqxH7tNXS1Vsjhc",
-  "rollback_deployment": "dpl_9pSMURG8tKXFhRvqXudvNqV1TRaE",
-  "rollback_runtime_sha": "31b0567be79525b6e0122ea3d832f01af0031ea9",
-  "target_deployment": "dpl_GKbJwsMkKia1UZqxH7tNXS1Vsjhc",
+  "runtime_sha": "1b63208286c1a633ebc1018df4cacc40e8d35326",
+  "production_deployment": "dpl_DkVJC5h6KbgLrWeWxiKp9XG3JJP4",
+  "rollback_deployment": "dpl_GKbJwsMkKia1UZqxH7tNXS1Vsjhc",
+  "rollback_runtime_sha": "872ed38972fc70738bede80acc936191a86f52f1",
+  "target_deployment": "dpl_DkVJC5h6KbgLrWeWxiKp9XG3JJP4",
   "production_project": "prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN",
   "vercel_team": "team_VZc5H7Q1DBIJ3g0mwrSBz1o8",
   "production_origin": "https://vdsen-ecosistema.vercel.app",
@@ -41,16 +41,16 @@
     "preview_production_env_verified": true,
     "human_ux_approved": true
   },
-  "observation_source": "Client App release 2026-10-18 (run 39191400700, promotion_model staged_production; recorded 2026-10-19): app-result.json reported SUCCESS / state VERIFIED, production_deployment dpl_GKbJwsMkKia1UZqxH7tNXS1Vsjhc (runtime 872ed38972fc70738bede80acc936191a86f52f1, T582: LOAD without equipment dependency + Motor rep ranges), previous_deployment dpl_9pSMURG8tKXFhRvqXudvNqV1TRaE, verified_surfaces 25, rules_mutated=false, main_unchanged=true. Re-baselined from those run artifacts plus a read-only Vercel alias lookup (vdsen-ecosistema.vercel.app -> dpl_GKbJwsMkKia1UZqxH7tNXS1Vsjhc). Earlier history: run 39186125344 promoted dpl_9pSMURG8tKXFhRvqXudvNqV1TRaE (31b0567be79525b6e0122ea3d832f01af0031ea9, Coach hotfix T580 + exerciseId T581) after the T579 release (run 39171421689, runtime 8b7a772) shipped a Coach with a JavaScript SyntaxError and was rolled back by the owner to dpl_2c8QmmGjnRrEwq4zaXPfBPppXYXk (10e38ebfcdf824975bcc82387d0692a5966b3bf0); the 2026-10-17 release (run 38994938674) promoted dpl_2c8QmmGjnRrEwq4zaXPfBPppXYXk; the first Client App release 2026-10-07 (run 37688146609) promoted dpl_4xAS5kXuny7APpaRjozGeNdPETMj (runtime 8365410cf7f09427c79ead77aa4f769c16e9a803). Live Firestore rules were not mutated by app releases and stay as pinned in rules_transition; main remained f6596ba5207dc158b8a9b01483cd0fe0ebeb274c; both kill switches left false after the run; NUMERIC_APPLY_ENABLED=false. Entitlement, index plans_backup and data-precondition observations from the 2026-10-06 revalidation remain in force. NOTE: observation_source is a prose record of what was observed; it is not schema-validated and confers no release authority.",
+  "observation_source": "Client App release 2026-10-19 (run 39246627144, promotion_model staged_production): app-result.json reported SUCCESS / state VERIFIED, production_deployment dpl_DkVJC5h6KbgLrWeWxiKp9XG3JJP4 (runtime 1b63208286c1a633ebc1018df4cacc40e8d35326, T584: double progression at the range ceiling, add_sets no longer blocks, Ayrton pilot tooling).",
   "release_mode": "app_only",
   "app_release": {
-    "runtime_sha": "872ed38972fc70738bede80acc936191a86f52f1",
-    "deployment": "dpl_GKbJwsMkKia1UZqxH7tNXS1Vsjhc",
+    "runtime_sha": "1b63208286c1a633ebc1018df4cacc40e8d35326",
+    "deployment": "dpl_DkVJC5h6KbgLrWeWxiKp9XG3JJP4",
     "promotion_model": "staged_production",
-    "previous_deployment": "dpl_9pSMURG8tKXFhRvqXudvNqV1TRaE",
-    "previous_runtime_sha": "31b0567be79525b6e0122ea3d832f01af0031ea9",
+    "previous_deployment": "dpl_GKbJwsMkKia1UZqxH7tNXS1Vsjhc",
+    "previous_runtime_sha": "872ed38972fc70738bede80acc936191a86f52f1",
     "verified_surfaces": 25,
-    "source_release_run": "39191400700",
-    "completed_at": "2026-10-19T02:47:16Z"
+    "source_release_run": "39246627144",
+    "completed_at": "2026-10-19T11:45:45Z"
   }
 }
