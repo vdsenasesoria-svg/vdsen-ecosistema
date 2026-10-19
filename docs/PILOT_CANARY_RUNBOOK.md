@@ -1,5 +1,7 @@
 # Runbook — canario de un atleta con LOAD autónomo (progresión autónoma)
 
+> **Vigencia (T582/T583):** el equipamiento ya NO es un requisito de LOAD: sin incrementos verificados la carga es orientativa (`ADVISORY_GENERIC`). Los pasos que dicen "LOAD queda `BLOCKED_EQUIPMENT_DATA`" y el paso 0 son históricos. El procedimiento vigente del piloto (Ayrton) está en `docs/T583_AYRTON_PILOT_PROPOSAL.md`.
+
 Estado de la evidencia: PENDING→APPLIED→CONSUMED, REPS, REST e idempotencia validados en staging hospedado (T576); LOAD con incremento verificado validado en emulador y en staging (T578). **Nada de esto se ha activado en producción.** Activar `AUTONOMOUS_PROGRESSION_ENABLED` / `AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED` en el proyecto de producción es una **decisión explícita del director** (`docs/AUTO_APPLY_ACTIVATION_CHECKLIST.md`, `AGENTS.md`: nunca habilitar la aplicación numérica dentro de un cambio de infraestructura de release; las credenciales de producción solo existen en los workflows protegidos). Este documento deja preparado el camino; no lo ejecuta.
 
 ## 0. Lo único que falta y no puede inventarse: los incrementos reales del Coach

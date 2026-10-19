@@ -118,6 +118,7 @@ Formato exacto que espera `parsePlanFromJSON` (vdsen-coach.html:2649). Emítelo 
 | `techniqueNote` | string | Descripción corta de la técnica (visible al cliente) |
 | `coachNote` | string | Nota informativa para el cliente |
 | `supersetGroup` | string | Id corto (`"A"`, `"B"`) compartido entre 2–3 ejercicios del mismo día → superserie no competitiva |
+| `repsRange` | `{"min":int,"max":int}` | **Opcional (T583).** Rango de repeticiones aplicable por fibra (Compendio A.4) cuando prescribes un RANGO (`min` < `max`). `max` es el techo y todo `repsTarget` de serie queda dentro de `[min,max]` (puede diferir por serie). Repeticiones fijas ⇒ omítelo. **Nunca inventes el mínimo.** La app lo usa para progresar repeticiones dentro del rango; sin él solo conoce el techo. |
 
 ### Campos por set
 | Campo | Tipo | Default |
