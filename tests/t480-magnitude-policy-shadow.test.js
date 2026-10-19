@@ -157,16 +157,19 @@ test('12. autoFilled (and express) evidence is ignored', () => {
 });
 
 test('13. rep bounds never expand the prescribed range', () => {
+  // T584 double progression: AT the ceiling there is no rep step to take (the range is never expanded); the same Rule A moves to LOAD (reps first, then load).
   const up = run(two({ rirPrescribed: 1, rirReal: 2, reps: 12 }, { rirPrescribed: 1, reps: 12 }),
     { prescription: Object.assign({}, prescription, { sets: prescription.sets.map(s => Object.assign({}, s, { repsTarget: 12 })) }) });
-  const c = raw(up, 'REPS');
-  assert.equal(c.rawCandidate, 13); assert.equal(c.finalCandidate, null); assert.equal(c.boundState, 'REP_RANGE_UPPER_BOUND');
-  assert.equal(up.eligible, false); assert.ok(up.reasonCodes.includes('REP_RANGE_UPPER_BOUND'));
+  assert.equal(raw(up, 'REPS'), undefined, 'no rep candidate beyond the ceiling'); assert.equal(up.dimension, 'LOAD'); assert.equal(up.doubleProgression.ceiling, 12);
   assert.deepEqual(prescription.repsRange, { min: 8, max: 12 }, 'range untouched');
-  // No explicit range: derived from the prescribed sets; a single repsTarget means no headroom.
+  // With rep room left, a step that would still overshoot the ceiling stays BLOCKED (never truncated, never expanded).
+  const over = run(two({ rirPrescribed: 1, rirReal: 5, reps: 10 }, { rirPrescribed: 1, reps: 10 }));
+  assert.equal(raw(over, 'REPS').rawCandidate, 14); assert.equal(raw(over, 'REPS').finalCandidate, null); assert.equal(raw(over, 'REPS').boundState, 'REP_RANGE_UPPER_BOUND');
+  assert.equal(over.eligible, false); assert.ok(over.reasonCodes.includes('REP_RANGE_UPPER_BOUND'));
+  // No explicit range: derived from the prescribed sets; a single repsTarget means no headroom => no rep candidate (double progression moves to LOAD).
   const noRange = run(two({ rirPrescribed: 1, rirReal: 2 }, { rirPrescribed: 1 }),
     { prescription: { prescriptionExerciseId: PID, sets: prescription.sets } });
-  assert.equal(raw(noRange, 'REPS').boundState, 'REP_RANGE_UPPER_BOUND');
+  assert.equal(raw(noRange, 'REPS'), undefined); assert.equal(noRange.dimension, 'LOAD');
   const derived = run(two({ rirPrescribed: 1, rirReal: 2 }, { rirPrescribed: 1 }),
     { prescription: { prescriptionExerciseId: PID, sets: [8, 10, 12].map((r, i) => ({ setIndex: i, repsTarget: r, rirTarget: 1 })) } });
   assert.equal(derived.evidence.repsTarget, 12);

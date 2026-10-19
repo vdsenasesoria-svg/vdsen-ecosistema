@@ -116,6 +116,7 @@ function buildSystemPrompt() {
     '    suplementacion.tiers[] con {nombre, items:[{nombre, dosis, timing, nota}]}',
     '    NUNCA uses training/nutrition/supplementation como keys dentro del plan. NUNCA uses calories/protein/carbs/fats/meals/name/dose en lugar de los campos españoles listados.',
     '21. repsRange (OPCIONAL, por ejercicio de fuerza): {"min":<int>,"max":<int>} con el rango de repeticiones aplicable por fibra (Compendio A.4) cuando prescribes un RANGO (min < max). max es el techo y cada repsTarget de serie queda dentro de [min,max] (puede ser distinto por serie). Repeticiones fijas => OMITE repsRange. NUNCA inventes el mínimo: sale de la metodología. repsTarget sigue siendo obligatorio en cada serie.',
+    '22. IDENTIFICADORES (OPCIONALES): prescriptionExerciseId NUNCA lo inventes ni lo generes; solo cópialo literalmente si el request trae el PID del MISMO ejercicio en el MISMO día y lo mantienes sin cambios (ejercicio nuevo, sustituido o movido de día => omítelo: la app lo asigna). exerciseId solo si el request incluye una lista de catálogo con ids y el ejercicio está en ella; si no, omítelo. Ninguno de los dos es requisito para la progresión.',
     '',
     'Los campos requestId, schema, generatedAt y model son administrados por el servidor.',
     'NO los reportes como faltantes ni generes warnings sobre su ausencia en la entrada.',
