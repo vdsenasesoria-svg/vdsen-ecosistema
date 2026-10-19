@@ -41,10 +41,10 @@ const run = async (s) => {
 const meso = async (s) => (await db.doc('logs/' + s.uid + '/mesos/' + s.planId).get()).data();
 const overlays = (m) => Object.values((m && m.nextExposureOverlays) || {});
 
-test('T581-A plan WITHOUT exerciseId and NO link => LOAD blocked (identity unresolved), no overlay', async () => {
+test('T581-A (T582) plan WITHOUT exerciseId and NO link => LOAD is an ADVISORY target (machine unknown, progression not withheld)', async () => {
   const s = await seed(); const out = await run(s); const m = await meso(s);
-  assert.equal(out.applied[0].written, false); assert.equal(out.applied[0].blocked, 'BLOCKED_EQUIPMENT_DATA'); assert.match(out.applied[0].reason, /^(UNRESOLVED_EQUIPMENT_INCREMENT|EQUIPMENT_IDENTITY_UNRESOLVED)$/);
-  assert.equal(overlays(m).length, 0);
+  assert.deepEqual([out.applied[0].written, out.applied[0].blocked], [true, null]);
+  assert.equal(overlays(m).length, 1); assert.equal(overlays(m)[0].equipmentId, null); assert.equal(overlays(m)[0].equipmentSnapshot.source, 'ADVISORY_GENERIC'); assert.equal(overlays(m)[0].appliedValue, 105);
 });
 
 test('T581-B plan without exerciseId + Coach link by PID => LOAD APPLIED 100 -> 105 KG, plan untouched', async () => {
@@ -58,11 +58,11 @@ test('T581-B plan without exerciseId + Coach link by PID => LOAD APPLIED 100 -> 
   assert.equal(overlays(await meso(s)).length, 1, 'idempotent');
 });
 
-test('T581-C a link for another PID, to an unknown catalog id, or a non-string value does not identify the equipment', async () => {
+test('T581-C (T582) a link for another PID, to an unknown catalog id, or a non-string value does not identify the equipment (the LOAD target stays advisory)', async () => {
   for (const links of [{ 'pid-otro': EX }, { [PID]: 'ex-not-in-catalog' }, { [PID]: 42 }, { [PID]: { x: 1 } }]) {
     const s = await seed({ links }); const out = await run(s);
-    assert.equal(out.applied[0].written, false, JSON.stringify(links)); assert.equal(out.applied[0].blocked, 'BLOCKED_EQUIPMENT_DATA', JSON.stringify(links));
-    assert.equal(overlays(await meso(s)).length, 0);
+    assert.deepEqual([out.applied[0].written, out.applied[0].blocked], [true, null], JSON.stringify(links));
+    const ov = overlays(await meso(s)); assert.equal(ov.length, 1); assert.equal(ov[0].equipmentId, null, 'a bad link never produces an equipment identity: ' + JSON.stringify(links));
   }
 });
 
@@ -70,5 +70,5 @@ test('T581-D the plan own exerciseId wins over a link; a link that is not the at
   const s = await seed({ planExerciseId: EX, links: { [PID]: 'ex-not-in-catalog' } });
   const out = await run(s); assert.deepEqual(out.applied.map(x => x.written), [true], 'plan exerciseId is used, the bad link is never consulted');
   const t = await seed(); await db.doc('coaches/some-other-coach').set({ exerciseLinks: { [PID]: EX }, equipmentIncrements: { shared: { [EX]: STEP }, gyms: {} } });
-  const out2 = await run(t); assert.equal(out2.applied[0].written, false, 'only the coach of THIS client counts');
+  const out2 = await run(t); assert.equal(out2.applied[0].written, true); assert.equal(overlays(await meso(t))[0].equipmentId, null, 'only the coach of THIS client counts: the other coach link/increment gives no equipment identity (advisory)');
 });

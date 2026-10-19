@@ -111,29 +111,30 @@ for (const [name, mk] of [
   });
 }
 
-const blockedCases = [
-  ['B1 no increment configured for a KNOWN equipment', {}, 'UNRESOLVED_EQUIPMENT_INCREMENT'],
-  ['B2 unknown exercise => equipment identity unresolved', { exerciseId: 'ex-t578-not-in-catalog', increment: stepMeta() }, 'EQUIPMENT_IDENTITY_UNRESOLVED'],
-  ['C1 raw 102.5 is a tie between 100 and 105 => no realizable move', { increment: stepMeta(), rirReal: 3, newLoad: 102.5 }, 'DIRECTION_NOT_REALIZABLE'],
-  ['C2 available loads lack the step above (tie) => no fabricated load', { increment: { kind: 'AVAILABLE_LOADS', unit: 'KG', source: 'COACH_CONFIGURED', scope: 'SHARED_EQUIPMENT', configuredAt: '2026-09-26T00:00:00.000Z', revision: 1, loads: [90, 100, 110] } }, 'DIRECTION_NOT_REALIZABLE'],
-  ['C3 equipment maximum 100 kg', { increment: stepMeta({ max: 100 }) }, 'EQUIPMENT_OUT_OF_RANGE'],
-  ['C4 increment configured in LB, evidence in KG', { increment: stepMeta({ unit: 'LB' }) }, 'UNIT_MISMATCH'],
-  ['C5 invalid increment metadata (step 0)', { increment: stepMeta({ step: 0 }) }, null]
+// T582 (owner decision): equipment data is OPTIONAL. Whatever the state of the equipment information (none, unknown exercise, tie on the grid, configured limit,
+// unit mismatch, invalid metadata) the LOAD progression is NOT withheld: it becomes an ADVISORY target (no machine claim) that the athlete adapts to what they have.
+const advisoryCases = [
+  ['B1 no increment configured for a KNOWN equipment', {}, 105],
+  ['B2 unknown exercise => equipment identity unresolved', { exerciseId: 'ex-t578-not-in-catalog', increment: stepMeta() }, 105],
+  ['C1 raw 102.5 is a tie between 100 and 105 on the configured grid', { increment: stepMeta(), rirReal: 3, newLoad: 102.5 }, 102.5],
+  ['C2 available loads lack the step above (tie)', { increment: { kind: 'AVAILABLE_LOADS', unit: 'KG', source: 'COACH_CONFIGURED', scope: 'SHARED_EQUIPMENT', configuredAt: '2026-09-26T00:00:00.000Z', revision: 1, loads: [90, 100, 110] } }, 105],
+  ['C3 equipment maximum 100 kg', { increment: stepMeta({ max: 100 }) }, 105],
+  ['C4 increment configured in LB, evidence in KG', { increment: stepMeta({ unit: 'LB' }) }, 105],
+  ['C5 invalid increment metadata (step 0)', { increment: stepMeta({ step: 0 }) }, 105]
 ];
-for (const [name, o, reason] of blockedCases) {
-  test('T578-' + name + ' => BLOCKED_EQUIPMENT_DATA, no numeric application', async () => {
-    const s = await seed(Object.assign({ tag: 'blocked' }, o));
+for (const [name, o, expected] of advisoryCases) {
+  test('T578-' + name + ' => ADVISORY LOAD target (T582), applied, no machine claim', async () => {
+    const s = await seed(Object.assign({ tag: 'advisory' }, o));
     const out = await run(s);
     assert.equal(out.applied.length, 1);
-    assert.equal(out.applied[0].written, false);
-    assert.equal(out.applied[0].blocked, 'BLOCKED_EQUIPMENT_DATA');
-    if (reason) assert.equal(out.applied[0].reason, reason);
-    const m = await meso(s);
-    assert.equal(overlays(m).length, 0); assert.equal(records(m).length, 1); assert.equal(records(m)[0].state, 'PENDING');
+    assert.deepEqual([out.applied[0].written, out.applied[0].blocked, out.applied[0].reason], [true, null, null], JSON.stringify(out.applied));
+    const m = await meso(s), ov = overlays(m)[0];
+    assert.equal(overlays(m).length, 1); assert.equal(records(m).length, 1); assert.equal(records(m)[0].state, 'APPLIED');
+    assert.equal(ov.dimension, 'LOAD'); assert.equal(ov.previousValue, 100); assert.equal(ov.appliedValue, expected); assert.equal(ov.unit, 'KG');
+    assert.equal(ov.equipmentId, null, 'an advisory target makes no equipment claim'); assert.equal(ov.equipmentSnapshot.source, 'ADVISORY_GENERIC'); assert.match(ov.roundingReason, /^ADVISORY_/);
     assert.equal(JSON.stringify(m.entries), JSON.stringify(s.logs), 'evidence untouched');
-    const again = await run(s);
-    assert.equal(again.applied[0].blocked, 'BLOCKED_EQUIPMENT_DATA');
-    const m2 = await meso(s); assert.equal(overlays(m2).length, 0); assert.equal(records(m2).length, 1);
+    await run(s); await run(s);
+    const m2 = await meso(s); assert.equal(overlays(m2).length, 1); assert.equal(records(m2).length, 1);
   });
 }
 

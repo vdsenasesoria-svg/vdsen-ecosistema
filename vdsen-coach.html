@@ -6732,7 +6732,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   // Editor round-trip state for one stored exercise (the editor rebuilds sets from three inputs, so the type / prescription / per-set doses ride on the row).
   function _perfRowState(e) {
     const sets = Array.isArray(e && e.sets) ? e.sets : [];
-    return JSON.stringify({ ex: _perfCarryEx(e), sets: sets.map(_perfCarrySet), noSets: _perfHasNoSetsOk(e) && sets.length === 0 });
+    return JSON.stringify({ ex: _perfCarryEx(e), sets: sets.map(_perfCarrySet), noSets: _perfHasNoSetsOk(e) && sets.length === 0, meta: (typeof _planMetaForRow === 'function' ? _planMetaForRow(e) : {}) });
   }
 
   function parsePlanFromJSON() {
@@ -6771,6 +6771,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           // history continuity for exercises the coach didn't actually change.
           ...(ex.prescriptionExerciseId ? { prescriptionExerciseId: String(ex.prescriptionExerciseId) } : {}),
           ...(typeof _carryExerciseIdentity === 'function' ? _carryExerciseIdentity(ex) : {}),   // T581: canonical catalog exerciseId (source-known or exact catalog name only)
+          ...(typeof _carryRepsRange === 'function' ? _carryRepsRange(ex) : {}),   // T582: the Motor's prescribed rep range, when it states one
           sets: Array.isArray(ex.sets) && ex.sets.length > 0
             ? ex.sets.map((s, si) => ({
                 setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
@@ -9375,7 +9376,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           tempo: String(s.tempo || '').trim(),
           ..._perfCarrySet(s)
         })) : []
-      }, _carryPrescriptionId(ex), _perfCarryEx(ex), (typeof _carryExerciseIdentity === 'function' ? _carryExerciseIdentity(ex) : {}))).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
+      }, _carryPrescriptionId(ex), _perfCarryEx(ex), (typeof _carryExerciseIdentity === 'function' ? _carryExerciseIdentity(ex) : {}), (typeof _carryRepsRange === 'function' ? _carryRepsRange(ex) : {}))).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
     })).filter(d => d.exercises.length > 0);
     if (!days.length) return null;
     const _norm = { weeks: parseInt(obj.weeks) || 6, daysPerWeek: parseInt(obj.daysPerWeek) || days.length, days };
@@ -10427,6 +10428,33 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       var hit = Object.keys(ids);
       return hit.length === 1 ? { exerciseId: hit[0], exerciseIdSource: 'CATALOG_EXACT_NAME' } : {};   // ambiguous (2+ ids) or unknown => nothing written
     } catch (e) { return {}; }
+  }
+  // T582: the rep RANGE the Motor prescribed (repsTarget alone is only its ceiling). Carried ONLY when the source states one ({min,max} integers or "8-12");
+  // a fixed-rep prescription gets no range (never invented), and a range that contradicts the per-set targets is dropped (the prescription is then ambiguous).
+  function _carryRepsRange(ex) {
+    try {
+      var r = ex && ex.repsRange, min = NaN, max = NaN;
+      if (r && typeof r === 'object' && !Array.isArray(r)) { min = Number(r.min); max = Number(r.max); }
+      else if (typeof r === 'string') { var m = /^\s*(\d{1,3})\s*[-–—]\s*(\d{1,3})\s*$/.exec(r); if (m) { min = Number(m[1]); max = Number(m[2]); } }
+      if (!Number.isInteger(min) || !Number.isInteger(max) || min < 1 || max > 100 || min >= max) return {};
+      var sets = Array.isArray(ex.sets) ? ex.sets : [];
+      for (var i = 0; i < sets.length; i++) { var t = parseInt(sets[i] && sets[i].repsTarget, 10); if (Number.isFinite(t) && (t < min || t > max)) return {}; }
+      return { repsRange: { min: min, max: max } };
+    } catch (e) { return {}; }
+  }
+  // T582: plan metadata the editor must not drop when it rebuilds an exercise from its row (catalog id + rep range). exerciseId only survives while the
+  // exercise name is unchanged (a renamed exercise is a different exercise: the catalog id would be stale); repsRange only while it still agrees with the sets.
+  function _planMetaForRow(e) {
+    var o = {}; if (!e || typeof e !== 'object') return o;
+    if (typeof e.exerciseId === 'string' && e.exerciseId) { o.exerciseId = e.exerciseId; if (typeof e.exerciseIdSource === 'string') o.exerciseIdSource = e.exerciseIdSource; o.forName = String(e.exerciseName || '').trim().toLowerCase(); }
+    var rr = _carryRepsRange(e); if (rr.repsRange) o.repsRange = rr.repsRange;
+    return o;
+  }
+  function _restorePlanMeta(meta, name, sets) {
+    var out = {}; if (!meta || typeof meta !== 'object') return out;
+    if (typeof meta.exerciseId === 'string' && meta.exerciseId && meta.forName === String(name || '').trim().toLowerCase()) { out.exerciseId = meta.exerciseId; if (typeof meta.exerciseIdSource === 'string') out.exerciseIdSource = meta.exerciseIdSource; }
+    var rr = _carryRepsRange({ repsRange: meta.repsRange, sets: sets }); if (rr.repsRange) out.repsRange = rr.repsRange;
+    return out;
   }
   function _genPrescriptionId() {
     try { return crypto.randomUUID(); } catch(e) {}
@@ -19470,6 +19498,7 @@ El esfuerzo no es negociable.
       NO_ACTIONABLE_CANDIDATE: 'sin candidato accionable', STRUCTURAL_DIMENSION_NOT_AUTHORIZED: 'dimensión estructural no autorizada',
       ALREADY_RECORDED: 'ya registrado', DIRECTION_NOT_REALIZABLE: 'el equipo no permite ese movimiento de carga', UNIT_MISMATCH: 'unidad distinta a la del incremento configurado',
       EQUIPMENT_OUT_OF_RANGE: 'fuera del rango del equipo', EQUIPMENT_INPUT_INVALID: 'entrada de equipo inválida',
+      ADVISORY_LOAD_UNAVAILABLE: 'carga no calculable (unidad desconocida o sin carga ejecutada válida)',
       ACTIVATION_GUARD_FAILED: 'guardia de activación: un hecho requerido no se verificó', EQUIPMENT_IDENTITY_UNRESOLVED: 'equipo sin identidad canónica', SCIENCE_POLICY_UNRESOLVED: 'ciencia sin definir para esta rama (D/E)',
       COACH_REVIEW_REQUIRED: 'revisión del Coach requerida (sin aplicación automática)', EVIDENCE_COUNT_INSUFFICIENT: 'evidencia insuficiente (menos de 2 exposiciones comparables)', DIRECTION_CONFLICTING: 'dirección contradictoria entre exposiciones',
       DIRECTION_UNCONFIRMED: 'dirección no confirmada por la exposición previa', READINESS_VETO: 'veto por readiness' };
@@ -21726,10 +21755,13 @@ El esfuerzo no es negociable.
         try { variacionVertical = JSON.parse(row.dataset.variacionVertical || 'null'); } catch(e) {}
         const prescriptionExerciseId = row.dataset.prescriptionId || _genPrescriptionId();
         let perf = { ex: {}, sets: [], noSets: false };
-        try { const pj = JSON.parse(row.dataset.perf || '{}'); perf = { ex: _perfCarryEx(pj.ex), sets: (Array.isArray(pj.sets) ? pj.sets : []).map(_perfCarrySet), noSets: pj.noSets === true }; } catch(e) {}
+        let planMeta = null;
+        try { const pj = JSON.parse(row.dataset.perf || '{}'); perf = { ex: _perfCarryEx(pj.ex), sets: (Array.isArray(pj.sets) ? pj.sets : []).map(_perfCarrySet), noSets: pj.noSets === true }; planMeta = pj.meta || null; } catch(e) {}
+        const _setsOut = perf.noSets ? [] : (row.querySelector('.exset') ? _exCollectSets(row, perf.sets) : Array.from({length: sets}, (_, s) => ({ setIndex: s, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: restSec, setNote: '', drop: false, tempo: '', ...(perf.sets[s] || {}) })));
         if (name) exercises.push({
           exerciseName: name,
           prescriptionExerciseId,
+          ...(typeof _restorePlanMeta === 'function' ? _restorePlanMeta(planMeta, name, _setsOut) : {}),   // T582: exerciseId (same exercise only) + repsRange (only while it agrees with the sets)
           alternatives,
           ...((coachNote || row.dataset.hadCoachnote) ? { coachNote } : {}),
           technique,
@@ -21737,7 +21769,7 @@ El esfuerzo no es negociable.
           supersetGroup,
           ...(nivelMedio ? { nivel_medio: nivelMedio } : {}),
           ...(variacionVertical ? { variacion_vertical: variacionVertical } : {}),
-          sets: perf.noSets ? [] : (row.querySelector('.exset') ? _exCollectSets(row, perf.sets) : Array.from({length: sets}, (_, s) => ({ setIndex: s, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: restSec, setNote: '', drop: false, tempo: '', ...(perf.sets[s] || {}) }))),
+          sets: _setsOut,
           ...perf.ex   // T544: exerciseType + Coach performance prescription survive an editor save
         });
       });
@@ -22241,7 +22273,7 @@ El esfuerzo no es negociable.
             tempo: String(s.tempo || '').trim(),
             ..._perfCarrySet(s)
           })) : []
-        }, _carryPrescriptionId(ex), _perfCarryEx(ex), (typeof _carryExerciseIdentity === 'function' ? _carryExerciseIdentity(ex) : {}))).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
+        }, _carryPrescriptionId(ex), _perfCarryEx(ex), (typeof _carryExerciseIdentity === 'function' ? _carryExerciseIdentity(ex) : {}), (typeof _carryRepsRange === 'function' ? _carryRepsRange(ex) : {}))).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
       })).filter(d => d.exercises.length > 0);
       if (days.length !== curDays) {
         st.style.color='#c94a3a'; st.textContent=`Tras normalizar quedaron ${days.length} días válidos (esperaba ${curDays}). Revisa que cada día tenga ejercicios.`;
@@ -22813,6 +22845,7 @@ El esfuerzo no es negociable.
             coachNote: ex.coachNote || '',
             supersetGroup: String(ex.supersetGroup || '').trim(),   // T553
             ..._carryClassification(ex),   // T553: nivel_medio + variacion_vertical survive export -> re-import
+            ...(typeof _carryRepsRange === 'function' ? _carryRepsRange(ex) : {}),   // T582: the prescribed rep range survives export -> re-import
             ..._perfCarryEx(ex),   // T544: export -> re-import keeps exerciseType + performance prescription
             sets: (ex.sets || []).map(s => ({
               setIndex: s.setIndex, repsTarget: s.repsTarget, rirTarget: s.rirTarget,

@@ -25,8 +25,8 @@ const UNKNOWN_NAME = 'Press Convergente Inclinado';                    // a real
 const STEP = { kind: 'STEP', step: 5, min: 0, unit: 'KG', source: 'COACH_CONFIGURED', scope: 'SHARED_EQUIPMENT', configuredAt: '2026-09-26T00:00:00.000Z', configuredBy: 'synthetic-t581', revision: 1 };
 let seq = 0;
 
-const motorPlan = (names, o) => ({ weeks: 4, daysPerWeek: 2, days: [0, 2].map((dayIndex) => ({ dayIndex, label: 'Día ' + dayIndex, exercises: names.map((exerciseName) => ({ exerciseName, technique: 'straight',
-  sets: [0, 1, 2].map((setIndex) => ({ setIndex, repsTarget: (o && o.repsTarget) || 10, rirTarget: 2, load: 0, restSeconds: 90 })) })) })) });
+const motorPlan = (names, o) => ({ weeks: 4, daysPerWeek: 2, days: [0, 2].map((dayIndex) => ({ dayIndex, label: 'Día ' + dayIndex, exercises: names.map((exerciseName) => Object.assign({ exerciseName, technique: 'straight',
+  sets: [0, 1, 2].map((setIndex) => ({ setIndex, repsTarget: (o && o.repsTarget) || 10, rirTarget: (o && o.rirTarget) || 2, load: 0, restSeconds: 90 })) }, o && o.repsRange ? { repsRange: o.repsRange } : {})) })) });
 
 // o: names[], recs: (exercise index) => progrec recommendation fields | null, increments, exposures (default both W1 days), interventions, planUpdatedAt, coachCanary
 async function seed(o) {
@@ -39,7 +39,7 @@ async function seed(o) {
   // Real shape: a PID belongs to ONE day of the plan, so its history is consecutive WEEKS of that same prescription (W1 D0, W2 D0, ...).
   const logs = {}, weeks = o.weeks || [1, 2], last = weeks[weeks.length - 1];
   weeks.forEach((w) => names.forEach((n, e) => [0, 1, 2].forEach((s) => {
-    logs['log_' + w + '_0_' + e + '_s' + s] = { done: true, carga: '100', reps: '10', unit: 'KG', rir: 2, rir_real: 4, prescriptionExerciseId: pids[e], ts: T0 + w * 1e6 + e * 100 + s };
+    logs['log_' + w + '_0_' + e + '_s' + s] = { done: true, carga: '100', reps: '10', unit: 'KG', rir: o.rirTarget || 2, rir_real: o.rirReal || 4, prescriptionExerciseId: pids[e], ts: T0 + w * 1e6 + e * 100 + s };
   })));
   if (o.recs) {
     const recommendations = names.map((n, e) => o.recs(e, pids[e], plan.days[0].exercises[e])).filter(Boolean);
@@ -90,11 +90,13 @@ test('INT-01 NEW Motor plan: exact catalog name -> exerciseId at import -> verif
   assert.equal(r0.state, 'APPLIED'); assert.deepEqual(r0.events.map((e) => e.state), ['PENDING', 'APPLIED']);
   const ov = overlays(m).filter((o) => o.prescriptionExerciseId === s.pids[0])[0];
   assert.equal(ov.dimension, 'LOAD'); assert.equal(ov.previousValue, 100); assert.equal(ov.appliedValue, 105); assert.equal(ov.equipmentId, EXACT_ID);
-  assert.equal(r1.state, 'PENDING', 'the unresolved-identity exercise is NOT applied'); assert.equal(overlays(m).filter((o) => o.prescriptionExerciseId === s.pids[1]).length, 0);
-  assert.equal(out.applied.filter((a) => a.blocked === 'BLOCKED_EQUIPMENT_DATA').length, 1, 'classified as an equipment-data block');
+  assert.equal(r1.state, 'APPLIED', 'T582: the exercise with NO catalog identity still progresses (advisory target)');
+  const ov1 = overlays(m).filter((o) => o.prescriptionExerciseId === s.pids[1])[0];
+  assert.equal(ov1.dimension, 'LOAD'); assert.equal(ov1.equipmentId, null); assert.equal(ov1.appliedValue, 105); assert.equal(ov1.equipmentSnapshot.source, 'ADVISORY_GENERIC');
+  assert.equal(out.applied.filter((a) => a.blocked).length, 0, 'nothing is blocked by missing equipment data');
   assert.equal(JSON.stringify((await db.doc('plans/' + s.planId).get()).data()), planBefore, 'base plan immutable'); assert.equal(JSON.stringify(m.entries), entriesBefore, 'logbook untouched');
   const e0 = await eff(s, 0, m, ov.target.week, ov.target.dayIndex); assert.equal(e0.provenance, 'CANONICAL_OVERLAY'); assert.equal(e0.sets[0].effective.load, 105); assert.equal(e0.sets[0].base.load, 100);
-  const e1 = await eff(s, 1, m, ov.target.week, ov.target.dayIndex); assert.notEqual(e1.provenance, 'CANONICAL_OVERLAY', 'blocked exercise keeps the base prescription');
+  const e1 = await eff(s, 1, m, ov.target.week, ov.target.dayIndex); assert.equal(e1.provenance, 'CANONICAL_OVERLAY'); assert.equal(e1.sets[0].effective.load, 105, 'the advisory target reaches the next session too');
   const first = {}; first['log_' + ov.target.week + '_' + ov.target.dayIndex + '_0_s0'] = { done: true, carga: '105', reps: '10', unit: 'KG', rir: 2, rir_real: 2, prescriptionExerciseId: s.pids[0], ts: T0 + 9e6 };
   await db.doc('logs/' + s.uid + '/mesos/' + s.planId).set({ entries: first }, { merge: true });
   await db.doc('logs/' + s.uid + '/mesos/' + s.planId).set({ consumptionReceipts: { [r0.key]: { recordKey: r0.key, overlayKey: ov.key, dimension: 'LOAD', appliedValue: 105, provenance: 'CANONICAL_OVERLAY', ackAt: clock() } } }, { merge: true });
@@ -104,11 +106,11 @@ test('INT-01 NEW Motor plan: exact catalog name -> exerciseId at import -> verif
   assert.equal(byPid(m, s.pids[0]).events.filter((e) => e.state === 'CONSUMED').length, 1, 'repeat adds nothing');
 });
 
-test('INT-02 exact name but NO verified increment => LOAD BLOCKED (never invented); the record stays PENDING with a reviewable reason', async () => {
+test('INT-02 (T582) exact catalog name but NO verified increment => LOAD is an ADVISORY target (not withheld); the decision trace is persisted for the Coach', async () => {
   const s = await seed({ recs: loadRec });
   const out = await run(s); const m = await meso(s);
-  assert.deepEqual(out.applied.map((a) => [a.written, a.blocked]), [[false, 'BLOCKED_EQUIPMENT_DATA']]); assert.equal(out.applied[0].reason, 'UNRESOLVED_EQUIPMENT_INCREMENT');
-  assert.equal(overlays(m).length, 0); assert.equal(records(m)[0].state, 'PENDING'); assert.ok(records(m)[0].magnitude, 'the decision trace is persisted for the Coach');
+  assert.deepEqual(out.applied.map((a) => [a.written, a.blocked]), [[true, null]]);
+  assert.equal(overlays(m).length, 1); assert.equal(overlays(m)[0].equipmentId, null); assert.equal(overlays(m)[0].appliedValue, 105); assert.equal(records(m)[0].state, 'APPLIED'); assert.ok(records(m)[0].magnitude, 'the decision trace is persisted for the Coach');
 });
 
 test('INT-03 no history (single exposure, no recommendation) => conservative: no record, no overlay, base prescription', async () => {
@@ -156,9 +158,9 @@ test('INT-07 multi-client isolation: two athletes, distinct plans/coaches; proce
   const ma = await meso(a), mb = await meso(b);
   assert.ok(overlays(ma).every((o) => o.clientId === a.uid && o.planId === a.planId && a.pids.includes(o.prescriptionExerciseId)));
   assert.ok(overlays(mb).every((o) => o.clientId === b.uid && o.planId === b.planId && b.pids.includes(o.prescriptionExerciseId)));
-  assert.equal(overlays(ma).length, 1); assert.equal(overlays(mb).length, 1);
+  assert.equal(overlays(ma).length, 1); assert.equal(overlays(mb).length, 2);
   const cross = await executor.processProgression({ db, clientId: a.uid, planId: b.planId, enabled: true, numericApplyEnabled: true, clock });
-  assert.equal(cross.status, 'PLAN_MISMATCH'); assert.equal(overlays(await meso(b)).length, 1, 'unchanged by the cross request');
+  assert.equal(cross.status, 'PLAN_MISMATCH'); assert.equal(overlays(await meso(b)).length, 2, 'unchanged by the cross request');
 });
 
 test('INT-08 two simultaneous requests and a reopened session (same evidence rewritten) => exactly ONE application, ONE APPLIED event', async () => {
@@ -187,8 +189,8 @@ test('INT-10 universal availability is not activation: a client outside the rele
   assert.equal(out.status, 'OUT_OF_ALLOWLIST'); assert.equal(await digest(s), d0);
 });
 
-test('INT-11 characterization: a plan with a UNIFORM repsTarget (the Motor stores the CEILING and no repsRange) has no rep room, so a REPS candidate is never applied', async () => {
-  const s = await seed({ recs: (e, pid, ex) => withId(ex, { prescriptionExerciseId: pid, exerciseName: ex.exerciseName, action: 'increase_reps', newReps: 11 }) });
+test('INT-11 characterization: a plan with a UNIFORM repsTarget (the Motor stores the CEILING and no repsRange) has no rep room, so a REPS candidate (target RIR 1) is never applied', async () => {
+  const s = await seed({ rirTarget: 1, rirReal: 3, recs: (e, pid, ex) => withId(ex, { prescriptionExerciseId: pid, exerciseName: ex.exerciseName, action: 'increase_reps', newReps: 11 }) });
   assert.ok(!('repsRange' in s.plan.days[0].exercises[0]), 'the Coach persists no repsRange');
   await run(s); const m = await meso(s);
   assert.equal(overlays(m).length, 0); assert.equal(records(m).length, 1); assert.notEqual(records(m)[0].state, 'APPLIED');

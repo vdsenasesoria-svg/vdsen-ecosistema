@@ -139,11 +139,13 @@ test('E12/E13/E14 disarmed, out-of-scope and disabled canary perform zero mutati
   await run(d); assert.deepEqual(await overlays(d), []);
 });
 
-test('E19 a LOAD candidate with no verified equipment increment is blocked: no overlay, no invented load', { timeout: 60000 }, async () => {
+test('E19 (T582) a LOAD candidate with NO equipment data is NOT blocked: it becomes an ADVISORY target (no machine claim, nothing invented beyond the rule step)', { timeout: 60000 }, async () => {
   const f = await fixture({ rirTarget: 2 }); const out = await run(f);
-  assert.deepEqual(await overlays(f), [], JSON.stringify(out));
-  assert.ok(out.applied.every(a => a.written === false && /EQUIPMENT/.test(a.reason)), JSON.stringify(out.applied));
-  assert.deepEqual(out.applied.map(a => a.blocked), ['BLOCKED_EQUIPMENT_DATA'], 'classified as an equipment-data block, not a failure');
+  assert.deepEqual(out.applied.map(a => [a.written, a.blocked]), [[true, null]], JSON.stringify(out.applied));
+  const [o] = await overlays(f);
+  assert.equal(o.dimension, 'LOAD'); assert.equal(o.status, 'APPLIED'); assert.equal(o.equipmentId, null, 'no equipment claim'); assert.equal(o.unit, 'KG');
+  assert.equal(o.previousValue, 100); assert.ok(o.appliedValue > 100 && o.appliedValue <= 110, 'a rule-sized step above the executed load: ' + o.appliedValue);
+  assert.equal(o.equipmentSnapshot.source, 'ADVISORY_GENERIC'); assert.match(o.roundingReason, /^ADVISORY_/);
 });
 
 test('E20 a Coach intervention prevails and never loads a LOAD overlay', { timeout: 60000 }, async () => {
@@ -278,7 +280,7 @@ test('CLIENT forgery: the athlete cannot create/flip APPLIED records or overlays
   assert.equal((await overlays(f))[0].appliedValue, o.appliedValue, 'canonical overlay unchanged');
 });
 
-test('LOAD: with verified (synthetic, test-only) equipment increments the LOAD overlay is realizable; without them it is BLOCKED_EQUIPMENT_DATA while REPS stays independent', { timeout: 90000 }, async () => {
+test('LOAD (T582): verified equipment, when present, gives the machine-exact load; without it LOAD is an advisory target; REPS stays independent', { timeout: 90000 }, async () => {
   const DB_EX = 'legacy-remo-mancuerna-unilateral';
   const SYNTH = { shared: { 'functional-dumbbells': { kind: 'STEP', step: 2.5, unit: 'KG', source: 'COACH_CONFIGURED' } }, gyms: {} };
   const withCfg = await fixture({ rirTarget: 2, exerciseId: DB_EX, equipmentIncrements: SYNTH });
@@ -286,7 +288,8 @@ test('LOAD: with verified (synthetic, test-only) equipment increments the LOAD o
   const a = await run(withCfg), b = await run(noCfg);
   assert.deepEqual(a.applied.map(x => [x.written, x.blocked]), [[true, null]], JSON.stringify(a.applied));
   const [o] = await overlays(withCfg); assert.equal(o.dimension, 'LOAD'); assert.equal(o.unit, 'KG'); assert.ok(o.appliedValue % 2.5 === 0, 'a realizable multiple of the configured step: ' + o.appliedValue);
-  assert.deepEqual(b.applied.map(x => [x.written, x.blocked]), [[false, 'BLOCKED_EQUIPMENT_DATA']]); assert.deepEqual(await overlays(noCfg), []);
+  assert.deepEqual(b.applied.map(x => [x.written, x.blocked]), [[true, null]], 'no equipment data no longer blocks LOAD');
+  const [ob] = await overlays(noCfg); assert.equal(ob.dimension, 'LOAD'); assert.equal(ob.equipmentId, null); assert.equal(ob.equipmentSnapshot.source, 'ADVISORY_GENERIC');
   const reps = await fixture(); const c = await run(reps);
   assert.deepEqual(c.applied.map(x => [x.written, x.blocked]), [[true, null]], 'REPS is not paralysed by missing equipment data');
 });
