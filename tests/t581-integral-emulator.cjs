@@ -189,9 +189,10 @@ test('INT-10 universal availability is not activation: a client outside the rele
   assert.equal(out.status, 'OUT_OF_ALLOWLIST'); assert.equal(await digest(s), d0);
 });
 
-test('INT-11 characterization: a plan with a UNIFORM repsTarget (the Motor stores the CEILING and no repsRange) has no rep room, so a REPS candidate (target RIR 1) is never applied', async () => {
+test('INT-11 (T584) fixed reps (the Motor stores the CEILING and no repsRange): there is no rep room, so with target RIR 1 and an easier RIR the progression is LOAD (reps first, then load); no range is invented', async () => {
   const s = await seed({ rirTarget: 1, rirReal: 3, recs: (e, pid, ex) => withId(ex, { prescriptionExerciseId: pid, exerciseName: ex.exerciseName, action: 'increase_reps', newReps: 11 }) });
-  assert.ok(!('repsRange' in s.plan.days[0].exercises[0]), 'the Coach persists no repsRange');
-  await run(s); const m = await meso(s);
-  assert.equal(overlays(m).length, 0); assert.equal(records(m).length, 1); assert.notEqual(records(m)[0].state, 'APPLIED');
+  assert.ok(!('repsRange' in s.plan.days[0].exercises[0]), 'the Coach persists no repsRange for fixed reps');
+  await run(s); const m = await meso(s), [ov] = overlays(m);
+  assert.equal(overlays(m).length, 1); assert.deepEqual([ov.dimension, ov.previousValue, ov.appliedValue, ov.equipmentId], ['LOAD', 100, 105, null]);
+  assert.deepEqual(records(m)[0].magnitude.doubleProgression, { ceiling: 10, trigger: 'RIR_EASIER_AT_CEILING' });
 });

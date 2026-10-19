@@ -61,3 +61,19 @@ test('T583-C6 existing plans keep working: a stored plan without repsRange impor
   const out = importLikeCoach(legacy, { idPrefix: 'l' }); assert.equal(out.days[0].exercises[0].prescriptionExerciseId, 'legacy-pid-1'); assert.ok(!('repsRange' in out.days[0].exercises[0]));
   assert.deepEqual(normalizer.validateVdsenPlan(legacy), { ok: true });
 });
+
+// ---- T584: the definitive block for the external Motor ----
+test('T584-M1 the ready-to-paste Motor block covers every field of the output contract and states that it does NOT update the external Motor', () => {
+  const t = fs.readFileSync('references/motor-bloque-salida-entrenamiento.md', 'utf8');
+  for (const field of ['exerciseName', 'prescriptionExerciseId', 'exerciseId', 'repsRange', 'repsTarget', 'rirTarget', 'restSeconds', 'setIndex', 'load']) assert.ok(t.includes('`' + field + '`'), field);
+  assert.match(t, /NO actualiza el Motor externo/); assert.match(t, /Repeticiones fijas ⇒ OMÍTELO/); assert.match(t, /Nunca inventes el mínimo/); assert.match(t, /NUNCA lo inventes ni lo generes/);
+  assert.match(t, /OMÍTELO \(la app lo asigna al guardar/, 'new / substituted / moved exercises get no PID from the Motor');
+  assert.match(t, /Su ausencia no impide la progresión/, 'exerciseId is never a requirement');
+  assert.match(t, /No cambia ningún criterio científico/);
+});
+
+test('T584-M2 the in-repo generator prompt carries the same identifier rule (rule 22) and never asks the model to mint a prescriptionExerciseId', () => {
+  const p = generate._internal.buildSystemPrompt();
+  assert.match(p, /22\. IDENTIFICADORES \(OPCIONALES\)/); assert.match(p, /prescriptionExerciseId NUNCA lo inventes/); assert.match(p, /Ninguno de los dos es requisito para la progresión/);
+  assert.ok(!/genera(r)? (un )?prescriptionExerciseId/i.test(p));
+});

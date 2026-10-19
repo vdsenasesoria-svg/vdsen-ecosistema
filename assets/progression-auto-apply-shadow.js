@@ -110,6 +110,11 @@
       if (rec.action === 'maintain' && Number(rec.newReps) === targets[0])
         return { state: STATES.REJECTED, reasonCode: REASONS.NO_NUMERIC_DELTA, nextExposure: null };
       dimension = 'REPS';
+    } else if (rec.action === 'add_sets') {
+      // T584: a VOLUME recommendation (the Client's volume-first rule at ICS >= 8) stays a Coach decision and is never applied automatically, but it must NOT hide an
+      // independent LOAD / REPS progression. The numeric dimension is decided by the magnitude policy from the executed evidence (same rules, no new thresholds); with no
+      // valid candidate the record simply stays PENDING and not eligible. Other structural / fatigue actions (reduce_sets, deload, freeze_load) remain unsupported.
+      dimension = null;
     } else return { state: STATES.REJECTED, reasonCode: REASONS.UNSUPPORTED_ACTION, nextExposure: null };
     var next = resolveNextExposure(plan, pid, input.week, input.dayIndex);
     if (!next) return { state: STATES.REJECTED, reasonCode: REASONS.NO_NEXT_EXPOSURE, nextExposure: null };

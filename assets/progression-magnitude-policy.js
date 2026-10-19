@@ -255,7 +255,15 @@
     if (diff < 0) return 'D';
     return 'MAINTAIN';
   }
-  var DIRECTION = { A: 'UP', C: 'REST', D: 'DOWN', E: 'DOWN', 'D+E': 'DOWN', MAINTAIN: 'HOLD' };
+  // T584 DOUBLE PROGRESSION (docs/CONTEXTO_GENERADOR.md §8: reps first, then load; repsTarget is the CEILING of the range). Once the athlete's representative set is AT the
+  // ceiling there is no rep room left, so the next progression is LOAD, with Rule A's own magnitude (no new threshold):
+  //   - RIR easier than prescribed at the ceiling (target RIR < 2, where Rule A would ask for reps): LOAD +2.5% x RIR points   (ruleId A, doubleProgression flagged)
+  //   - effort exactly as prescribed at the ceiling of a REAL range (min < max): LOAD +2.5%                                    (ruleId DP)
+  // A fixed-rep prescription has no real range, so "as prescribed" there is just MAINTAIN (never an invented range). The reps target is NOT reset: repsTarget stays the ceiling,
+  // exactly as the Client's own double progression keeps it. The usual evidence rules still apply (2 comparable exposures, confirmed direction, safety).
+  function _atCeiling(reps, range) { return !!range && reps !== null && reps >= range.max; }
+  function _refine(cls, reps, range) { return (cls === 'MAINTAIN' && range && range.min < range.max && _atCeiling(reps, range)) ? 'DP' : cls; }
+  var DIRECTION = { A: 'UP', DP: 'UP', C: 'REST', D: 'DOWN', E: 'DOWN', 'D+E': 'DOWN', MAINTAIN: 'HOLD' };
   function _directionOf(rule) { return DIRECTION[rule] || 'UNKNOWN'; }
   // Decision-set values of an exposure (last executed set, same basis as the latest).
   function _decisionSet(exposure, prescription) {
@@ -311,7 +319,7 @@
     var missingReps = repsTarget - reps;
     var haveRir = rirReal !== null && rirTarget !== null;
     var rirDiff = haveRir ? rirReal - rirTarget : null;
-    var cls = _classify(reps, repsTarget, rirReal, rirTarget);
+    var cls = _refine(_classify(reps, repsTarget, rirReal, rirTarget), reps, range);
 
     // T523: previous COMPARABLE exposure's classification (same representative-set authority). "Comparable" is guaranteed by
     // cmp.kept: stale / excluded / non-comparable exposures never count as persistence.
@@ -357,6 +365,11 @@
       if (rirTarget >= 2) {
         res.dimension = 'LOAD';
         res.candidates = [_loadCandidate('A', load, PCT.A_LOAD * rirDiff, 1)];
+      } else if (_atCeiling(reps, range)) {
+        // T584: reps first, then load. At the ceiling Rule A's rep step has no room, so the same rule moves to LOAD with its own magnitude.
+        res.dimension = 'LOAD';
+        res.candidates = [_loadCandidate('A', load, PCT.A_LOAD * rirDiff, 1)];
+        res.doubleProgression = { ceiling: range.max, trigger: 'RIR_EASIER_AT_CEILING' };
       } else {
         res.dimension = 'REPS';
         res.candidates = [_repsCandidate('A', repsTarget, rirDiff, range)];
@@ -368,6 +381,10 @@
       res.unresolved = { code: REASONS.POLICY_BRANCH_REQUIRES_RESOLUTION, rules: ['A'] };
     } else if (cls === 'D') {
       review('D', 'EFFORT_HARDER_THAN_PRESCRIBED');
+    } else if (cls === 'DP') {
+      res.ruleId = 'DP'; res.dimension = 'LOAD';
+      res.candidates = [_loadCandidate('DP', load, PCT.A_LOAD, 1)];
+      res.doubleProgression = { ceiling: range.max, trigger: 'RIR_AS_PRESCRIBED_AT_CEILING' };
     } else {
       res.ruleId = 'MAINTAIN';
       res.reasonCodes.push(REASONS.NO_ADJUSTMENT_NEEDED);
@@ -393,7 +410,7 @@
       res.directionConsistency = 'NOT_APPLICABLE'; // a review state is not an action: no confirmation needed
     } else if (prior && (direction === 'UP' || direction === 'DOWN')) {
       var ps = _decisionSet(prior, input.prescription);
-      var priorDirection = (ps.reps === null || ps.repsTarget === null) ? 'UNKNOWN' : _directionOf(_classify(ps.reps, ps.repsTarget, ps.rirReal, ps.rirTarget));
+      var priorDirection = (ps.reps === null || ps.repsTarget === null) ? 'UNKNOWN' : _directionOf(_refine(_classify(ps.reps, ps.repsTarget, ps.rirReal, ps.rirTarget), ps.reps, range));
       res.previousExposureSignal = priorDirection;
       if (priorDirection === direction) res.directionConsistency = 'CONSISTENT';
       else if ((direction === 'UP' && priorDirection === 'DOWN') || (direction === 'DOWN' && priorDirection === 'UP')) {

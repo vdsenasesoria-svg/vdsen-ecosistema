@@ -11,7 +11,8 @@ const app = admin.initializeApp({ projectId: PROJECT }, 'client-e2e-server');
 const db = admin.firestore(app), auth = admin.auth(app);
 const trigger = require(path.join(root, 'api', 'autonomous-progression-trigger.js'));
 const calls = [];
-const handler = trigger.makeHandler({ db, verifyIdToken: (t) => auth.verifyIdToken(t), enabled: true, numericApplyEnabled: true });
+// E2E_ENABLED=0 -> the executor is DISARMED (202, zero writes); E2E_NUMERIC=0 -> materialize only (PENDING), never apply. Default: both ON (this is a local emulator, never production).
+const handler = trigger.makeHandler({ db, verifyIdToken: (t) => auth.verifyIdToken(t), enabled: process.env.E2E_ENABLED !== '0', numericApplyEnabled: process.env.E2E_NUMERIC !== '0' });
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.jpg': 'image/jpeg', '.png': 'image/png', '.svg': 'image/svg+xml', '.json': 'application/json', '.ttf': 'font/ttf', '.woff2': 'font/woff2' };
 const MOD = new RegExp('<script type="module">([\\s\\S]*?)<' + '/script>');
 const CFG = /const firebaseConfig = \{[\s\S]*?\};/;

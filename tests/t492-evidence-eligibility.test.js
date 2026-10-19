@@ -92,7 +92,7 @@ test('T492.7 competitive/enhanced/PED labels neither create nor remove eligibili
 test('T492.8 the source-rule branching lives in one classifier reused for the previous exposure', () => {
   const src = fs.readFileSync(path.join(__dirname, '..', 'assets/progression-magnitude-policy.js'), 'utf8');
   assert.equal((src.match(/function _classify\(/g) || []).length, 1);
-  assert.ok(src.includes('var cls = _classify(reps, repsTarget, rirReal, rirTarget);') && src.includes('_classify(ps.reps, ps.repsTarget, ps.rirReal, ps.rirTarget)'));
+  assert.ok(src.includes('var cls = _refine(_classify(reps, repsTarget, rirReal, rirTarget), reps, range);') && src.includes('_refine(_classify(ps.reps, ps.repsTarget, ps.rirReal, ps.rirTarget), ps.reps, range)'));
   assert.ok(!/if \(incomplete\)/.test(src));
 });
 

@@ -81,10 +81,12 @@ test('T583-E3 ACTUAL load feedback: the athlete trains with 102.5 (not the sugge
   assert.deepEqual(records(m).filter((r) => r.source.week === 2).map((r) => r.state), ['CONSUMED', 'CONSUMED']);
   const next = ovOf(m, s.pids[0], 4); assert.ok(next, 'a new overlay for the next exposure');
   assert.deepEqual([next.previousValue, next.appliedValue, next.unit, next.equipmentId], [102.5, 107.5, 'KG', null], 'the baseline is the EXECUTED load');
-  assert.equal(ovOf(m, s.pids[1], 4), undefined, 'REPS at the range top with the prescribed effort: maintained (no invented change)');
+  const dp = ovOf(m, s.pids[1], 4);   // T584 double progression: REPS reached the ceiling (12) with the prescribed effort => the next progression is LOAD
+  assert.deepEqual([dp.dimension, dp.previousValue, dp.appliedValue, dp.unit, dp.equipmentId], ['LOAD', 100, 102.5, 'KG', null], 'T584: at the range ceiling with the prescribed RIR the double progression moves to LOAD');
+  assert.equal(records(m).filter((r) => r.source.week === 3 && r.prescriptionExerciseId === s.pids[1])[0].magnitude.ruleId, 'DP');
   assert.equal(overlays(m).filter((o) => o.target.week === 3).length, 2, 'the first overlays are not duplicated or rewritten');
   await run(s); await run(s); await Promise.all([run(s), run(s), run(s), run(s), run(s)]); m = await meso(s);
-  assert.equal(overlays(m).length, 3); assert.equal(records(m).length, 4, 'repeated and simultaneous requests add nothing');
+  assert.equal(overlays(m).length, 4); assert.equal(records(m).length, 4, 'repeated and simultaneous requests add nothing');
 });
 
 test('T583-E4 MAINTAIN (reps below target at the prescribed effort): the Client says maintain, the server applies nothing', async () => {
@@ -104,11 +106,11 @@ test('T583-E6 INDIVIDUAL restriction: the Client recommends an increase, the rep
   assert.equal(s.entries.postsession_2_0.articularPain.present, true, 'the pain report was written by the Client post-session modal');
 });
 
-test('T583-E7 LEGACY plan (PID + name + sets only): LOAD works without any new field; fixed reps get no invented range, so REPS do not move', async () => {
+test('T583-E7 LEGACY plan (PID + name + sets only): LOAD works without any new field; fixed reps get no invented range, so the easier-RIR progression is LOAD', async () => {
   const s = await seed('E'); const out = await run(s); const m = await meso(s);
-  const o0 = ovOf(m, s.pids[0]); assert.deepEqual([o0.dimension, o0.previousValue, o0.appliedValue, o0.equipmentId], ['LOAD', 100, 105, null]);
-  assert.equal(ovOf(m, s.pids[1]), undefined); assert.equal(overlays(m).length, 1);
-  assert.deepEqual(out.applied.map((a) => a.written).sort(), [false, true]);
+  const o0 = ovOf(m, s.pids[0]), o1 = ovOf(m, s.pids[1]); assert.deepEqual([o0.dimension, o0.previousValue, o0.appliedValue, o0.equipmentId], ['LOAD', 100, 105, null]);
+  assert.deepEqual([o1.dimension, o1.previousValue, o1.appliedValue, o1.equipmentId], ['LOAD', 100, 105, null], 'T584: fixed reps have no rep room (no range is invented), so an easier RIR moves by LOAD');
+  assert.equal(overlays(m).length, 2); assert.deepEqual(out.applied.map((a) => a.written), [true, true]);
 });
 
 test('T583-E8 the Coach decides: a Coach decision on ONE exercise after the application makes the Client show its base prescription; the other exercise keeps its adjustment', async () => {

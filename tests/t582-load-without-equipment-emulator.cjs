@@ -122,7 +122,8 @@ test('T582-06 REPS progress INSIDE the prescribed range; fixed reps get no inven
   assert.deepEqual(out.applied.map((a) => [a.written, a.blocked]), [[true, null]]); assert.equal(ov.dimension, 'REPS'); assert.equal(ov.previousValue, 10); assert.equal(ov.appliedValue, 12); assert.equal(ov.equipmentId, null);
   const e = await eff(inRange, m, ov); assert.equal(e.provenance, 'CANONICAL_OVERLAY'); assert.deepEqual(e.sets.map((x) => x.effective.repsTarget), [12, 12, 12]);
   const fixed = await seed({ rirTarget: 1, rirReal: 3, recFor: () => ({ action: 'increase_reps', newReps: 12 }) });
-  assert.ok(!('repsRange' in fixed.plan.days[0].exercises[0]), 'fixed reps: no range invented'); await run(fixed); assert.equal(overlays(await meso(fixed)).length, 0, 'no room to progress reps without a range');
+  assert.ok(!('repsRange' in fixed.plan.days[0].exercises[0]), 'fixed reps: no range invented'); await run(fixed);
+  const [fo] = overlays(await meso(fixed)); assert.deepEqual([fo.dimension, fo.previousValue, fo.appliedValue], ['LOAD', 100, 105], 'T584: no rep room without a range => reps first is exhausted, the same rule moves to LOAD');
   const over = await seed({ rirTarget: 1, rirReal: 5, repsRange: { min: 8, max: 12 }, recFor: () => ({ action: 'increase_reps', newReps: 12 }) }); await run(over);
   assert.equal(overlays(await meso(over)).length, 0, 'a +4 step would exceed the ceiling (14 > 12): not truncated, not applied');
 });
