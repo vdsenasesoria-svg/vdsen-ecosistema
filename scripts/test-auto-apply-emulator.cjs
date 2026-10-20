@@ -40,7 +40,8 @@ const SUITES = [
   { name: 'integral progression matrix', file: path.join('tests', 't581-integral-emulator.cjs') },
   { name: 'load without equipment', file: path.join('tests', 't582-load-without-equipment-emulator.cjs') },
   { name: 'real client chain', file: path.join('tests', 't583-real-client-chain-emulator.cjs') },
-  { name: 'real client chain ICS8', file: path.join('tests', 't584-real-client-chain-emulator.cjs') }
+  { name: 'real client chain ICS8', file: path.join('tests', 't584-real-client-chain-emulator.cjs') },
+  { name: 'autonomous authority', file: path.join('tests', 't586-autonomous-authority-emulator.cjs') }
 ].filter(x => fs.existsSync(path.join(__dirname, '..', x.file)));
 const ONLY = process.env.VDSEN_EMU_ONLY;   // e.g. "rules" to run a single suite (used for RED demonstrations)
 const isWin = process.platform === 'win32';

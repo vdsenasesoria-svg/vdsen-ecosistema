@@ -12,6 +12,8 @@ var visualCatalog = require('../assets/exercise-visual-catalog.js');
 // The consumer loads this module through an injected require (_req), which Vercel's file tracer cannot follow: without this literal
 // require it is absent from the deployed function and applyPending throws MODULE_NOT_FOUND (hosted-only; see _functionBundleTrace.test.js).
 require('../assets/progression-effective-prescription.js');
+// T586: same reason for the structural / fatigue rules (loaded lazily by the magnitude policy through a literal require).
+require('../assets/progression-structural-policy.js');
 
 // T582 (owner decision): equipment data is OPTIONAL. LOAD no longer blocks for lack of equipment identity / increments: it falls back to an advisory target
 // (see resolveAdvisoryLoad). These reasons remain only as classifications for a consumer that is handed an explicit equipment resolution, and
@@ -71,7 +73,7 @@ async function materialize(db, clientId, requestedPlanId, clock) {
     var out = shadow.materializeRecords({
       clientId: clientId, planId: requestedPlanId, activePlanId: client.activePlanId,
       plan: plan, interventions: client.coachInterventions, entries: authority.entries || {},
-      records: (meso && meso.progressionApplications) || {}, at: _now(clock), isStarted: consumer.targetStarted
+      records: (meso && meso.progressionApplications) || {}, overlays: (meso && meso.nextExposureOverlays) || {}, structural: true, at: _now(clock), isStarted: consumer.targetStarted
     });
     // SRA is attached as a read-only provenance trace, not a second decision
     // engine and never a gate for an otherwise valid progression candidate.

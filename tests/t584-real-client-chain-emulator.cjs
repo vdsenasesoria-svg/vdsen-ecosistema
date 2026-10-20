@@ -24,6 +24,8 @@ async function seed(name, o) {
   o = o || {};
   const sc = FX.scenarios[name], tag = 't584-' + name + '-' + (++seq) + '-' + Date.now().toString(36), uid = 'ath-' + tag, coachId = 'coach-' + tag, planId = 'plan-' + tag;
   const plan = Object.assign(J(sc.plan), { clientId: uid, coachId });
+  // T586: `capSets` declares a heavy compound (fatigue cost 5 => at most 3 sets): volume cannot grow, so the evaluation moves on to LOAD / REPS (the T584 contract this chain was written for).
+  if (o.capSets) plan.days.forEach((d) => d.exercises.forEach((e) => { e.fatigueCost = 5; }));
   const entries = J(o.through === 3 ? sc.entriesThroughW3 : sc.entriesThroughW2), pids = plan.days[0].exercises.map((e) => e.prescriptionExerciseId);
   await db.doc('clients/' + uid).set({ coachId, activePlanId: planId, coachInterventions: o.interventions || [] });
   await db.doc('coaches/' + coachId).set({ autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: [] } });
@@ -54,21 +56,29 @@ test('T584-E1 provenance: the entries are what the REAL Client wrote with ICS >=
   }
 });
 
-test('T584-E2 ICS >= 8: the Client recommends add_sets and the server STILL evaluates LOAD (orientative) and REPS (inside the Motor range) from the evidence; the volume decision stays with the Coach', async () => {
+test('T586-E2 ICS >= 8 and sustained performance: the server now ADDS the set itself (applied, visible as 4 rows in the next exposure, consumed once executed); the plan is never rewritten', async () => {
   const s = await seed('G'); const planBefore = JSON.stringify((await db.doc('plans/' + s.planId).get()).data());
   const out = await run(s); assert.equal(out.status, 'MATERIALIZED', JSON.stringify(out)); assert.deepEqual(out.applied.map((a) => [a.written, a.blocked]), [[true, null], [true, null]]);
   const m = await meso(s), o0 = ovOf(m, s.pids[0]), o1 = ovOf(m, s.pids[1]);
+  assert.deepEqual([o0.dimension, o0.previousValue, o0.appliedValue, o0.equipmentId], ['SETS', 3, 4, null]); assert.deepEqual([o1.dimension, o1.previousValue, o1.appliedValue], ['SETS', 3, 4]);
+  assert.ok(records(m).every((r) => r.action === 'add_sets' && r.state === 'APPLIED'), 'the Client recommendation was the trigger; the server decided and applied the SAME structural change');
+  assert.equal(JSON.stringify((await db.doc('plans/' + s.planId).get()).data()), planBefore, 'the base plan is not rewritten: the set exists only in the effective prescription');
+  assert.equal(s.entries.progrec_2_0.recommendations[0].newSets, 4, 'Client and server agree: the Client recommended 4 sets and the server prescribed 4 sets');
+  const e0 = await eff(s, m, o0), e1 = await eff(s, m, o1);
+  assert.equal(e0.sets.length, 4); assert.equal(e1.sets.length, 4); assert.equal(e0.presentation.text, '3 → 4 series'); assert.deepEqual(e0.sets.map((x) => x.effective.setIndex), [0, 1, 2, 3]);
+});
+
+test('T584-E2b ICS >= 8 with the volume capped (heavy compound, 3 sets max): the server evaluates LOAD (orientative) and REPS (inside the Motor range) from the evidence, exactly as in T584', async () => {
+  const s = await seed('G', { capSets: true }); const out = await run(s); assert.deepEqual(out.applied.map((a) => [a.written, a.blocked]), [[true, null], [true, null]]);
+  const m = await meso(s), o0 = ovOf(m, s.pids[0]), o1 = ovOf(m, s.pids[1]);
   assert.deepEqual([o0.dimension, o0.previousValue, o0.appliedValue, o0.unit, o0.equipmentId], ['LOAD', 100, 105, 'KG', null]);
   assert.deepEqual([o1.dimension, o1.previousValue, o1.appliedValue, o1.equipmentId], ['REPS', 10, 12, null]);
-  assert.ok(records(m).every((r) => r.action === 'add_sets' && r.state === 'APPLIED'), 'the record keeps the Client volume recommendation as its source action');
-  assert.equal(JSON.stringify((await db.doc('plans/' + s.planId).get()).data()), planBefore, 'the plan is not rewritten: NO set is added automatically (volume is the Coach decision)');
-  assert.equal(s.entries.progrec_2_0.recommendations[0].newSets, 4, 'the add_sets recommendation stays visible to the Coach in the logbook / monitor');
   const e0 = await eff(s, m, o0), e1 = await eff(s, m, o1);
   assert.equal(e0.sets[0].effective.load, 105); assert.deepEqual(e1.sets.map((x) => x.effective.repsTarget), [12, 12, 12]); assert.equal(e0.sets.length, 3, 'still 3 sets');
 });
 
-test('T584-E3 DOUBLE PROGRESSION + ACTUAL load: the athlete used 102.5 (not 105) and reached the 12-rep ceiling at the prescribed RIR; the next evaluation moves the curl to LOAD and starts the press from 102.5', async () => {
-  const s = await seed('G'); await run(s); let m = await meso(s); const receipts = {};
+test('T584-E3 DOUBLE PROGRESSION + ACTUAL load (volume capped): the athlete used 102.5 (not 105) and reached the 12-rep ceiling at the prescribed RIR; the next evaluation moves the curl to LOAD and starts the press from 102.5', async () => {
+  const s = await seed('G', { capSets: true }); await run(s); let m = await meso(s); const receipts = {};
   records(m).forEach((r) => { const ov = ovOf(m, r.prescriptionExerciseId, 3); receipts[r.key] = { recordKey: r.key, overlayKey: ov.key, dimension: ov.dimension, appliedValue: ov.appliedValue, provenance: 'CANONICAL_OVERLAY', ackAt: clock() }; });
   const w3 = J(FX.scenarios.G.entriesThroughW3); assert.deepEqual([0, 1, 2].map((i) => w3['log_3_0_0_s' + i].carga), ['102.5', '102.5', '102.5']); assert.deepEqual([0, 1, 2].map((i) => w3['log_3_0_1_s' + i].reps), ['12', '12', '12']);
   await db.doc('logs/' + s.uid + '/mesos/' + s.planId).set({ entries: w3, consumptionReceipts: receipts }, { merge: true }); await db.doc('logs/' + s.uid).set({ entries: w3 }, { merge: true });
@@ -80,9 +90,8 @@ test('T584-E3 DOUBLE PROGRESSION + ACTUAL load: the athlete used 102.5 (not 105)
   const r1 = records(m).filter((r) => r.source.week === 3 && r.prescriptionExerciseId === s.pids[1])[0];
   assert.equal(r1.magnitude.ruleId, 'DP'); assert.deepEqual(r1.magnitude.doubleProgression, { ceiling: 12, trigger: 'RIR_AS_PRESCRIBED_AT_CEILING' });
   const e1 = await eff(s, m, n1); assert.equal(e1.provenance, 'CANONICAL_OVERLAY'); assert.equal(e1.sets[0].effective.load, 102.5);
-  // KNOWN LIMIT (documented, not hidden): overlays are per EXPOSURE. The load step never touches reps, and the REPS overlay of the previous exposure (12) does not carry over, so this exposure's reps target is the
-  // BASE prescription (10). With Motor-compliant plans (repsTarget = the range ceiling) the base IS the ceiling, which is the Client's own double-progression contract (newReps = repsTarget).
-  assert.deepEqual(e1.sets.map((x) => x.effective.repsTarget), [10, 10, 10]);
+  // T586 (continuity, replaces the T584 "known limit"): the REPS overlay of the previous exposure (12, CONSUMED) is carried, so the load step no longer drops the athlete back to the base reps.
+  assert.deepEqual(e1.sets.map((x) => x.effective.repsTarget), [12, 12, 12]);
   await run(s); await Promise.all([run(s), run(s), run(s), run(s), run(s)]); m = await meso(s);
   assert.equal(overlays(m).length, 4); assert.equal(records(m).length, 4, 'repeated and simultaneous requests add nothing');
 });
@@ -92,22 +101,25 @@ test('T584-E4 flags OFF with the real Client data: DISARMED writes nothing; nume
   assert.deepEqual(await run(s, { enabled: false }), { status: 'DISARMED', writes: 0 }); assert.equal(await digest(s), d0);
   const obs = await run(s, { numericApplyEnabled: false }); assert.deepEqual([obs.applied, obs.consumed], [[], []]); let m = await meso(s);
   assert.equal(overlays(m).length, 0); assert.ok(records(m).every((r) => r.state === 'PENDING'));
-  assert.deepEqual(records(m).map((r) => r.magnitude.candidates[0].dimension).sort(), ['LOAD', 'REPS'], 'the observation shows the LOAD and REPS decisions that would apply');
+  assert.deepEqual(records(m).map((r) => r.magnitude.candidates[0].dimension).sort(), ['SETS', 'SETS'], 'the observation shows the structural decisions that would apply');
   const keys = records(m).map((r) => r.key).sort();
   await run(s); m = await meso(s); assert.deepEqual(records(m).map((r) => r.key).sort(), keys, 'no new record: the activation applies the observed ones'); assert.equal(overlays(m).length, 2);
   const t = await seed('I'); await open(['someone-else']); const d1 = await digest(t); assert.equal((await run(t, { keepAllowlist: true })).status, 'OUT_OF_ALLOWLIST'); assert.equal(await digest(t), d1);
 });
 
-test('T584-E5 insufficient performance with ICS 8: nothing is increased; it goes to Coach review', async () => {
+test('T586-E5 insufficient performance with ICS 8 (6 reps to failure): nothing is increased; effort outside the band FREEZES the load (applied); a reps regression has no VDSEN rule and still goes to Coach review', async () => {
   const s = await seed('J'); const out = await run(s); const m = await meso(s);
-  assert.equal(overlays(m).length, 0); assert.deepEqual(out.applied.map((a) => [a.written, a.reason]), [[false, 'COACH_REVIEW_REQUIRED'], [false, 'COACH_REVIEW_REQUIRED']]);
+  assert.equal(overlays(m).length, 1, 'only the exercise whose effort falls outside the +-1 band is frozen'); assert.equal(overlays(m)[0].dimension, 'FREEZE'); assert.equal(overlays(m)[0].appliedValue, 100);
+  assert.deepEqual(out.applied.map((a) => [a.written, a.reason]).sort(), [[false, 'COACH_REVIEW_REQUIRED'], [true, null]], 'no rule defines a reps regression: that part is NOT guessed');
+  assert.ok(!overlays(m).some((o) => o.dimension === 'LOAD' || o.dimension === 'REPS' || o.dimension === 'SETS'), 'never an increase');
+  assert.equal((await eff(s, m, overlays(m)[0])).presentation.text, 'Carga congelada · 100 kg');
 });
 
 test('T584-E6 individual restriction with ICS 8: the independent evaluation computes the candidates but joint pain blocks them (SAFETY_CONFLICT)', async () => {
   const s = await seed('K'); const out = await run(s); const m = await meso(s);
   assert.equal(s.entries.postsession_2_0.articularPain.present, true); assert.equal(overlays(m).length, 0);
   assert.deepEqual(out.applied.map((a) => [a.written, a.reason]), [[false, 'SAFETY_CONFLICT'], [false, 'SAFETY_CONFLICT']]);
-  assert.deepEqual(records(m).map((r) => r.magnitude.candidates[0].dimension).sort(), ['LOAD', 'REPS']);
+  assert.deepEqual(records(m).map((r) => r.magnitude.candidates[0].dimension).sort(), ['SETS', 'SETS'], 'the decision is computed, but pain blocks it');
 });
 
 test('T584-E7 the Coach decides: a decision on one exercise makes the Client show its base prescription; the other keeps its adjustment', async () => {
