@@ -42,7 +42,8 @@ const SUITES = [
   { name: 'real client chain', file: path.join('tests', 't583-real-client-chain-emulator.cjs') },
   { name: 'real client chain ICS8', file: path.join('tests', 't584-real-client-chain-emulator.cjs') },
   { name: 'autonomous authority', file: path.join('tests', 't586-autonomous-authority-emulator.cjs') },
-  { name: 'fleet readiness', file: path.join('tests', 't585-fleet-readiness-emulator.cjs') }
+  { name: 'fleet readiness', file: path.join('tests', 't585-fleet-readiness-emulator.cjs') },
+  { name: 'pilot stop', file: path.join('tests', 't587-pilot-stop-emulator.cjs') }
 ].filter(x => fs.existsSync(path.join(__dirname, '..', x.file)));
 const ONLY = process.env.VDSEN_EMU_ONLY;   // e.g. "rules" to run a single suite (used for RED demonstrations)
 const isWin = process.platform === 'win32';
