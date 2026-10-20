@@ -497,7 +497,8 @@
         <h3 class="text-xl font-bold" id="modalClientName">—</h3>
         <button onclick="navClient(1)" class="text-[#888] hover:text-[#F4F4F0] text-lg px-2 py-1" title="Siguiente cliente">▶</button>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2 flex-wrap justify-end">
+        <button id="modalExpedientePdfBtn" type="button" style="display:none;padding:4px 8px;border-radius:6px;border:1px solid rgba(183,244,0,.55);background:rgba(183,244,0,.11);color:#B7F400;font-size:12px;cursor:pointer" title="Descargar ficha inicial y renovación como expediente PDF confidencial">📄 Expediente PDF</button>
         <button id="modalExportClientBtn" type="button" style="display:none;padding:4px 8px;border-radius:6px;border:1px solid rgba(68,187,136,.5);background:rgba(68,187,136,.1);color:#44BB88;font-size:12px;cursor:pointer" title="Exportar toda la información de este cliente (ZIP)">⬇ Exportar cliente</button>
         <button id="modalDeleteClientBtn" style="display:none;padding:4px 8px;border-radius:6px;border:1px solid #FF4444;background:rgba(255,68,68,.1);color:#FF4444;font-size:12px;cursor:pointer" title="Eliminar cliente">🗑 Eliminar</button>
         <button onclick="closeClientModal()" class="text-[#888] hover:text-white text-xl leading-none">✕</button>
@@ -1610,6 +1611,7 @@
   <script src="assets/client-export/firestore-io.js"></script>
   <script src="assets/client-export/runner.js"></script>
   <script src="assets/client-export/ui.js"></script>
+  <script src="assets/client-export/expediente-pdf.js"></script>
   <script src="assets/sra-context.js"></script>
   <script src="assets/progression-magnitude-policy.js"></script>
   <script src="assets/progression-equipment-resolver.js"></script>
@@ -3116,6 +3118,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     if (window.VDSEN_CE_UI && window.VDSEN_CE_UI.closeActive) window.VDSEN_CE_UI.closeActive();
     const _x = document.getElementById('modalExportClientBtn');
     if (_x) { _x.style.display = 'none'; _x.onclick = null; }
+    const _xp = document.getElementById('modalExpedientePdfBtn');
+    if (_xp) { _xp.style.display = 'none'; _xp.onclick = null; _xp.disabled = false; }
     // Selectores de cliente (<select> con options "value=clientId>nombre"): se quitan las opciones que
     // nombran a un cliente del coach saliente. No se tocan las opciones estaticas ajenas al cliente.
     const _known = new Set(_clientIdList.concat(Object.keys(_clientNameMap)));
@@ -11893,6 +11897,46 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   }
   window._vdsenOpenClientExport = _vdsenOpenClientExport;
 
+  // PDF de la ficha: datos nuevos, de un solo cliente, sin escrituras ni Admin.
+  async function _vdsenOpenExpedientePdf(clientId) {
+    const coachUid = currentCoach && currentCoach.uid;
+    if (!coachUid || _detailClientId !== clientId) return;
+    if (!window.VDSEN_CE_EXPEDIENTE_PDF || !window.VDSEN_CE_SECURITY || !window.jspdf || !window.jspdf.jsPDF) {
+      showToast('El generador de PDF no está disponible', true); return;
+    }
+    const approved = await _askConfirm('¿Descargar la ficha de este cliente como expediente PDF confidencial? Guárdalo únicamente en un lugar seguro.');
+    if (!approved || !currentCoach || currentCoach.uid !== coachUid || _detailClientId !== clientId) return;
+    const button = document.getElementById('modalExpedientePdfBtn');
+    if (button) { button.disabled = true; button.textContent = 'Preparando PDF…'; }
+    try {
+      const clientSnap = await getDoc(doc(db, 'clients', clientId));
+      if (!currentCoach || currentCoach.uid !== coachUid || _detailClientId !== clientId) return;
+      if (!clientSnap.exists()) throw new Error('CLIENT_NOT_FOUND');
+      window.VDSEN_CE_SECURITY.authorizeClient({ id: clientSnap.id, data: clientSnap.data() }, clientId, coachUid);
+      const [initialSnap, renewalSnap, publicSnap] = await Promise.all([
+        getDoc(doc(db, 'fichas_onboarding', clientId)),
+        getDoc(doc(db, 'fichas_renovacion', clientId)),
+        getDocs(query(collection(db, 'fichas_publicas'), where('coachId', '==', coachUid), where('clientUid', '==', clientId)))
+      ]);
+      if (!currentCoach || currentCoach.uid !== coachUid || _detailClientId !== clientId) return;
+      const forms = publicSnap.docs.map(snap => ({ id: snap.id, data: snap.data() }))
+        .filter(f => f.data && f.data.coachId === coachUid && f.data.clientUid === clientId);
+      const model = window.VDSEN_CE_EXPEDIENTE_PDF.buildModel({
+        client: clientSnap.data(),
+        onboarding: initialSnap.exists() ? initialSnap.data() : null,
+        renewal: renewalSnap.exists() ? renewalSnap.data() : null,
+        publicForms: forms
+      });
+      if (!model.sections.length) { showToast('Este cliente todavía no tiene una ficha registrada', true); return; }
+      window.VDSEN_CE_EXPEDIENTE_PDF.download(model, window.jspdf.jsPDF);
+      showToast('Expediente PDF descargado');
+    } catch (_err) {
+      showToast('No se pudo generar el expediente. Verifica el acceso a la ficha.', true);
+    } finally {
+      if (button) { button.disabled = false; button.textContent = '📄 Expediente PDF'; }
+    }
+  }
+
   async function showClientDetail(clientId, opts) {
     var _initialTab = (opts && opts.tab) || 'ficha';
     _detailClientId   = clientId;
@@ -11909,6 +11953,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     // fails to load. It is rebound below only once the client proves to be ours.
     const _expReset = document.getElementById('modalExportClientBtn');
     if (_expReset) { _expReset.style.display = 'none'; _expReset.onclick = null; }
+    const _pdfReset = document.getElementById('modalExpedientePdfBtn');
+    if (_pdfReset) { _pdfReset.style.display = 'none'; _pdfReset.onclick = null; _pdfReset.disabled = false; }
 
     // CN2 — firestore.rules responde a la lectura de un plan ausente/ajeno con permission-denied.
     // Antes, eso abortaba el detalle del cliente entero cuando su `activePlanId` estaba obsoleto,
@@ -11936,6 +11982,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if (_expBtn) {
       _expBtn.style.display = '';
       _expBtn.onclick = () => _vdsenOpenClientExport(clientId, c.displayName || c.email || clientId);
+    }
+    const _pdfBtn = document.getElementById('modalExpedientePdfBtn');
+    if (_pdfBtn && currentCoach && c.coachId === currentCoach.uid) {
+      _pdfBtn.style.display = '';
+      _pdfBtn.onclick = () => _vdsenOpenExpedientePdf(clientId);
     }
     const _delBtn = document.getElementById('modalDeleteClientBtn');
     if (_delBtn) {
