@@ -94,10 +94,11 @@ test('T583-E4 MAINTAIN (reps below target at the prescribed effort): the Client 
   assert.equal(overlays(m).length, 0, JSON.stringify(out)); assert.ok(records(m).every((r) => r.state === 'REJECTED' && r.reasonCode === 'NO_NUMERIC_DELTA'), JSON.stringify(records(m).map((r) => [r.state, r.reasonCode])));
 });
 
-test('T583-E5 INSUFFICIENT performance (6 reps to failure): no increase; the case goes to Coach review', async () => {
+test('T583-E5 INSUFFICIENT performance (6 reps to failure): no increase; (T586) effort outside the band freezes the load where a VDSEN rule exists, and a reps regression (no rule) still goes to Coach review', async () => {
   const s = await seed('C'); const out = await run(s); const m = await meso(s);
-  assert.equal(overlays(m).length, 0); assert.deepEqual(out.applied.map((a) => [a.written, a.reason]), [[false, 'COACH_REVIEW_REQUIRED'], [false, 'COACH_REVIEW_REQUIRED']]);
-  assert.ok(records(m).every((r) => r.state === 'PENDING'), 'nothing is applied or discarded silently: it stays reviewable');
+  assert.ok(overlays(m).every((o) => o.dimension === 'FREEZE'), 'never an increase: the only possible application is a held load'); assert.ok(overlays(m).length <= 1);
+  assert.deepEqual(out.applied.map((a) => [a.written, a.reason]).filter((x) => x[0] === false), out.applied.map((a) => [a.written, a.reason]).filter((x) => x[0] === false).map(() => [false, 'COACH_REVIEW_REQUIRED']), 'whatever is not applied goes to review, silently discarding nothing');
+  assert.ok(records(m).every((r) => r.state === 'PENDING' || r.state === 'APPLIED'), 'nothing is discarded silently: it is applied (freeze) or stays reviewable');
 });
 
 test('T583-E6 INDIVIDUAL restriction: the Client recommends an increase, the reported joint pain blocks it (SAFETY_CONFLICT)', async () => {

@@ -15,19 +15,21 @@ Suite: `tests/t585-fleet-readiness-emulator.cjs` (emulador de Firestore, datos s
 (`PLAN_TIMESTAMP_MISSING`) y sin PID no hay identidad (`IDENTITY_MISSING`). Son los planes de la ruta antigua "genera y activa de inmediato", que no estampa ninguno de los dos.
 `exerciseId` y `repsRange` NO son bloqueantes: LOAD funciona sin equipamiento (T582) y, sin rango, la progresión usa carga.
 
-## 2. Qué hace el motor con cada perfil (10 perfiles = el tope de la allowlist)
+## 2. Qué hace el motor con cada perfil (10 perfiles = el tope de la allowlist; contrato T586: el servidor es la autoridad)
 | Perfil | Resultado |
 | --- | --- |
-| Más fácil que el objetivo, KG | LOAD 100 → 105 |
-| Más fácil que el objetivo, LB | LOAD 225 → 236 (grano de 1 LB) |
+| Más fácil que el objetivo, KG (ICS 7,5) | LOAD 100 → 105 |
+| Más fácil que el objetivo, LB (ICS 7,5) | LOAD 225 → 236 (grano de 1 LB) |
 | Rango 8–12 con margen | REPS 10 → 12 |
-| En el techo del rango, el Cliente dice "mantener" | sin cambio (`NO_NUMERIC_DELTA`): el Cliente es compuerta |
-| Más duro que el objetivo (RIR por debajo) | sin cambio |
-| El Cliente pide deload | **rechazado** (`UNSUPPORTED_ACTION`), nada se aplica |
-| El Cliente pide reducir series | **rechazado** (`UNSUPPORTED_ACTION`), nada se aplica |
-| ICS ≥ 8 → "añadir serie" | LOAD 100 → 105 (ya no bloquea) |
-| Sin identidad de catálogo | LOAD orientativo en ambos ejercicios |
-| Una sola exposición | nada (necesita 2 exposiciones comparables) |
+| En el techo del rango, esfuerzo como lo prescrito | sin cambio (`NO_NUMERIC_DELTA`) |
+| Más duro que lo prescrito (series al fallo) | **CONGELAR** carga (100 → 100) |
+| Fatiga: RPE 9,8 + sueño 5 h | **DESCARGA** (3 → 2 series, carga × 0,9) |
+| Dolor muscular 3 | **−1 serie** (3 → 2) |
+| ICS 10 y rendimiento sostenido | **+1 serie** (3 → 4) |
+| Sin identidad de catálogo (ICS 7,5) | LOAD orientativo en ambos ejercicios |
+| Una sola exposición | nada (necesita 2 comparables, salvo reglas de seguridad) |
+
+La recomendación del Cliente solo dispara la evaluación; lo que se aplica lo decide el servidor con su propia evidencia (por eso, con ICS ≥ 8 y rendimiento sostenido, la primera progresión es una serie, no carga).
 
 Invariantes comprobados: nada cruza entre clientes; plan, coach, cliente y bitácora quedan idénticos byte a byte (el ejecutor solo refleja un `progressionApplicationSummary` de solo lectura);
 cuatro semanas seguidas sin doble aplicación aunque el barrido corra dos veces; un objetivo nunca baja por sí solo; DISARMED no escribe nada; con la aplicación numérica apagada solo queda PENDING;

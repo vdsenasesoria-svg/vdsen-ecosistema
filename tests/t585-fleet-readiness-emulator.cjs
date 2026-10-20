@@ -37,6 +37,7 @@ async function athlete(o) {
   weeks.forEach((w) => names.forEach((n, e) => [0, 1, 2].forEach((s) => {
     logs['log_' + w + '_0_' + e + '_s' + s] = Object.assign({ done: true, carga: String(load), reps: String(o.reps || 10), unit, rir: o.rirTarget || 2, rir_real: o.rirReal === undefined ? 4 : o.rirReal, ics: o.ics || 8, ts: T0 + w * 1e6 + e * 100 + s }, pids[e] ? { prescriptionExerciseId: pids[e] } : {});
   })));
+  if (o.post) logs['postsession_' + last + '_0'] = Object.assign({ eimd: 2, articularPain: { present: false, pattern: '' }, sleepHours: 7.5, rpeAverage: 7, ts: T0 + last * 1e6 + 9e5 }, o.post);
   if (o.action) logs['progrec_' + last + '_0'] = { calculatedAt: new Date(T0 + last * 1e6 + 60000).toISOString(), recommendations: names.map((n, e) => Object.assign({ exerciseName: n, action: o.action, newLoad: o.newLoad || load + 5, newReps: o.newReps || 10 }, pids[e] ? { prescriptionExerciseId: pids[e] } : {})) };
   await db.doc('clients/' + uid).set({ coachId, activePlanId: planId, coachInterventions: [] });
   await db.doc('coaches/' + coachId).set({ autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: [] } });
@@ -54,17 +55,17 @@ const records = (m) => Object.values((m && m.progressionApplications) || {});
 const digest = async (s) => JSON.stringify(await Promise.all(['clients/' + s.uid, 'plans/' + s.planId, 'coaches/' + s.coachId, 'logs/' + s.uid].map(async (p) => { const d = (await db.doc(p).get()).data(); if (p.startsWith('logs/') && d) { const { progressionApplicationSummary, ...rest } = d; return rest; } return d; })));
 
 // ---- the fleet: ten realistic athlete profiles (the release allowlist cap) ----
-const PROFILES = [
-  { key: 'F01 easier than target, KG', o: { rirTarget: 2, rirReal: 4, action: 'increase_load' } },
-  { key: 'F02 easier than target, LB', o: { unit: 'LB', load: 225, rirTarget: 2, rirReal: 4, action: 'increase_load', newLoad: 235 } },
-  { key: 'F03 rep range with room (8-12 @ 10)', o: { repsRange: { min: 8, max: 12 }, rirTarget: 1, rirReal: 3, action: 'increase_reps', newReps: 11 } },
-  { key: 'F04 at the ceiling of the range', o: { repsRange: { min: 8, max: 12 }, reps: 12, repsTarget: 12, rirTarget: 2, rirReal: 2, action: 'maintain', newReps: 12 } },
-  { key: 'F05 harder than target (RIR below)', o: { rirTarget: 2, rirReal: 0, action: 'maintain' } },
-  { key: 'F06 Client says deload (unsupported)', o: { rirTarget: 2, rirReal: 1, action: 'deload' } },
-  { key: 'F07 Client says reduce_sets (unsupported)', o: { rirTarget: 2, rirReal: 1, action: 'reduce_sets' } },
-  { key: 'F08 ICS>=8 add_sets only', o: { rirTarget: 2, rirReal: 4, ics: 10, action: 'add_sets' } },
-  { key: 'F09 no catalog identity (advisory)', o: { names: ['Press Convergente Inclinado', 'Curl femoral sentado máquina'], rirTarget: 2, rirReal: 4, action: 'increase_load' } },
-  { key: 'F10 single exposure only', o: { weeks: [1], rirTarget: 2, rirReal: 4, action: 'increase_load' } },
+const PROFILES = [   // T586: the server is the authority; ICS 7.5 keeps the volume rule out of the way for the LOAD / REPS profiles, structural profiles state their evidence explicitly
+  { key: 'F01 easier than target, KG', o: { rirTarget: 2, rirReal: 4, ics: 7.5, action: 'increase_load' } },
+  { key: 'F02 easier than target, LB', o: { unit: 'LB', load: 225, rirTarget: 2, rirReal: 4, ics: 7.5, action: 'increase_load', newLoad: 235 } },
+  { key: 'F03 rep range with room (8-12 @ 10)', o: { repsRange: { min: 8, max: 12 }, rirTarget: 1, rirReal: 3, ics: 7.5, action: 'increase_reps', newReps: 11 } },
+  { key: 'F04 at the ceiling, effort as prescribed', o: { repsRange: { min: 8, max: 12 }, reps: 12, repsTarget: 12, rirTarget: 2, rirReal: 2, ics: 7.5, action: 'maintain', newReps: 12 } },
+  { key: 'F05 harder than target (failure sets)', o: { rirTarget: 2, rirReal: 0, ics: 7.5, action: 'freeze_load' } },
+  { key: 'F06 fatigue: RPE 9.8 + sleep 5 h (deload)', o: { rirTarget: 2, rirReal: 2, ics: 7.5, action: 'deload', post: { rpeAverage: 9.8, sleepHours: 5 } } },
+  { key: 'F07 muscle soreness 3 (reduce one set)', o: { rirTarget: 2, rirReal: 2, ics: 7.5, action: 'reduce_sets', post: { eimd: 3 } } },
+  { key: 'F08 ICS 10, sustained performance (add set)', o: { rirTarget: 2, rirReal: 2, ics: 10, action: 'add_sets' } },
+  { key: 'F09 no catalog identity (advisory)', o: { names: ['Press Convergente Inclinado', 'Curl femoral sentado máquina'], rirTarget: 2, rirReal: 4, ics: 7.5, action: 'increase_load' } },
+  { key: 'F10 single exposure only', o: { weeks: [1], rirTarget: 2, rirReal: 4, ics: 7.5, action: 'increase_load' } },
 ];
 
 test('FLEET-01 ten profiles processed in one release window: every outcome is explicit, nothing crosses clients, base plans and logbooks are immutable', async () => {
@@ -81,9 +82,10 @@ test('FLEET-01 ten profiles processed in one release window: every outcome is ex
   }
   console.log('\nFLEET REPORT\n' + report.map((r) => '  ' + r.profile.padEnd(44) + ' ' + String(r.status).padEnd(14) + ' applied=' + r.applied + ' rejected=' + r.rejected + ' overlays=' + r.overlays).join('\n'));
   const by = (k) => report.find((r) => r.profile.startsWith(k));
-  assert.match(by('F01').overlays, /LOAD:100->10[0-9.]+/); assert.match(by('F02').overlays, /LOAD:225->2[2-4][0-9]/);
-  assert.match(by('F06').rejected, /UNSUPPORTED/); assert.match(by('F07').rejected, /UNSUPPORTED/); assert.equal(by('F06').overlays, '-'); assert.equal(by('F07').overlays, '-');
-  assert.equal(by('F10').overlays, '-'); assert.equal(by('F10').applied, 0);
+  assert.equal(by('F01').overlays, 'LOAD:100->105'); assert.equal(by('F02').overlays, 'LOAD:225->236'); assert.equal(by('F03').overlays, 'REPS:10->12');
+  assert.equal(by('F04').overlays, '-', 'at the ceiling with the effort as prescribed and the Client saying maintain: nothing to change'); assert.equal(by('F05').overlays, 'FREEZE:100->100');
+  assert.equal(by('F06').overlays, 'DELOAD:3->2', 'fatigue: the structural rule applies the deload'); assert.equal(by('F07').overlays, 'SETS:3->2', 'soreness veto: one set less'); assert.equal(by('F08').overlays, 'SETS:3->4');
+  assert.equal(by('F09').overlays, 'LOAD:100->105,LOAD:100->105', 'advisory load without catalog identity'); assert.equal(by('F10').overlays, '-'); assert.equal(by('F10').applied, 0);
 });
 
 test('FLEET-02 the 10-client cap is a hard fail-closed: an allowlist of 11 is INVALID and nobody is activated (no partial rollout by accident)', async () => {
@@ -115,7 +117,7 @@ test('FLEET-03 production-shaped LEGACY plan (old generate-and-activate route: n
   await db.doc('logs/' + s.uid + '/mesos/' + s.planId).set({ planId: s.planId, entries: fresh });
   await db.doc('logs/' + s.uid).set({ planId: s.planId, entries: fresh });
   const out2 = await run(s); const m2 = await meso(s);
-  assert.equal(out2.status, 'MATERIALIZED', JSON.stringify(out2)); assert.equal(overlays(m2).length, 2, 'both exercises progress once the plan is re-saved');
+  assert.equal(out2.status, 'MATERIALIZED', JSON.stringify(out2)); assert.equal(overlays(m2).length, 2, 'both exercises progress once the plan is re-saved (T586: with ICS 8 and sustained performance the first progression is a set)');
   console.log('AFTER Coach re-save: ' + out2.status + ' overlays=' + overlays(m2).map((o) => o.dimension + ':' + o.previousValue + '->' + o.appliedValue).join(','));
 });
 

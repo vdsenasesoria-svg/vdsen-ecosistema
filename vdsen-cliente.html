@@ -5367,7 +5367,7 @@ function getSesiones() {
 
   // Prioridad 1: sesiones guardadas como array
   const ses = PLAN.entrenamiento.sesiones || [];
-  if (ses.length > 0) return ses.filter(function(s){ return s && (s.dia||s.nombre); });
+  if (ses.length > 0) return _withEffectiveSessions(ses.filter(function(s){ return s && (s.dia||s.nombre); }), ses);
 
   // Prioridad 2: parsear texto con múltiples formatos
   const texto = PLAN.entrenamiento.texto || '';
@@ -11490,6 +11490,7 @@ function _logsPlanChanged(logData, activePlanId, flagSession, localPlanId) {
 }
 
 async function _doSaveLogs() {
+  _effSesCache = { src: null, ov: null, rec: null, week: null, out: null };   // T586: the effective view depends on LOGS (started exposure / pain): rebuilt after every save
   if (!USER || !FB) return false;
   var _uidAtStart = USER.uid;
   var _sraGenerationAtStart = ++_sraSaveGeneration;
@@ -11607,7 +11608,34 @@ function _resolveOverlayForExercise(ej, di, unit) {
   var r = window.VDSEN_EFFECTIVE_PRESCRIPTION.resolveEffective({ clientId: USER.uid, planId: ACTIVE_PLAN_ID, activePlanId: ACTIVE_PLAN_ID,
     pid: ej.prescriptionExerciseId, week: CURRENT_WEEK, dayIndex: di, records: st.records, overlays: st.overlays, interventions: st.interventions,
     plan: st.planDoc, entries: LOGS, baseSets: ej.sets || [], unit: unit, canonicalOverlayRead: true });
-  return r.provenance === 'CANONICAL_OVERLAY' ? r : null;
+  // T586: an application that was CONSUMED keeps governing later exposures (CARRIED_OVERLAY): adjustments never silently fall back to the plan.
+  return (r.provenance === 'CANONICAL_OVERLAY' || r.provenance === 'CARRIED_OVERLAY') ? r : null;
+}
+// T586: ONE effective view of the plan. Sets count / load / reps / rest decided by the trusted server (and carried across exposures) reach EVERY consumer of getSesiones()
+// (navigation, set rows, progress, session totals, supersets, rest timers), never only the card. Strength exercises that are not substituted / Y3T only; anything else is untouched.
+var _effSesCache = { src: null, ov: null, rec: null, week: null, out: null };
+function _withEffectiveSessions(list, source) {
+  try {
+    var st = LIFECYCLE_STATE;
+    if (!st || !USER || st.uid !== USER.uid || st.planId !== ACTIVE_PLAN_ID || !st.planDoc || !window.VDSEN_EFFECTIVE_PRESCRIPTION) return list;
+    if (!Object.keys(st.overlays || {}).length) return list;
+    var c = _effSesCache;
+    if (c.src === source && c.ov === st.overlays && c.rec === st.records && c.week === CURRENT_WEEK && c.logs === LOGS) return c.out;
+    var out = list.map(function(ses, di) {
+      if (!ses || !Array.isArray(ses.exercises)) return ses;
+      var changed = false, exs = ses.exercises.map(function(ej, ei) {
+        if (!ej || !ej.prescriptionExerciseId || _getExType(ej) !== 'fuerza' || isY3TExercise(ej) || LOGS['exsub_' + CURRENT_WEEK + '_' + di + '_' + ei]) return ej;
+        var r = _resolveOverlayForExercise(ej, di, getExUnit(di, ei));
+        if (!r) return ej;
+        changed = true;
+        var sets = r.sets.map(function(x) { return x.effective; });
+        return Object.assign({}, ej, { sets: sets, numSeries: sets.length, _overlay: r });
+      });
+      return changed ? Object.assign({}, ses, { exercises: exs }) : ses;
+    });
+    _effSesCache = { src: source, ov: st.overlays, rec: st.records, week: CURRENT_WEEK, logs: LOGS, out: out };
+    return out;
+  } catch (e) { return list; }
 }
 // Rest timers follow the effective prescription too (REST overlay). Returns the SAME object when no overlay applies (flag off => always).
 function _withOverlayRest(ej, di, ei) {

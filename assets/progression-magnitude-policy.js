@@ -35,6 +35,11 @@
     evidenceLevel: 'C'
   });
   var MIN_COMPARABLE_EXPOSURES = 2;
+  // T586: structural / fatigue rules live in ONE sibling module (same engine, one candidate per exposure). Loaded lazily; absent => the A/C/D/E rules behave exactly as before.
+  function _structural() {
+    if (typeof module === 'object' && module.exports && typeof require === 'function') { try { return require('./progression-structural-policy.js'); } catch (e) { return null; } }
+    return typeof globalThis !== 'undefined' ? globalThis.VDSEN_STRUCTURAL_POLICY || null : null;
+  }
   var NUMERIC_APPLY_ENABLED = false;
   var EVIDENCE_BASIS = 'VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET';
   // T523: the three formerly open decisions are now CLOSED VDSEN PRODUCT POLICY (director decisions). They are product choices,
@@ -121,7 +126,7 @@
       var g = groups[gk] || (groups[gk] = { week: Number(m[1]), dayIndex: Number(m[2]), exerciseIndex: Number(m[3]),
         prescriptionExerciseId: pid, planId: scope && scope.planId, clientId: scope && scope.clientId, sets: [], painFlag: pain });
       g.sets.push({ setIndex: Number(m[4]), load: e.carga, reps: e.reps, unit: e.unit, done: e.done === true,
-        rirPrescribed: e.rir, rirReal: e.rir_real, autoFilled: e.autoFilled === true, express: e.express === true, expressFinal: e.expressFinal === true,
+        rirPrescribed: e.rir, rirReal: e.rir_real, ics: e.ics, pump: e.pump, autoFilled: e.autoFilled === true, express: e.express === true, expressFinal: e.expressFinal === true,
         warmup: e.warmup === true || e.isWarmup === true, drop: e.drop === true || e.isDrop === true || e.isDropSet === true || e.dropSet === true,
         intensification: e.intensification === true || e.isIntensification === true, setType: typeof e.setType === 'string' ? e.setType : undefined, ts: e.ts });
     });
@@ -309,6 +314,28 @@
     res.coachReview = repsTarget === null ? [] : [_volumeReview(sets, repsTargets)].filter(Boolean);
     res.reasonCodes.push(REASONS.NUMERIC_ACTIVATION_DISABLED);
 
+    // T586 STRUCTURAL / FATIGUE rules (v3.1 algorithm ported verbatim, see progression-structural-policy.js). They take the exposure BEFORE the A/C/D/E rules: a fatigue or
+    // technique condition outranks progression, and only ONE candidate exists per exposure. Only evaluated for a trusted caller that supplies the context.
+    var structuralDecision = null, sctx = ctx.structural, STRUCT = sctx ? _structural() : null;
+    if (STRUCT) {
+      var prior0 = cmp.kept.length >= 2 ? cmp.kept[cmp.kept.length - 2] : null, ents = sctx.entries || {}, rxm = input.prescription && input.prescription.muscleGroup;
+      var muscle0 = typeof rxm === 'string' && STRUCT.MEV_MRV[rxm] ? rxm : null, prio0 = STRUCT.priorityOf(input.plan, muscle0);
+      structuralDecision = STRUCT.evaluate({ prescription: input.prescription, latest: latest, prior: prior0, context: {
+        post: ents['postsession_' + latest.week + '_' + latest.dayIndex], ci: ents['ci_sem_' + latest.week], prevCi: ents['ci_sem_' + (latest.week - 1)],
+        plan: input.plan, targetWeek: sctx.targetWeek, priority: prio0,
+        volume: muscle0 ? STRUCT.weeklyVolume(input.plan, ents, latest.week, muscle0, sctx.carriedSets) : undefined } });
+    }
+    if (structuralDecision) {
+      var stPain = cmp.kept.slice(-2).some(function(x) { return x.painFlag === true; });
+      res.ruleId = structuralDecision.ruleId; res.dimension = structuralDecision.dimension; res.candidates = [structuralDecision.candidate];
+      res.direction = structuralDecision.direction; res.directionConsistency = 'NOT_APPLICABLE'; res.structural = structuralDecision;
+      res.minExposures = structuralDecision.minExposures || MIN_COMPARABLE_EXPOSURES;
+      if (ctx.safetyConflict === true || stPain) res.reasonCodes.push(REASONS.SAFETY_CONFLICT);
+      if (ctx.readinessVeto) res.reasonCodes.push(REASONS.READINESS_VETO);
+      if (cmp.kept.length < res.minExposures) res.reasonCodes.push(REASONS.INSUFFICIENT_COMPARABLE_EXPOSURES);
+      res.eligible = cmp.kept.length >= res.minExposures && !ctx.readinessVeto && ctx.safetyConflict !== true && !stPain;
+      return res;
+    }
     if (repsTarget === null) { res.reasonCodes.push(REASONS.TARGET_NOT_NUMERIC); return res; }
     var threshold = cmp.kept.length >= MIN_COMPARABLE_EXPOSURES;
     if (!threshold) res.reasonCodes.push(REASONS.INSUFFICIENT_COMPARABLE_EXPOSURES);
@@ -453,6 +480,8 @@
       activationBlockers: decision.activationBlockers || [],
       coachReview: (decision.coachReview || []).map(function(r) { return r.code; }),
       reasonCodes: decision.reasonCodes, numericApplyAllowed: false, applied: false,
+      structural: decision.structural ? { model: decision.structural.model, kind: decision.structural.kind, safety: decision.structural.safety, volume: decision.structural.volume || null,
+        components: decision.candidates && decision.candidates[0] && decision.candidates[0].components || null } : null,
       primaryRaw: primary ? primary.rawCandidate : null };
   }
 

@@ -110,10 +110,12 @@
       if (rec.action === 'maintain' && Number(rec.newReps) === targets[0])
         return { state: STATES.REJECTED, reasonCode: REASONS.NO_NUMERIC_DELTA, nextExposure: null };
       dimension = 'REPS';
-    } else if (rec.action === 'add_sets') {
+    } else if (rec.action === 'add_sets' || rec.action === 'reduce_sets' || rec.action === 'deload' || rec.action === 'freeze_load') {
       // T584: a VOLUME recommendation (the Client's volume-first rule at ICS >= 8) stays a Coach decision and is never applied automatically, but it must NOT hide an
       // independent LOAD / REPS progression. The numeric dimension is decided by the magnitude policy from the executed evidence (same rules, no new thresholds); with no
-      // valid candidate the record simply stays PENDING and not eligible. Other structural / fatigue actions (reduce_sets, deload, freeze_load) remain unsupported.
+      // valid candidate the record simply stays PENDING and not eligible.
+      // T586 (owner directive): the SERVER is the single authority. The structural / fatigue actions (add_sets, reduce_sets, deload, freeze_load) are no longer unsupported: the
+      // Client recommendation is only the trigger; WHAT is applied is decided by the structural policy from the logbook (VDSEN v3.1 rules), so Client and server can never contradict.
       dimension = null;
     } else return { state: STATES.REJECTED, reasonCode: REASONS.UNSUPPORTED_ACTION, nextExposure: null };
     var next = resolveNextExposure(plan, pid, input.week, input.dayIndex);
@@ -126,6 +128,10 @@
     }
     return typeof globalThis !== 'undefined' ? globalThis.VDSEN_MAGNITUDE_POLICY || null : null;
   }
+  function _effective() {
+    if (typeof module === 'object' && module.exports && typeof require === 'function') { try { return require('./progression-effective-prescription.js'); } catch (e) { return null; } }
+    return typeof globalThis !== 'undefined' ? globalThis.VDSEN_EFFECTIVE_PRESCRIPTION || null : null;
+  }
   // Phase 2A: shadow magnitude decision. Never applied; only computed behind the Phase 1 guards.
   function _magnitude(input, decision) {
     var policy = _policy(), rec = input.recommendation || {}, pid = rec.prescriptionExerciseId;
@@ -133,10 +139,22 @@
     if (decision.state !== STATES.PENDING) return policy.reject(pid, decision.reasonCode);
     var plan = input.plan || {}, day = (Array.isArray(plan.days) ? plan.days : []).find(function(d) { return d.dayIndex === input.dayIndex; });
     var ex = ((day && day.exercises) || []).filter(function(e) { return e.prescriptionExerciseId === pid; })[0];
+    // T586: structural context (trusted callers only): the logbook (post-session / weekly check-in live in the same entries), the target week and the carried set counts of
+    // every exercise (so the weekly muscle volume reflects what is really in force, not the original plan).
+    var eff = _effective(), carriedSets = {};
+    if (eff && eff.carriedBaseline && (input.overlays || input.structural === true)) {
+      (Array.isArray(plan.days) ? plan.days : []).forEach(function(d) { (d.exercises || []).forEach(function(e) {
+        if (!e.prescriptionExerciseId) return;
+        var c = eff.carriedBaseline({ clientId: input.clientId, planId: input.planId, activePlanId: input.activePlanId, pid: e.prescriptionExerciseId, week: input.week, dayIndex: input.dayIndex + 1,
+          overlays: input.overlays || {}, records: input.records || {}, interventions: input.interventions, plan: plan, entries: input.entries });
+        if (c.SETS) carriedSets[e.prescriptionExerciseId] = c.SETS.value;
+      }); });
+    }
     return policy.evaluate({ clientId: input.clientId, planId: input.planId, prescriptionExerciseId: pid, plan: plan,
-      prescription: ex ? { prescriptionExerciseId: pid, sets: ex.sets, repsRange: ex.repsRange } : null,
+      prescription: ex ? { prescriptionExerciseId: pid, sets: ex.sets, repsRange: ex.repsRange, muscleGroup: ex.muscleGroup, fatigueCost: ex.fatigueCost } : null,
       exposures: policy.extractExposures(input.entries, pid, { planId: input.planId, clientId: input.clientId }),
-      context: { readinessVeto: input.readinessVeto === true } });
+      context: { readinessVeto: input.readinessVeto === true,
+        structural: input.structural === true ? { entries: input.entries, targetWeek: decision.nextExposure ? decision.nextExposure.week : undefined, carriedSets: carriedSets } : undefined } });
   }
   function buildRecord(input, at) {
     var decision = assess(input), rec = input.recommendation || {};
@@ -246,6 +264,7 @@
       parent.recommendations.forEach(function(rec) {
         if (!rec) return;
         var base = { clientId: input.clientId, planId: input.planId, activePlanId: input.activePlanId, plan: input.plan, interventions: input.interventions, entries: entries,
+          overlays: input.overlays, records: records, structural: input.structural === true,
           week: week, dayIndex: dayIndex, calculatedAt: parent.calculatedAt, recommendation: rec, sourceMatches: true,
           sourcePidCount: rec.prescriptionExerciseId ? parent.recommendations.filter(function(r) { return r && r.prescriptionExerciseId === rec.prescriptionExerciseId; }).length : 0 };
         var candidate = buildRecord(base, at);
