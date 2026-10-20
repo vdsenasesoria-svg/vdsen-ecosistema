@@ -89,8 +89,9 @@ test('T584-A1 add_sets (volume) no longer rejects the record: it stays PENDING a
   assert.notEqual(a.reasonCode, 'UNSUPPORTED_ACTION');
 });
 
-test('T584-A2 other fatigue / structure recommendations stay unsupported (deload, reduce_sets, freeze_load): nothing numeric is applied for them', () => {
-  for (const action of ['deload', 'reduce_sets', 'freeze_load', 'substitute', 'remove_exercise']) assert.equal(assess(rec(action, { newLoad: 90, newReps: 10 })).reasonCode, 'UNSUPPORTED_ACTION', action);
+test('T586-A2 structural / fatigue recommendations (deload, reduce_sets, freeze_load) are now SUPPORTED triggers (the structural policy decides what is applied); anything else stays unsupported', () => {
+  for (const action of ['deload', 'reduce_sets', 'freeze_load']) { const r = assess(rec(action, { newLoad: 90, newReps: 10 })); assert.equal(r.state, 'PENDING', action); assert.equal(r.dimension, null, action + ': the policy, not the recommendation, picks the dimension'); }
+  for (const action of ['substitute', 'remove_exercise', 'teleport']) assert.equal(assess(rec(action, { newLoad: 90, newReps: 10 })).reasonCode, 'UNSUPPORTED_ACTION', action);
 });
 
 test('T584-A3 supported actions keep their validation exactly (load needs a positive newLoad; reps need integers; maintain at the target is no delta)', () => {

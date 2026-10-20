@@ -12,7 +12,7 @@
 
   var NUMERIC_APPLY_ENABLED = false;
   var OVERLAY_SCHEMA = 'vdsen-next-exposure-overlay-v1';
-  var PROVENANCE = Object.freeze({ BASE_PLAN: 'BASE_PLAN', CANONICAL_OVERLAY: 'CANONICAL_OVERLAY', COACH_OVERRIDE: 'COACH_OVERRIDE', SAFETY_FALLBACK: 'SAFETY_FALLBACK' });
+  var PROVENANCE = Object.freeze({ BASE_PLAN: 'BASE_PLAN', CANONICAL_OVERLAY: 'CANONICAL_OVERLAY', CARRIED_OVERLAY: 'CARRIED_OVERLAY', COACH_OVERRIDE: 'COACH_OVERRIDE', SAFETY_FALLBACK: 'SAFETY_FALLBACK' });
   var LABEL = 'Autoajuste VDSEN';
 
   function _policy() {
@@ -101,22 +101,90 @@
   }
 
   function _fmt(n) { return String(Number(n)); }
+  var LOAD_UNIT = function(u) { return String(u).toUpperCase() === 'LB' ? 'lb' : 'kg'; };
   function _presentation(o) {
-    var unit = o.dimension === 'LOAD' ? (String(o.unit).toUpperCase() === 'LB' ? 'lb' : 'kg') : o.dimension === 'REPS' ? 'reps' : 's';
+    var c = o.components || null;
+    if (o.dimension === 'SETS') return { label: LABEL, text: _fmt(o.previousValue) + ' → ' + _fmt(o.appliedValue) + ' series' };
+    if (o.dimension === 'FREEZE') return { label: LABEL, text: 'Carga congelada' + (_num(o.appliedValue) !== null ? ' · ' + _fmt(o.appliedValue) + ' ' + LOAD_UNIT(o.unit) : '') };
+    if (o.dimension === 'DELOAD') {
+      var bits = ['Descarga: ' + _fmt(o.previousValue) + ' → ' + _fmt(o.appliedValue) + ' series'];
+      if (c && _num(c.LOAD) !== null) bits.push("carga " + _fmt(c.LOAD) + " " + LOAD_UNIT(o.loadUnit || o.unit));
+      return { label: LABEL, text: bits.join(' · ') };
+    }
+    var unit = o.dimension === 'LOAD' ? LOAD_UNIT(o.unit) : o.dimension === 'REPS' ? 'reps' : 's';
     return { label: LABEL, text: _fmt(o.previousValue) + ' → ' + _fmt(o.appliedValue) + ' ' + unit };
   }
   function _copy(s) { return Object.assign({}, s); }
-  // Explicitly tagged warm-up / drop / intensification sets keep their base values (the overlay adjusts the STANDARD working sets).
-  function _adjust(baseSets, o) {
-    return (Array.isArray(baseSets) ? baseSets : []).map(function(bs) {
-      var base = _copy(bs), eff = _copy(bs), adjusted = false;
-      if (!_kind(bs)) {
-        if (o.dimension === 'LOAD') { eff.load = o.appliedValue; adjusted = true; }
-        else if (o.dimension === 'REST') { eff.restSeconds = o.appliedValue; adjusted = true; }
-        else if (o.dimension === 'REPS' && _num(bs.repsTarget) !== null) { eff.repsTarget = o.appliedValue; adjusted = true; }
-      }
-      return { base: base, effective: eff, adjusted: adjusted };
+  // Sets that are NOT explicitly tagged warm-up / drop / intensification (an overlay adjusts the STANDARD working sets).
+  function _isStd(s) { return !_kind(s); }
+  // Standard-set COUNT change: remove trailing standard sets, or clone the last standard set right after it. Tagged sets keep their values; setIndex is renumbered by position.
+  function _withSetCount(sets, n) {
+    var out = sets.map(_copy), std = [];
+    out.forEach(function(s, i) { if (_isStd(s)) std.push(i); });
+    if (!std.length || !Number.isInteger(n) || n < 1 || n === std.length) return out;
+    if (n < std.length) {
+      var drop = std.slice(n); out = out.filter(function(s, i) { return drop.indexOf(i) < 0; });
+    } else {
+      var at = std[std.length - 1], clone = out[at], extra = [];
+      for (var k = std.length; k < n; k++) extra.push(_copy(clone));
+      out = out.slice(0, at + 1).concat(extra).concat(out.slice(at + 1));
+    }
+    return out.map(function(s, i) { return Object.assign(s, { setIndex: i }); });
+  }
+  function _applyValue(sets, dim, value) {
+    return sets.map(function(bs) {
+      var eff = _copy(bs); if (!_isStd(bs)) return eff;
+      if (dim === 'LOAD') eff.load = value; else if (dim === 'REST') eff.restSeconds = value; else if (dim === 'REPS' && _num(bs.repsTarget) !== null) eff.repsTarget = value;
+      return eff;
     });
+  }
+  function _effectiveSets(baseSets, o, carriedVals) {
+    var base = (Array.isArray(baseSets) ? baseSets : []).map(_copy), eff = base.map(_copy);
+    // 1) continuity: what an earlier CONSUMED application established stays in force (never silently back to the plan)
+    carriedVals = carriedVals || {};
+    ['LOAD', 'REPS', 'REST'].forEach(function(d) { if (carriedVals[d]) eff = _applyValue(eff, d, carriedVals[d].value); });
+    if (carriedVals.SETS) eff = _withSetCount(eff, carriedVals.SETS.value);
+    // 2) the overlay of THIS exposure
+    if (o) {
+      if (o.dimension === 'LOAD' || o.dimension === 'REPS' || o.dimension === 'REST') eff = _applyValue(eff, o.dimension, o.appliedValue);
+      else if (o.dimension === 'SETS') eff = _withSetCount(eff, o.appliedValue);
+      else if (o.dimension === 'DELOAD' && o.components) {
+        if (_num(o.components.LOAD) !== null) eff = _applyValue(eff, 'LOAD', o.components.LOAD);
+        if (_num(o.components.SETS) !== null) eff = _withSetCount(eff, o.components.SETS);
+        if (_num(o.components.RIR) !== null) eff = eff.map(function(x) { var y = _copy(x); if (_isStd(x)) y.rirTarget = o.components.RIR; return y; });
+      }
+      // FREEZE: values stay as they are (the carried / base load): the overlay only withholds a progression and says so.
+    }
+    return eff.map(function(e, i) { var b = base[i] || null; return { base: b ? _copy(b) : null, effective: e, adjusted: !b || JSON.stringify(b) !== JSON.stringify(e) }; });
+  }
+
+  // CONTINUITY (T586). An application that was CONSUMED (the athlete executed the exposure it targeted) keeps governing the next exposures of the SAME exercise until a later
+  // application replaces it: LOAD / REPS / REST / SETS are carried; DELOAD and FREEZE are scoped to their own exposure (a deload week is not the new baseline). The carry is
+  // dropped (back to the plan) on: a plan revision after the source calculation, an exact Coach decision on the PID since then, an articular-pain report after the source, a unit change.
+  function _before(a, b) { return a.week < b.week || (a.week === b.week && a.dayIndex < b.dayIndex); }
+  var CARRIED_DIMS = ['LOAD', 'REPS', 'REST', 'SETS'];
+  function carriedBaseline(input) {
+    input = input || {}; var out = {}, pid = input.pid, here = { week: input.week, dayIndex: input.dayIndex };
+    if (!input.clientId || !input.planId || !pid || !Number.isInteger(here.week) || !Number.isInteger(here.dayIndex) || input.planId !== input.activePlanId) return out;
+    var plan = input.plan || {}, planAt = _time(plan.updatedAt), best = {};
+    _values(input.overlays).forEach(function(o) {
+      if (!o || o.schema !== OVERLAY_SCHEMA || o.clientId !== input.clientId || o.planId !== input.planId || o.prescriptionExerciseId !== pid || !o.target) return;
+      if (CARRIED_DIMS.indexOf(o.dimension) < 0 || !_before(o.target, here) || o.status !== 'CONSUMED') return;
+      var r = input.records && input.records[o.sourceRecordKey];
+      if (!r || r.state !== 'CONSUMED' || r.key !== o.sourceRecordKey || r.clientId !== o.clientId || r.planId !== o.planId || r.prescriptionExerciseId !== pid || o.key !== 'ovl_' + r.key) return;
+      var cur = best[o.dimension]; if (!cur || _before(cur.target, o.target)) best[o.dimension] = o;
+    });
+    Object.keys(best).forEach(function(d) {
+      var o = best[d], calcAt = _time(o.source && o.source.calculatedAt);
+      if (calcAt === null || planAt === null || planAt > calcAt) return;
+      var overridden = (Array.isArray(input.interventions) ? input.interventions : []).some(function(iv) {
+        return iv && iv.targetType === 'EXERCISE' && iv.targetId === pid && (!iv.planId || iv.planId === input.planId) && _time(iv.decidedAt) !== null && _time(iv.decidedAt) >= calcAt && iv.action !== 'NO_CHANGE'; });
+      if (overridden || painReportedBetween(input.entries, o.source, here)) return;
+      if (d === 'LOAD' && input.unit && String(input.unit).toUpperCase() !== String(o.unit).toUpperCase()) return;
+      if (_num(o.appliedValue) === null) return;
+      out[d] = { value: o.appliedValue, unit: o.unit || null, overlayKey: o.key, target: o.target };
+    });
+    return out;
   }
 
   // Effective prescription for one exposure. input = evaluateOverlay input + { baseSets, unit (current display unit, for LOAD) }.
@@ -130,14 +198,25 @@
     // T570-R: READING a canonical overlay is not applying one. Overlays are writable only by the trusted server executor (Firestore rules
     // reject every athlete/Coach write), so a reader that passes canonicalOverlayRead may display what exists; with none it is the base plan.
     if (!NUMERIC_APPLY_ENABLED && input.canonicalOverlayRead !== true) return base('NUMERIC_APPLY_DISABLED');
+    var carried = carriedBaseline(input), hasCarry = Object.keys(carried).length > 0;
+    function carriedOnly(reason, prov) {
+      if (!hasCarry) return base(reason, prov);
+      var pres = Object.keys(carried).map(function(d) { return d === 'LOAD' ? _fmt(carried[d].value) + ' ' + LOAD_UNIT(carried[d].unit) : d === 'REPS' ? _fmt(carried[d].value) + ' reps' : d === 'SETS' ? _fmt(carried[d].value) + ' series' : _fmt(carried[d].value) + ' s'; });
+      return { provenance: PROVENANCE.CARRIED_OVERLAY, reason: reason, overlayKey: null, dimension: null, previousValue: null, appliedValue: null, unit: null, carried: carried,
+        presentation: { label: LABEL, text: 'Vigente: ' + pres.join(' · ') }, sets: _effectiveSets(baseSets, null, carried) };
+    }
     var ev = evaluateOverlay(input);
-    if (!ev.usable) return base(ev.reason, ev.provenance);
+    if (!ev.usable) {
+      // a Coach override, a safety fallback or an invalidated target is a deliberate return to the plan: never carry past it
+      if (ev.reason === 'SAFETY_CONFLICT' || ev.reason === 'COACH_OVERRIDE' || ev.reason === 'TARGET_INVALIDATED') return base(ev.reason, ev.provenance);
+      return carriedOnly(ev.reason, ev.provenance);
+    }
     var o = ev.overlay;
     if (o.dimension === 'LOAD' && input.unit && String(input.unit).toUpperCase() !== String(o.unit).toUpperCase()) return base('UNIT_MISMATCH');
     return { provenance: PROVENANCE.CANONICAL_OVERLAY, reason: null, overlayKey: o.key, state: ev.state, dimension: o.dimension, previousValue: o.previousValue, appliedValue: o.appliedValue,
-      unit: o.unit, presentation: _presentation(o), sets: _adjust(baseSets, o) };
+      unit: o.unit, components: o.components || null, carried: hasCarry ? carried : null, presentation: _presentation(o), sets: _effectiveSets(baseSets, o, carried) };
   }
 
   return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, OVERLAY_SCHEMA: OVERLAY_SCHEMA, PROVENANCE: PROVENANCE, LABEL: LABEL,
-    pidExposureStarted: pidExposureStarted, painReportedBetween: painReportedBetween, evaluateOverlay: evaluateOverlay, resolveEffective: resolveEffective };
+    pidExposureStarted: pidExposureStarted, painReportedBetween: painReportedBetween, evaluateOverlay: evaluateOverlay, carriedBaseline: carriedBaseline, resolveEffective: resolveEffective };
 });

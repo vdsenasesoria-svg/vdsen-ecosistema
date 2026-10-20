@@ -6772,6 +6772,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           ...(ex.prescriptionExerciseId ? { prescriptionExerciseId: String(ex.prescriptionExerciseId) } : {}),
           ...(typeof _carryExerciseIdentity === 'function' ? _carryExerciseIdentity(ex) : {}),   // T581: canonical catalog exerciseId (source-known or exact catalog name only)
           ...(typeof _carryRepsRange === 'function' ? _carryRepsRange(ex) : {}),   // T582: the Motor's prescribed rep range, when it states one
+          ...(typeof _carryMuscleGroup === 'function' ? _carryMuscleGroup(ex) : {}),   // T586: declared primary muscle (explicit vocabulary only)
           sets: Array.isArray(ex.sets) && ex.sets.length > 0
             ? ex.sets.map((s, si) => ({
                 setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
@@ -6809,6 +6810,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if (obj.rirByWeek) planObj.rirByWeek = obj.rirByWeek;
     if (obj.reverse_diet) planObj.reverse_diet = obj.reverse_diet;
     if (obj.distribucion_zonas_carga) planObj.distribucion_zonas_carga = obj.distribucion_zonas_carga;
+    { const _mp = typeof _normalizeMusclePriorities === 'function' ? _normalizeMusclePriorities(trainingBlock.musclePriorities || obj.musclePriorities) : null; if (_mp) planObj.musclePriorities = _mp; }   // T586: declared muscle priorities (explicit only)
     statusEl.innerHTML = `<span class="text-green-400">✅ JSON válido: ${planObj.weeks} semanas, ${days.length} día(s)</span>`;
     showParsedPreview(planObj);
     window._importedPlan = planObj;
@@ -9376,11 +9378,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           tempo: String(s.tempo || '').trim(),
           ..._perfCarrySet(s)
         })) : []
-      }, _carryPrescriptionId(ex), _perfCarryEx(ex), (typeof _carryExerciseIdentity === 'function' ? _carryExerciseIdentity(ex) : {}), (typeof _carryRepsRange === 'function' ? _carryRepsRange(ex) : {}))).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
+      }, _carryPrescriptionId(ex), _perfCarryEx(ex), (typeof _carryExerciseIdentity === 'function' ? _carryExerciseIdentity(ex) : {}), (typeof _carryRepsRange === 'function' ? _carryRepsRange(ex) : {}), (typeof _carryMuscleGroup === 'function' ? _carryMuscleGroup(ex) : {}))).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
     })).filter(d => d.exercises.length > 0);
     if (!days.length) return null;
     const _norm = { weeks: parseInt(obj.weeks) || 6, daysPerWeek: parseInt(obj.daysPerWeek) || days.length, days };
     if (obj.distribucion_zonas_carga) _norm.distribucion_zonas_carga = obj.distribucion_zonas_carga;
+    { const _mp = typeof _normalizeMusclePriorities === 'function' ? _normalizeMusclePriorities(obj.musclePriorities) : null; if (_mp) _norm.musclePriorities = _mp; }   // T586: declared muscle priorities (explicit only)
     return _norm;
   }
 
@@ -10448,13 +10451,30 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     var o = {}; if (!e || typeof e !== 'object') return o;
     if (typeof e.exerciseId === 'string' && e.exerciseId) { o.exerciseId = e.exerciseId; if (typeof e.exerciseIdSource === 'string') o.exerciseIdSource = e.exerciseIdSource; o.forName = String(e.exerciseName || '').trim().toLowerCase(); }
     var rr = _carryRepsRange(e); if (rr.repsRange) o.repsRange = rr.repsRange;
+    var mg = typeof _carryMuscleGroup === 'function' ? _carryMuscleGroup(e) : {}; if (mg.muscleGroup) o.muscleGroup = mg.muscleGroup;
     return o;
   }
   function _restorePlanMeta(meta, name, sets) {
     var out = {}; if (!meta || typeof meta !== 'object') return out;
     if (typeof meta.exerciseId === 'string' && meta.exerciseId && meta.forName === String(name || '').trim().toLowerCase()) { out.exerciseId = meta.exerciseId; if (typeof meta.exerciseIdSource === 'string') out.exerciseIdSource = meta.exerciseIdSource; }
     var rr = _carryRepsRange({ repsRange: meta.repsRange, sets: sets }); if (rr.repsRange) out.repsRange = rr.repsRange;
+    var mg = typeof _carryMuscleGroup === 'function' ? _carryMuscleGroup({ muscleGroup: meta.muscleGroup }) : {}; if (mg.muscleGroup) out.muscleGroup = mg.muscleGroup;
     return out;
+  }
+  // T586: MUSCLE PRIORITY contract (the Coach declares it in the initial prescription; the autonomous engine never invents or infers it). Vocabulary = the keys of the VDSEN MEV/MRV
+  // table (the same table the athlete app and the server policy use; parity is enforced by tests). `muscleGroup` = the exercise's declared PRIMARY muscle (one key);
+  // `musclePriorities` = { PRIORITARIO: [keys], NO_PRIORITARIO: [keys] } at plan level. Anything outside the vocabulary is dropped; a key declared in both classes is ambiguous and dropped from both.
+  const _MUSCLE_KEYS = ['pectoral','dorsal_ancho','trapecio_medio','delt_anterior','delt_lateral','delt_posterior','biceps','braquial','triceps','cuadriceps','isquios','gluteo_mayor','gluteo_medio','gastrocnemio','soleo','erectores','recto_abdominal','oblicuos','serrato'];
+  function _carryMuscleGroup(ex) {
+    var v = ex && ex.muscleGroup;
+    return (typeof v === 'string' && _MUSCLE_KEYS.indexOf(v) >= 0) ? { muscleGroup: v } : {};
+  }
+  function _normalizeMusclePriorities(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    var pick = function(a) { var o = []; (Array.isArray(a) ? a : []).forEach(function(k) { if (typeof k === 'string' && _MUSCLE_KEYS.indexOf(k) >= 0 && o.indexOf(k) < 0) o.push(k); }); return o; };
+    var hi = pick(raw.PRIORITARIO), lo = pick(raw.NO_PRIORITARIO), both = hi.filter(function(k) { return lo.indexOf(k) >= 0; });
+    hi = hi.filter(function(k) { return both.indexOf(k) < 0; }); lo = lo.filter(function(k) { return both.indexOf(k) < 0; });
+    return (hi.length || lo.length) ? { PRIORITARIO: hi, NO_PRIORITARIO: lo } : null;
   }
   function _genPrescriptionId() {
     try { return crypto.randomUUID(); } catch(e) {}
@@ -10944,6 +10964,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       daysPerWeek:         (training.daysPerWeek !== undefined ? training.daysPerWeek : 0),
       days:                _stampPrescriptionIds(Array.isArray(training.days) ? training.days : []),
       rirByWeek:           rirSchemeForWeeks(training.weeks || 6),
+      ...(training.musclePriorities && typeof _normalizeMusclePriorities === 'function' && _normalizeMusclePriorities(training.musclePriorities) ? { musclePriorities: _normalizeMusclePriorities(training.musclePriorities) } : {}),   // T586: declared priorities only
       // Review summary (no individual clicks, no raw response, no secrets)
       reviewSummary: { totalItems: totalItems, acceptedItems: acceptedItems },
       // EXCLUDED: farmacologia, pharmacoPlan, raw model response, prompt, API keys
@@ -22273,7 +22294,7 @@ El esfuerzo no es negociable.
             tempo: String(s.tempo || '').trim(),
             ..._perfCarrySet(s)
           })) : []
-        }, _carryPrescriptionId(ex), _perfCarryEx(ex), (typeof _carryExerciseIdentity === 'function' ? _carryExerciseIdentity(ex) : {}), (typeof _carryRepsRange === 'function' ? _carryRepsRange(ex) : {}))).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
+        }, _carryPrescriptionId(ex), _perfCarryEx(ex), (typeof _carryExerciseIdentity === 'function' ? _carryExerciseIdentity(ex) : {}), (typeof _carryRepsRange === 'function' ? _carryRepsRange(ex) : {}), (typeof _carryMuscleGroup === 'function' ? _carryMuscleGroup(ex) : {}))).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
       })).filter(d => d.exercises.length > 0);
       if (days.length !== curDays) {
         st.style.color='#c94a3a'; st.textContent=`Tras normalizar quedaron ${days.length} días válidos (esperaba ${curDays}). Revisa que cada día tenga ejercicios.`;
@@ -22315,6 +22336,7 @@ El esfuerzo no es negociable.
           updatedAt: new Date().toISOString()
         };
         if (obj.distribucion_zonas_carga) _planUpd.distribucion_zonas_carga = obj.distribucion_zonas_carga;
+        { const _mp = typeof _normalizeMusclePriorities === 'function' ? _normalizeMusclePriorities(obj.musclePriorities) : null; if (_mp) _planUpd.musclePriorities = _mp; }   // T586
         await updateDoc(doc(db, "plans", planId), _planUpd);
         // Auto-catalogar ejercicios nuevos (igual que importación)
         _autoAddExercisesToCatalog(days);
@@ -22846,6 +22868,7 @@ El esfuerzo no es negociable.
             supersetGroup: String(ex.supersetGroup || '').trim(),   // T553
             ..._carryClassification(ex),   // T553: nivel_medio + variacion_vertical survive export -> re-import
             ...(typeof _carryRepsRange === 'function' ? _carryRepsRange(ex) : {}),   // T582: the prescribed rep range survives export -> re-import
+            ...(typeof _carryMuscleGroup === 'function' ? _carryMuscleGroup(ex) : {}),   // T586: the declared primary muscle survives export -> re-import
             ..._perfCarryEx(ex),   // T544: export -> re-import keeps exerciseType + performance prescription
             sets: (ex.sets || []).map(s => ({
               setIndex: s.setIndex, repsTarget: s.repsTarget, rirTarget: s.rirTarget,

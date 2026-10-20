@@ -124,7 +124,8 @@
       !(record.state === 'REJECTED' && record.reasonCode === 'COACH_KEEP_ORIGINAL');
     r.noSafetyConflict = ctx.safetyConflict !== true && (m.reasonCodes || []).indexOf('SAFETY_CONFLICT') < 0;
     r.noPolicyReview = !m.coachReviewRequired;
-    r.evidenceEligible = m.eligible === true && _num(m.comparableExposureCount) !== null && m.comparableExposureCount >= 2 && record.state === 'PENDING';
+    // T586: progression needs two comparable exposures; the protective structural rules (fatigue, technique, soreness, effort) declare their own minimum (>= 1) in the policy.
+    r.evidenceEligible = m.eligible === true && _num(m.comparableExposureCount) !== null && m.comparableExposureCount >= Math.max(1, _num(m.minExposures) || 2) && record.state === 'PENDING';
     r.directionConsistent = m.directionConsistency === 'CONSISTENT' || m.directionConsistency === 'NOT_APPLICABLE';
     r.magnitudeResolved = !m.unresolved && !!cand && m.mode === 'SHADOW' && m.numericApplyAllowed === false;
     // T582: an ADVISORY load (no equipment claim at all) is a first-class resolution: equipment data is optional, so there is no identity / increment to verify.
@@ -216,6 +217,14 @@
       return { dimension: c.dimension, previousValue: _num(c.previousValue), requestedValue: _num(c.rawCandidate),
         appliedValue: _num(c.finalCandidate), unit: c.dimension === 'REST' ? 'SECONDS' : 'REPS', equipmentId: null, roundingReason: null };
     }
+    // T586 (owner directive): volume / effort / recovery decisions are executed by the trusted server like LOAD / REPS / REST. SETS = standard working-set count, FREEZE = a load that is
+    // held (no progression this exposure), DELOAD = a composite week (sets halved, load x0.9; the components are persisted, appliedValue = the new set count).
+    if (c.dimension === 'SETS' || c.dimension === 'FREEZE' || c.dimension === 'DELOAD') {
+      if (_num(c.finalCandidate) === null || (c.dimension !== 'FREEZE' && !(c.finalCandidate >= 1))) { blockers.push(BLOCKERS.NO_ACTIONABLE_CANDIDATE); return null; }
+      var lu = ctx.loadUnit || null;
+      return { dimension: c.dimension, previousValue: _num(c.previousValue), requestedValue: _num(c.rawCandidate), appliedValue: _num(c.finalCandidate),
+        unit: c.dimension === 'FREEZE' ? lu : 'SETS', loadUnit: lu, equipmentId: null, roundingReason: null, components: c.components || null };
+    }
     blockers.push(BLOCKERS.STRUCTURAL_DIMENSION_NOT_AUTHORIZED);
     return null;
   }
@@ -283,7 +292,7 @@
       if (m.coachReviewRequired) blockers.push(BLOCKERS.COACH_REVIEW_REQUIRED);
       if (m.unresolved) { blockers.push(BLOCKERS.MAGNITUDE_BRANCH_UNRESOLVED); if (_scienceGapsFor(m).length) blockers.push(BLOCKERS.SCIENCE_POLICY_UNRESOLVED); }
       else if (!m.eligible && !specific.length && !m.coachReviewRequired) blockers.push(BLOCKERS.NOT_ELIGIBLE);
-      var cand = (m.unresolved || m.coachReviewRequired || !m.eligible) ? null : _candidateFor(m, ctx, blockers);
+      var cand = (m.unresolved || m.coachReviewRequired || !m.eligible) ? null : _candidateFor(m, Object.assign({ loadUnit: m.evidence && m.evidence.unit || null }, ctx), blockers);
       var key = overlayKey(record);
       // one overlay per exact target exposure, whatever its state: a new candidate never stacks on / resurrects an earlier application
       var eo = ctx.existingOverlays;
@@ -297,7 +306,7 @@
           source: { week: record.source.week, dayIndex: record.source.dayIndex, calculatedAt: record.source.calculatedAt },
           target: { week: t.week, dayIndex: t.dayIndex }, dimension: cand.dimension, previousValue: cand.previousValue,
           requestedValue: cand.requestedValue, appliedValue: cand.appliedValue, unit: cand.unit, equipmentId: cand.equipmentId,
-          equipmentSnapshot: cand.equipmentSnapshot || null,
+          equipmentSnapshot: cand.equipmentSnapshot || null, components: cand.components || null, loadUnit: cand.loadUnit || null,
           roundingReason: cand.roundingReason, status: 'PLANNED', reversibleUntil: 'TARGET_EXPOSURE_START',
           provenance: { methodologyFamily: m.methodologyFamily, ruleAuthority: m.ruleAuthority, evidenceLevel: m.evidenceLevel, ruleId: m.ruleId,
             comparableExposureCount: m.comparableExposureCount, directionConsistency: m.directionConsistency || null } };

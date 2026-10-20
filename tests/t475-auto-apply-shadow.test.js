@@ -53,7 +53,9 @@ test('contract resolves next exposure by PID and blocks all numeric writes', () 
   assert.equal(shadow.assess({ ...base, sourcePidCount: 2 }).reasonCode, 'IDENTITY_CONFLICT');
   assert.equal(shadow.assess({ ...base, interventions: [{ targetType: 'EXERCISE', targetId: 'pid-A',
     planId: 'plan-A', action: 'KEEP', decidedAt: '2026-09-27T12:01:00.000Z' }] }).reasonCode, 'COACH_OVERRIDE');
-  assert.equal(shadow.assess({ ...base, recommendation: { ...rec, action: 'reduce_sets' } }).reasonCode, 'UNSUPPORTED_ACTION');
+  assert.equal(shadow.assess({ ...base, recommendation: { ...rec, action: 'teleport' } }).reasonCode, 'UNSUPPORTED_ACTION');
+  // T586: the structural / fatigue actions are no longer unsupported: the Client recommendation only triggers; the structural policy decides what (if anything) is applied.
+  ['add_sets', 'reduce_sets', 'deload', 'freeze_load'].forEach((a) => { const r = shadow.assess({ ...base, recommendation: { ...rec, action: a } }); assert.equal(r.state, 'PENDING', a); assert.equal(r.dimension, null, a); });
   assert.equal(shadow.assess({ ...base, recommendation: { ...rec, action: 'maintain', newReps: 9 } }).dimension, 'REPS');
   assert.equal(shadow.assess({ ...base, recommendation: { ...rec, action: 'maintain', newReps: 10 } }).reasonCode, 'NO_NUMERIC_DELTA');
   assert.deepEqual(plan.days[0].exercises[0].sets[0], { load: 50, repsTarget: 10 });
