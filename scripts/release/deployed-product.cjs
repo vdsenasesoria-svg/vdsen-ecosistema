@@ -73,7 +73,7 @@ const SERVED = [
   'assets/client-export/firestore-io.js',
   'assets/client-export/runner.js',
   'assets/client-export/ui.js',
-  'assets/client-export/expediente-pdf.js',
+  'assets/client-export/expediente-txt.js',
 ];
 
 // Paths the CANDIDATE intends to serve but that are NOT yet in production.
@@ -106,7 +106,7 @@ const CANDIDATE_ONLY = [
   'assets/client-export/firestore-io.js',
   'assets/client-export/runner.js',
   'assets/client-export/ui.js',
-  'assets/client-export/expediente-pdf.js',
+  'assets/client-export/expediente-txt.js',
 
   'assets/coach-image-upload/controller.js',
   'assets/coach-image-upload/firebase-adapter.js',
