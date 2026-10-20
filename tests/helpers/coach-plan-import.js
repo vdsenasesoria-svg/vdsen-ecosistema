@@ -48,4 +48,14 @@ function importLikeCoach(motorPlan, opts) {
   return norm;
 }
 
-module.exports = { importLikeCoach, coachSandbox };
+// T587: the JSON-tab route (parsePlanFromJSON) with every carry helper present (as in the real page), driven through minimal DOM stubs. Returns the normalized plan the preview / save receive.
+function jsonTabImport(json, idPrefix) {
+  const el = { value: typeof json === 'string' ? json : JSON.stringify(json), innerHTML: '' };
+  const ctx = coachSandbox(idPrefix || 'jt', { document: { getElementById: () => el }, showToast() {}, _escH: (x) => x, showParsedPreview(p) { ctx.preview = p; } });
+  ctx.window = Object.assign(ctx.window || {}, { VDSEN_EQUIPMENT_IDENTITY: identity, VDSEN_EXERCISE_VISUAL_CATALOG: catalog });
+  vm.runInContext(fnSrc('parsePlanFromJSON') + '\nthis.parsePlanFromJSON = parsePlanFromJSON;', ctx);
+  ctx.parsePlanFromJSON();
+  return { statusHtml: el.innerHTML, plan: ctx.window._importedPlan ? JSON.parse(JSON.stringify(ctx.window._importedPlan)) : null, sandbox: ctx };
+}
+
+module.exports = { importLikeCoach, coachSandbox, jsonTabImport };
