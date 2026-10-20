@@ -1334,6 +1334,37 @@ button,.btn,.nb,.xc,.dt,.chip,a{-webkit-tap-highlight-color:transparent;touch-ac
 .nb.on .nb-lbl{color:var(--tx);font-weight:800}
 /* logging stays quick: slightly tighter plate padding so more of the set form is visible without scrolling */
 .setpanel{padding:14px 12px}
+/* T587 · session recap (capture-friendly): same tokens, official logo crop (.brand-word), no new typefaces, no bottom nav while open */
+html.rc-open{overflow:hidden}
+#sessRecap{position:fixed;inset:0;z-index:2147483000;background:var(--bg);color:var(--tx);overflow:hidden;-webkit-tap-highlight-color:transparent}
+#sessRecap .rc-wrap{max-width:480px;height:100%;margin:0 auto;padding:calc(12px + env(safe-area-inset-top,0px)) 16px calc(10px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column}
+#sessRecap .rc-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:8px;border-bottom:1px solid var(--rule)}
+#sessRecap .rc-head .brand-word{height:22px}
+#sessRecap .rc-date{font-family:var(--font-num);font-size:12px;letter-spacing:.04em;color:var(--mt);text-transform:uppercase}
+#sessRecap .rc-title{padding:10px 0 8px}
+#sessRecap .rc-title h2{margin:0;font-family:var(--font-display);font-weight:800;font-style:normal;font-size:clamp(21px,6.4vw,26px);line-height:1.1;letter-spacing:-.01em}
+#sessRecap .rc-sub{margin-top:4px;font-size:12px;color:var(--mt);letter-spacing:.03em}
+#sessRecap .rc-sub u{text-decoration:none;color:var(--accent);font-weight:700}
+#sessRecap .rc-body{flex:1;min-height:0;overflow:hidden}
+#sessRecap .rc-ex{padding:9px 0;border-bottom:1px solid var(--rule)}
+#sessRecap .rc-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+#sessRecap .rc-name{font-family:var(--font-display);font-weight:700;font-size:15.5px;line-height:1.2;min-width:0;overflow-wrap:anywhere}
+#sessRecap .rc-sets{font-family:var(--font-num);font-size:12px;color:var(--accent);white-space:nowrap}
+#sessRecap .rc-data{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:3px;font-family:var(--font-num);font-size:14px}
+#sessRecap .rc-data b{font-weight:600}
+#sessRecap .rc-data em{font-style:normal;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mt);border:1px solid var(--rule-strong);border-radius:99px;padding:1px 7px;align-self:center}
+#sessRecap .rc-meta{display:flex;flex-wrap:wrap;gap:2px 12px;margin-top:3px;font-family:var(--font-num);font-size:12px;color:var(--mt)}
+#sessRecap .rc-rest i{font-style:normal;opacity:.85}
+#sessRecap .rc-note{margin-top:4px;font-size:12.5px;line-height:1.35;color:var(--ink);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+#sessRecap .rc-foot{padding-top:8px}
+#sessRecap .rc-acts{display:flex;align-items:center;gap:8px}
+#sessRecap .rc-page{font-family:var(--font-num);font-size:12px;color:var(--mt);min-width:34px;text-align:center}
+#sessRecap[data-capture="1"] .rc-foot{text-align:center;padding-top:4px}
+#sessRecap .rc-b{min-height:44px;min-width:44px;padding:0 14px;border-radius:12px;border:1px solid var(--rule-strong);background:var(--plate);color:var(--tx);font-family:var(--font-display);font-weight:700;font-size:13px;letter-spacing:.08em}
+#sessRecap .rc-b:disabled{opacity:.35}
+#sessRecap .rc-cap{margin-left:auto}
+#sessRecap .rc-home{background:var(--accent-fill);color:var(--on-accent);border-color:transparent}
+@media (max-width:359px){#sessRecap .rc-wrap{padding-left:12px;padding-right:12px}#sessRecap .rc-data{font-size:13px}}
 </style>
 </head>
 <body>
@@ -9198,9 +9229,9 @@ function renderEntrenamiento() {
           (function(){var _ejAct=ejercicios.filter(function(ej){return isTechniqueActive(ej,CURRENT_WEEK);});var _tot=_ejAct.length;var _dn=ejercicios.filter(function(ej,_ei){return isTechniqueActive(ej,CURRENT_WEEK)&&_isExerciseFullyDone(DIA_ACTIVO,_ei,ej);}).length;return _dn===_tot&&_tot>0?'<span class="ok">'+_tot+'/'+_tot+' ejercicios ✓</span>':'<span>'+_dn+'/'+_tot+' ejercicios</span>';})()+'</div>'+
       '</div>'+
       (isDone
-        ? '<div class="sess-status sess-done">✓ COMPLETA</div>'
+        ? '<div class="tr-acts"><div class="sess-status sess-done">✓ COMPLETA</div><button onclick="openSessionRecap('+DIA_ACTIVO+')" class="sess-hdr-btn sess-live" title="Ver el resumen de esta sesión">RESUMEN</button></div>'
         : _isPartialClosed
-          ? '<div class="sess-status sess-partial">◐ PARCIAL</div>'
+          ? '<div class="tr-acts"><div class="sess-status sess-partial">◐ PARCIAL</div><button onclick="openSessionRecap('+DIA_ACTIVO+')" class="sess-hdr-btn sess-live" title="Ver el resumen de esta sesión">RESUMEN</button></div>'
         : _isSkipped
           ? '<div class="sess-status sess-skipped">⏸ OMITIDA</div>'
           : '<div class="tr-acts">'+
@@ -15680,6 +15711,9 @@ async function submitPostSession() {
     }
     if (CURRENT_WEEK === _weekAtPostStart && DIA_ACTIVO === _dayAtPostStart) {
       if (_saved !== false) showSessionSummary(di);
+    } else if (_saved !== false && typeof openSessionRecap === 'function' && USER && USER.uid === _uidAtPostStart && ACTIVE_PLAN_ID === _planAtPostStart) {
+      // T587: closing the LAST session of a week advances the week / day before this point; the recap belongs to the session that was just saved (read-only, same athlete and plan).
+      openSessionRecap(di, _weekAtPostStart, { auto: true });
     }
   } finally {
     // Always unlock — both success and unexpected-exception paths land here.
@@ -15689,6 +15723,11 @@ async function submitPostSession() {
 
 // ── Resumen visual post-sesión ────────────────────────────────────────────────
 function showSessionSummary(di) {
+  // T587: after a SUCCESSFUL save the compact recap (what the athlete really logged) opens; the old card is only a fallback if the recap cannot be built.
+  if (typeof openSessionRecap === 'function' && openSessionRecap(di, CURRENT_WEEK, { auto: true })) return;
+  _showSessionSummaryCard(di);
+}
+function _showSessionSummaryCard(di) {
   var sesiones = getSesiones();
   var ses = sesiones && sesiones[di];
   if (!ses) return;
@@ -15755,6 +15794,145 @@ function showSessionSummary(di) {
   document.body.appendChild(ov);
   // Auto-dismiss solo cuando no hay recomendaciones que leer
   if (!_recHtml) setTimeout(function(){ var el = document.getElementById('sessionSummaryOv'); if(el) el.remove(); }, 8000);
+}
+
+// ── T587 · RESUMEN FINAL DE SESIÓN (captura) ─────────────────────────────────────────────────────────────────────────────────────
+// Solo LECTURA: nunca escribe ni dispara progresión. Muestra lo que el atleta REALMENTE registró (cargas, repeticiones, RIR, ICS); un dato ausente se omite (nunca se rellena);
+// el descanso solo se muestra como "prescrito" (el Cliente no mide el descanso real). Las funciones _recap* puras se prueban en tests/t587-session-recap.test.js.
+function _recapNum(v) { var n = parseFloat(v); return isFinite(n) ? n : null; }
+function _recapFmtNum(n) { return (Math.round(n * 100) / 100 % 1 === 0) ? String(Math.round(n)) : String(Math.round(n * 100) / 100).replace('.', ','); }
+// Valores por serie -> texto compacto: todos iguales "10" · distintos "10·10·8"
+function _recapJoin(vals) {
+  var v = vals.filter(function(x) { return x !== null && x !== undefined; }).map(_recapFmtNum);
+  if (!v.length) return '';
+  return v.every(function(x) { return x === v[0]; }) ? v[0] : v.join('·');
+}
+function _recapRestFmt(sec) {
+  var n = parseInt(sec, 10); if (!(n > 0)) return '';
+  return n >= 60 ? Math.floor(n / 60) + ':' + ('0' + (n % 60)).slice(-2) : n + ' s';
+}
+function _recapDate(ms) {
+  if (!(ms > 0)) return '';
+  try { return new Date(ms).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }).replace('.', ''); } catch (e) { return ''; }
+}
+// o = { sessionName, week, dateMs, partial, exercises: [{ name, sets: [{ reps, carga, unit, rir_real, ics, express, expressFinal }], prescribedRest, note }] }
+function _recapBuild(o) {
+  o = o || {}; var rows = [], totalSets = 0;
+  (o.exercises || []).forEach(function(ex) {
+    var sets = (ex.sets || []).filter(function(s) { return s; });
+    if (!sets.length) return;
+    totalSets += sets.length;
+    var units = [], loadVals = [], repsVals = [], rirVals = [], icsVals = [];
+    sets.forEach(function(s) {
+      var u = String(s.unit || '').toUpperCase() === 'LB' ? 'lb' : 'kg'; if (units.indexOf(u) < 0) units.push(u);
+      repsVals.push(_recapNum(s.reps));
+      loadVals.push(_recapNum(s.carga) !== null && _recapNum(s.carga) > 0 ? { v: _recapNum(s.carga), u: u } : null);
+      if (_recapNum(s.rir_real) !== null && s.rir_real !== '' && s.rir_real !== null) rirVals.push(_recapNum(s.rir_real));
+      if (_recapNum(s.ics) !== null && _recapNum(s.ics) > 0) icsVals.push(_recapNum(s.ics));
+    });
+    var loadText = '';
+    var loads = loadVals.filter(function(x) { return x; });
+    if (loads.length) {
+      if (units.length === 1) loadText = _recapJoin(loads.map(function(x) { return x.v; })) + ' ' + units[0];
+      else loadText = loads.map(function(x) { return _recapFmtNum(x.v) + ' ' + x.u; }).join(' · ');   // distinct units are never mixed into one number
+    }
+    var repsText = _recapJoin(repsVals);
+    var avgIcs = icsVals.length ? icsVals.reduce(function(a, b) { return a + b; }, 0) / icsVals.length : null;
+    rows.push({
+      name: String(ex.name || 'Ejercicio'), sets: sets.length, repsText: repsText ? repsText + ' reps' : '', loadText: loadText,
+      rirText: rirVals.length ? 'RIR ' + _recapJoin(rirVals) : '', icsText: avgIcs !== null ? 'ICS ' + _recapFmtNum(Math.round(avgIcs * 10) / 10) : '',
+      restText: _recapRestFmt(ex.prescribedRest), restLabel: _recapRestFmt(ex.prescribedRest) ? 'Descanso prescrito' : '',
+      express: sets.some(function(s) { return s.express === true || s.expressFinal === true; }),
+      note: String(ex.note || '').replace(/\s+/g, ' ').trim()
+    });
+  });
+  return { sessionName: String(o.sessionName || 'Sesión'), week: o.week, dateText: _recapDate(o.dateMs), partial: o.partial === true, rows: rows, totals: { exercises: rows.length, sets: totalSets } };
+}
+// Empaqueta bloques (alturas medidas) en páginas de altura útil `avail`; un bloque nunca se parte ni se encoge; si un solo bloque excede la página va solo.
+function _recapPaginate(heights, avail) {
+  var pages = [], cur = [], used = 0;
+  heights.forEach(function(h, i) {
+    if (cur.length && used + h > avail) { pages.push(cur); cur = []; used = 0; }
+    cur.push(i); used += h;
+  });
+  if (cur.length) pages.push(cur);
+  return pages.length ? pages : [[]];
+}
+function _recapCollect(di, week) {
+  var ses = (getSesiones() || [])[di]; if (!ses) return null;
+  var exs = (ses.exercises && ses.exercises.length) ? ses.exercises : [];
+  var items = [], lastTs = 0;
+  exs.forEach(function(ej, ei) {
+    if (typeof isTechniqueActive === 'function' && !isTechniqueActive(ej, week)) return;
+    var sub = LOGS['exsub_' + week + '_' + di + '_' + ei], name = (sub && sub.nombre) || ej.nombre || ej.exerciseName || ('Ejercicio ' + (ei + 1));
+    var sets = [];
+    for (var s = 0; s < 12; s++) {
+      var lg = LOGS['log_' + week + '_' + di + '_' + ei + '_s' + s];
+      if (lg && lg.done === true && lg.autoFilled !== true) { sets.push(lg); if (typeof lg.ts === 'number' && lg.ts > lastTs) lastTs = lg.ts; }
+    }
+    var rest = null, es = ej.sets || []; for (var k = 0; k < es.length; k++) { if (parseInt(es[k] && es[k].restSeconds, 10) > 0) { rest = es[k].restSeconds; break; } }
+    var pidNote = ej.prescriptionExerciseId && LOGS['exnotepid_' + week + '_' + ej.prescriptionExerciseId];
+    var note = (pidNote && typeof pidNote.text === 'string' && pidNote.text) || (typeof LOGS['exnote_' + week + '_' + di + '_' + ei] === 'string' ? LOGS['exnote_' + week + '_' + di + '_' + ei] : '');
+    items.push({ name: name, sets: sets, prescribedRest: rest, note: note });
+  });
+  var post = LOGS['postsession_' + week + '_' + di];
+  var sessionName = _stripDayNo((ses.dia || 'Sesión').replace(/^(SESION|SESIÓN)\s*\d+[:\s]*/i, '').replace(/^(DÍA|DIA)\s*\d+\s*[—–:\s]*/i, '').trim()).replace(/^[\s\-–—:·]+/, '') || 'Sesión';
+  return { sessionName: sessionName, week: week, dateMs: (post && post.ts) || lastTs || 0, partial: !!(post && (post.partial === true || post.autoClosed === true)) || !!LOGS['partial_' + week + '_' + di], exercises: items };
+}
+function _recapRowHtml(r) {
+  var meta = [r.rirText, r.icsText].filter(Boolean).join(' · ');
+  var rest = r.restText ? '<span class="rc-rest"><i>' + _escHTml(r.restLabel) + '</i> ' + _escHTml(r.restText) + '</span>' : '';
+  return '<div class="rc-ex">' +
+    '<div class="rc-top"><span class="rc-name">' + _escHTml(r.name) + '</span><span class="rc-sets">' + r.sets + (r.sets === 1 ? ' serie' : ' series') + '</span></div>' +
+    '<div class="rc-data">' + (r.repsText ? '<b>' + _escHTml(r.repsText) + '</b>' : '') + (r.loadText ? '<b>' + _escHTml(r.loadText) + '</b>' : '') + (r.express ? '<em>express</em>' : '') + '</div>' +
+    ((meta || rest) ? '<div class="rc-meta">' + (meta ? '<span>' + _escHTml(meta) + '</span>' : '') + rest + '</div>' : '') +
+    (r.note ? '<div class="rc-note">' + _escHTml(r.note) + '</div>' : '') + '</div>';
+}
+var _recapState = null;
+function openSessionRecap(di, weekOverride, opts) {
+  try {
+    var week = weekOverride || CURRENT_WEEK, data = _recapCollect(di, week); if (!data) return false;
+    var recap = _recapBuild(data); if (!recap.rows.length) { if (!(opts && opts.auto)) showToast('Esta sesión no tiene series registradas', true); return false; }
+    var old = document.getElementById('sessRecap'); if (old) old.remove();   // never two overlays
+    var ov = document.createElement('div'); ov.id = 'sessRecap'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'Resumen de la sesión');
+    ov.innerHTML = '<div class="rc-wrap"><div class="rc-head"><div class="brand"><span class="brand-word" aria-label="VDSEN">VDSEN<i></i></span></div>' +
+      '<div class="rc-date">' + _escHTml(recap.dateText) + '</div></div>' +
+      '<div class="rc-title"><h2>' + _escHTml(recap.sessionName) + '</h2><div class="rc-sub">SEM ' + week + ' · ' + recap.totals.exercises + (recap.totals.exercises === 1 ? ' ejercicio' : ' ejercicios') + ' · ' + recap.totals.sets + ' series completadas' + (recap.partial ? ' · <u>PARCIAL</u>' : '') + '</div></div>' +
+      '<div class="rc-body" id="rcBody"></div><div class="rc-foot" id="rcFoot"></div></div>';
+    document.body.appendChild(ov); document.documentElement.classList.add('rc-open');
+    _recapState = { recap: recap, page: 0, pages: [[]], capture: false, di: di, week: week };
+    _recapLayout(); return true;
+  } catch (e) { console.warn('[recap]', e && e.message); return false; }
+}
+function _recapLayout() {
+  var st = _recapState, ov = document.getElementById('sessRecap'); if (!st || !ov) return;
+  var body = ov.querySelector('#rcBody'), head = ov.querySelector('.rc-head'), title = ov.querySelector('.rc-title'), foot = ov.querySelector('#rcFoot');
+  // measure every block at the real width, then pack pages: nothing is shrunk to force a single screen
+  body.innerHTML = st.recap.rows.map(_recapRowHtml).join('');
+  var hs = Array.prototype.map.call(body.children, function(c) { var cs = getComputedStyle(c); return c.offsetHeight + parseFloat(cs.marginTop || 0) + parseFloat(cs.marginBottom || 0); });
+  var avail = Math.max(240, window.innerHeight - head.offsetHeight - title.offsetHeight - 132);
+  st.pages = _recapPaginate(hs, avail); if (st.page >= st.pages.length) st.page = st.pages.length - 1;
+  _recapRender();
+}
+function _recapRender() {
+  var st = _recapState, ov = document.getElementById('sessRecap'); if (!st || !ov) return;
+  var body = ov.querySelector('#rcBody'), foot = ov.querySelector('#rcFoot'), idx = st.pages[st.page] || [], multi = st.pages.length > 1;
+  body.innerHTML = idx.map(function(i) { return _recapRowHtml(st.recap.rows[i]); }).join('');
+  ov.setAttribute('data-capture', st.capture ? '1' : '0');
+  var dots = multi ? '<span class="rc-page">' + (st.page + 1) + '/' + st.pages.length + '</span>' : '';
+  foot.innerHTML = st.capture
+    ? dots
+    : '<div class="rc-acts">' + (multi ? '<button type="button" class="rc-b" onclick="_recapGo(-1)" ' + (st.page === 0 ? 'disabled' : '') + ' aria-label="Página anterior">‹</button>' : '') + dots +
+      (multi ? '<button type="button" class="rc-b" onclick="_recapGo(1)" ' + (st.page === st.pages.length - 1 ? 'disabled' : '') + ' aria-label="Página siguiente">›</button>' : '') +
+      '<button type="button" class="rc-b rc-cap" onclick="_recapCapture(true)">CAPTURA</button>' +
+      '<button type="button" class="rc-b rc-home" onclick="closeSessionRecap(true)">INICIO</button></div>';
+  ov.onclick = st.capture ? function() { if (st.page < st.pages.length - 1) { st.page++; _recapRender(); } else _recapCapture(false); } : null;
+}
+function _recapGo(d) { var st = _recapState; if (!st) return; st.page = Math.max(0, Math.min(st.pages.length - 1, st.page + d)); _recapRender(); }
+function _recapCapture(on) { var st = _recapState; if (!st) return; st.capture = !!on; if (on) st.page = 0; _recapRender(); }
+function closeSessionRecap(goHome) {
+  var ov = document.getElementById('sessRecap'); if (ov) ov.remove(); document.documentElement.classList.remove('rc-open'); _recapState = null;
+  if (goHome && typeof goTab === 'function') { try { goTab(0); } catch (e) { /* no-op */ } }
 }
 
 function _avgArr(arr) {

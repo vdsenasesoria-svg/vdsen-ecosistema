@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const S = require('../scripts/pilot/ayrton-canary.cjs');
 
-const UID = 'z82EDPvsCaabfMN3eGAP3rpxeMt1';   // format of the real owner UID (supplied by the owner in chat); the script never looks it up
+const UID = 'Ab12Cd34Ef56Gh78Ij90Kl12Mn34';   // synthetic value with the format of a Firebase UID; the script never looks one up and no real UID is stored in the repository
 const enc = (v) => v === null || v === undefined ? { nullValue: null } : typeof v === 'boolean' ? { booleanValue: v } : typeof v === 'number' ? { integerValue: String(v) } : typeof v === 'string' ? { stringValue: v }
   : Array.isArray(v) ? { arrayValue: { values: v.map(enc) } } : { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, enc(x)])) } };
 const dec = (v) => v.stringValue !== undefined ? v.stringValue : v.integerValue !== undefined ? +v.integerValue : v.booleanValue !== undefined ? v.booleanValue : v.nullValue !== undefined ? null
