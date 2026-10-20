@@ -61,7 +61,7 @@ test('T588-5 no TXT on unauthorized client or denied relevant read', async () =>
 });
 test('T588-6 sanitizes secrets without stripping user notes containing ordinary word token', async () => {
   const db = fx.build();
-  db.fichas_onboarding[fx.A1].data.data.accessToken = 'DO-NOT-EXPORT';
+  db.fichas_onboarding[fx.A1].data.accessToken = 'DO-NOT-EXPORT';
   const out = await file(db, fx.COACH_A, fx.A1);
   assert.doesNotMatch(out.text, /DO-NOT-EXPORT|accessToken/);
   assert.match(out.text, /campo_futuro/);
