@@ -6,7 +6,7 @@ Estado: **preparado, no desplegado.** Este documento describe la secuencia para 
 
 | Entorno | Identificador | Fuente |
 |---|---|---|
-| PRODUCCIÓN | `vdsen-ecosistema` | `firebaseConfig.projectId` en `vdsen-coach.html` y `vdsen-cliente.html`; `scripts/migrate-ayrton-uid.js` |
+| PRODUCCIÓN | `vdsen-ecosistema` | `firebaseConfig.projectId` en `vdsen-coach.html` y `vdsen-cliente.html` |
 | STAGING | `vdsen-ecosistema-staging` (alias `staging`, `.firebaserc`) | Creado en T540: Firestore nativo `nam5` (misma ubicación que producción), Auth solo Email/Password, app web «VDSEN Staging»; config del SDK en `config/firebase-staging.config.json`. **Vacío; reglas e índices aún NO desplegados.** |
 | Otro proyecto de la cuenta | `vdsen-planes` | Fuera de alcance: nunca se toca |
 
