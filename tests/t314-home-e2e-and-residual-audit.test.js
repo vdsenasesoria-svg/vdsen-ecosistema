@@ -35,6 +35,8 @@ const REAL_DECLS = [
   'function _getSessionLifecycleLabel(logs, week, di) {',
   'function _getTodayHomeState(logs, week, sesiones) {',
   'function _calcSessionStats(logs, di, week) {',
+  'function _dayTotals(ses, week) {',
+  'function _progressText(strengthDone, strengthTotal, cardioDone, cardioTotal) {',
   'function _lastRealSetTs(logs, week, di) {',
   'function _findStaleOpenSession(logs, week, sesiones, nowMs) {',
   'function getTodaySummary() {',
@@ -53,6 +55,7 @@ var LOGS = {}, CURRENT_WEEK = 1, REAL_WEEK = 1, DIA_ACTIVO = 0, PLAN = { entrena
 var __selDiaCalls = [], __goTabCalls = [], __endPartialCalls = [];
 function getSesiones() { return PLAN.__sesiones || []; }
 function isTechniqueActive(ej, week) { return true; }
+function _getExType(ej) { return String((ej && (ej.exerciseType || ej.tipo)) || '').toLowerCase() === 'cardio' ? 'cardio' : 'fuerza'; }
 function _escHTml(s) { return String(s == null ? '' : s); }
 function _stripDayNo(l) { return String(l == null ? '' : l).replace(/^\s*#\s*\d+\s*[—–:.-]\s*/, '').trim(); }
 function selDia(i) { __selDiaCalls.push(i); DIA_ACTIVO = i; }
