@@ -2,3 +2,4 @@ vdsen-cliente.html text eol=lf
 vdsen-coach.html text eol=lf
 storage.rules text eol=lf
 .release/storage-rollback/*.rules text eol=lf
+.release/rollback/*.rules text eol=lf
