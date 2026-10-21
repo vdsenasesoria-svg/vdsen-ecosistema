@@ -151,7 +151,9 @@ function validateVdsenPlan(normalized) {
     }
     for (var ei = 0; ei < day.exercises.length; ei++) {
       var ex = day.exercises[ei];
-      if (!Array.isArray(ex.sets) || ex.sets.length === 0) {
+      var sets = Array.isArray(ex.sets) ? ex.sets : [];
+      var exerciseType = String(ex.exerciseType || ex.tipo || '').toLowerCase().trim();
+      if (sets.length === 0 && exerciseType !== 'cardio') {
         return { ok: false, error: ERROR_CODES.EXERCISE_WITHOUT_SETS,
                  message: 'Ejercicio "' + (ex.exerciseName || '?') + '" no tiene series' };
       }
@@ -175,8 +177,8 @@ function validateVdsenPlan(normalized) {
           return { ok: false, error: ERROR_CODES.INVALID_REPS_RANGE,
                    message: 'repsRange debe ser {min,max} enteros con min < max en "' + (ex.exerciseName || '?') + '"' };
         }
-        for (var ri = 0; ri < ex.sets.length; ri++) {
-          var rt = ex.sets[ri] && ex.sets[ri].repsTarget;
+        for (var ri = 0; ri < sets.length; ri++) {
+          var rt = sets[ri] && sets[ri].repsTarget;
           if (typeof rt === 'number' && (rt < rr.min || rt > rr.max)) {
             return { ok: false, error: ERROR_CODES.INVALID_REPS_RANGE,
                      message: 'repsTarget fuera de repsRange en "' + (ex.exerciseName || '?') + '" set ' + ri };
@@ -187,8 +189,8 @@ function validateVdsenPlan(normalized) {
       if (ex.muscleGroup !== undefined && ex.muscleGroup !== null && MUSCLE_KEYS.indexOf(ex.muscleGroup) < 0) {
         return { ok: false, error: ERROR_CODES.INVALID_MUSCLE_GROUP, message: 'muscleGroup fuera del vocabulario VDSEN en "' + (ex.exerciseName || '?') + '"' };
       }
-      for (var si = 0; si < ex.sets.length; si++) {
-        var s = ex.sets[si];
+      for (var si = 0; si < sets.length; si++) {
+        var s = sets[si];
         if (!s || typeof s !== 'object') {
           return { ok: false, error: ERROR_CODES.INVALID_SET,
                    message: 'Set ' + si + ' inválido en "' + (ex.exerciseName || '?') + '"' };
