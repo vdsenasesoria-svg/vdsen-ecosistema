@@ -2278,6 +2278,17 @@ test('T-N05: validateVdsenPlan: ejercicio sin series → EXERCISE_WITHOUT_SETS',
   assert(r.error === N_ERR.EXERCISE_WITHOUT_SETS, 'error=EXERCISE_WITHOUT_SETS, got: ' + r.error);
 });
 
+test('T590: validateVdsenPlan accepts declared cardio without strength sets', function() {
+  var plan = {
+    weeks: 6, daysPerWeek: 1,
+    days: [{ dayIndex: 0, label: 'Cardio', exercises: [{
+      exerciseName: 'Bicicleta zona 2', exerciseType: 'cardio', duracionMin: 30
+    }] }]
+  };
+  var r = validateVdsenPlan(plan);
+  assert(r.ok === true, 'declared cardio does not require sets: ' + (r.message || ''));
+});
+
 // T-N06: nivel_medio inválido → INVALID_NIVEL_MEDIO
 test('T-N06: validateVdsenPlan: nivel_medio="intermedio" → INVALID_NIVEL_MEDIO', function() {
   var plan = {
