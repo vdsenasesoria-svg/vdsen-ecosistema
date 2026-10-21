@@ -64,6 +64,8 @@ const REAL_SRC = [
   '_lastRealSetTs(logs, week, di) {',
   '_findStaleOpenSession(logs, week, sesiones, nowMs) {',
   '_calcSessionStats(logs, di, week) {',
+  '_dayTotals(ses, week) {',
+  '_progressText(strengthDone, strengthTotal, cardioDone, cardioTotal) {',
   '_fmtElapsed(startMs, endMs) {',
 ].map(function(sig) {
   var kw = sig.startsWith('_') ? 'function ' + sig : sig;
@@ -94,6 +96,7 @@ var localStorage = { _d:{}, getItem:function(k){ return this._d.hasOwnProperty(k
 function getSesiones() { return __sesiones; }
 function getTotalWeeks() { return __totalWeeks; }
 function isTechniqueActive(ej, week) { return true; }
+function _getExType(ej) { return String((ej && (ej.exerciseType || ej.tipo)) || '').toLowerCase() === 'cardio' ? 'cardio' : 'fuerza'; }
 function showToast(msg, isError) { __toasts.push({ msg: msg, isError: !!isError }); }
 function renderEntrenamiento() { __renderCalls++; }
 function renderResumen() { __renderCalls++; }

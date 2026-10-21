@@ -36,6 +36,8 @@ const src = [
   'function _getSessionLifecycleState(logs, week, di) {',
   'function _getSessionLifecycleLabel(logs, week, di) {',
   'function _calcSessionStats(logs, di, week) {',
+  'function _dayTotals(ses, week) {',
+  'function _progressText(strengthDone, strengthTotal, cardioDone, cardioTotal) {',
   'function _getTodayHomeState(logs, week, sesiones) {',
 ].map(function(decl) { return extractFunction(CLIENT, decl); }).join('\n');
 const labelsMapIdx = CLIENT.indexOf('var _SESSION_LIFECYCLE_LABELS = {');
@@ -43,6 +45,7 @@ const labelsMapSrc = CLIENT.slice(labelsMapIdx, CLIENT.indexOf('};', labelsMapId
 
 const fn = new Function(
   'function isTechniqueActive(ej, week) { return true; }\n' +
+  "function _getExType(ej) { return String((ej && (ej.exerciseType || ej.tipo)) || '').toLowerCase() === 'cardio' ? 'cardio' : 'fuerza'; }\n" +
   src.replace('function _getSessionLifecycleLabel(logs, week, di) {', labelsMapSrc + '\nfunction _getSessionLifecycleLabel(logs, week, di) {') +
   '\nreturn { _getTodayHomeState, _getSessionLifecycleState };'
 );

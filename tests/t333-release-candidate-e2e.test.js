@@ -46,6 +46,8 @@ const CLIENT_DECLS = [
   'function _getSessionLifecycleLabel(logs, week, di) {',
   'function _getTodayHomeState(logs, week, sesiones) {',
   'function _calcSessionStats(logs, di, week) {',
+  'function _dayTotals(ses, week) {',
+  'function _progressText(strengthDone, strengthTotal, cardioDone, cardioTotal) {',
   'async function skipSession(di, reason) {',
   'async function skipExercise(di, ei, reason) {',
   'async function _endSessionAsPartial(di) {',
@@ -66,6 +68,7 @@ var localStorage = { _d:{}, getItem:function(k){ return this._d.hasOwnProperty(k
 function getSesiones() { return __sesiones; }
 function getTotalWeeks() { return 6; }
 function isTechniqueActive() { return true; }
+function _getExType(ej) { return String((ej && (ej.exerciseType || ej.tipo)) || '').toLowerCase() === 'cardio' ? 'cardio' : 'fuerza'; }
 function showToast(msg, isError) { __toasts.push({ msg: msg, isError: !!isError }); }
 function renderEntrenamiento() {}
 function renderResumen() {}

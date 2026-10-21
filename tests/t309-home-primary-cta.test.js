@@ -49,7 +49,7 @@ ok(!/case 'COMPLETE':[\s\S]{0,200}EMPEZAR|case 'COMPLETE':[\s\S]{0,200}ENTRENAR 
 ok(todaySummarySrc.includes('OMITIDA'), 'SKIPPED renders an explicit "OMITIDA" status line, never a bare pending look');
 
 // ── PARTIAL shows real progress (X/Y), never fabricated. ───────────────────
-ok(todaySummarySrc.includes('home.progress.completedSets') && todaySummarySrc.includes('home.progress.totalSets'),
+ok(todaySummarySrc.includes('home.progress.strengthDone') && todaySummarySrc.includes('home.progress.strengthTotal'),
   'PARTIAL/IN_PROGRESS status lines show the resolver\'s real completedSets/totalSets, not an invented number');
 
 // ── Single routing path, no duplicated logic (CTA always opens the right day). ──

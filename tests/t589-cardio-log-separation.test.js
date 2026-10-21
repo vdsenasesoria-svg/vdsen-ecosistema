@@ -23,7 +23,7 @@ function fnSrc(src, name) {
   throw new Error('unbalanced ' + name);
 }
 function sandbox(names, extra) {
-  const ctx = Object.assign({ console, Date, Math, parseInt, parseFloat, isFinite, isNaN, String, Number, Array, Object, JSON }, extra || {});
+  const ctx = Object.assign({ _exCatIdx: { src: null, at: 0, map: {} }, console, Date, Math, parseInt, parseFloat, isFinite, isNaN, String, Number, Array, Object, JSON }, extra || {});
   vm.createContext(ctx);
   vm.runInContext(names.map((n) => fnSrc(html, n)).join('\n') + '\nthis.__x={' + names.map((n) => n + ':' + n).join(',') + '};', ctx);
   return ctx.__x;
@@ -33,7 +33,7 @@ const J = (o) => JSON.parse(JSON.stringify(o));
 test('T589-1 classification: explicit type wins; the Coach catalog pattern Cardio (exact id / exact name) classifies; fuzzy or word-based guesses never do', () => {
   const CAT = { 'cinta de correr': { motorPattern: 'Cardio' }, 'press banca': { motorPattern: 'Empuje' }, 'remo': { motorPattern: 'Tirón' } };
   const BY_ID = { x1: { motorPattern: 'Cardio' } };
-  const R = sandbox(['_getExType', '_exNormKey', '_exHasCardioPattern'], { EXERCISE_CATALOG: CAT, EXERCISE_CATALOG_BY_ID: BY_ID });
+  const R = sandbox(['_getExType', '_exNormKey', '_exHasCardioPattern', '_exCatPatternIndex'], { EXERCISE_CATALOG: CAT, EXERCISE_CATALOG_BY_ID: BY_ID });
   assert.equal(R._getExType({ exerciseType: 'cardio' }), 'cardio');
   assert.equal(R._getExType({ tipo: 'cardio' }), 'cardio');
   assert.equal(R._getExType({ exerciseName: 'Press banca' }), 'fuerza');
@@ -101,7 +101,7 @@ test('T589-6 recap collection: the single cardio log is read; legacy set-shaped 
   const LOGS = { log_2_0_0: { exType: 'cardio', done: true, duracionMin: 30, metrica: 'rpe', rpe: 6, ts: 5000 }, log_2_0_1_s0: { done: true, reps: '10', carga: '50', unit: 'KG', ts: 6000 },
     log_2_0_2_s0: { done: true, reps: '30', carga: '0', ts: 7000 }, postsession_2_0: { ts: 9000 } };
   const ses = [{ dia: 'DÍA 1 — Mixto', exercises: [{ nombre: 'Cinta', exerciseType: 'cardio' }, { nombre: 'Press', sets: [{}] }, { nombre: 'Bici vieja', exerciseType: 'cardio', sets: [{}] }] }];
-  const R = sandbox(['_getExType', '_exNormKey', '_exHasCardioPattern', '_recapCollect'], { LOGS, EXERCISE_CATALOG: {}, EXERCISE_CATALOG_BY_ID: {}, getSesiones: () => ses, isTechniqueActive: () => true, _stripDayNo: (x) => x });
+  const R = sandbox(['_getExType', '_exNormKey', '_exHasCardioPattern', '_exCatPatternIndex', '_recapCollect'], { LOGS, EXERCISE_CATALOG: {}, EXERCISE_CATALOG_BY_ID: {}, getSesiones: () => ses, isTechniqueActive: () => true, _stripDayNo: (x) => x });
   const d = J(R._recapCollect(0, 2));
   assert.equal(d.exercises[0].cardio.duracionMin, 30); assert.deepEqual(d.exercises[0].sets, []);
   assert.equal(d.exercises.length, 2, 'a cardio exercise with no single cardio log (only legacy set-shaped records) is not listed');
@@ -113,7 +113,7 @@ test('T589-6 recap collection: the single cardio log is read; legacy set-shaped 
 test('T589-7 progression and weekly statistics exclude cardio (source contracts) and the shadow never materializes a candidate for a declared-cardio PID', () => {
   assert.match(fnSrc(html, 'calculateProgression'), /if \(_getExType\(ej\) === 'cardio'\) return null;/);
   assert.match(fnSrc(html, '_buildWeekPerfSummary'), /_isCardioLogKey\(k\)\) return;/);
-  const R = sandbox(['_isCardioLogKey', '_getExType', '_exNormKey', '_exHasCardioPattern'], { EXERCISE_CATALOG: {}, EXERCISE_CATALOG_BY_ID: {}, getSesiones: () => [{ exercises: [{ nombre: 'Cinta', exerciseType: 'cardio' }, { nombre: 'Press' }] }] });
+  const R = sandbox(['_isCardioLogKey', '_getExType', '_exNormKey', '_exHasCardioPattern', '_exCatPatternIndex'], { EXERCISE_CATALOG: {}, EXERCISE_CATALOG_BY_ID: {}, getSesiones: () => [{ exercises: [{ nombre: 'Cinta', exerciseType: 'cardio' }, { nombre: 'Press' }] }] });
   assert.equal(R._isCardioLogKey('log_1_0_0_s0'), true); assert.equal(R._isCardioLogKey('log_1_0_1_s0'), false); assert.equal(R._isCardioLogKey('log_1_0_0'), true);
   const shadow = require('../assets/progression-auto-apply-shadow.js');
   const plan = { days: [{ exercises: [{ prescriptionExerciseId: 'c1', exerciseType: 'cardio' }, { prescriptionExerciseId: 's1' }] }] };

@@ -196,6 +196,9 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .sec-kicker{font-family:var(--font-display);font-size:18px;font-weight:700;letter-spacing:0;line-height:1.1;color:var(--tx);margin-bottom:8px}
 .sess-hdr-btn{min-height:44px;min-width:44px;padding:10px 14px;font-size:12px;font-weight:800;cursor:pointer;letter-spacing:.5px;border-radius:2px}
 .tap-target{min-height:44px;min-width:44px}
+/* T592: the 52x30 profile switches keep their look; their hit area grows to 44px height (no layout change) */
+button[onclick^="setRestTimerDisabled"],button[onclick^="toggleLightMode"],button[onclick^="setExpressDisabled"]{position:relative}
+button[onclick^="setRestTimerDisabled"]::before,button[onclick^="toggleLightMode"]::before,button[onclick^="setExpressDisabled"]::before{content:"";position:absolute;inset:-7px -4px}
 .session-head{align-items:center}
 .ci-float{position:fixed;bottom:calc(72px + env(safe-area-inset-bottom,0px));right:calc(14px + env(safe-area-inset-right,0px));z-index:300}
 .ci-float button{min-height:44px;padding:12px 18px;background:var(--accent-fill);border:none;color:var(--on-accent);font-family:var(--font-display);font-size:14px;font-weight:800;letter-spacing:1px;cursor:pointer;border-radius:2px;box-shadow:0 4px 20px rgba(196,255,0,.28);white-space:nowrap}
@@ -353,7 +356,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .done-session-btn{width:100%;padding:16px;background:var(--accent-fill);color:var(--on-accent);font-family:var(--font-display);font-weight:800;font-size:16px;letter-spacing:2.5px;text-transform:uppercase;border:none;border-radius:2px;cursor:pointer;margin-top:14px;-webkit-tap-highlight-color:transparent}
 .done-session-btn:active{opacity:.9;transform:scale(.98)}
 .pdf-btn{width:100%;padding:13px;background:transparent;color:var(--platinum);font-weight:700;font-size:13px;letter-spacing:1.5px;text-transform:uppercase;border:1px solid rgba(165,165,158,.4);border-radius:10px;cursor:pointer;margin-bottom:10px}
-.logout-btn{width:100%;padding:12px;background:transparent;color:var(--mt);font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--border);border-radius:10px;cursor:pointer}
+.logout-btn{width:100%;min-height:44px;padding:12px;background:transparent;color:var(--mt);font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--border);border-radius:10px;cursor:pointer}
 .logout-btn:hover,.logout-btn:active{border-color:var(--red);color:var(--red)}
 ::-webkit-scrollbar{width:2px}
 ::-webkit-scrollbar-thumb{background:var(--border)}
@@ -5078,7 +5081,7 @@ function getTodaySummary() {
   switch (home.lifecycle) {
     case 'COMPLETE':
       btnClass = 'sess-cta-done';
-      statusLine = '<div class="sess-status sess-done">✓ COMPLETADA — '+home.progress.completedSets+'/'+home.progress.totalSets+' series</div>';
+      statusLine = '<div class="sess-status sess-done">✓ COMPLETADA — '+_progressText(home.progress.strengthDone, home.progress.strengthTotal, home.progress.cardioDone, home.progress.cardioTotal)+'</div>';
       break;
     case 'SKIPPED':
       btnClass = 'sess-cta-skipped';
@@ -5086,15 +5089,15 @@ function getTodaySummary() {
       break;
     case 'PARTIAL':
       btnClass = 'sess-cta-partial';
-      statusLine = '<div class="sess-status sess-partial">◐ PARCIAL — '+home.progress.completedSets+'/'+home.progress.totalSets+' series</div>';
+      statusLine = '<div class="sess-status sess-partial">◐ PARCIAL — '+_progressText(home.progress.strengthDone, home.progress.strengthTotal, home.progress.cardioDone, home.progress.cardioTotal)+'</div>';
       break;
     case 'IN_PROGRESS':
       btnClass = 'sess-cta-live';
-      statusLine = '<div class="sess-status sess-live">● EN CURSO — '+home.progress.completedSets+'/'+home.progress.totalSets+' series</div>';
+      statusLine = '<div class="sess-status sess-live">● EN CURSO — '+_progressText(home.progress.strengthDone, home.progress.strengthTotal, home.progress.cardioDone, home.progress.cardioTotal)+'</div>';
       break;
     default: // NOT_STARTED
       btnClass = 'sess-cta-pending';
-      statusLine = '<div class="sess-status sess-pending">· PENDIENTE — '+home.progress.totalSets+' series previstas</div>';
+      statusLine = '<div class="sess-status sess-pending">· PENDIENTE — '+[home.progress.strengthTotal > 0 || !(home.progress.cardioTotal > 0) ? home.progress.strengthTotal + ' series' : '', home.progress.cardioTotal > 0 ? home.progress.cardioTotal + ' cardio' : ''].filter(Boolean).join(' · ')+' previstas</div>';
   }
 
   return `<div class="today-session">${_escHTml(_stripDayNo(hoy.dia||''))}</div>
@@ -5299,7 +5302,7 @@ function _getTodayHomeState(logs, week, sesiones) {
     week: week,
     primaryAction: primaryAction,
     secondaryAction: secondaryAction,
-    progress: { completedSets: stats.completedSets, totalSets: totalSets },
+    progress: { completedSets: stats.completedSets, totalSets: totalSets, strengthDone: stats.strengthSets, strengthTotal: _dayTotals(ses, week).sets, cardioDone: stats.cardioDone, cardioTotal: _dayTotals(ses, week).cardio },
     isToday: !weekFullyResolved,
     canStart: canStart,
     canResume: canResume,
@@ -6641,9 +6644,18 @@ function _exHasCardioPattern(ej) {
   var id = ej.exerciseId, byId = id ? (typeof EXERCISE_CATALOG_BY_ID !== 'undefined' ? EXERCISE_CATALOG_BY_ID[String(id)] : null) : null;
   if (byId) return isC(byId.motorPattern);
   var nm = ej.nombre || ej.exerciseName; if (!nm || typeof EXERCISE_CATALOG === 'undefined') return false;
-  var raw = String(nm).toLowerCase().trim(), hit = EXERCISE_CATALOG[raw] || EXERCISE_CATALOG[_exNormKey(nm)];
-  if (!hit) { var ks = Object.keys(EXERCISE_CATALOG), nk = _exNormKey(nm); for (var i = 0; i < ks.length; i++) { if (_exNormKey(ks[i]) === nk) { hit = EXERCISE_CATALOG[ks[i]]; break; } } }
-  return !!hit && isC(hit.motorPattern);
+  var idx = _exCatPatternIndex(), nk = _exNormKey(nm);
+  return Object.prototype.hasOwnProperty.call(idx.map, nk) && idx.map[nk] === 'cardio';
+}
+// T592: the normalized name -> pattern index is rebuilt only when the catalog object changes or after 2 s (the classification runs in hot paths: week statistics call it per logged set).
+var _exCatIdx = { src: null, at: 0, map: {} };
+function _exCatPatternIndex() {
+  var now = Date.now();
+  if (_exCatIdx.src === EXERCISE_CATALOG && now - _exCatIdx.at < 2000) return _exCatIdx;
+  var m = {}, ks = Object.keys(EXERCISE_CATALOG);
+  for (var i = 0; i < ks.length; i++) { var k = _exNormKey(ks[i]); if (!Object.prototype.hasOwnProperty.call(m, k)) m[k] = _exNormKey(EXERCISE_CATALOG[ks[i]] && EXERCISE_CATALOG[ks[i]].motorPattern); }
+  _exCatIdx = { src: EXERCISE_CATALOG, at: now, map: m };
+  return _exCatIdx;
 }
 
 // Etiqueta visual + color por tipo (chip en header del ejercicio)
@@ -7390,19 +7402,19 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       ? '<div style="background:rgba(107,107,102,.08);border:1px solid rgba(107,107,102,.25);border-radius:10px;padding:8px 14px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
           '<span style="font-size:14px">⏸</span>'+
           '<span style="font-size:11px;color:var(--mt);font-weight:700;flex:1">Sesión omitida · puedes reabrirla</span>'+
-          '<button onclick="markSessionDone('+di+')" style="font-size:10px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:3px 10px;border-radius:6px;cursor:pointer">Reabrir</button>'+
+          '<button onclick="markSessionDone('+di+')" style="font-size:10px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:0 14px;min-height:44px;border-radius:6px;cursor:pointer">Reabrir</button>'+
         '</div>'
       : _isPartialClosedCard
       ? '<div style="background:rgba(200,165,74,.08);border:1px solid rgba(200,165,74,.3);border-radius:10px;padding:8px 14px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
           '<span style="font-size:14px">◐</span>'+
           '<span style="font-size:11px;color:#C8A54A;font-weight:700;flex:1">Sesión parcial · se conservó todo lo realizado</span>'+
-          '<button onclick="markSessionDone('+di+')" style="font-size:10px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:3px 10px;border-radius:6px;cursor:pointer">Reabrir</button>'+
+          '<button onclick="markSessionDone('+di+')" style="font-size:10px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:0 14px;min-height:44px;border-radius:6px;cursor:pointer">Reabrir</button>'+
         '</div>'
       : '<div style="background:rgba(110,154,110,.08);border:1px solid rgba(110,154,110,.25);border-radius:10px;padding:8px 14px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
           '<span style="font-size:14px">✓</span>'+
           '<span style="font-size:11px;color:var(--grn);font-weight:700;flex:1">Sesión completada · puedes seguir editando series</span>'+
-          '<button onclick="goTab(0)" style="font-size:10px;font-weight:700;color:var(--accent);background:rgba(var(--accent-rgb),.1);border:1px solid var(--accent);padding:3px 10px;border-radius:6px;cursor:pointer">📊 Ver Resumen</button>'+
-          '<button onclick="markSessionDone('+di+')" style="font-size:10px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:3px 10px;border-radius:6px;cursor:pointer">Reabrir</button>'+
+          '<button onclick="goTab(0)" style="font-size:10px;font-weight:700;color:var(--accent);background:rgba(var(--accent-rgb),.1);border:1px solid var(--accent);padding:0 14px;min-height:44px;border-radius:6px;cursor:pointer">📊 Ver Resumen</button>'+
+          '<button onclick="markSessionDone('+di+')" style="font-size:10px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:0 14px;min-height:44px;border-radius:6px;cursor:pointer">Reabrir</button>'+
         '</div>')
     : '';
 
@@ -7460,6 +7472,17 @@ function _perfCta(onclick, done, label) {
     (done ? '<svg class="ico" aria-hidden="true" focusable="false"><use href="#i-check"/></svg> COMPLETADO — TOCAR PARA EDITAR' : label)+'</button>';
 }
 
+// T592: a log of a calisthenics / cardio / station / circuit entry is only written in the CURRENT week (strength already refuses preview and past weeks), and a
+// repeated tap on the same entry within 700 ms is ignored (a double tap used to confirm and immediately un-confirm the entry).
+var _perfTapLock = {};
+function _perfBlocked(key) {
+  if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return true; }
+  if (CURRENT_WEEK < REAL_WEEK) { showToast('Semana pasada — modo lectura', true); return true; }
+  var now = Date.now();
+  if (_perfTapLock[key] && now - _perfTapLock[key] < 700) return true;
+  _perfTapLock[key] = now;
+  return false;
+}
 // ── Helper genérico para guardar log y refrescar ──────────────────────────
 function _saveExLog(key, payload) {
   LOGS[key] = Object.assign({}, payload, { ts: Date.now() });
@@ -7563,6 +7586,7 @@ function _buildCalisteniaCard(ejercicios, di, ei, isPartner) {
 }
 
 function completeCalisteniaSet(key, di, ei, si, restSec) {
+  if (_perfBlocked(key)) return;   // T592: same week guard + double-tap guard as completeSet
   var saved = LOGS[key] || {};
   var done = !saved.done;
   if (done) {
@@ -7668,6 +7692,7 @@ function setCardioMetric(key, metric) {
   var lb = document.querySelector('label[for="card_eff_'+key+'"]'); if (lb) lb.textContent = m === 'calidad' ? 'CALIDAD (1-10)' : 'RPE (1-10)';
 }
 function completeCardio(key, di, ei) {
+  if (_perfBlocked(key)) return;   // T592: same week guard + double-tap guard as completeSet
   var saved = LOGS[key] || {};
   if (saved.done) {
     _saveExLog(key, Object.assign({}, saved, { done:false }));
@@ -7747,6 +7772,7 @@ function saveEstacionWearable(wearKey) {
 }
 
 function completeEstacionSet(key, di, ei, si, restSec, dosisUnit) {
+  if (_perfBlocked(key)) return;   // T592: same week guard + double-tap guard as completeSet
   var saved = LOGS[key] || {};
   if (saved.done) {
     _saveExLog(key, Object.assign({}, saved, { done:false }));
@@ -7818,6 +7844,7 @@ function _buildCircuitoCard(ejercicios, di, ei, isPartner) {
 }
 
 function completeCircuito(key, di, ei) {
+  if (_perfBlocked(key)) return;   // T592: same week guard + double-tap guard as completeSet
   var saved = LOGS[key] || {};
   if (saved.done) {
     _saveExLog(key, Object.assign({}, saved, { done:false }));
@@ -8884,14 +8911,31 @@ function _buildCheckinHistory() {
 
 // Returns { completedSets, avgRIR, avgICS, sessionStart }
 // done && !autoFilled only; RIR 0-5; ICS 1-10
+// T592: planned strength series and cardio entries of a day (cardio is counted apart: minutes are not sets and never inflate the series total).
+function _dayTotals(ses, week) {
+  var sets = 0, cardio = 0;
+  ((ses && ses.exercises) || []).forEach(function(ej) {
+    if (typeof isTechniqueActive === 'function' && !isTechniqueActive(ej, week)) return;
+    if (_getExType(ej) === 'cardio') { cardio++; return; }
+    sets += ej.numSeries || (ej.sets ? ej.sets.length : 3);
+  });
+  return { sets: sets, cardio: cardio };
+}
+function _progressText(strengthDone, strengthTotal, cardioDone, cardioTotal) {
+  var parts = [];
+  if (strengthTotal > 0 || !(cardioTotal > 0)) parts.push(strengthDone + '/' + strengthTotal + ' series');
+  if (cardioTotal > 0) parts.push(cardioDone + '/' + cardioTotal + ' cardio');
+  return parts.join(' · ');
+}
 function _calcSessionStats(logs, di, week) {
-  var rirs = [], icss = [], tss = [], completedSets = 0;
+  var rirs = [], icss = [], tss = [], completedSets = 0, cardioDone = 0;
   var prefix = 'log_' + week + '_' + di + '_';
   Object.keys(logs).forEach(function(k) {
     if (k.indexOf(prefix) !== 0) return;
     var e = logs[k];
     if (!e || !e.done || e.autoFilled) return;
     completedSets++;
+    if (e.exType === 'cardio') cardioDone++;   // T592: a cardio entry is never a strength series (it stays inside completedSets only for session flows)
     var rir = parseFloat(e.rir_real);
     if (!isNaN(rir) && rir >= 0 && rir <= 5) rirs.push(rir);
     var ics = parseFloat(e.ics);
@@ -8901,6 +8945,8 @@ function _calcSessionStats(logs, di, week) {
   });
   return {
     completedSets: completedSets,
+    cardioDone: cardioDone,
+    strengthSets: completedSets - cardioDone,
     avgRIR: rirs.length ? +(rirs.reduce(function(a,b){return a+b;},0)/rirs.length).toFixed(1) : null,
     avgICS: icss.length ? +(icss.reduce(function(a,b){return a+b;},0)/icss.length).toFixed(1) : null,
     sessionStart: tss.length ? Math.min.apply(null, tss) : null
@@ -8915,11 +8961,7 @@ function _refreshSessionDashboard() {
   if (!el) return;
   var _sesStats = _calcSessionStats(LOGS, DIA_ACTIVO, CURRENT_WEEK);
   var ejercicios = (getSesiones()[DIA_ACTIVO] || {}).exercises || [];
-  var _sesTotSets = 0;
-  ejercicios.forEach(function(ej, _ei) {
-    if (!isTechniqueActive(ej, CURRENT_WEEK)) return;
-    _sesTotSets += ej.numSeries || (ej.sets ? ej.sets.length : 3);
-  });
+  var _dt = _dayTotals(getSesiones()[DIA_ACTIVO], CURRENT_WEEK), _sesTotSets = _dt.sets;
   var _sesRIR = _sesStats.avgRIR !== null ? _sesStats.avgRIR : null;
   var _sesICS = _sesStats.avgICS !== null ? _sesStats.avgICS : null;
   var _icsColor = _sesICS !== null ? (_sesICS >= 8 ? 'var(--grn)' : _sesICS >= 7 ? 'var(--gold)' : 'var(--red)') : 'var(--mt)';
@@ -8935,7 +8977,7 @@ function _refreshSessionDashboard() {
   window._sesTimerEnd = (_sesDoneEntry && _sesDoneEntry.ts) ? _sesDoneEntry.ts : null;
   el.innerHTML =
     '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:6px 12px 8px;background:rgba(0,0,0,.10)">' +
-    _statCell(_sesStats.completedSets + '/' + _sesTotSets, 'series', 'var(--tx)') +
+    (_dt.sets > 0 || !(_dt.cardio > 0) ? _statCell(_sesStats.strengthSets + '/' + _sesTotSets, 'series', 'var(--tx)') : _statCell(_sesStats.cardioDone + '/' + _dt.cardio, 'cardio', 'var(--tx)')) +
     _statCell('<span id="_sesTime">' + _fmtElapsed(window._sesTimerStart, window._sesTimerEnd) + '</span>', 'tiempo', 'var(--tx)') +
     _statCell(_sesRIR !== null ? _sesRIR : '—', 'rir medio', 'var(--tx)') +
     _statCell(_sesICS !== null ? _sesICS : '—', 'ics medio', _icsColor) +
@@ -9229,11 +9271,7 @@ function renderEntrenamiento() {
   var sessionStatsHtml = '';
   if (CURRENT_WEEK === REAL_WEEK) {
     var _sesStats = _calcSessionStats(LOGS, DIA_ACTIVO, CURRENT_WEEK);
-    var _sesTotSets = 0;
-    ejercicios.forEach(function(ej, _ei) {
-      if (!isTechniqueActive(ej, CURRENT_WEEK)) return;
-      _sesTotSets += ej.numSeries || (ej.sets ? ej.sets.length : 3);
-    });
+    var _dt = _dayTotals({ exercises: ejercicios }, CURRENT_WEEK), _sesTotSets = _dt.sets;
     var _sesRIR = _sesStats.avgRIR !== null ? _sesStats.avgRIR : null;
     var _sesICS = _sesStats.avgICS !== null ? _sesStats.avgICS : null;
     var _icsColor = _sesICS !== null ? (_sesICS >= 8 ? 'var(--grn)' : _sesICS >= 7 ? 'var(--gold)' : 'var(--red)') : 'var(--mt)';
@@ -9244,8 +9282,8 @@ function renderEntrenamiento() {
     var _sesDoneEntry = LOGS['done_'+CURRENT_WEEK+'_'+DIA_ACTIVO];
     window._sesTimerEnd = (_sesDoneEntry && _sesDoneEntry.ts) ? _sesDoneEntry.ts : null;
     sessionStatsHtml =
-      '<div id="_sesDashboard"><div class="sess-rail" role="progressbar" aria-label="Series completadas" aria-valuemin="0" aria-valuemax="' + _sesTotSets + '" aria-valuenow="' + _sesStats.completedSets + '"><span style="width:' + (_sesTotSets ? Math.min(100, Math.round(_sesStats.completedSets / _sesTotSets * 100)) : 0) + '%"></span></div><div class="ro-strip ro-strip-4">' +
-      _statCell(_sesStats.completedSets + '/' + _sesTotSets, 'series', 'var(--tx)') +
+      '<div id="_sesDashboard"><div class="sess-rail" role="progressbar" aria-label="Progreso de la sesión" aria-valuemin="0" aria-valuemax="' + (_sesTotSets + _dt.cardio) + '" aria-valuenow="' + _sesStats.completedSets + '"><span style="width:' + ((_sesTotSets + _dt.cardio) ? Math.min(100, Math.round(_sesStats.completedSets / (_sesTotSets + _dt.cardio) * 100)) : 0) + '%"></span></div><div class="ro-strip ro-strip-4">' +
+      (_dt.sets > 0 || !(_dt.cardio > 0) ? _statCell(_sesStats.strengthSets + '/' + _sesTotSets, 'series', 'var(--tx)') : _statCell(_sesStats.cardioDone + '/' + _dt.cardio, 'cardio', 'var(--tx)')) +
       _statCell('<span id="_sesTime">' + _fmtElapsed(_sesStats.sessionStart, window._sesTimerEnd) + '</span>', 'tiempo', 'var(--tx)') +
       _statCell(_sesRIR !== null ? _sesRIR : '—', 'rir medio', 'var(--tx)') +
       _statCell(_sesICS !== null ? _sesICS : '—', 'ics medio', _icsColor) +
@@ -11077,16 +11115,17 @@ async function _endSessionAsPartial(di) {
   var sesiones = getSesiones();
   var ses = sesiones[di];
   if (!ses) return;
-  var totalSets = 0;
-  (ses.exercises || []).forEach(function(ej, ei) {
-    if (!isTechniqueActive(ej, CURRENT_WEEK)) return;
-    totalSets += ej.numSeries || (ej.sets ? ej.sets.length : 3);
-  });
+  var _dtP = _dayTotals(ses, CURRENT_WEEK);
+  // T592: the confirmation counts STRENGTH series only (cardio is reported apart, never as a series)
+  completedSets = stats.strengthSets;
+  var totalSets = _dtP.sets;
 
   var weekAtStart = CURRENT_WEEK;
   _markSessionBusy[di] = true; // lock BEFORE the confirm dialog -- blocks a second tap from opening a duplicate dialog
   var confirmed = await _askConfirmPartial(
+    (_dtP.sets === 0 && _dtP.cardio > 0 ? 'Completaste ' + _progressText(0, 0, stats.cardioDone, _dtP.cardio) + '. Se conservará todo lo realizado. ' :
     'Completaste ' + completedSets + ' de ' + totalSets + ' series. Se conservará todo lo realizado. ' +
+    (_dtP.cardio > 0 ? 'Cardio: ' + stats.cardioDone + ' de ' + _dtP.cardio + '. ' : '')) +
     'La sesión quedará registrada como parcial y podrás continuar con tu programa.'
   );
   // T127-H: re-check identity after the await -- week/session context may have changed while the dialog was open
