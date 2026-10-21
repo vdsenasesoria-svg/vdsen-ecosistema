@@ -4,6 +4,11 @@ const assert = require('node:assert/strict');
 const { hash, json, git, validate, noSecrets } = require('./lib.cjs');
 const { validateBaseline } = require('./baseline.cjs');
 const deployedProduct = require('./deployed-product.cjs');
+// One explicitly reviewed, short-lived exception for the isolated Coach export release.
+// This is deliberately an exact ref, never a prefix or arbitrary release branch.
+const CANONICAL_APP_REF = 'refs/heads/codex/client-app-next';
+const ISOLATED_EXPEDIENTE_TXT_REF = 'refs/heads/release/coach-expediente-txt-9654';
+const APP_RELEASE_REFS = new Set([CANONICAL_APP_REF, ISOLATED_EXPEDIENTE_TXT_REF]);
 function workflowContract() {
   for (const name of ['vdsen-release-prod', 'vdsen-rollback', 'vdsen-oidc-validate']) {
     const source = fs.readFileSync('.github/workflows/' + name + '.yml', 'utf8');
@@ -96,7 +101,9 @@ function check(runtime = process.env.RUNTIME_SHA) {
   git('cat-file', '-e', runtime + '^{commit}');
   git('merge-base', '--is-ancestor', runtime, 'origin/codex/client-app-next');
   const ref = process.env.GITHUB_REF;
-  if (ref && process.env.GITHUB_EVENT_NAME !== 'pull_request') assert.equal(ref, 'refs/heads/codex/client-app-next');
+  if (ref && process.env.GITHUB_EVENT_NAME !== 'pull_request') {
+    assert.ok(APP_RELEASE_REFS.has(ref), 'Untrusted app release ref: ' + ref);
+  }
   if (!ref) assert.equal(git('branch', '--show-current').trim(), 'codex/client-app-next');
   // Provenance of the DEPLOYED ARTIFACT is proven by the frozen deployed-product manifest,
   // not by forbidding product work on the branch. `runtime_sha` is the commit of the app
@@ -133,4 +140,4 @@ function resolveRuntime(requested, state) {
   return runtime;
 }
 if (require.main === module) { try { check(); } catch (e) { console.error(e.message); process.exitCode = 1; } }
-module.exports = { check, workflowContract, resolveRuntime };
+module.exports = { check, workflowContract, resolveRuntime, CANONICAL_APP_REF, ISOLATED_EXPEDIENTE_TXT_REF, APP_RELEASE_REFS };

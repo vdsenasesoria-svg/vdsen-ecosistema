@@ -32,6 +32,8 @@ test('deployed product manifest is honest and the release check no longer forbid
   // require a production deploy, and it is logically impossible for an undeployed candidate.
   const src = fs.readFileSync('scripts/release/check.cjs', 'utf8');
   assert.ok(src.includes('deployedProduct.verify'), 'check must verify the deployed product manifest');
+  assert.ok(src.includes("refs/heads/release/coach-expediente-txt-9654"), 'only the exact isolated Expediente TXT ref may be accepted');
+  assert.ok(!src.includes('refs/heads/release/*'), 'release ref guard must never become a wildcard');
   assert.ok(!src.includes('Runtime/package mismatch'), 'the runtime-vs-HEAD product ban must be gone');
   assert.ok(!/git\('diff',\s*'--name-only',\s*runtime,\s*'HEAD'\)/.test(src), 'check must not diff the deployed runtime against HEAD');
   // Tampering with the manifest still fails: the guard protects, it is not a rubber stamp.
