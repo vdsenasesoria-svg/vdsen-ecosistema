@@ -11528,8 +11528,7 @@ async function saveLogs() {
   if (_saveLogsTimer) clearTimeout(_saveLogsTimer);
   _saveLogsTimer = setTimeout(_doSaveLogs, 400);
   // Backup inmediato a localStorage siempre
-  // SIEMPRE guardar REAL_WEEK (no CURRENT_WEEK que puede ser una semana en revisión)
-  try { localStorage.setItem('vdsen_logs_backup', JSON.stringify({entries:LOGS,currentWeek:REAL_WEEK,planId:ACTIVE_PLAN_ID,exerciseUnits:EXERCISE_UNITS,exerciseHistory:EXERCISE_HISTORY,ts:Date.now()})); } catch(le){}
+  _writeLocalBackup();
 }
 
 // Same _doSaveLogs payload/updatedAt is written to both paths. If the mirror
@@ -11581,6 +11580,7 @@ async function _doSaveLogs() {
   _saveLogsTimer = null; // limpiar ID del timer que ya disparó (evita false-positive en visibilitychange)
   var _seqAtStart = typeof _logsReqSeq === 'number' ? _logsReqSeq : 0;
   _logsWriteInFlight++;
+  _writeLocalBackup();   // T596: every save path (also the ones that call _doSaveLogs directly) leaves an on-device copy before touching the network
   try {
     // Sanear: Firestore rechaza objetos con `undefined`. JSON.parse(JSON.stringify(...))
     // descarta cualquier campo undefined heredado de versiones anteriores o de bugs.
@@ -11593,9 +11593,9 @@ async function _doSaveLogs() {
     const _ownedFields = Object.keys(_payload);
     // T1 dual-write: nuevo path por mesociclo primero (future source), legacy segundo (compatibilidad coach).
     // El fallo del path nuevo es no-fatal: datos seguros en legacy y localStorage.
-    var _mesoOk = false;
+    var _mesoOk = false, _rootWrite = null;
     if (ACTIVE_PLAN_ID) {
-      try { await FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart, 'mesos', ACTIVE_PLAN_ID), _payload, { mergeFields: _ownedFields }); _mesoOk = true; }
+      try { await _fbWriteOrQueue(FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart, 'mesos', ACTIVE_PLAN_ID), _payload, { mergeFields: _ownedFields })); _mesoOk = true; }
       catch(_me) { console.warn('[logs/mesos] write:', _me && _me.code, _me && _me.message); }
     }
     if (!USER || USER.uid !== _uidAtStart) return false;
@@ -11605,7 +11605,7 @@ async function _doSaveLogs() {
       if (!_mesoOk) throw new Error('plan-bound log write failed');
     } else {
       const ref = FB.doc(FB.db, 'logs', _uidAtStart);
-      await FB.setDoc(ref, _payload, { mergeFields: _ownedFields });
+      _rootWrite = await _fbWriteOrQueue(FB.setDoc(ref, _payload, { mergeFields: _ownedFields }));
     }
     if (!USER || USER.uid !== _uidAtStart) return false;
     if (ACTIVE_PLAN_ID === _payload.planId) _logsAuthorityUpdatedAt = _payload.updatedAt;
@@ -11615,6 +11615,11 @@ async function _doSaveLogs() {
     const errEl = document.getElementById('saveErrBadge');
     if (errEl) errEl.style.display = 'none';
     // Indicador breve de guardado exitoso
+    if (_rootWrite && _rootWrite.state === 'queued') {   // T596: held on the device; the server-side follow-ups wait for the real confirmation
+      _renderSyncBadge();
+      _rootWrite.done.then(function() { try { _maybeConsumeOverlays(_uidAtStart); } catch(_ce2) {} try { _scheduleTrustedProgression(_uidAtStart, _payload.planId); } catch(_pe2) {} }, function() { /* reported by _deferredWriteFailed */ });
+      return true;
+    }
     _showSaveOk();
     try { _maybeConsumeOverlays(_uidAtStart); } catch(_ce) {}
     // The trusted executor is notified only after Firestore confirms the
@@ -11823,6 +11828,46 @@ function _showSaveOk() {
   setTimeout(function(){ el.style.opacity = '0'; }, 2000);
 }
 
+// T596: OFFLINE WRITES. Firestore (persistentLocalCache) keeps a write made without connection in its on-device queue and sends it when the connection returns, but the
+// promise of setDoc() only settles once the SERVER confirms. Waiting for it blocked the whole session offline (the button stayed on "GUARDANDO…" forever). A write that is
+// not confirmed within the grace window (immediately when the device reports no connection) is treated as ACCEPTED LOCALLY: the athlete continues, a sticky badge says it is
+// pending, and the real outcome is still handled when the promise settles (confirmed -> badge off; rejected -> visible error, the data stays in LOGS and in the local backup).
+var _WRITE_GRACE_MS = 5000, _syncPending = 0;
+function _renderSyncBadge() {
+  var el = document.getElementById('syncPendingBadge');
+  if (_syncPending <= 0) { if (el) el.style.display = 'none'; return; }
+  if (!el) {
+    el = document.createElement('div'); el.id = 'syncPendingBadge'; el.setAttribute('role', 'status');
+    el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(72px + env(safe-area-inset-bottom,0px));z-index:9000;max-width:calc(100vw - 24px);box-sizing:border-box;padding:8px 12px;background:var(--card,#141414);border:1px solid var(--gold,#c8a54a);color:var(--tx,#f4f4f0);font-size:12px;font-weight:700;line-height:1.35;text-align:center';
+    document.body.appendChild(el);
+  }
+  el.textContent = '⏳ Sin conexión: tu registro está guardado en este dispositivo y se enviará solo al volver internet.';
+  el.style.display = 'block';
+}
+function _deferredWriteFailed(err) {
+  var msg = '⚠ No se pudo sincronizar un registro: ' + (err && err.code ? '[' + err.code + '] ' : '') + ((err && err.message) || 'error') + '. Se conserva en este dispositivo; vuelve a guardar para reintentar.';
+  try { showToast(msg, true); } catch (e) { /* no-op */ }
+  var errEl = document.getElementById('saveErrBadge');
+  if (errEl) { errEl.style.display = 'block'; errEl.textContent = msg + ' — tap para reintentar'; }
+}
+// Resolves { state: 'acked' } when the server confirmed within the grace window, { state: 'queued', done } when the SDK holds the write (offline / slow); rejects on a real error.
+function _fbWriteOrQueue(p) {
+  return new Promise(function(resolve, reject) {
+    var settled = false, offline = (typeof navigator !== 'undefined' && navigator.onLine === false);
+    function queue() {
+      if (settled) return; settled = true; _syncPending++; _renderSyncBadge();
+      var done = p.then(function() { _syncPending = Math.max(0, _syncPending - 1); _renderSyncBadge(); }, function(err) { _syncPending = Math.max(0, _syncPending - 1); _renderSyncBadge(); _deferredWriteFailed(err); throw err; });
+      done.catch(function() { /* already reported */ });
+      resolve({ state: 'queued', done: done });
+    }
+    var t = setTimeout(queue, offline ? 0 : _WRITE_GRACE_MS);
+    p.then(function() { if (settled) return; settled = true; clearTimeout(t); resolve({ state: 'acked' }); }, function(err) { if (settled) return; settled = true; clearTimeout(t); reject(err); });
+  });
+}
+function _writeLocalBackup() {
+  // SIEMPRE guardar REAL_WEEK (no CURRENT_WEEK que puede ser una semana en revisión)
+  try { localStorage.setItem('vdsen_logs_backup', JSON.stringify({entries:LOGS,currentWeek:REAL_WEEK,planId:ACTIVE_PLAN_ID,exerciseUnits:EXERCISE_UNITS,exerciseHistory:EXERCISE_HISTORY,ts:Date.now()})); } catch(le){}
+}
 // Restaurar desde backup local si Firestore falla al cargar
 function loadBackupLogs() {
   try {
