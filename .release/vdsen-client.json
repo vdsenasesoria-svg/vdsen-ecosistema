@@ -1,9 +1,9 @@
 {
-  "runtime_sha": "87df9501f4b0902cd1b7a85d18b7354e108720f0",
-  "production_deployment": "dpl_HwipoMcYMuzpvoqUsn2R25J657xG",
-  "rollback_deployment": "dpl_4UZAX9b6geNiKC5T9XWSizGP4PaX",
-  "rollback_runtime_sha": "da5c5156af8029ad0092848b6886c2157cb51ab1",
-  "target_deployment": "dpl_HwipoMcYMuzpvoqUsn2R25J657xG",
+  "runtime_sha": "d91df26fb73a8ba15d67c178d8bc654223c39e3f",
+  "production_deployment": "dpl_CymoUfB21x8NhPbyJpMd4rCBX6Fb",
+  "rollback_deployment": "dpl_HwipoMcYMuzpvoqUsn2R25J657xG",
+  "rollback_runtime_sha": "87df9501f4b0902cd1b7a85d18b7354e108720f0",
+  "target_deployment": "dpl_CymoUfB21x8NhPbyJpMd4rCBX6Fb",
   "production_project": "prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN",
   "vercel_team": "team_VZc5H7Q1DBIJ3g0mwrSBz1o8",
   "production_origin": "https://vdsen-ecosistema.vercel.app",
@@ -41,16 +41,16 @@
     "preview_production_env_verified": true,
     "human_ux_approved": true
   },
-  "observation_source": "Client App release 2026-10-20 (run 39537767339, promotion_model staged_production): app-result reported SUCCESS, production_deployment dpl_HwipoMcYMuzpvoqUsn2R25J657xG (runtime 87df9501f4b0902cd1b7a85d18b7354e108720f0, T589: cardio logged separately from strength (duration + RPE or quality)).",
+  "observation_source": "Client App release 2026-10-20 (run 39678634795, promotion_model staged_production): app-result reported SUCCESS, production_deployment dpl_CymoUfB21x8NhPbyJpMd4rCBX6Fb (runtime d91df26fb73a8ba15d67c178d8bc654223c39e3f, T592: client audit fixes (cardio guards and counters, touch targets) and T593: simple suggested load).",
   "release_mode": "app_only",
   "app_release": {
-    "runtime_sha": "87df9501f4b0902cd1b7a85d18b7354e108720f0",
-    "deployment": "dpl_HwipoMcYMuzpvoqUsn2R25J657xG",
+    "runtime_sha": "d91df26fb73a8ba15d67c178d8bc654223c39e3f",
+    "deployment": "dpl_CymoUfB21x8NhPbyJpMd4rCBX6Fb",
     "promotion_model": "staged_production",
-    "previous_deployment": "dpl_4UZAX9b6geNiKC5T9XWSizGP4PaX",
-    "previous_runtime_sha": "da5c5156af8029ad0092848b6886c2157cb51ab1",
+    "previous_deployment": "dpl_HwipoMcYMuzpvoqUsn2R25J657xG",
+    "previous_runtime_sha": "87df9501f4b0902cd1b7a85d18b7354e108720f0",
     "verified_surfaces": 25,
-    "source_release_run": "39537767339",
-    "completed_at": "2026-10-21T03:20:50Z"
+    "source_release_run": "39678634795",
+    "completed_at": "2026-10-21T21:28:53Z"
   }
 }
