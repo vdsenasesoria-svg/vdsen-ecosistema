@@ -1,0 +1,56 @@
+{
+  "runtime_sha": "9654ecb3b43902afbee0544da2f5cfee3f6df260",
+  "production_deployment": "dpl_EPUhWPCKpkNqFkSdmbp7hiGKRiY8",
+  "rollback_deployment": "dpl_Ey9tae2LEMEoQvzF4TGieeA5Wkuv",
+  "rollback_runtime_sha": "d8ca92f6f5661be81166fa81379228321d1f9a36",
+  "target_deployment": "dpl_EPUhWPCKpkNqFkSdmbp7hiGKRiY8",
+  "production_project": "prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN",
+  "vercel_team": "team_VZc5H7Q1DBIJ3g0mwrSBz1o8",
+  "production_origin": "https://vdsen-ecosistema.vercel.app",
+  "firebase_project": "vdsen-ecosistema",
+  "numeric_apply_enabled": false,
+  "rules_transition": {
+    "target_sha256": "ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6",
+    "order": "verify_current_app_then_rules",
+    "rollback_order": "rules_then_app",
+    "rollback_sha256": "bb4402e9b99d2d78c1f2867fa09bd75b89f9a88046189edfb0302b0635635f0b",
+    "rollback_source_path": ".release/rollback/firestore.rules.bb4402e9b99d2d78c1f2867fa09bd75b89f9a88046189edfb0302b0635635f0b.rules"
+  },
+  "required_index": {
+    "collectionGroup": "plans_backup",
+    "queryScope": "COLLECTION",
+    "fields": [
+      {
+        "fieldPath": "coachId",
+        "order": "ASCENDING"
+      },
+      {
+        "fieldPath": "clientId",
+        "order": "ASCENDING"
+      },
+      {
+        "fieldPath": "backedUpAt",
+        "order": "DESCENDING"
+      }
+    ]
+  },
+  "release_status": "READY",
+  "preconditions": {
+    "entitlements_verified": true,
+    "legacy_data_reviewed": true,
+    "preview_production_env_verified": true,
+    "human_ux_approved": true
+  },
+  "observation_source": "Client App release 2026-10-20 (run 39414543959, promotion_model staged_production): app-result reported SUCCESS, production_deployment dpl_EPUhWPCKpkNqFkSdmbp7hiGKRiY8 (runtime 9654ecb3b43902afbee0544da2f5cfee3f6df260, T586: autonomous authority for sets / deload / freeze / load down, continuity and muscle priority).",
+  "release_mode": "app_only",
+  "app_release": {
+    "runtime_sha": "9654ecb3b43902afbee0544da2f5cfee3f6df260",
+    "deployment": "dpl_EPUhWPCKpkNqFkSdmbp7hiGKRiY8",
+    "promotion_model": "staged_production",
+    "previous_deployment": "dpl_Ey9tae2LEMEoQvzF4TGieeA5Wkuv",
+    "previous_runtime_sha": "d8ca92f6f5661be81166fa81379228321d1f9a36",
+    "verified_surfaces": 25,
+    "source_release_run": "39414543959",
+    "completed_at": "2026-10-20T11:26:03Z"
+  }
+}
