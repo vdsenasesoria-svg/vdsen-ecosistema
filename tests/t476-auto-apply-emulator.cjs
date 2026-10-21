@@ -90,12 +90,12 @@ function clientContext(f) {
       })) },
     LOGS: { progrec_1_0: f.parent }, REAL_WEEK: 1, EXERCISE_UNITS: {}, EXERCISE_HISTORY: {},
     _sraSaveGeneration: 0, _sraPersisted: { version: 0, entries: {} }, _saveLogsTimer: null, _logsWriteInFlight: 0, _showSaveOk: () => {},
-    document: { getElementById: () => null }, showToast: () => {}, console };
+    document: { getElementById: () => null }, showToast: () => {}, console, _syncPending: 0, _WRITE_GRACE_MS: 5000, _renderSyncBadge() {}, _deferredWriteFailed() {}, localStorage: { setItem() {} }, navigator: { onLine: true }, setTimeout, clearTimeout };
   vm.createContext(context);
   ['_getSessionCompletionState', '_sessionHasRealLoggedSets', '_getSessionLifecycleState']
     .forEach(name => vm.runInContext(functionSource(clientHtml, name), context));
   vm.runInContext(functionSource(clientHtml, '_selectLogAuthority'), context);
-  vm.runInContext(functionSource(clientHtml, '_acceptSraPersisted') + '\n' + functionSource(clientHtml, '_doSaveLogs'), context);
+  vm.runInContext(functionSource(clientHtml, '_acceptSraPersisted') + '\n' + functionSource(clientHtml, '_fbWriteOrQueue') + '\n' + functionSource(clientHtml, '_writeLocalBackup') + '\n' + functionSource(clientHtml, '_doSaveLogs'), context);
   return context;
 }
 
