@@ -80,10 +80,10 @@ test('T587-R6 collection from the logbook: only DONE, non-autofilled sets; subst
     postsession_2_0: { ts: 1792400000000, eimd: 2 }, exnote_2_0_1: 'nota legado' };
   LOGS['exnotepid_2_pid-A'] = { text: 'nota por PID' };
   const ses = [{ dia: 'DÍA 1 — Empuje', exercises: [{ nombre: 'Press', prescriptionExerciseId: 'pid-A', numSeries: 4, sets: [{ restSeconds: 150 }] }, { nombre: 'Curl', prescriptionExerciseId: 'pid-B', sets: [{ restSeconds: 60 }] }, { nombre: 'Sin series', sets: [{}] }] }];
-  const sb = sandbox({ __collect: true, LOGS, getSesiones: () => ses, isTechniqueActive: () => true, _stripDayNo: (x) => x });
+  const sb = sandbox({ __collect: true, LOGS, getSesiones: () => ses, isTechniqueActive: () => true, _getExType: () => 'fuerza', _stripDayNo: (x) => x });
   const d = J(sb._recapCollect(0, 2));
   assert.equal(d.sessionName, 'Empuje');
-  const dash = sandbox({ __collect: true, LOGS: {}, getSesiones: () => [{ dia: 'Día 1 - Empuje', exercises: [] }, { dia: 'SESIÓN 2: — ', exercises: [] }], isTechniqueActive: () => true, _stripDayNo: (v) => v });
+  const dash = sandbox({ __collect: true, LOGS: {}, getSesiones: () => [{ dia: 'Día 1 - Empuje', exercises: [] }, { dia: 'SESIÓN 2: — ', exercises: [] }], isTechniqueActive: () => true, _getExType: () => 'fuerza', _stripDayNo: (v) => v });
   assert.equal(J(dash._recapCollect(0, 1)).sessionName, 'Empuje', 'a leading hyphen left by the day prefix is removed'); assert.equal(J(dash._recapCollect(1, 1)).sessionName, 'Sesión', 'an empty name falls back'); assert.deepEqual(d.exercises.map((e) => [e.name, e.sets.length, e.prescribedRest, e.note]), [['Press', 2, 150, 'nota por PID'], ['Curl sustituto', 1, 60, 'nota legado'], ['Sin series', 0, null, '']]);
   assert.equal(d.dateMs, 1792400000000); assert.ok(d.exercises[0].sets.every((s) => s.reps === '10'), 'week 3 / day 1 values did not leak');
   assert.equal(sb._recapCollect(5, 2), null);

@@ -6795,6 +6795,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         // Preservar techniqueFromWeek para activación condicional (Y3T/SST)
         if (ex.techniqueFromWeek) normEx.techniqueFromWeek = parseInt(ex.techniqueFromWeek);
         Object.assign(normEx, _perfCarryEx(ex));   // T544: exerciseType + Coach performance prescription (explicit whitelist)
+        if (!normEx.exerciseType && !normEx.tipo && typeof _exCatalogIsCardio === 'function' && _exCatalogIsCardio(normEx.exerciseName)) normEx.exerciseType = 'cardio';   // T589: the catalog of the Coach marks it Cardio (exact name)
         return normEx;
       }).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
     })).filter(d => d.exercises.length > 0);
@@ -20916,6 +20917,18 @@ El esfuerzo no es negociable.
   // ── EDITOR DE PLAN EXISTENTE ─────────────────────────────────────────
   let _editingPlanId = null;
 
+  // T589: catalog classification of the Coach (motorPattern 'Cardio') — exact name match only.
+  function _exCatalogIsCardio(name) {
+    const n = String(name || '').toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    if (!n || typeof _allExercises === 'undefined' || !Array.isArray(_allExercises)) return false;
+    return _allExercises.some(e => e && String(e.name || '').toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g, '') === n && String(e.motorPattern || '').toLowerCase().trim() === 'cardio');
+  }
+  function _exTypeChange(sel) {
+    const row = sel.closest('.exrow-item'); if (!row) return;
+    const card = sel.value === 'cardio';
+    const a = row.querySelector('.excardio-dur'), b = row.querySelector('.exstrength-ctl'), c = row.querySelector('.exsets');
+    if (a) a.style.display = card ? 'block' : 'none'; if (b) b.style.display = card ? 'none' : 'grid'; if (c) c.style.display = card ? 'none' : 'grid';
+  }
   function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote, technique, techniqueNote, alternativesJson, ssGroup, nivelMedio, variacionVerticalJson, prescriptionId, restSeconds, perfJson, setsJson, hadCoachNote) {
     const techVal = (technique || 'straight').toLowerCase();
     const techOpts = ['straight','drop','sst','myoreps','rest-pause','cluster','superset','giant','amrap','tempo','iso-hold']
@@ -20939,6 +20952,12 @@ El esfuerzo no es negociable.
     const _topV = k => _same(k) ? _escH(String((_setsArr[0] || {})[k] ?? '')) : '';
     const _topPh = k => _same(k) ? '' : 'mix';
     const setRowsHtml = _setsArr.map((st, si) => _exSetRowHtml(st, si)).join('');
+    // T589: type selector. Cardio is logged by the athlete with its own controls (duration + RPE/quality), so a cardio row prescribes no sets / reps / RIR / rest.
+    let _pj = {}; try { _pj = JSON.parse(perfJson || '{}') || {}; } catch (e) {}
+    let _exT = _perfEffType(_pj.ex || {});
+    if (!(_pj.ex && (_pj.ex.exerciseType || _pj.ex.tipo)) && _exCatalogIsCardio(name)) _exT = 'cardio';
+    const _isCard = _exT === 'cardio', _cardDur = _escH(String((_pj.ex && (_pj.ex.duracionMin ?? _pj.ex.targetMinutes)) ?? ''));
+    const _otherT = (_exT !== 'fuerza' && _exT !== 'cardio') ? `<option value="${_exT}" selected>${_exT.toUpperCase()}</option>` : '';
     return `<div class="mb-2 p-2 rounded-lg exrow-item" id="exrow_${di}_${ei}" data-di="${di}" data-had-coachnote="${hadCoachNote ? '1' : ''}"
       draggable="true" ondragstart="_exDragStart(event)" ondragover="_exDragOver(event)"
       ondrop="_exDrop(event)" ondragend="_exDragEnd(event)"
@@ -20956,7 +20975,17 @@ El esfuerzo no es negociable.
         <button onclick="openSubstModal(${di},${ei})" title="Sustituir ejercicio" class="text-[#4488cc] hover:text-[#66aaff] text-sm px-1 leading-none">⇄</button>
         <button onclick="removeExRow(${di},${ei})" class="text-red-400 hover:text-red-300 text-xl leading-none flex-shrink-0 px-0.5" title="Eliminar">×</button>
       </div>
-      <div class="grid grid-cols-4 gap-2 mb-2">
+      <div class="grid gap-2 mb-2" style="grid-template-columns:1fr 1fr">
+        <div>
+          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1">Tipo</div>
+          <select class="input-field w-full text-xs py-1" data-field="extype" onchange="_exTypeChange(this);markEditorDirty&&markEditorDirty()"><option value="fuerza"${_exT==='fuerza'?' selected':''}>FUERZA</option><option value="cardio"${_isCard?' selected':''}>CARDIO</option>${_otherT}</select>
+        </div>
+        <div class="excardio-dur" style="display:${_isCard?'block':'none'}">
+          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1">Duración objetivo (min)</div>
+          <input class="input-field w-full text-sm py-1 text-center font-bold" type="number" min="1" step="1" inputmode="numeric" data-field="cardioDur" value="${_cardDur}" oninput="markEditorDirty&&markEditorDirty()">
+        </div>
+      </div>
+      <div class="grid grid-cols-4 gap-2 mb-2 exstrength-ctl" style="display:${_isCard?'none':'grid'}">
         <div>
           <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">Series</div>
           <input class="input-field w-full text-sm py-1 text-center font-bold text-[#F4F4F0]" value="${numSets}" id="exsets_${di}_${ei}" type="number" min="1" max="10" inputmode="numeric" data-field="sets" oninput="_exSetsResize(this);markEditorDirty&&markEditorDirty()">
@@ -20974,7 +21003,7 @@ El esfuerzo no es negociable.
           <input class="input-field w-full text-sm py-1 text-center font-bold text-[#88ccff]" value="${_topV('restSeconds')}" type="number" min="0" step="5" placeholder="${_topPh('restSeconds') || '0'}" inputmode="numeric" data-field="restSeconds" data-bulk="restSeconds" onchange="_exBulkApply(this)" oninput="markEditorDirty&&markEditorDirty()">
         </div>
       </div>
-      <div class="exsets mb-2" data-field="setsList" style="display:grid;gap:4px">${setRowsHtml}</div>
+      <div class="exsets mb-2" data-field="setsList" style="display:${_isCard?'none':'grid'};gap:4px">${setRowsHtml}</div>
       <div class="grid gap-2 mb-2" style="grid-template-columns:60px 1fr 1fr 2fr">
         <div>
           <div class="text-[10px] uppercase tracking-wide mb-1" style="color:#cc66aa">Biserie</div>
@@ -21813,6 +21842,13 @@ El esfuerzo no es negociable.
         let perf = { ex: {}, sets: [], noSets: false };
         let planMeta = null;
         try { const pj = JSON.parse(row.dataset.perf || '{}'); perf = { ex: _perfCarryEx(pj.ex), sets: (Array.isArray(pj.sets) ? pj.sets : []).map(_perfCarrySet), noSets: pj.noSets === true }; planMeta = pj.meta || null; } catch(e) {}
+        const _typeSel = row.querySelector('[data-field="extype"]')?.value;
+        if (_typeSel === 'cardio') {   // T589: cardio prescribes duration only; it carries no sets and the athlete logs duration + RPE/quality
+          perf = { ex: { ...perf.ex, exerciseType: 'cardio' }, sets: [], noSets: true };
+          const _cd = parseFloat(row.querySelector('[data-field="cardioDur"]')?.value); if (_cd > 0) perf.ex.duracionMin = _cd; else delete perf.ex.duracionMin;
+        } else if (_typeSel === 'fuerza' && _perfEffType(perf.ex) === 'cardio') {
+          perf = { ex: { ...perf.ex, exerciseType: 'fuerza' }, sets: perf.sets, noSets: false };
+        }
         const _setsOut = perf.noSets ? [] : (row.querySelector('.exset') ? _exCollectSets(row, perf.sets) : Array.from({length: sets}, (_, s) => ({ setIndex: s, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: restSec, setNote: '', drop: false, tempo: '', ...(perf.sets[s] || {}) })));
         if (name) exercises.push({
           exerciseName: name,
