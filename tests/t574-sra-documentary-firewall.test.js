@@ -8,12 +8,12 @@ const client = fs.readFileSync('vdsen-cliente.html', 'utf8'), coach = fs.readFil
 function extract(src, decl) { const start = src.indexOf(decl), b = src.indexOf('{', start); let d = 0; assert.ok(start >= 0); for (let i = b; i < src.length; i++) { d += (src[i] === '{') - (src[i] === '}'); if (!d) return src.slice(start, i + 1); } throw Error(decl); }
 function harness() {
   const pending = [], badge = { style: {} };
-  const box = { USER: { uid: 'c1' }, ACTIVE_PLAN_ID: 'plan1', LOGS: { log_1_0_0_s0: { done: true, prescriptionExerciseId: 'p1' } }, REAL_WEEK: 1,
+  const box = { _syncPending: 0, _WRITE_GRACE_MS: 5000, _renderSyncBadge() {}, _deferredWriteFailed() {}, localStorage: { setItem() {} }, navigator: { onLine: true }, setTimeout, clearTimeout, USER: { uid: 'c1' }, ACTIVE_PLAN_ID: 'plan1', LOGS: { log_1_0_0_s0: { done: true, prescriptionExerciseId: 'p1' } }, REAL_WEEK: 1,
     EXERCISE_UNITS: {}, EXERCISE_HISTORY: {}, _saveLogsTimer: null, _logsReqSeq: 0, _logsAckedSeq: 0, _logsWriteInFlight: 0,
     _logsAuthorityUpdatedAt: 0, _rootLogUnbound: false, _sraSaveGeneration: 0, _sraPersisted: { version: 0, entries: {} },
     console: { warn() {}, error() {} }, document: { getElementById: () => badge }, showToast() {}, _showSaveOk() {}, _maybeConsumeOverlays() {},
     FB: { db: {}, doc: (...a) => a.slice(1).join('/'), setDoc: (path, payload) => path.includes('/mesos/') ? Promise.resolve() : new Promise((resolve, reject) => pending.push({ resolve, reject, payload })) } };
-  vm.createContext(box); vm.runInContext(extract(client, 'function _acceptSraPersisted(') + '\n' + extract(client, 'async function _doSaveLogs('), box);
+  vm.createContext(box); vm.runInContext(extract(client, 'function _acceptSraPersisted(') + '\n' + extract(client, 'function _fbWriteOrQueue(') + '\n' + extract(client, 'function _writeLocalBackup(') + '\n' + extract(client, 'async function _doSaveLogs('), box);
   return { box, pending };
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));

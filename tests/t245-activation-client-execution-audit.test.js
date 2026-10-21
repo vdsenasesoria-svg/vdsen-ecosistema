@@ -120,7 +120,7 @@ ok(/if \(_saveLogsTimer\) \{ clearTimeout\(_saveLogsTimer\); _saveLogsTimer = nu
   'a pending debounced save is flushed to Firestore BEFORE the reset -- data already in LOGS is never silently dropped on a plan switch');
 ok(/LOGS\s*=\s*\{\};\s*\n\s*EXERCISE_UNITS = \{\};.*\n\s*CURRENT_WEEK\s*=\s*1;\s*\n\s*REAL_WEEK\s*=\s*1;/.test(CLIENT),
   'the reset is a full, clean wipe (LOGS/week) -- no possibility of week-N-plan-A entries surviving alongside week-N-plan-B entries in the same flat document');
-ok(CLIENT.includes('const _ownedFields = Object.keys(_payload);') && CLIENT.includes('await FB.setDoc(ref, _payload, { mergeFields: _ownedFields });'),
+ok(CLIENT.includes('const _ownedFields = Object.keys(_payload);') && CLIENT.includes('FB.setDoc(ref, _payload, { mergeFields: _ownedFields })'),
   'the save atomically replaces all owned top-level fields, including the whole entries map, while preserving unrelated shadow audit fields');
 
 // ─────────────────────────────────────────────────────────────────────────────

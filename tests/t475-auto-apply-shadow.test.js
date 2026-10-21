@@ -118,9 +118,9 @@ test('saveLogs merges existing application fields on both paths', async () => {
       } },
     LOGS: {}, REAL_WEEK: 1, ACTIVE_PLAN_ID: 'plan-A', EXERCISE_UNITS: {}, EXERCISE_HISTORY: {},
     _sraSaveGeneration: 0, _sraPersisted: { version: 0, entries: {} }, _saveLogsTimer: null, _logsWriteInFlight: 0, _showSaveOk: () => {},
-    document: { getElementById: () => null }, showToast: () => {}, console };
+    document: { getElementById: () => null }, showToast: () => {}, console, _syncPending: 0, _WRITE_GRACE_MS: 5000, _renderSyncBadge() {}, _deferredWriteFailed() {}, localStorage: { setItem() {} }, navigator: { onLine: true }, setTimeout, clearTimeout };
   vm.createContext(context);
-  vm.runInContext(functionSource(client, '_acceptSraPersisted') + '\n' + functionSource(client, '_doSaveLogs'), context);
+  vm.runInContext(functionSource(client, '_acceptSraPersisted') + '\n' + functionSource(client, '_fbWriteOrQueue') + '\n' + functionSource(client, '_writeLocalBackup') + '\n' + functionSource(client, '_doSaveLogs'), context);
   assert.equal(await context._doSaveLogs(), true);
   assert.equal(docs.get('logs/client-A/mesos/plan-A').progressionApplications.prior.state, 'PENDING');
   assert.equal(docs.get('logs/client-A').progressionApplicationSummary.autoCount, 1);

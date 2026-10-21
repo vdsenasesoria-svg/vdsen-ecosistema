@@ -11,6 +11,8 @@ for (; end < client.length; end++) {
   if (client[end] === '}' && --depth === 0) break;
 }
 const source = client.slice(start, end + 1);
+function grab(name) { const i = client.indexOf('function ' + name + '('); let d = 0, k = client.indexOf('{', i); for (; k < client.length; k++) { if (client[k] === '{') d++; if (client[k] === '}' && --d === 0) break; } return client.slice(i, k + 1); }
+const offlineHelpers = grab('_fbWriteOrQueue') + '\n' + grab('_writeLocalBackup');
 
 test('T441: a save started by A never writes A payload to B after logout/login', async () => {
   const runtime = new Function(`
@@ -25,6 +27,8 @@ test('T441: a save started by A never writes A payload to B after logout/login',
       doc: function(){ return Array.prototype.join.call(arguments, '/'); },
       setDoc: async function(path, payload) { calls.push({ path:path, payload:payload }); if (calls.length === 1) USER = { uid: 'B' }; }
     };
+    var _syncPending = 0, _WRITE_GRACE_MS = 5000; function _renderSyncBadge() {} function _deferredWriteFailed() {} var localStorage = { setItem: function() {} };
+    ${offlineHelpers}
     ${source}
     return { save: _doSaveLogs, calls: calls };
   `)();
