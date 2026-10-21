@@ -383,10 +383,11 @@ test('CE.29 UI trigger: confirmation copy, progress text, success/failure messag
   await d3.confirmButton.onclick(); assert.ok(d3.statusEl.textContent.startsWith('La exportación no pudo completarse. No tienes permiso'));
 });
 
-test('CE.30 Coach wiring: button in the selected-client modal bound to that clientId; scripts loaded; nothing else in the app changed behaviourally', () => {
+test('CE.30 Coach wiring: TXT button bound to selected client and ZIP infrastructure kept available internally', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'vdsen-coach.html'), 'utf8');
-  assert.ok(html.includes('id="modalExportClientBtn"') && html.includes('Exportar cliente'));
-  assert.ok(html.includes("_expBtn.onclick = () => _vdsenOpenClientExport(clientId, c.displayName || c.email || clientId)"));
+  assert.ok(html.includes('id="modalExpedienteTxtBtn"') && html.includes('Expediente TXT'));
+  assert.ok(html.includes("_pdfBtn.onclick = () => _vdsenOpenExpedienteTxt(clientId)"));
+  assert.ok(html.includes("_expBtn.style.display = 'none'"), 'do not advertise ZIP: owner requested one TXT');
   const order = ['util', 'security', 'collect', 'normalize', 'derive', 'media', 'serialize', 'zip', 'firestore-io', 'runner', 'ui'].map(n => html.indexOf('assets/client-export/' + n + '.js'));
   assert.ok(order.every((x, i) => x > 0 && (i === 0 || x > order[i - 1])), 'scripts present and in dependency order');
   const glue = html.slice(html.indexOf('function _vdsenClientExportIo'), html.indexOf('window._vdsenOpenClientExport'));
@@ -428,20 +429,21 @@ test('CE.33 export request carries exactly the dialog\'s clientId; failure state
   assert.equal(c.confirmButton.disabled, false);
 });
 
-test('CE.34 button exists only in the selected-client modal: hidden by default, shown/bound only after that client loads, rebinding on navigation', () => {
+test('CE.34 one TXT button stays hidden until the exact authorized client is loaded; ZIP action remains hidden', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'vdsen-coach.html'), 'utf8');
-  assert.equal((html.match(/id="modalExportClientBtn"/g) || []).length, 1);
-  const tag = html.slice(html.indexOf('<button id="modalExportClientBtn"'), html.indexOf('</button>', html.indexOf('<button id="modalExportClientBtn"')));
+  assert.equal((html.match(/id="modalExpedienteTxtBtn"/g) || []).length, 1);
+  const tag = html.slice(html.indexOf('<button id="modalExpedienteTxtBtn"'), html.indexOf('</button>', html.indexOf('<button id="modalExpedienteTxtBtn"')));
   assert.ok(tag.includes('display:none'));
   const modalStart = html.indexOf('<div id="clientModal"'), modalEnd = html.indexOf('<div class="bottom-nav-mobile"');
-  assert.ok(html.indexOf('id="modalExportClientBtn"') > modalStart && html.indexOf('id="modalExportClientBtn"') < modalEnd, 'inside the client modal only');
-  assert.equal((html.match(/_vdsenOpenClientExport\(/g) || []).length, 2);          // definition + the single binding
-  const fn = html.slice(html.indexOf('async function showClientDetail('), html.indexOf('async function showClientDetail(') + 6000);
-  assert.ok(fn.indexOf('_detailClientId !== clientId') < fn.indexOf("const _expBtn = document.getElementById('modalExportClientBtn')"), 'bound after the stale-context guard');
-  assert.ok(fn.includes("_expBtn.onclick = () => _vdsenOpenClientExport(clientId,"));
-  assert.ok(fn.indexOf("_expReset.onclick = null") > 0 && fn.indexOf("_expReset.onclick = null") < fn.indexOf('_detailClientId !== clientId'), 'previous client binding is cleared before loading');
+  assert.ok(html.indexOf('id="modalExpedienteTxtBtn"') > modalStart && html.indexOf('id="modalExpedienteTxtBtn"') < modalEnd);
+  const fn = html.slice(html.indexOf('async function showClientDetail('), html.indexOf('async function showClientDetail(') + 6500);
+  assert.ok(fn.indexOf('_detailClientId !== clientId') < fn.indexOf("const _pdfBtn = document.getElementById('modalExpedienteTxtBtn')"));
+  assert.ok(fn.includes("_pdfBtn.onclick = () => _vdsenOpenExpedienteTxt(clientId)"));
+  assert.ok(fn.includes("c.coachId === currentCoach.uid"), 'scope TXT to the signed-in coach');
+  assert.ok(fn.includes("_expBtn.style.display = 'none'") && fn.includes("_expBtn.onclick = null"), 'ZIP button must remain hidden, not bound');
+  assert.ok(fn.indexOf("_pdfReset.onclick = null") > 0 && fn.indexOf("_pdfReset.onclick = null") < fn.indexOf('_detailClientId !== clientId'), 'clear former client before loading');
   const nav = html.slice(html.indexOf('function navClient('), html.indexOf('function navClient(') + 800);
-  assert.ok(/showClientDetail\(/.test(nav), 'navigating to another client re-runs showClientDetail, rebinding the button to that client');
+  assert.match(nav, /showClientDetail\(/);
   const glue = html.slice(html.indexOf('function _vdsenOpenClientExport('), html.indexOf('window._vdsenOpenClientExport'));
-  assert.ok(glue.includes('_clientExporterUid !== currentCoach.uid'), 'exporter is recreated when the signed-in coach changes');
+  assert.ok(glue.includes('_clientExporterUid !== currentCoach.uid'), 'existing ZIP exporter still isolates coach sessions');
 });

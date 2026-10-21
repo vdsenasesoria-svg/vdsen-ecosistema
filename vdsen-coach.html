@@ -491,13 +491,14 @@
 
 <div id="clientModal" class="modal-overlay" style="display:none;">
   <div class="modal-box">
-    <div class="flex justify-between items-center mb-2">
-      <div class="flex items-center gap-2">
+    <div class="flex justify-between items-center mb-2 flex-wrap gap-2">
+      <div class="flex items-center gap-2 min-w-0">
         <button onclick="navClient(-1)" class="text-[#888] hover:text-[#F4F4F0] text-lg px-2 py-1" title="Cliente anterior">◀</button>
         <h3 class="text-xl font-bold" id="modalClientName">—</h3>
         <button onclick="navClient(1)" class="text-[#888] hover:text-[#F4F4F0] text-lg px-2 py-1" title="Siguiente cliente">▶</button>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2 flex-wrap justify-end">
+        <button id="modalExpedienteTxtBtn" type="button" style="display:none;padding:4px 8px;border-radius:6px;border:1px solid rgba(183,244,0,.55);background:rgba(183,244,0,.11);color:#B7F400;font-size:12px;cursor:pointer" title="Descargar un único TXT: Ficha 360, biomecánica, antropometría y rendimiento">📋 Expediente TXT</button>
         <button id="modalExportClientBtn" type="button" style="display:none;padding:4px 8px;border-radius:6px;border:1px solid rgba(68,187,136,.5);background:rgba(68,187,136,.1);color:#44BB88;font-size:12px;cursor:pointer" title="Exportar toda la información de este cliente (ZIP)">⬇ Exportar cliente</button>
         <button id="modalDeleteClientBtn" style="display:none;padding:4px 8px;border-radius:6px;border:1px solid #FF4444;background:rgba(255,68,68,.1);color:#FF4444;font-size:12px;cursor:pointer" title="Eliminar cliente">🗑 Eliminar</button>
         <button onclick="closeClientModal()" class="text-[#888] hover:text-white text-xl leading-none">✕</button>
@@ -1610,6 +1611,7 @@
   <script src="assets/client-export/firestore-io.js"></script>
   <script src="assets/client-export/runner.js"></script>
   <script src="assets/client-export/ui.js"></script>
+  <script src="assets/client-export/expediente-txt.js"></script>
   <script src="assets/sra-context.js"></script>
   <script src="assets/progression-magnitude-policy.js"></script>
   <script src="assets/progression-equipment-resolver.js"></script>
@@ -3116,6 +3118,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     if (window.VDSEN_CE_UI && window.VDSEN_CE_UI.closeActive) window.VDSEN_CE_UI.closeActive();
     const _x = document.getElementById('modalExportClientBtn');
     if (_x) { _x.style.display = 'none'; _x.onclick = null; }
+    const _xp = document.getElementById('modalExpedienteTxtBtn');
+    if (_xp) { _xp.style.display = 'none'; _xp.onclick = null; _xp.disabled = false; }
     // Selectores de cliente (<select> con options "value=clientId>nombre"): se quitan las opciones que
     // nombran a un cliente del coach saliente. No se tocan las opciones estaticas ajenas al cliente.
     const _known = new Set(_clientIdList.concat(Object.keys(_clientNameMap)));
@@ -11893,6 +11897,32 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   }
   window._vdsenOpenClientExport = _vdsenOpenClientExport;
 
+  // Cuatro apartados en UN TXT, usando el recolector existente con la sesion del Coach.
+  // Ni ZIP, ni PDF, ni consultas de otros clientes, ni escrituras.
+  async function _vdsenOpenExpedienteTxt(clientId) {
+    const coachUid = currentCoach && currentCoach.uid;
+    if (!coachUid || _detailClientId !== clientId) return;
+    if (!window.VDSEN_CE_EXPEDIENTE_TXT || !window.VDSEN_CE_COLLECT) {
+      showToast('Exportación TXT no disponible', true); return;
+    }
+    const approved = await _askConfirm('¿Descargar un único TXT con Ficha 360, biomecánica, antropometría y rendimiento del mesociclo? Contiene información confidencial.');
+    if (!approved || !currentCoach || currentCoach.uid !== coachUid || _detailClientId !== clientId) return;
+    const button = document.getElementById('modalExpedienteTxtBtn');
+    if (button) { button.disabled = true; button.textContent = 'Preparando TXT…'; }
+    try {
+      const raw = await window.VDSEN_CE_COLLECT.collect(_vdsenClientExportIo(), { clientId: clientId, coachUid: coachUid });
+      if (!currentCoach || currentCoach.uid !== coachUid || _detailClientId !== clientId) return;
+      const result = window.VDSEN_CE_EXPEDIENTE_TXT.build(raw);
+      if (!currentCoach || currentCoach.uid !== coachUid || _detailClientId !== clientId) return;
+      window.VDSEN_CE_EXPEDIENTE_TXT.download(document, window, result.filename, result.text);
+      showToast('Expediente TXT descargado');
+    } catch (_err) {
+      showToast('No se pudo exportar el TXT completo. Revisa el acceso a la ficha y a la bitácora.', true);
+    } finally {
+      if (button) { button.disabled = false; button.textContent = '📋 Expediente TXT'; }
+    }
+  }
+
   async function showClientDetail(clientId, opts) {
     var _initialTab = (opts && opts.tab) || 'ficha';
     _detailClientId   = clientId;
@@ -11909,6 +11939,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     // fails to load. It is rebound below only once the client proves to be ours.
     const _expReset = document.getElementById('modalExportClientBtn');
     if (_expReset) { _expReset.style.display = 'none'; _expReset.onclick = null; }
+    const _pdfReset = document.getElementById('modalExpedienteTxtBtn');
+    if (_pdfReset) { _pdfReset.style.display = 'none'; _pdfReset.onclick = null; _pdfReset.disabled = false; }
 
     // CN2 — firestore.rules responde a la lectura de un plan ausente/ajeno con permission-denied.
     // Antes, eso abortaba el detalle del cliente entero cuando su `activePlanId` estaba obsoleto,
@@ -11933,9 +11965,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     // Bound to this exact clientId — never to a display name, and never left over from the previous
     // client. Ownership is re-verified inside the exporter before any byte is produced.
     const _expBtn = document.getElementById('modalExportClientBtn');
-    if (_expBtn) {
-      _expBtn.style.display = '';
-      _expBtn.onclick = () => _vdsenOpenClientExport(clientId, c.displayName || c.email || clientId);
+    // El expediente solicitado es UN TXT. El ZIP historico se conserva internamente, pero se oculta en esta vista.
+    if (_expBtn) { _expBtn.style.display = 'none'; _expBtn.onclick = null; }
+    const _pdfBtn = document.getElementById('modalExpedienteTxtBtn');
+    if (_pdfBtn && currentCoach && c.coachId === currentCoach.uid) {
+      _pdfBtn.style.display = '';
+      _pdfBtn.onclick = () => _vdsenOpenExpedienteTxt(clientId);
     }
     const _delBtn = document.getElementById('modalDeleteClientBtn');
     if (_delBtn) {
