@@ -1088,6 +1088,8 @@ button[role="switch"]::after{content:'';position:absolute;inset:-8px -6px}
 .spec-grid.auto .spec-c{border-bottom:1px solid var(--rule)}
 .spec-grid.auto .spec-v{font-size:26px;white-space:normal;text-align:center;overflow-wrap:anywhere}
 .pf-reg{margin:18px 0 10px}
+.pf-seg{display:flex;gap:8px;margin:10px 0 4px}.pf-seg-b{flex:1;min-height:44px;background:transparent;border:1px solid var(--rule-strong);border-radius:var(--r-1);color:var(--mt);font:inherit;font-weight:700;letter-spacing:.06em}.pf-seg-b.on{color:var(--tx);border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.pf-more{margin-top:12px}.pf-more>summary{cursor:pointer;min-height:44px;display:flex;align-items:center}
 .pf-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .pf-grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}
 .pf-grid-4{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -6626,7 +6628,22 @@ function _getExType(ej) {
   if (!ej) return 'fuerza';
   var t = String(ej.exerciseType || ej.tipo || '').toLowerCase().trim();
   if (t === 'calistenia' || t === 'cardio' || t === 'estacion' || t === 'circuito') return t;
-  return 'fuerza';
+  if (t) return 'fuerza';   // the Coach declared a type explicitly ('fuerza'): it wins over any catalog pattern
+  return (typeof _exHasCardioPattern === 'function' && _exHasCardioPattern(ej)) ? 'cardio' : 'fuerza';
+}
+// T589: an exercise with NO declared type is cardio only when the own classification of the Coach says so: the exercise's motorPattern 'Cardio' or an EXACT catalog
+// match (exerciseId, or the exact normalized name — never a substring/fuzzy match, never a guess from the name's words) whose motorPattern is 'Cardio'.
+function _exNormKey(s) { return String(s || '').toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+function _exHasCardioPattern(ej) {
+  if (!ej || typeof ej !== 'object') return false;
+  var isC = function(p) { return _exNormKey(p) === 'cardio'; };
+  if (isC(ej.motorPattern)) return true;
+  var id = ej.exerciseId, byId = id ? (typeof EXERCISE_CATALOG_BY_ID !== 'undefined' ? EXERCISE_CATALOG_BY_ID[String(id)] : null) : null;
+  if (byId) return isC(byId.motorPattern);
+  var nm = ej.nombre || ej.exerciseName; if (!nm || typeof EXERCISE_CATALOG === 'undefined') return false;
+  var raw = String(nm).toLowerCase().trim(), hit = EXERCISE_CATALOG[raw] || EXERCISE_CATALOG[_exNormKey(nm)];
+  if (!hit) { var ks = Object.keys(EXERCISE_CATALOG), nk = _exNormKey(nm); for (var i = 0; i < ks.length; i++) { if (_exNormKey(ks[i]) === nk) { hit = EXERCISE_CATALOG[ks[i]]; break; } } }
+  return !!hit && isC(hit.motorPattern);
 }
 
 // Etiqueta visual + color por tipo (chip en header del ejercicio)
@@ -7600,21 +7617,31 @@ function _buildCardioCard(ejercicios, di, ei, isPartner) {
     ['BLOQUES', (tBloqueTrabajo||tBloqueDescanso) ? (tBloqueTrabajo?'W '+tBloqueTrabajo:'')+(tBloqueTrabajo&&tBloqueDescanso?' / ':'')+(tBloqueDescanso?'R '+tBloqueDescanso:'') : '']
   ]);
 
+  // T589: cardio is logged with its OWN controls: real duration (required) + ONE effort measure (RPE or quality, athlete's choice, required). No sets, reps, load, RIR or rest.
+  var metric = saved.metrica === 'calidad' || (saved.calidad !== undefined && saved.calidad !== null && saved.rpe == null) ? 'calidad' : 'rpe';
+  var effortVal = metric === 'calidad' ? saved.calidad : saved.rpe;
   var inputsHtml =
-    '<div class="kick pf-reg">REGISTRO</div>'+
+    '<div class="kick pf-reg">REGISTRO DE CARDIO</div>'+
     '<div class="pf-grid">'+
-      _perfField('card_dur_'+key, 'DURACIÓN (min)', 'type="number" step="0.5" value="'+(saved.duracionMin||'')+'" placeholder="min" inputmode="decimal"')+
+      _perfField('card_dur_'+key, 'DURACIÓN REAL (min)', 'type="number" step="0.5" min="1" value="'+(saved.duracionMin||'')+'" placeholder="min" inputmode="decimal"')+
+      _perfField('card_eff_'+key, metric === 'calidad' ? 'CALIDAD (1-10)' : 'RPE (1-10)', 'type="number" min="1" max="10" step="0.5" value="'+(effortVal||'')+'" placeholder="1-10" inputmode="decimal"')+
+    '</div>'+
+    '<div class="pf-seg" role="radiogroup" aria-label="Medida de esfuerzo del cardio" data-metric="'+metric+'">'+
+      '<button type="button" role="radio" aria-checked="'+(metric==='rpe')+'" class="pf-seg-b'+(metric==='rpe'?' on':'')+'" onclick="setCardioMetric(\''+key+'\',\'rpe\')">RPE</button>'+
+      '<button type="button" role="radio" aria-checked="'+(metric==='calidad')+'" class="pf-seg-b'+(metric==='calidad'?' on':'')+'" onclick="setCardioMetric(\''+key+'\',\'calidad\')">CALIDAD</button>'+
+    '</div>'+
+    '<details class="pf-more"'+((saved.distanciaKm||saved.fcMedia||saved.fcMax||saved.ritmo||saved.notas)?' open':'')+'><summary class="kick">DATOS OPCIONALES</summary>'+
+    '<div class="pf-grid">'+
       _perfField('card_dist_'+key, 'DISTANCIA (km)', 'type="number" step="0.01" value="'+(saved.distanciaKm||'')+'" placeholder="km" inputmode="decimal"')+
       _perfField('card_fcm_'+key, 'FC MEDIA (lpm)', 'type="number" value="'+(saved.fcMedia||'')+'" placeholder="lpm" inputmode="numeric"')+
       _perfField('card_fcx_'+key, 'FC MÁX (lpm)', 'type="number" value="'+(saved.fcMax||'')+'" placeholder="lpm" inputmode="numeric"')+
       _perfField('card_pace_'+key, 'RITMO', 'type="text" value="'+_escHTml(String(saved.ritmo||''))+'" placeholder="min/km"', 'txt')+
-      _perfField('card_rpe_'+key, 'RPE (1-10)', 'type="number" min="1" max="10" value="'+(saved.rpe||'')+'" placeholder="1-10" inputmode="numeric"')+
     '</div>'+
     '<div class="sp-f" style="margin-top:12px"><label class="sp-fl" for="card_notes_'+key+'">NOTAS (opcional)</label>'+
     '<textarea id="card_notes_'+key+'" placeholder="Sensaciones, clima, terreno..." class="pf-ta">'+_escHTml(String(saved.notas||''))+'</textarea></div>'+
     // ── Bloque colapsable: datos universales de wearable (todos opcionales) ──
-    // Copiar manualmente desde Garmin / Apple Watch / Polar / Strava sin que sean obligatorios.
     _buildWearableBlock(key, 'card', saved.wearable || {}, false, ['calorias','cadencia','elevacion','zonaTiempo'])+
+    '</details>'+
     _perfCta('completeCardio(\''+key+'\','+di+','+ei+')', done, 'CONFIRMAR CARDIO');
 
   return '<section class="pf" data-extype="cardio">'+
@@ -7623,6 +7650,23 @@ function _buildCardioCard(ejercicios, di, ei, isPartner) {
     '</section>';
 }
 
+// T589: pure validation of the cardio entry (shared by completeCardio and the tests). Duration is required; exactly one of RPE / quality (1-10) is required.
+function _cardioEntry(raw) {
+  raw = raw || {};
+  var dur = parseFloat(raw.dur), metric = raw.metric === 'calidad' ? 'calidad' : 'rpe', eff = parseFloat(raw.eff);
+  if (!(dur > 0)) return { error: 'Ingresa la duración real (min)' };
+  if (!(eff >= 1 && eff <= 10)) return { error: (metric === 'calidad' ? 'Calidad' : 'RPE') + ' de 1 a 10' };
+  var out = { duracionMin: dur, metrica: metric };
+  out[metric] = eff;
+  return { value: out };
+}
+function setCardioMetric(key, metric) {
+  // Pure DOM toggle: nothing typed is lost and nothing is saved until the athlete confirms.
+  var m = metric === 'calidad' ? 'calidad' : 'rpe', seg = document.querySelector('.pf-seg[data-metric]'); if (!seg) return;
+  seg.setAttribute('data-metric', m);
+  Array.prototype.forEach.call(seg.querySelectorAll('.pf-seg-b'), function(b) { var on = b.textContent.trim().toLowerCase() === m; b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false'); });
+  var lb = document.querySelector('label[for="card_eff_'+key+'"]'); if (lb) lb.textContent = m === 'calidad' ? 'CALIDAD (1-10)' : 'RPE (1-10)';
+}
 function completeCardio(key, di, ei) {
   var saved = LOGS[key] || {};
   if (saved.done) {
@@ -7630,18 +7674,17 @@ function completeCardio(key, di, ei) {
     showToast('Cardio desmarcado — edita y vuelve a confirmar');
     return;
   }
-  var dur = parseFloat(document.getElementById('card_dur_'+key)?.value);
   var dist = parseFloat(document.getElementById('card_dist_'+key)?.value);
   var fcMed = parseInt(document.getElementById('card_fcm_'+key)?.value);
   var fcMax = parseInt(document.getElementById('card_fcx_'+key)?.value);
   var ritmo = (document.getElementById('card_pace_'+key)?.value || '').trim();
-  var rpe = parseInt(document.getElementById('card_rpe_'+key)?.value);
   var notas = (document.getElementById('card_notes_'+key)?.value || '').trim();
-  if ((!dur || dur <= 0) && (!dist || dist <= 0)) { showToast('Ingresa duración o distancia', true); return; }
-  if (rpe && (rpe < 1 || rpe > 10)) { showToast('RPE 1-10', true); return; }
+  var seg = document.querySelector('[id="exPanel"] .pf-seg[data-metric]') || document.querySelector('.pf-seg[data-metric]');
+  var entry = _cardioEntry({ dur: document.getElementById('card_dur_'+key)?.value, metric: seg ? seg.getAttribute('data-metric') : (saved.metrica || 'rpe'), eff: document.getElementById('card_eff_'+key)?.value });
+  if (entry.error) { showToast(entry.error, true); return; }
   var ej = (_EJERCICIOS_DIA || [])[ei] || {};
   var wearable = _readWearableInputs(key, 'card', ['calorias','cadencia','elevacion','zonaTiempo']);
-  _saveExLog(key, { exType:'cardio', modo:ej.modo||ej.cardioMode||'z2', duracionMin:isNaN(dur)?null:dur, distanciaKm:isNaN(dist)?null:dist, fcMedia:isNaN(fcMed)?null:fcMed, fcMax:isNaN(fcMax)?null:fcMax, ritmo:ritmo||null, rpe:isNaN(rpe)?null:rpe, notas:notas||null, wearable:Object.keys(wearable).length?wearable:null, done:true });
+  _saveExLog(key, Object.assign({ exType:'cardio', modo:ej.modo||ej.cardioMode||'z2', distanciaKm:isNaN(dist)?null:dist, fcMedia:isNaN(fcMed)?null:fcMed, fcMax:isNaN(fcMax)?null:fcMax, ritmo:ritmo||null, notas:notas||null, wearable:Object.keys(wearable).length?wearable:null, prescriptionExerciseId: ej.prescriptionExerciseId || null, exerciseNameSnapshot: ej.nombre || ej.exerciseName || null, done:true }, entry.value));
   showToast('Cardio registrado ✓');
 }
 
@@ -8750,6 +8793,12 @@ function _calcWeightTrend(checkins) {
   };
 }
 
+// T589: true when the exercise a set key points at (week_day_exercise) is classified cardio in the CURRENT plan. Records are never rewritten; they are only excluded from strength statistics.
+function _isCardioLogKey(k) {
+  var m = /^log_(\d+)_(\d+)_(\d+)(?:_s\d+)?$/.exec(k || ''); if (!m) return false;
+  var ses = (typeof getSesiones === 'function' ? getSesiones() : null) || [], d = ses[+m[2]], ej = d && d.exercises && d.exercises[+m[3]];
+  return !!ej && _getExType(ej) === 'cardio';
+}
 // FASE 12 — Aggregated week stats strip for ALL days in CURRENT_WEEK (excludes autoFilled)
 function _buildWeekPerfSummary() {
   var totalSets = 0, rirs = [], icss = [];
@@ -8757,6 +8806,7 @@ function _buildWeekPerfSummary() {
     if (!/^log_\d+_\d+_\d+_s\d+$/.test(k)) return;
     var e = LOGS[k];
     if (!e || !e.done || e.autoFilled) return;
+    if (_isCardioLogKey(k)) return;   // T589
     totalSets++;
     var rir = parseFloat(e.rir_real);
     if (!isNaN(rir) && rir >= 0 && rir <= 5) rirs.push(rir);
@@ -15816,9 +15866,22 @@ function _recapDate(ms) {
   try { return new Date(ms).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }).replace('.', ''); } catch (e) { return ''; }
 }
 // o = { sessionName, week, dateMs, partial, exercises: [{ name, sets: [{ reps, carga, unit, rir_real, ics, express, expressFinal }], prescribedRest, note }] }
+// T589: cardio row text — real duration plus the ONE effort measure the athlete chose (RPE or quality). Absent values stay absent.
+function _recapCardioRow(c) {
+  if (!c || typeof c !== 'object') return null;
+  var dur = _recapNum(c.duracionMin), q = _recapNum(c.calidad), r = _recapNum(c.rpe);
+  var durText = dur !== null && dur > 0 ? _recapFmtNum(dur) + ' min' : '';
+  var effortText = (c.metrica === 'calidad' || (q !== null && r === null)) ? (q !== null && q > 0 ? 'Calidad ' + _recapFmtNum(q) + '/10' : '') : (r !== null && r > 0 ? 'RPE ' + _recapFmtNum(r) + '/10' : (q !== null && q > 0 ? 'Calidad ' + _recapFmtNum(q) + '/10' : ''));
+  return (durText || effortText) ? { durText: durText, effortText: effortText } : null;
+}
 function _recapBuild(o) {
-  o = o || {}; var rows = [], totalSets = 0;
+  o = o || {}; var rows = [], totalSets = 0, totalCardio = 0;
   (o.exercises || []).forEach(function(ex) {
+    if (ex.cardio) {   // T589: cardio has its own row (duration + RPE/quality); it is never a set and never counts as one
+      var cd = _recapCardioRow(ex.cardio); if (!cd) return;
+      rows.push({ name: String(ex.name || 'Cardio'), cardio: true, sets: 0, repsText: '', loadText: '', rirText: '', icsText: '', cardioText: cd.durText, effortText: cd.effortText, restText: '', restLabel: '', express: false, note: String(ex.note || '').replace(/\s+/g, ' ').trim() });
+      totalCardio++; return;
+    }
     var sets = (ex.sets || []).filter(function(s) { return s; });
     if (!sets.length) return;
     totalSets += sets.length;
@@ -15846,7 +15909,7 @@ function _recapBuild(o) {
       note: String(ex.note || '').replace(/\s+/g, ' ').trim()
     });
   });
-  return { sessionName: String(o.sessionName || 'Sesión'), week: o.week, dateText: _recapDate(o.dateMs), partial: o.partial === true, rows: rows, totals: { exercises: rows.length, sets: totalSets } };
+  return { sessionName: String(o.sessionName || 'Sesión'), week: o.week, dateText: _recapDate(o.dateMs), partial: o.partial === true, rows: rows, totals: { exercises: rows.length, sets: totalSets, cardio: totalCardio } };
 }
 // Empaqueta bloques (alturas medidas) en páginas de altura útil `avail`; un bloque nunca se parte ni se encoge; si un solo bloque excede la página va solo.
 function _recapPaginate(heights, avail) {
@@ -15866,6 +15929,11 @@ function _recapCollect(di, week) {
     if (typeof isTechniqueActive === 'function' && !isTechniqueActive(ej, week)) return;
     var sub = LOGS['exsub_' + week + '_' + di + '_' + ei], name = (sub && sub.nombre) || ej.nombre || ej.exerciseName || ('Ejercicio ' + (ei + 1));
     var sets = [];
+    if (_getExType(ej) === 'cardio') {   // T589: one cardio log per exercise (no _s{S}); legacy set-shaped records of a cardio exercise are preserved in LOGS but never shown as strength sets
+      var cl = LOGS['log_' + week + '_' + di + '_' + ei], cnote = (ej.prescriptionExerciseId && LOGS['exnotepid_' + week + '_' + ej.prescriptionExerciseId]);
+      if (cl && cl.done === true && cl.exType === 'cardio') { if (typeof cl.ts === 'number' && cl.ts > lastTs) lastTs = cl.ts; items.push({ name: name, sets: [], cardio: cl, prescribedRest: null, note: (cnote && typeof cnote.text === 'string' && cnote.text) || (typeof LOGS['exnote_' + week + '_' + di + '_' + ei] === 'string' ? LOGS['exnote_' + week + '_' + di + '_' + ei] : '') }); }
+      return;
+    }
     for (var s = 0; s < 12; s++) {
       var lg = LOGS['log_' + week + '_' + di + '_' + ei + '_s' + s];
       if (lg && lg.done === true && lg.autoFilled !== true) { sets.push(lg); if (typeof lg.ts === 'number' && lg.ts > lastTs) lastTs = lg.ts; }
@@ -15880,6 +15948,12 @@ function _recapCollect(di, week) {
   return { sessionName: sessionName, week: week, dateMs: (post && post.ts) || lastTs || 0, partial: !!(post && (post.partial === true || post.autoClosed === true)) || !!LOGS['partial_' + week + '_' + di], exercises: items };
 }
 function _recapRowHtml(r) {
+  if (r.cardio) {
+    return '<div class="rc-ex rc-cardio">' +
+      '<div class="rc-top"><span class="rc-name">' + _escHTml(r.name) + '</span><span class="rc-sets">cardio</span></div>' +
+      '<div class="rc-data">' + (r.cardioText ? '<b>' + _escHTml(r.cardioText) + '</b>' : '') + (r.effortText ? '<b>' + _escHTml(r.effortText) + '</b>' : '') + '</div>' +
+      (r.note ? '<div class="rc-note">' + _escHTml(r.note) + '</div>' : '') + '</div>';
+  }
   var meta = [r.rirText, r.icsText].filter(Boolean).join(' · ');
   var rest = r.restText ? '<span class="rc-rest"><i>' + _escHTml(r.restLabel) + '</i> ' + _escHTml(r.restText) + '</span>' : '';
   return '<div class="rc-ex">' +
@@ -15892,12 +15966,12 @@ var _recapState = null;
 function openSessionRecap(di, weekOverride, opts) {
   try {
     var week = weekOverride || CURRENT_WEEK, data = _recapCollect(di, week); if (!data) return false;
-    var recap = _recapBuild(data); if (!recap.rows.length) { if (!(opts && opts.auto)) showToast('Esta sesión no tiene series registradas', true); return false; }
+    var recap = _recapBuild(data); if (!recap.rows.length) { if (!(opts && opts.auto)) showToast('Esta sesión no tiene registros', true); return false; }
     var old = document.getElementById('sessRecap'); if (old) old.remove();   // never two overlays
     var ov = document.createElement('div'); ov.id = 'sessRecap'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'Resumen de la sesión');
     ov.innerHTML = '<div class="rc-wrap"><div class="rc-head"><div class="brand"><span class="brand-word" aria-label="VDSEN">VDSEN<i></i></span></div>' +
       '<div class="rc-date">' + _escHTml(recap.dateText) + '</div></div>' +
-      '<div class="rc-title"><h2>' + _escHTml(recap.sessionName) + '</h2><div class="rc-sub">SEM ' + week + ' · ' + recap.totals.exercises + (recap.totals.exercises === 1 ? ' ejercicio' : ' ejercicios') + ' · ' + recap.totals.sets + ' series completadas' + (recap.partial ? ' · <u>PARCIAL</u>' : '') + '</div></div>' +
+      '<div class="rc-title"><h2>' + _escHTml(recap.sessionName) + '</h2><div class="rc-sub">SEM ' + week + ' · ' + recap.totals.exercises + (recap.totals.exercises === 1 ? ' ejercicio' : ' ejercicios') + (recap.totals.sets ? ' · ' + recap.totals.sets + ' series completadas' : '') + (recap.totals.cardio ? ' · ' + recap.totals.cardio + ' cardio' : '') + (recap.partial ? ' · <u>PARCIAL</u>' : '') + '</div></div>' +
       '<div class="rc-body" id="rcBody"></div><div class="rc-foot" id="rcFoot"></div></div>';
     document.body.appendChild(ov); document.documentElement.classList.add('rc-open');
     _recapState = { recap: recap, page: 0, pages: [[]], capture: false, di: di, week: week };
@@ -16988,6 +17062,7 @@ function calculateProgression(di, postData) {
   }
 
   var recs = exercises.map(function(ej, ei) {
+    if (_getExType(ej) === 'cardio') return null;   // T589: cardio never enters the strength progression (minutes are not reps, a cardio entry is not a set)
     var planSets = ej.numSeries || (ej.sets ? ej.sets.length : 3);
     var sets = [];
     for (var s = 0; s < Math.max(planSets, 8); s++) {

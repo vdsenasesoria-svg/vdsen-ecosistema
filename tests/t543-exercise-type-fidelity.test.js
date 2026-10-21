@@ -77,7 +77,7 @@ test('T543.6 dispatch: every supported type reaches its own renderer', () => {
 test('T543.7 execution contracts: historical storage keys and shapes are unchanged; nothing prescribed becomes observed', () => {
   const shapes = {
     completeCalisteniaSet: ["exType:'calistenia'", 'reps:reps', 'lastre:lastre', 'asistencia:asistencia', 'rpe:rpe||null', 'ics:ics||null', 'done:true'],
-    completeCardio: ["exType:'cardio'", 'duracionMin:', 'distanciaKm:', 'fcMedia:', 'fcMax:', 'ritmo:', 'rpe:', 'done:true'],
+    completeCardio: ["exType:'cardio'", 'distanciaKm:', 'fcMedia:', 'fcMax:', 'ritmo:', 'done:true', 'entry.value'],   // T589: duracionMin + rpe | calidad (+ metrica) now come from _cardioEntry
     completeEstacionSet: ["exType:'estacion'", 'dosis:dosis', 'dosisUnit:dosisUnit', 'tiempoSeg:tiempo', 'rpe:rpe||null', 'done:true'],
     completeCircuito: ["exType:'circuito'", 'estructura:', 'rounds:', 'tiempoTotalMin:', 'tiempoTotalSeg:', 'done:true']
   };
@@ -95,7 +95,7 @@ test('T543.8 non-strength exercises stay out of strength-only lifecycle / progre
 });
 
 test('T543.9 performance cards keep every historical input id / handler and render in the V3 language (no emoji, no inline color state)', () => {
-  const ids = { _buildCalisteniaCard: ['cal_reps_', 'cal_load_', 'cal_rpe_', 'cal_ics_', 'completeCalisteniaSet('], _buildCardioCard: ['card_dur_', 'card_dist_', 'card_fcm_', 'card_fcx_', 'card_pace_', 'card_rpe_', 'card_notes_', 'completeCardio('],
+  const ids = { _buildCalisteniaCard: ['cal_reps_', 'cal_load_', 'cal_rpe_', 'cal_ics_', 'completeCalisteniaSet('], _buildCardioCard: ['card_dur_', 'card_dist_', 'card_fcm_', 'card_fcx_', 'card_pace_', 'card_eff_', 'card_notes_', 'completeCardio('],
     _buildEstacionCard: ['est_dose_', 'est_time_', 'est_rpe_', 'completeEstacionSet(', 'saveEstacionWearable('], _buildCircuitoCard: ['cir_rds_', 'cir_time_', 'cir_rpe_', 'cir_notes_', 'completeCircuito('] };
   for (const [f, needles] of Object.entries(ids)) {
     const s = fn(f);

@@ -252,6 +252,13 @@
   // persisted progrec_* entries are just EVIDENCE INPUT; the record and its magnitude are (re)computed here from persisted LOGS.
   // input = { clientId, planId, activePlanId, plan, interventions, entries, records, at, isStarted(entries, week, dayIndex) }
   // -> { records, changed, created: [key], staled: [key] }   (pure; never mutates its inputs)
+  // T589: a recommendation whose prescribed exercise the Coach declared cardio never becomes a progression candidate (minutes are not reps; cardio is not a set).
+  function _isCardioRec(plan, rec) {
+    var pid = rec && rec.prescriptionExerciseId; if (!pid || !plan || !Array.isArray(plan.days)) return false;
+    for (var i = 0; i < plan.days.length; i++) { var exs = (plan.days[i] && plan.days[i].exercises) || [];
+      for (var j = 0; j < exs.length; j++) { if (exs[j] && exs[j].prescriptionExerciseId === pid) return exs[j].exerciseType === 'cardio' || (!exs[j].exerciseType && exs[j].tipo === 'cardio'); } }
+    return false;
+  }
   function materializeRecords(input) {
     var records = Object.assign({}, input.records || {}), entries = input.entries || {}, created = [], staled = [];
     if (!input.clientId || !input.planId || input.activePlanId !== input.planId) return { records: records, changed: false, created: created, staled: staled };
@@ -262,7 +269,7 @@
       if (!m || !parent || !_validTime(parent.calculatedAt) || !Array.isArray(parent.recommendations) || !parent.recommendations.length) return;
       var week = Number(m[1]), dayIndex = Number(m[2]);
       parent.recommendations.forEach(function(rec) {
-        if (!rec) return;
+        if (!rec || _isCardioRec(input.plan, rec)) return;
         var base = { clientId: input.clientId, planId: input.planId, activePlanId: input.activePlanId, plan: input.plan, interventions: input.interventions, entries: entries,
           overlays: input.overlays, records: records, structural: input.structural === true,
           week: week, dayIndex: dayIndex, calculatedAt: parent.calculatedAt, recommendation: rec, sourceMatches: true,

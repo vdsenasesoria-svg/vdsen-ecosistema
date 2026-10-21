@@ -61,6 +61,7 @@
       sesiones: model.training.sessions.filter(function(s) { return s.plan_id === planId; }),
       resumen_de_sesiones: derived.performance.session_summaries.filter(function(s) { return s.plan_id === planId; }),
       series_ejecutadas_y_registradas: model.training.exercise_logs.filter(function(e) { return e.plan_id === planId; }),
+      cardio_registrado: (model.training.cardio_logs || []).filter(function(e) { return e.plan_id === planId; }),
       rendimiento_por_ejercicio: byExercise,
       notas_del_mesociclo: model.notes.filter(function(n) { return n.plan_id === planId; })
     };

@@ -22,7 +22,7 @@
     trend: 'last value - first value in chronological order; direction UP/DOWN/FLAT from the sign of the delta; no thresholds are applied'
   };
 
-  function observed(r) { return r.done === true && r.synthetic_express !== true; }
+  function observed(r) { return r.done === true && r.synthetic_express !== true && r.exercise_type !== 'cardio'; }   // T589: a set-shaped record of an exercise the Coach declared cardio is never strength volume
   function stats(rows) {
     var loads = rows.map(function(r) { return r.load; }).filter(function(x) { return x !== null; });
     var reps = rows.map(function(r) { return r.reps; }).filter(function(x) { return x !== null; });

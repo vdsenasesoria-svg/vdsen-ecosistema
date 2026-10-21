@@ -20,7 +20,7 @@
     set: /^log_(\d+)_(\d+)_(\d+)_s(\d+)$/, done: /^done_(\d+)_(\d+)$/, post: /^postsession_(\d+)_(\d+)$/, prog: /^progrec_(\d+)_(\d+)$/,
     ci: /^ci_sem_(\d+)$/, notePid: /^exnotepid_(\d+)_(.+)$/, noteW: /^exnote_(\d+)_(\d+)_(\d+)$/, noteLegacy: /^exnote_(\d+)_(\d+)$/,
     sub: /^exsub_(\d+)_(\d+)_(\d+)$/, skip: /^exskip_(\d+)_(\d+)_(\d+)$/, series: /^exseries_(\d+)_(\d+)_(\d+)_s(\d+)$/,
-    express: /^exexpress_(\d+)_(\d+)_(\d+)$/, nutri: /^nutrilog_(\d{4}-\d{2}-\d{2})$/
+    cardio: /^log_([0-9]+)_([0-9]+)_([0-9]+)$/, express: /^exexpress_(\d+)_(\d+)_(\d+)$/, nutri: /^nutrilog_(\d{4}-\d{2}-\d{2})$/
   };
   var NOTE_KEY_RE = /^(nota|notas|note|notes|observacion|observaciones|comentario|comentarios|comment|comments|feedback|cue|cues|indicaciones)$/i;
   var BIOMECH_EXACT = ['asimetrias', 'dolor_actual', 'ejercicios_evitar', 'ejercicios_favoritos', 'lesiones', 'limitaciones', 'movilidad',
@@ -57,7 +57,7 @@
   }
 
   function parseEntries(entries) {
-    var b = { sets: [], done: {}, post: {}, prog: {}, ci: {}, notePid: [], noteW: [], noteLegacy: [], sub: {}, skip: {}, series: [], express: {}, nutri: [], unclassified: {} };
+    var b = { sets: [], done: {}, post: {}, prog: {}, ci: {}, notePid: [], noteW: [], noteLegacy: [], sub: {}, skip: {}, series: [], express: {}, nutri: [], cardio: [], unclassified: {} };
     Object.keys(entries || {}).sort().forEach(function(k) {
       var v = entries[k], m;
       if ((m = RE.set.exec(k))) b.sets.push({ key: k, w: +m[1], d: +m[2], e: +m[3], s: +m[4], v: v });
@@ -73,6 +73,7 @@
       else if ((m = RE.series.exec(k))) b.series.push({ key: k, w: +m[1], d: +m[2], e: +m[3], s: +m[4], v: v });
       else if ((m = RE.express.exec(k))) b.express[m[1] + '_' + m[2] + '_' + m[3]] = { key: k, v: v };
       else if ((m = RE.nutri.exec(k))) b.nutri.push({ key: k, date: m[1], v: v });
+      else if ((m = RE.cardio.exec(k)) && v && typeof v === 'object' && v.exType === 'cardio') b.cardio.push({ key: k, w: +m[1], d: +m[2], e: +m[3], v: v });   // T589: a cardio entry (duration + RPE/quality) is not a set
       else b.unclassified[k] = v;
     });
     return b;
@@ -92,6 +93,19 @@
   }
   function exerciseName(ex) { return ex ? pick(ex, ['exerciseName', 'nombre', 'name']) : null; }
 
+  // T589: the type the Coach DECLARED on the plan exercise (exerciseType, legacy alias tipo). Never inferred from the name.
+  function declaredType(ex) { var t = ex ? String(ex.exerciseType || ex.tipo || '').toLowerCase().trim() : ''; return t || null; }
+  function cardioRecord(c, ctx, planDay) {
+    var v = c.v, ex = planDay && Array.isArray(planDay.exercises) ? planDay.exercises[c.e] : null;
+    var quality = U.num(v.calidad), rpe = U.num(v.rpe), metric = v.metrica === 'calidad' || (quality !== null && rpe === null) ? 'quality' : 'rpe';
+    return {
+      cardio_log_id: ctx.mesocycleKey + ':' + c.key, entry_key: c.key, plan_id: ctx.planId, mesocycle_id: ctx.planId, session_id: ctx.sessionId(c.w, c.d), week: c.w, day_index: c.d, exercise_index: c.e,
+      prescription_exercise_id: ex && ex.prescriptionExerciseId !== undefined ? ex.prescriptionExerciseId : (v.prescriptionExerciseId === undefined ? null : v.prescriptionExerciseId),
+      planned_exercise_name: exerciseName(ex) || (v.exerciseNameSnapshot === undefined ? null : v.exerciseNameSnapshot),
+      duration_min: U.num(v.duracionMin), effort_metric: metric, rpe: rpe, quality: quality, distance_km: U.num(v.distanciaKm), hr_avg: U.num(v.fcMedia), hr_max: U.num(v.fcMax),
+      done: v.done === true, timestamp: U.toIso(v.ts), raw: v
+    };
+  }
   function setRecord(s, ctx, planDay, sub, express) {
     var v = U.isObj(s.v) ? s.v : { value: s.v };
     var ex = planDay && Array.isArray(planDay.exercises) ? planDay.exercises[s.e] : null;
@@ -101,7 +115,7 @@
       week: s.w, day_index: s.d, exercise_index: s.e, set_index: s.s,
       prescription_exercise_id: ex && ex.prescriptionExerciseId !== undefined ? ex.prescriptionExerciseId : null,
       planned_exercise_name: exerciseName(ex), performed_exercise_name: performed || exerciseName(ex),
-      substituted: !!performed && performed !== exerciseName(ex),
+      exercise_type: declaredType(ex), substituted: !!performed && performed !== exerciseName(ex),
       load: U.num(v.carga), reps: U.num(v.reps), unit: v.unit === undefined ? null : v.unit, done: v.done === true,
       rir_prescribed: U.num(v.rir), rir_observed: U.num(v.rir_real), ics: U.num(v.ics), pump: U.num(v.pump),
       timestamp: U.toIso(v.ts), synthetic_express: v.express === true && v.expressFinal !== true, express_final: v.expressFinal === true,
@@ -121,11 +135,12 @@
     Object.keys(b.post).forEach(function(k) { touch(b.post[k].w, b.post[k].d); });
     Object.keys(b.prog).forEach(function(k) { touch(b.prog[k].w, b.prog[k].d); });
     b.noteW.forEach(function(n) { touch(n.w, n.d); });
+    b.cardio.forEach(function(c) { touch(c.w, c.d); });
     Object.keys(b.sub).forEach(function(k) { var p = k.split('_'); touch(+p[0], +p[1]); });
     Object.keys(b.skip).forEach(function(k) { var p = k.split('_'); touch(+p[0], +p[1]); });
     Object.keys(b.express).forEach(function(k) { var p = k.split('_'); touch(+p[0], +p[1]); });
 
-    var exerciseLogs = [], sessions = [], recovery = [], notes = [];
+    var exerciseLogs = [], cardioLogs = [], sessions = [], recovery = [], notes = [];
     var sessionList = U.sortBy(Object.keys(keys).map(function(k) { return keys[k]; }), function(x) { return [x.w, x.d]; });
     sessionList.forEach(function(sk) {
       var w = sk.w, d = sk.d, id = ctx.sessionId(w, d), wd = w + '_' + d, day = days[d] || null;
@@ -136,10 +151,12 @@
       });
       recs = U.sortBy(recs, function(r) { return [r.exercise_index, r.set_index, r.entry_key]; });
       exerciseLogs = exerciseLogs.concat(recs);
+      var cards = U.sortBy(b.cardio.filter(function(c) { return c.w === w && c.d === d; }).map(function(c) { return cardioRecord(c, ctx, day); }), function(r) { return [r.exercise_index, r.entry_key]; });
+      cardioLogs = cardioLogs.concat(cards);
       var doneMarker = b.done[wd] ? b.done[wd].v : undefined;
       var autoClosed = U.isObj(doneMarker) && doneMarker.autoClosed === true && doneMarker.skipped === true;
       var status = autoClosed ? 'AUTO_CLOSED_NO_DATA' : (doneMarker === true || (U.isObj(doneMarker) && !autoClosed) ? 'COMPLETED'
-        : (recs.some(function(r) { return r.done; }) ? 'PARTIAL' : 'NO_SETS_LOGGED'));
+        : ((recs.some(function(r) { return r.done; }) || cards.some(function(r) { return r.done; })) ? 'PARTIAL' : 'NO_SETS_LOGGED'));
       var exIdx = {};
       recs.forEach(function(r) { exIdx[r.exercise_index] = true; });
       Object.keys(b.sub).forEach(function(k) { var p = k.split('_'); if (+p[0] === w && +p[1] === d) exIdx[+p[2]] = true; });
@@ -167,7 +184,7 @@
         first_logged_at: times.length ? new Date(Math.min.apply(null, times)).toISOString() : null,
         last_logged_at: times.length ? new Date(Math.max.apply(null, times)).toISOString() : null,
         completion: { status: status, done_marker: doneMarker === undefined ? null : doneMarker },
-        planned_exercises: plannedEx, performed_exercises: performed, exercise_log_ids: recs.map(function(r) { return r.exercise_log_id; }),
+        planned_exercises: plannedEx, performed_exercises: performed, exercise_log_ids: recs.map(function(r) { return r.exercise_log_id; }), cardio_log_ids: cards.map(function(r) { return r.cardio_log_id; }),
         post_session: post, progression: prog
       });
       if (b.post[wd]) {
@@ -228,7 +245,7 @@
       week_structure: days.map(function(dy, i) { return { day_index: i, day_label: pick(dy, ['label', 'name', 'nombre']), exercise_count: Array.isArray(dy && dy.exercises) ? dy.exercises.length : 0 }; }),
       session_ids: sessions.map(function(s) { return s.session_id; }), weeks_with_data: Object.keys(weeksWithData).map(Number).sort(function(a, c) { return a - c; })
     };
-    return { mesocycle: mesocycle, sessions: sessions, exercise_logs: exerciseLogs, recovery: recovery, notes: notes, nutrition_logs: nutriLogs, unclassified: unclassified };
+    return { mesocycle: mesocycle, sessions: sessions, exercise_logs: exerciseLogs, cardio_logs: cardioLogs, recovery: recovery, notes: notes, nutrition_logs: nutriLogs, unclassified: unclassified };
   }
 
   function dedupeBy(list, keyFn) { var seen = {}; return list.filter(function(x) { var k = keyFn(x); if (seen[k]) return false; seen[k] = true; return true; }); }
@@ -277,6 +294,8 @@
     sessions = U.sortBy(sessions, function(s) { return [orderOf[s.plan_id === null ? '~' : s.plan_id], s.week, s.day_index]; });
     var exerciseLogs = [].concat.apply([], normalized.map(function(n) { return n.exercise_logs; }));
     exerciseLogs = U.sortBy(exerciseLogs, function(r) { return [orderOf[r.plan_id === null ? '~' : r.plan_id], r.week, r.day_index, r.exercise_index, r.set_index, r.entry_key]; });
+    var cardioLogs = [].concat.apply([], normalized.map(function(n) { return n.cardio_logs; }));
+    cardioLogs = U.sortBy(cardioLogs, function(r) { return [orderOf[r.plan_id === null ? '~' : r.plan_id], r.week, r.day_index, r.exercise_index, r.entry_key]; });
     var recovery = [].concat.apply([], normalized.map(function(n) { return n.recovery; }));
     recovery = U.sortBy(recovery, function(r) { return [U.toMs(r.timestamp), orderOf[r.plan_id === null ? '~' : r.plan_id], r.week, r.day_index === null ? -1 : r.day_index, r.type, r.recovery_id]; });
     var notes = [].concat.apply([], normalized.map(function(n) { return n.notes; }));
@@ -378,7 +397,7 @@
 
     return {
       client: client, ficha_360: ficha, biomechanics: biomechanics, body_metrics: body,
-      training: { plans: plans, plans_backup: backups, mesocycles: mesocycles, sessions: sessions, exercise_logs: exerciseLogs, current_week: rootLogs ? U.num(rootLogs.currentWeek) : null },
+      training: { plans: plans, plans_backup: backups, mesocycles: mesocycles, sessions: sessions, exercise_logs: exerciseLogs, cardio_logs: cardioLogs, current_week: rootLogs ? U.num(rootLogs.currentWeek) : null },
       recovery: recovery, notes: notes, nutrition: nutrition, supplements: supplements, additional_client_data: additional, warnings: warnings,
       _internal: { plansById: plansById }
     };
