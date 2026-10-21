@@ -661,6 +661,9 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .spec-v{font-family:var(--font-num);font-size:30px;font-weight:800;line-height:1;color:var(--tx);font-variant-numeric:tabular-nums;white-space:nowrap}
 .autoadj{margin-top:12px;display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--accent);background:rgba(var(--accent-rgb),.06)}
 :root.light-mode .autoadj{border-color:#245500}
+.autoadj{flex-wrap:wrap}
+.autoadj-main{flex:1 0 100%;font-size:22px;font-weight:900;line-height:1.15;color:var(--tx)}
+.autoadj-main small{display:block;font-size:10px;font-weight:800;letter-spacing:1.4px;color:var(--mt2);margin-bottom:2px}
 .autoadj-t{font-size:13px;font-weight:700;color:var(--tx)}
 .xh-phase{margin-top:12px;display:flex;align-items:baseline;gap:10px;padding:6px 10px;border:1px solid;font-size:12px;font-weight:800;letter-spacing:.08em}
 .xh-phase small{font-size:11px;font-weight:600;color:var(--mt);letter-spacing:0}
@@ -11685,10 +11688,25 @@ function _withOverlayRest(ej, di, ei) {
   var r = _resolveOverlayForExercise(ej, di, getExUnit(di, ei));
   return r && r.dimension === 'REST' ? Object.assign({}, ej, { sets: r.sets.map(function(x){ return x.effective; }) }) : ej;
 }
+// T593: the suggestion reads as three plain numbers ("82.5 kg · 8 reps · RIR 2"): the first standard working set of the effective prescription. A part the plan does not have is
+// simply left out (never invented). The previous -> applied change stays underneath in small type.
+function _autoAdjustSummary(ej) {
+  var o = ej && ej._overlay; if (!o) return '';
+  var list = (Array.isArray(o.sets) && o.sets.length ? o.sets.map(function(x) { return (x && x.effective) || x; }) : (ej && ej.sets) || []);
+  var st = list.filter(function(x) { return x && !x.drop && !x.warmup; })[0] || list[0] || {};
+  var parts = [], load = parseFloat(st.load), reps = st.repsTarget, rir = parseFloat(st.rirTarget);
+  var unit = String((o.loadUnit || o.unit || 'kg')).toUpperCase() === 'LB' ? 'lb' : 'kg';
+  if (load > 0) parts.push(String(Number(load)) + ' ' + unit);
+  if (reps !== undefined && reps !== null && String(reps) !== '' && /^[0-9]+([-–][0-9]+)?$/.test(String(reps))) parts.push(String(reps) + ' reps');
+  if (!isNaN(rir) && rir >= 0) parts.push('RIR ' + String(Number(rir)));
+  return parts.join(' · ');
+}
 function _autoAdjustHtml(ej) {
   var o = ej && ej._overlay;
   if (!o || !o.presentation) return '';
+  var main = _autoAdjustSummary(ej);
   return '<div data-autoadjust="1" class="autoadj">'+
+    (main ? '<div class="autoadj-main"><small>SUGERIDO PARA HOY</small>'+_escHTml(main)+'</div>' : '')+
     '<span class="chip auto">'+String(o.presentation.label).toUpperCase()+'</span>'+
     '<span class="autoadj-t">'+o.presentation.text+'</span></div>';
 }
