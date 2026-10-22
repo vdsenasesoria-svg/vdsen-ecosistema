@@ -7,6 +7,7 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const shadow = require(path.join(root, 'assets/progression-auto-apply-shadow.js'));
 const client = fs.readFileSync(path.join(root, 'vdsen-cliente.html'), 'utf8');
+const { MERGE_HELPERS_SRC, withMergeSdk } = require(path.join(root, 'tests', 'helpers', 'client-log-merge.js'));   // T593-R
 const coach = fs.readFileSync(path.join(root, 'vdsen-coach.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 const at = '2026-09-27T12:00:00.000Z';
@@ -111,16 +112,22 @@ test('saveLogs merges existing application fields on both paths', async () => {
     ['logs/client-A/mesos/plan-A', { entries: { old_plan_set: true }, progressionApplications: { prior: { state: 'PENDING' } } }],
     ['logs/client-A', { entries: { old_plan_set: true }, progressionApplicationSummary: { autoCount: 1 } }]
   ]);
-  const context = { USER: { uid: 'client-A' }, FB: { db: {}, doc: (_db, ...parts) => parts.join('/'),
+  const context = { USER: { uid: 'client-A' }, FB: withMergeSdk({ db: {}, doc: (_db, ...parts) => parts.join('/'),
       setDoc: async (ref, payload, opts) => {
-        assert.equal(JSON.stringify(opts.mergeFields), JSON.stringify(Object.keys(payload)));
-        docs.set(ref, { ...docs.get(ref), ...payload });
-      } },
+        // T593-R: the mask names scalar fields and entries.<key> paths only; it never contains a shadow-owned field and never the whole entries map
+        const names = opts.mergeFields.map(f => (typeof f === 'string' ? f : f.segments.join('.')));
+        assert.ok(names.every(n => !/^(progressionApplications|progressionApplicationSummary|nextExposureOverlays|consumptionReceipts|summary|entries)$/.test(n)), JSON.stringify(names));
+        const cur = { ...docs.get(ref) }; cur.entries = { ...(cur.entries || {}) };
+        opts.mergeFields.forEach(f => { if (typeof f === 'string') cur[f] = payload[f]; else { const [top, key] = f.segments; const v = payload[top][key]; if (v && v.__delete) delete cur[top][key]; else (cur[top] = cur[top] || {})[key] = v; } });
+        docs.set(ref, cur);
+      } }),
     LOGS: {}, REAL_WEEK: 1, ACTIVE_PLAN_ID: 'plan-A', EXERCISE_UNITS: {}, EXERCISE_HISTORY: {},
     _sraSaveGeneration: 0, _sraPersisted: { version: 0, entries: {} }, _saveLogsTimer: null, _logsWriteInFlight: 0, _showSaveOk: () => {},
     document: { getElementById: () => null }, showToast: () => {}, console, _syncPending: 0, _WRITE_GRACE_MS: 5000, _renderSyncBadge() {}, _deferredWriteFailed() {}, localStorage: { setItem() {} }, navigator: { onLine: true }, setTimeout, clearTimeout };
   vm.createContext(context);
-  vm.runInContext(functionSource(client, '_acceptSraPersisted') + '\n' + functionSource(client, '_fbWriteOrQueue') + '\n' + functionSource(client, '_writeLocalBackup') + '\n' + functionSource(client, '_doSaveLogs'), context);
+  vm.runInContext(MERGE_HELPERS_SRC + '\n' + functionSource(client, '_acceptSraPersisted') + '\n' + functionSource(client, '_fbWriteOrQueue') + '\n' + functionSource(client, '_writeLocalBackup') + '\n' + functionSource(client, '_doSaveLogs'), context);
+  // the athlete loaded old_plan_set from the server and then switched plan (LOGS is emptied): the baseline knows the old entry, so exactly that entry is removed
+  vm.runInContext("_setBaselines({ old_plan_set: true }, {}, {}); _logsHeal = false;", context);
   assert.equal(await context._doSaveLogs(), true);
   assert.equal(docs.get('logs/client-A/mesos/plan-A').progressionApplications.prior.state, 'PENDING');
   assert.equal(docs.get('logs/client-A').progressionApplicationSummary.autoCount, 1);

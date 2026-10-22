@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const client = fs.readFileSync(path.join(__dirname, '..', 'vdsen-cliente.html'), 'utf8');
+const { MERGE_HELPERS_SRC, withMergeSdk } = require(__dirname + '/helpers/client-log-merge.js');   // T593-R
 function extract(src, decl) { const start = src.indexOf(decl), b = src.indexOf('{', start); let d = 0; assert.ok(start >= 0, decl); for (let i = b; i < src.length; i++) { d += (src[i] === '{') - (src[i] === '}'); if (!d) return src.slice(start, i + 1); } throw Error(decl); }
 const tick = (ms) => new Promise((r) => setTimeout(r, ms || 0));
 
@@ -16,10 +17,10 @@ function harness({ online = true, grace = 30 } = {}) {
     _saveLogsTimer: null, _logsReqSeq: 0, _logsAckedSeq: 0, _logsWriteInFlight: 0, _logsAuthorityUpdatedAt: 0, _rootLogUnbound: false, _sraSaveGeneration: 0, _sraPersisted: { version: 0, entries: {} },
     console: { warn() {}, error() {} }, document: { getElementById: () => ({ style: {} }) }, showToast: (m) => calls.toasts.push(m), _showSaveOk() { calls.saveOk = (calls.saveOk || 0) + 1; }, _maybeConsumeOverlays() { calls.consume = (calls.consume || 0) + 1; }, _scheduleTrustedProgression() { calls.trusted = (calls.trusted || 0) + 1; },
     _syncPending: 0, _WRITE_GRACE_MS: grace, _renderSyncBadge() { calls.badge++; }, localStorage: { setItem: (k, v) => { stored[k] = v; } }, navigator: { onLine: online }, setTimeout, clearTimeout,
-    FB: { db: {}, doc: (...a) => a.slice(1).join('/'), setDoc: () => new Promise((resolve, reject) => pending.push({ resolve, reject })) } };
+    FB: withMergeSdk({ db: {}, doc: (...a) => a.slice(1).join('/'), setDoc: () => new Promise((resolve, reject) => pending.push({ resolve, reject })) }) };
   box._deferredWriteFailed = (e) => calls.deferredErrors.push(e && e.code);
   vm.createContext(box);
-  vm.runInContext([extract(client, 'function _acceptSraPersisted('), extract(client, 'function _fbWriteOrQueue('), extract(client, 'function _writeLocalBackup('), extract(client, 'async function _doSaveLogs(')].join('\n'), box);
+  vm.runInContext([MERGE_HELPERS_SRC, extract(client, 'function _acceptSraPersisted('), extract(client, 'function _fbWriteOrQueue('), extract(client, 'function _writeLocalBackup('), extract(client, 'async function _doSaveLogs(')].join('\n'), box);
   return { box, pending, stored, calls };
 }
 

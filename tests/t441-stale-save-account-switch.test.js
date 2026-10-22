@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const client = fs.readFileSync('vdsen-cliente.html', 'utf8');
+const { MERGE_HELPERS_SRC, FB_SDK_SRC } = require('./helpers/client-log-merge.js');   // T593-R: the per-entry merge helpers the real save uses
 const start = client.indexOf('async function _doSaveLogs()');
 assert.ok(start >= 0);
 let depth = 0, end = client.indexOf('{', start);
@@ -23,7 +24,9 @@ test('T441: a save started by A never writes A payload to B after logout/login',
     var document = { getElementById: function(){ return null; }, createElement: function(){ return { style:{}, addEventListener:function(){} }; }, body:{ appendChild:function(){} } };
     var navigator = { onLine: true };
     function showToast() {} function _showSaveOk() {}
-    var FB = {
+    ${FB_SDK_SRC}
+    ${MERGE_HELPERS_SRC}
+    var FB = { FieldPath: FieldPath, deleteField: deleteField,
       doc: function(){ return Array.prototype.join.call(arguments, '/'); },
       setDoc: async function(path, payload) { calls.push({ path:path, payload:payload }); if (calls.length === 1) USER = { uid: 'B' }; }
     };
