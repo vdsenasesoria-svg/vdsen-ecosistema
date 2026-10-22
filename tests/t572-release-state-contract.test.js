@@ -134,9 +134,9 @@ test('T572-9 the reviewed state passes the whole hardened contract', () => {
   assert.equal(STATE.release_mode, 'app_only');
   assert.ok(STATE.app_release, 'el estado debe traer el bloque app_release');
   // and it describes the release that actually happened
-  assert.equal(STATE.app_release.runtime_sha, '318b8724293cb66ef91c7c9ec1e507b356aad2ae');
-  assert.equal(STATE.app_release.deployment, 'dpl_7Q2KyfBwB7hfLsp6mXHNxektKbML');
-  assert.equal(STATE.app_release.source_release_run, '39695814458');
+  assert.equal(STATE.app_release.runtime_sha, '340c0ac8eb988cfc3b5dd674493c4657fbdb9b8e');
+  assert.equal(STATE.app_release.deployment, 'dpl_2z6fyJMjrYDwaKYXeYXmCgMeVdYB');
+  assert.equal(STATE.app_release.source_release_run, '39717728425');
 });
 
 // ── 10-11. the mode gates ─────────────────────────────────────────────────────────────────────
