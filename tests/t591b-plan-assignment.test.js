@@ -7,65 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { coachSandbox, jsonTabImport } = require('./helpers/coach-plan-import.js');
-const coach = fs.readFileSync(path.join(__dirname, '..', 'vdsen-coach.html'), 'utf8');
-
-function fnSrc(name) {
-  let i = coach.indexOf('async function ' + name + '('); if (i < 0) i = coach.indexOf('function ' + name + '(');
-  assert.ok(i >= 0, name + ' exists');
-  let d = 0, q = null, esc = false;
-  for (let k = coach.indexOf('{', i); k < coach.length; k++) {
-    const c = coach[k];
-    if (q) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === q) q = null; continue; }
-    if (c === '/' && coach[k + 1] === '/') { k = coach.indexOf('\n', k); continue; }
-    if (c === '/' && coach[k + 1] === '*') { k = coach.indexOf('*/', k) + 1; continue; }
-    if (c === '"' || c === "'" || c === '`') { q = c; continue; }
-    if (c === '{') d++; else if (c === '}' && --d === 0) return coach.slice(i, k + 1);
-  }
-  throw new Error('unbalanced ' + name);
-}
-const S = (n) => Array.from({ length: n }, (_, i) => ({ setIndex: i, repsTarget: 8, rirTarget: 2, load: 0, restSeconds: 90 }));
-const planObjFor = (extra) => Object.assign({ weeks: 4, daysPerWeek: 1, days: [{ dayIndex: 0, label: 'Día 1', exercises: [
-  { exerciseName: 'Press', alternatives: [], technique: 'straight', techniqueNote: '', supersetGroup: '', coachNote: '', sets: S(3) },
-  { exerciseName: 'Cinta', alternatives: [], technique: 'straight', techniqueNote: '', supersetGroup: '', coachNote: '', exerciseType: 'cardio', duracionMin: 30, sets: [] }] }] }, extra || {});
-
-// ── in-memory Firestore with transactions ─────────────────────────────────────────────────────────────
-function makeStore(init) {
-  const data = JSON.parse(JSON.stringify(init)); let auto = 0; const log = { commits: 0, failures: 0 };
-  const store = {
-    data, log, hooks: { beforeConfirm: null, failCommit: null, applyThenFail: false, setDocFail: null },
-    doc: (first, coll, id) => { if (first && first.__coll) { return { path: first.__coll + '/auto' + (++auto), id: 'auto' + auto, __coll: first.__coll }; } return { path: coll + '/' + id, id, __coll: coll }; },   // doc(collectionRef) => auto id, like the SDK
-    collection: (_db, name) => ({ __coll: name }),
-    getDoc: async (ref) => { const v = data[ref.path]; if (ref.__coll === 'plans_backup' && v === undefined) throw Object.assign(new Error('missing backup reads as denied'), { code: 'permission-denied' }); return { exists: () => v !== undefined, data: () => JSON.parse(JSON.stringify(v)), ref }; },
-    setDoc: async (ref, v) => { if (store.hooks.setDocFail) throw store.hooks.setDocFail; data[ref.path] = JSON.parse(JSON.stringify(v)); },
-    updateDoc: async (ref, v) => { if (!(ref.path in data)) throw new Error('no document to update'); Object.assign(data[ref.path], JSON.parse(JSON.stringify(v))); },
-    runTransaction: async (_db, fn) => {
-      const snap = JSON.parse(JSON.stringify(data)), writes = [];
-      const tx = { get: async (ref) => ({ exists: () => snap[ref.path] !== undefined, data: () => JSON.parse(JSON.stringify(snap[ref.path])), ref }),
-        set: (ref, v) => writes.push(['set', ref.path, v]), update: (ref, v) => { if (snap[ref.path] === undefined) throw new Error('update of a missing document'); writes.push(['update', ref.path, v]); } };
-      await fn(tx);
-      if (store.hooks.failCommit && !store.hooks.applyThenFail) { store.log.failures++; throw store.hooks.failCommit; }
-      for (const [op, p, v] of writes) { if (op === 'set') data[p] = JSON.parse(JSON.stringify(v)); else Object.assign(data[p], JSON.parse(JSON.stringify(v))); }
-      store.log.commits++;
-      if (store.hooks.failCommit && store.hooks.applyThenFail) { store.log.failures++; throw store.hooks.failCommit; }   // committed on the server, the acknowledgement is lost
-    }
-  };
-  return store;
-}
-function harness(init, opts) {
-  opts = opts || {}; const st = makeStore(init), toasts = [], confirms = [];
-  const ctx = coachSandbox('as', { currentCoach: { uid: 'c1' }, db: {}, doc: st.doc, collection: st.collection, getDoc: st.getDoc, setDoc: st.setDoc, updateDoc: st.updateDoc, runTransaction: st.runTransaction,
-    showToast: (m, e) => toasts.push({ m: String(m), e: !!e }), _askConfirm: async (m) => { confirms.push(String(m)); if (st.hooks.beforeConfirm) await st.hooks.beforeConfirm(); return opts.confirm !== false; },
-    _autoAddExercisesToCatalog() {}, document: { getElementById: () => ({ innerHTML: '', value: '', disabled: false, textContent: '' }) }, serverTimestamp: () => 'TS' });
-  ctx.window = Object.assign(ctx.window || {}, { _importedPlan: null });
-  vm.runInContext(['const _importPlanIds = new WeakMap();', 'let _savingImportedPlan = false;', fnSrc('rirSchemeForWeeks'), fnSrc('_stablePlanIdFor'), fnSrc('_normRirByWeek'), fnSrc('_readActivePlanId'), fnSrc('_supersedePlan'), fnSrc('_assignErr'), fnSrc('backupPlanIfExists'), fnSrc('saveImportedPlan'),
-    'this.saveImportedPlan = saveImportedPlan; this._supersedePlan = _supersedePlan; this._normRirByWeek = _normRirByWeek;'].join('\n'), ctx);
-  return { ctx, st, toasts, confirms };
-}
-const base = () => ({
-  'clients/cl1': { coachId: 'c1', displayName: 'Cliente', activePlanId: 'p0' },
-  'plans/p0': { coachId: 'c1', clientId: 'cl1', status: 'active', weeks: 4, days: [{ label: 'viejo', exercises: [] }], updatedAt: '2026-09-01T00:00:00.000Z', createdAt: '2026-09-01T00:00:00.000Z' }
-});
-const newPlans = (h) => Object.keys(h.st.data).filter((k) => /^plans\/auto/.test(k));
+const { coach, fnSrc, S, planObjFor, harness, base, newPlans } = require('./helpers/coach-assign-harness.js');
 
 test('T591B-1 replacing a plan is ONE atomic commit: new plan + activePlanId + the previous plan marked historical (never deleted) + a single backup', async () => {
   const h = harness(base()); h.ctx.window._importedPlan = planObjFor();
@@ -74,7 +16,7 @@ test('T591B-1 replacing a plan is ONE atomic commit: new plan + activePlanId + t
   assert.equal(h.st.data['clients/cl1'].activePlanId, id, 'authority: activePlanId points to the new plan');
   assert.equal(h.st.data[np[0]].status, 'active'); assert.equal(h.st.data[np[0]].clientId, 'cl1'); assert.equal(h.st.data[np[0]].coachId, 'c1');
   const old = h.st.data['plans/p0']; assert.equal(old.status, 'superseded'); assert.equal(old.supersededBy, id); assert.ok(old.supersededAt); assert.deepEqual(old.days, [{ label: 'viejo', exercises: [] }], 'history intact'); assert.equal(old.updatedAt, '2026-09-01T00:00:00.000Z', 'prescription revision stamp untouched');
-  assert.ok(h.st.data['plans_backup/p0__replaced'], 'backup of the outgoing plan'); assert.equal(h.st.log.commits, 1, 'one transaction');
+  assert.ok(h.st.data['plans_backup/p0__replaced_by__' + id], 'backup of the outgoing plan (one per replacement, id = outgoing + replaced_by + new)'); assert.equal(h.st.log.commits, 1, 'one transaction');
   assert.equal(h.confirms.length, 1, 'the replacement was confirmed');
   const exs = h.st.data[np[0]].days[0].exercises; assert.ok(exs.every((e) => e.prescriptionExerciseId), 'PIDs stamped'); assert.equal(exs[1].exerciseType, 'cardio'); assert.equal(exs[1].sets.length, 0);
 });
@@ -84,7 +26,7 @@ test('T591B-2 a failure before commit writes NOTHING (no orphan, client and old 
   h.st.hooks.failCommit = Object.assign(new Error('network down'), { code: 'unavailable' });
   assert.equal(await h.ctx.saveImportedPlan('cl1'), false);
   assert.equal(newPlans(h).length, 0, 'no orphan plan document'); assert.equal(h.st.data['clients/cl1'].activePlanId, 'p0'); assert.equal(h.st.data['plans/p0'].status, 'active', 'old plan still active: nothing changed');
-  assert.ok(h.toasts.some((t) => t.e && /NO se guardó nada.*reintenta/i.test(t.m)), 'explicit failure message');
+  assert.ok(h.toasts.some((t) => t.e && /No se pudo confirmar.*reintenta.*NO se duplicará/i.test(t.m)), 'explicit, honest failure message (it may or may not have been saved; the retry is safe)');
   h.st.hooks.failCommit = null; assert.equal(await h.ctx.saveImportedPlan('cl1'), true);
   assert.equal(newPlans(h).length, 1, 'exactly one plan after the retry'); assert.equal(h.st.data['clients/cl1'].activePlanId, newPlans(h)[0].split('/')[1]);
 });

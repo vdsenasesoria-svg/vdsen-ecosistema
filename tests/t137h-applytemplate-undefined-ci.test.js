@@ -78,9 +78,9 @@ test('applyTemplate reports the assigned client using sel.name', function () {
 
 test('success toast appears after the client is actually activated (updateDoc)', function () {
   assert.ok(body, 'function body present');
-  var updateDocIdx = body.indexOf('activePlanId: planRef.id');
+  var updateDocIdx = body.indexOf('await _assignPlanTxn(');   // T591-C: the activation is the transaction that creates the plan
   var toastIdx = body.indexOf("showToast('Plan asignado a '+sel.name+' ✅')");
-  assert.ok(updateDocIdx > -1, 'activePlanId updateDoc present');
+  assert.ok(updateDocIdx > -1, 'assignment transaction (plan + activePlanId) present');
   assert.ok(toastIdx > -1, 'success toast present');
   assert.ok(updateDocIdx < toastIdx, 'success toast must come after activation write');
 });

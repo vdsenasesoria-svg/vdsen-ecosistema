@@ -68,7 +68,7 @@ const normalizeSupplSrc = extractFunction(COACH, 'function _normalizeSupplementa
 const normalizePlanSrc  = extractFunction(COACH, 'function _normalizePlan(p)');
 const saveDraftSrc  = extractFunction(COACH, 'async function _vdsenSaveDraftToFirestore()');
 const activateSrc   = extractFunction(COACH, 'async function _vdsenActivatePlanInFirestore(planId, clientId)');
-const backupSrc      = extractFunction(COACH, 'async function backupPlanIfExists(clientId)');
+const backupSrc      = extractFunction(COACH, 'function _planBackupDoc(planData, clientData, activeId, nowIso, byUid)') + ';\n' + extractFunction(COACH, 'async function backupPlanIfExists(clientId)');   // T591-C: shared document builder + the backup function
 
 ok([resolveSrc, genIdSrc, stampSrc, rirSrc, normalizeTrainSrc, normalizeNutrSrc, normalizeSupplSrc, normalizePlanSrc, saveDraftSrc, activateSrc, backupSrc].every(Boolean),
   'prerequisite: every real T259-T265 function extracts cleanly');

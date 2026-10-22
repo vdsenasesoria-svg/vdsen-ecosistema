@@ -52,8 +52,9 @@ function planWriters(source) {
 }
 // Writers to plans/ that are authored by the Coach (or copy Coach-authored plans). None consumes
 // a recommendation, progrec record or magnitude.
-const LEGIT = ['saveImportedPlan', 'saveManualPlan', '_applyTemplateToClient', 'applyTemplate', 'duplicatePlan',
-  'duplicatePlanToClient', '_vdsenSaveDraftToFirestore', 'saveTrainingPlan', 'submitQuickAdd', 'showUpdatePlanModal',
+// T591-C: the six plan-replacing routes no longer write plans/ themselves: they all go through the ONE assignment transaction (_assignPlanTxn)
+const ROUTES = ['saveImportedPlan', 'saveManualPlan', '_applyTemplateToClient', 'applyTemplate', 'duplicatePlan', 'duplicatePlanToClient'];
+const LEGIT = ['_assignPlanTxn', '_vdsenSaveDraftToFirestore', 'saveTrainingPlan', 'submitQuickAdd', 'showUpdatePlanModal',
   'extendPlanWeeks', 'planWeekHandlers'];
 
 test('T482.1/2 the recommendation-to-plan writers no longer exist (removed in T487)', () => {
@@ -106,12 +107,15 @@ test('T482.7 explicit Coach manual plan editing remains functional', () => {
 });
 
 test('T482.8 plan authoring, activation and persistence remain functional', () => {
-  for (const fn of ['saveManualPlan', '_applyTemplateToClient', 'applyTemplate', 'duplicatePlan', 'duplicatePlanToClient'])
-    assert.ok(/addDoc\(collection\(db, ?['"]plans['"]\)/.test(functionSource(coach, fn)), fn);
-  // T591-B: the import path creates the plan inside ONE transaction (plan + activePlanId + historical retirement). It is still the same single authoring writer, and it writes only Coach-authored fields.
-  const imp = functionSource(coach, 'saveImportedPlan');
-  assert.ok(/tx\.set\(planRef, _newPlanDoc\)/.test(imp) && /tx\.update\(cRef, \{ activePlanId: planRef\.id \}\)/.test(imp), 'saveImportedPlan: transactional plan creation + activation');
-  assert.ok(!/addDoc\(collection\(db, ?['"]plans['"]\)/.test(imp) && !/deleteDoc/.test(imp), 'no separate addDoc / deleteDoc left in saveImportedPlan');
+  // T591-C: the six plan-replacing routes create the plan through ONE transaction (plan + activePlanId + backup + historical retirement); each only supplies the Coach-authored plan document.
+  const eng = functionSource(coach, '_assignPlanTxn');
+  assert.ok(/tx\.set\(planRef, o\.buildPlanDoc\(planId, nowIso\)\)/.test(eng) && /tx\.update\(cRef, \{ activePlanId: planId \}\)/.test(eng), '_assignPlanTxn: transactional plan creation + activation');
+  assert.ok(!/deleteDoc/.test(eng), 'the engine never deletes a plan (history is kept)');
+  for (const fn of ROUTES) {
+    const body = functionSource(coach, fn);
+    assert.ok(/_assignPlanTxn\(/.test(body) && /buildPlanDoc: function/.test(body), fn + ': assigns through the single transaction');
+    assert.ok(!/addDoc\(collection\(db, ?['"]plans['"]\)/.test(body) && !/deleteDoc/.test(body) && !/updateDoc\(doc\(db, ?['"]clients['"]/.test(body), fn + ': no separate addDoc / updateDoc(client) / deleteDoc left');
+  }
   assert.ok(/setDoc\(planRef, draftDoc\)/.test(functionSource(coach, '_vdsenSaveDraftToFirestore')));
   const activate = functionSource(coach, '_vdsenActivatePlanInFirestore');
   assert.ok(activate.includes('runTransaction') && /t\.update\(clientRef/.test(activate));
@@ -143,7 +147,8 @@ test('T482.11 Coach KEEP > AUTO remains', () => {
 
 test('T482.12 no new numerical writer: every plans/ writer is a Coach-authored one; none consumes recommendations', () => {
   const found = planWriters(coach);
-  assert.ok(found.length >= LEGIT.length - 1, 'scan sees the writers: ' + JSON.stringify(found));
+  assert.ok(found.length >= LEGIT.length - 1, 'scan sees the writers: ' + JSON.stringify(found.map(w => w.fn)));
+  assert.deepEqual(found.filter(w => ROUTES.includes(w.fn)), [], 'the six assignment routes write plans/ only through _assignPlanTxn');
   const unknown = found.filter(w => !LEGIT.includes(w.fn));
   assert.deepEqual(unknown, [], 'unexpected plans/ writer(s): ' + JSON.stringify(unknown));
   assert.deepEqual(planWriters(client), [], 'the client app never writes plans/');

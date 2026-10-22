@@ -53,8 +53,8 @@ assert.ok(
 //     (uses _restampPrescriptionIds — new IDs, no history inheritance from template)
 //     distance ~451 chars to _restampPrescriptionIds
 assert.ok(
-  /async function _applyTemplateToClient[\s\S]{1,1000}_restampPrescriptionIds/.test(COACH),
-  'T1e: _applyTemplateToClient must call _restampPrescriptionIds before addDoc'
+  /async function _applyTemplateToClient[\s\S]{1,3500}_restampPrescriptionIds/.test(COACH),
+  'T1e: _applyTemplateToClient must call _restampPrescriptionIds when it builds the plan document (T591-C: inside the transaction)'
 );
 
 // 1f. showUpdatePlanModal updateDoc path includes prescriptionExerciseId carry-through

@@ -40,9 +40,9 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 // ─────────────────────────────────────────────────────────────────────────────
 
 const minimalActivations = (COACH.match(/updateDoc\(doc\(db, ["']clients["'], clientId\), \{ activePlanId: planRef\.id \}\);/g) || []).length;
-const txActivations = (COACH.match(/tx\.update\(cRef, \{ activePlanId: planRef\.id \}\);/g) || []).length;
-ok(txActivations === 1, 'T591-B: saveImportedPlan activates inside its single transaction and writes ONLY activePlanId (exactly one such site)');
-ok(minimalActivations === 3, 'exactly 3 OTHER activation sites (saveManualPlan/applyTemplate/duplicatePlan, plus the single-quoted _applyTemplateToClient and duplicatePlanToClient variants) write ONLY activePlanId -- confirmed via the literal minimal-update pattern, no accidental nutrition/supplement mirror added to any of them');
+const txActivations = (COACH.match(/tx\.update\(cRef, \{ activePlanId: planId \}\);/g) || []).length;
+ok(txActivations === 1, 'T591-C: ALL six plan-replacing routes (import, manual, template x2, duplicate x2) activate through ONE transactional site (_assignPlanTxn) that writes ONLY activePlanId');
+ok(minimalActivations === 0, 'T591-C: no loose, non-transactional activePlanId updateDoc remains in any of the six routes -- and none of them mirrors nutrition/supplement fields');
 ok(COACH.includes('var clientUpdate = { activePlanId: planId };'), 'the 5th (and ONLY) place that conditionally mirrors nutrition/supplements is _vdsenActivatePlanInFirestore, T261-fixed');
 
 // ─────────────────────────────────────────────────────────────────────────────

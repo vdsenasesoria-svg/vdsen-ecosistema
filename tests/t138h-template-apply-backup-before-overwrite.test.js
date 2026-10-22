@@ -45,33 +45,34 @@ function assertBackupBeforeOverwrite(fnDecl, label, activateSnippet) {
   test(label + ' function is present', function () {
     assert.ok(body, label + ' found in HTML source');
   });
-  test(label + ' calls backupPlanIfExists(clientId)', function () {
+  test(label + ' backs up the outgoing plan through the single assignment transaction (T591-C)', function () {
     assert.ok(body, 'function body present');
-    assert.ok(
-      body.indexOf('backupPlanIfExists(clientId)') > -1,
-      label + ' must call backupPlanIfExists(clientId) before overwriting the active plan'
-    );
+    assert.ok(body.indexOf('_assignPlanTxn(') > -1, label + ' must assign through _assignPlanTxn');
+    var eng = extractFnBody(src, 'async function _assignPlanTxn(');
+    assert.ok(eng && eng.indexOf("tx.set(doc(db, 'plans_backup'") > -1, 'the transaction writes the backup of the outgoing plan');
   });
   test(label + ' backup call happens before activePlanId is repointed', function () {
     assert.ok(body, 'function body present');
-    var backupIdx = body.indexOf('backupPlanIfExists(clientId)');
-    var activateIdx = body.indexOf(activateSnippet);
-    assert.ok(backupIdx > -1, 'backupPlanIfExists(clientId) call present');
-    assert.ok(activateIdx > -1, 'activePlanId updateDoc present: ' + activateSnippet);
-    assert.ok(backupIdx < activateIdx, 'backup must happen before activePlanId is overwritten');
+    var eng = extractFnBody(src, 'async function _assignPlanTxn(');
+    var txIdx = eng.indexOf('runTransaction(db');
+    var backupIdx = eng.indexOf("tx.set(doc(db, 'plans_backup'");
+    var activateIdx = eng.indexOf(activateSnippet);
+    assert.ok(txIdx > -1 && backupIdx > txIdx, 'backup is a write of the transaction');
+    assert.ok(activateIdx > txIdx, 'activePlanId repointing is a write of the SAME transaction: ' + activateSnippet);
+    assert.ok(body.indexOf('updateDoc(doc(db') === -1, label + ' has no loose activePlanId updateDoc left');
   });
 }
 
 assertBackupBeforeOverwrite(
   'async function _applyTemplateToClient(',
   '_applyTemplateToClient',
-  "updateDoc(doc(db, 'clients', clientId), { activePlanId: planRef.id }"
+  'tx.update(cRef, { activePlanId: planId })'
 );
 
 assertBackupBeforeOverwrite(
   'async function applyTemplate(',
   'applyTemplate',
-  'updateDoc(doc(db, "clients", clientId), { activePlanId: planRef.id }'
+  'tx.update(cRef, { activePlanId: planId })'
 );
 
 console.log('\n' + PASS + '/' + (PASS + FAIL) + ' passed' + (FAIL ? ' — ' + FAIL + ' FAILED' : ''));

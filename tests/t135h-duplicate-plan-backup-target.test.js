@@ -49,39 +49,39 @@ test('duplicatePlan function is present', function () {
   assert.ok(body, 'duplicatePlan function found in HTML source');
 });
 
-test('backupPlanIfExists(targetId) is called', function () {
+test('the target\'s outgoing plan is backed up by the single assignment transaction (T591-C)', function () {
   assert.ok(body, 'function body present');
-  assert.ok(
-    body.indexOf('backupPlanIfExists(targetId)') > -1,
-    'duplicatePlan must call backupPlanIfExists(targetId) to preserve the target\'s outgoing plan'
-  );
+  assert.ok(body.indexOf('_assignPlanTxn(') > -1 && body.indexOf('clientId: targetId') > -1, 'duplicatePlan assigns to the TARGET client through _assignPlanTxn');
+  var eng = extractFnBody(src, 'async function _assignPlanTxn(');
+  assert.ok(eng && eng.indexOf("tx.set(doc(db, 'plans_backup'") > -1, 'the transaction writes the backup of the target\'s outgoing plan');
 });
 
 test('backup call happens after targetId is chosen', function () {
   assert.ok(body, 'function body present');
   var targetIdx = body.indexOf('const targetId = sel.id');
-  var backupIdx = body.indexOf('backupPlanIfExists(targetId)');
+  var backupIdx = body.indexOf('_assignPlanTxn(');
   assert.ok(targetIdx > -1, 'targetId assignment present');
-  assert.ok(backupIdx > -1, 'backupPlanIfExists(targetId) call present');
-  assert.ok(targetIdx < backupIdx, 'targetId must be resolved before the backup call');
+  assert.ok(backupIdx > -1, 'assignment transaction call present');
+  assert.ok(targetIdx < backupIdx, 'targetId must be resolved before the transaction (which backs up the target\'s plan)');
 });
 
 test('backup call happens before the new plan is written', function () {
   assert.ok(body, 'function body present');
-  var backupIdx = body.indexOf('backupPlanIfExists(targetId)');
-  var addDocIdx = body.indexOf('addDoc(collection(db, "plans"), newPlan)');
-  assert.ok(backupIdx > -1, 'backupPlanIfExists(targetId) call present');
-  assert.ok(addDocIdx > -1, 'addDoc of newPlan present');
-  assert.ok(backupIdx < addDocIdx, 'backup must run before the duplicated plan is created');
+  var eng = extractFnBody(src, 'async function _assignPlanTxn(');
+  var backupIdx = eng.indexOf("tx.set(doc(db, 'plans_backup'");
+  var newIdx = eng.indexOf('tx.set(planRef, o.buildPlanDoc(planId, nowIso))');
+  assert.ok(backupIdx > -1 && newIdx > -1, 'backup write and new-plan write both present in the transaction');
+  assert.ok(body.indexOf('addDoc(') === -1, 'duplicatePlan has no loose addDoc: the copy is created inside the transaction together with the backup');
 });
 
 test('backup call happens before activePlanId is repointed at the target', function () {
   assert.ok(body, 'function body present');
-  var backupIdx = body.indexOf('backupPlanIfExists(targetId)');
-  var activateIdx = body.indexOf('updateDoc(doc(db, "clients", targetId), { activePlanId: newRef.id }');
-  assert.ok(backupIdx > -1, 'backupPlanIfExists(targetId) call present');
-  assert.ok(activateIdx > -1, 'activePlanId updateDoc present');
-  assert.ok(backupIdx < activateIdx, 'backup must happen before the target\'s activePlanId is overwritten');
+  var eng = extractFnBody(src, 'async function _assignPlanTxn(');
+  var txIdx = eng.indexOf('runTransaction(db');
+  var backupIdx = eng.indexOf("tx.set(doc(db, 'plans_backup'");
+  var activateIdx = eng.indexOf('tx.update(cRef, { activePlanId: planId })');
+  assert.ok(txIdx > -1 && backupIdx > txIdx && activateIdx > txIdx, 'backup and activePlanId repointing are writes of the same transaction');
+  assert.ok(body.indexOf('updateDoc(') === -1, 'duplicatePlan has no separate activePlanId updateDoc');
 });
 
 console.log('\n' + PASS + '/' + (PASS + FAIL) + ' passed' + (FAIL ? ' — ' + FAIL + ' FAILED' : ''));

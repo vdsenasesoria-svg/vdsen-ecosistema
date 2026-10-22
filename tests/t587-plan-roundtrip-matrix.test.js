@@ -58,8 +58,8 @@ test('T587-A3 both routes agree on every engine field (no route-dependent behavi
 });
 
 test('T587-A4 the SAVE paths keep every field: the plan document is {...planObj, days: stamp(days)} (import) / {...planData, days: restamp} (duplicate) — plan-level musclePriorities and per-exercise muscleGroup / repsRange travel through the spread; only the PID is re-minted on a duplicate', () => {
-  // T591-B: the import creates the plan in ONE transaction; the document is still {...planObj, days: stamp(days)} and the Generator's explicit rirByWeek wins over the Coach default (source recorded)
-  const save = /async function saveImportedPlan[\s\S]*?const _newPlanDoc = \{\s*\.\.\.planObj,\s*days: _stampPrescriptionIds\(planObj\.days\),\s*rirByWeek: _rirImp \|\| rirSchemeForWeeks\(planObj\.weeks \|\| 6\),\s*rirByWeekSource: _rirImp \? 'generator' : 'coach-default',[\s\S]*?updatedAt: _nowIso/;
+  // T591-B / T591-C: the import creates the plan in ONE transaction (the shared assignment engine); the document is still {...planObj, days: stamp(days)} and the Generator's explicit rirByWeek wins over the Coach default (source recorded)
+  const save = /async function saveImportedPlan[\s\S]*?buildPlanDoc: function\(_planId, _nowIso\) \{\s*const _rirImp = [^\n]*\n\s*return \{\s*\.\.\.planObj,\s*days: _stampPrescriptionIds\(planObj\.days\),\s*rirByWeek: _rirImp \|\| rirSchemeForWeeks\(planObj\.weeks \|\| 6\),\s*rirByWeekSource: _rirImp \? 'generator' : 'coach-default',[\s\S]*?updatedAt: _nowIso/;
   assert.match(coach, save, 'saveImportedPlan: spread + stamp + rirByWeek (generator-first) + updatedAt');
   assert.match(coach, /\.\.\.planData,\s*days: _restampPrescriptionIds\(planData\.days\),\s*clientId: targetId,\s*coachId: currentCoach\.uid,\s*status: 'active',\s*generatedBy: 'duplicate-to-client'/, 'duplicate-to-client keeps the plan fields');
   assert.match(coach, /const newPlan = \{ \.\.\.planData, days: _restampPrescriptionIds\(planData\.days\)/, 'duplicatePlan too');
