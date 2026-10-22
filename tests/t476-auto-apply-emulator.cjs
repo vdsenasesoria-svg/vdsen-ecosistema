@@ -8,7 +8,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { randomUUID } = require('node:crypto');
 const { initializeApp, deleteApp } = require('firebase/app');
-const { getFirestore, connectFirestoreEmulator, doc, setDoc, getDoc, runTransaction } = require('firebase/firestore');
+const { getFirestore, connectFirestoreEmulator, doc, setDoc, getDoc, runTransaction, FieldPath, deleteField } = require('firebase/firestore');
 const { initializeApp: initAdmin, deleteApp: deleteAdmin } = require('firebase-admin/app');
 const { getFirestore: getAdminFirestore } = require('firebase-admin/firestore');
 
@@ -19,6 +19,7 @@ const root = path.join(__dirname, '..');
 const clientHtml = fs.readFileSync(path.join(root, 'vdsen-cliente.html'), 'utf8');
 const coachHtml = fs.readFileSync(path.join(root, 'vdsen-coach.html'), 'utf8');
 const shadow = require(path.join(root, 'assets/progression-auto-apply-shadow.js'));
+const { MERGE_HELPERS_SRC } = require(path.join(root, 'tests', 'helpers', 'client-log-merge.js'));   // T593-R: per-entry merge helpers of the real Client
 const adminApp = initAdmin({ projectId }, 't476-admin');
 const adminDb = getAdminFirestore(adminApp);
 const apps = [];
@@ -79,10 +80,17 @@ async function fixture() {
   return { client, coach, planId, plan, rec, parent };
 }
 
+// structuredClone would turn the SDK delete sentinel into a plain object: copy plain objects / arrays, keep every other instance (FieldValue) as is
+function cloneKeepingFieldValues(v) {
+  if (v === null || typeof v !== 'object') return v;
+  if (Array.isArray(v)) return Array.from(v, cloneKeepingFieldValues);   // Array.from: a host-realm array (v.map would keep the vm realm)
+  if (v.constructor && v.constructor.name !== 'Object') return v;
+  return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, cloneKeepingFieldValues(x)]));
+}
 function clientContext(f) {
   const context = { window: { VDSEN_AUTO_APPLY_SHADOW: shadow }, USER: { uid: f.client.uid },
-    ACTIVE_PLAN_ID: f.planId, FB: { db: f.client.db, doc,
-      setDoc: (ref, value, opts) => setDoc(ref, structuredClone(value), opts),
+    ACTIVE_PLAN_ID: f.planId, FB: { db: f.client.db, doc, FieldPath, deleteField,
+      setDoc: (ref, value, opts) => setDoc(ref, cloneKeepingFieldValues(value), opts),   // T593-R: host-realm copy (the vm objects are cross-realm) that keeps the real FieldValue delete sentinel
       runTransaction: (db, fn) => runTransaction(db, tx => fn({
         get: ref => tx.get(ref),
         set: (ref, value, opts) => tx.set(ref, structuredClone(value), opts),
@@ -95,6 +103,7 @@ function clientContext(f) {
   ['_getSessionCompletionState', '_sessionHasRealLoggedSets', '_getSessionLifecycleState']
     .forEach(name => vm.runInContext(functionSource(clientHtml, name), context));
   vm.runInContext(functionSource(clientHtml, '_selectLogAuthority'), context);
+  vm.runInContext(MERGE_HELPERS_SRC, context);
   vm.runInContext(functionSource(clientHtml, '_acceptSraPersisted') + '\n' + functionSource(clientHtml, '_fbWriteOrQueue') + '\n' + functionSource(clientHtml, '_writeLocalBackup') + '\n' + functionSource(clientHtml, '_doSaveLogs'), context);
   return context;
 }
@@ -136,20 +145,30 @@ function coachContext(f, item) {
 
 test.after(async () => { await Promise.all(apps.map(deleteApp)); await deleteAdmin(adminApp); });
 
-test('mergeFields retains canonical fields and replaces the owned entries map under real Firestore rules', { timeout: 30000 }, async () => {
+test('the save retains canonical fields and merges the owned entries KEY BY KEY (another device entries survive) under real Firestore rules', { timeout: 30000 }, async () => {
   const f = await fixture(), ctx = clientContext(f);
   const mesoRef = doc(f.client.db, 'logs', f.client.uid, 'mesos', f.planId);
   const rootRef = doc(f.client.db, 'logs', f.client.uid);
   // canonical fields exist (written by the Coach side, here via admin): the athlete's save must keep them and be ALLOWED
   await adminDb.doc(mesoRef.path).set({ progressionApplications: { prior: { state: 'PENDING' } }, progressionApplicationSummary: { autoCount: 1 } }, { merge: true });
   await adminDb.doc(rootRef.path).set({ progressionApplicationSummary: { autoCount: 1 } }, { merge: true });
-  assert.equal(await ctx._doSaveLogs(), true);
+  // T593-R: another device of the same athlete already saved an entry this device has never seen: a save must NOT erase it
+  const other = { done: true, carga: '100', reps: '10', ts: 5 };
+  await adminDb.doc(mesoRef.path).set({ entries: { log_9_9_9_s9: other } }, { merge: true });
+  await adminDb.doc(rootRef.path).set({ entries: { log_9_9_9_s9: other } }, { merge: true });
+  assert.equal(await ctx._doSaveLogs(), true);   // the pre-existing 'obsolete' entry is unknown to this device (not in its baseline): it is never guessed away, only a knowing delete removes an entry
   const meso = (await getDoc(mesoRef)).data(), rootLog = (await getDoc(rootRef)).data();
-  assert.deepEqual(meso.entries, { progrec_1_0: f.parent });
+  assert.deepEqual(meso.entries, { progrec_1_0: f.parent, obsolete: { value: true }, log_9_9_9_s9: other });
   assert.equal(meso.progressionApplications.prior.state, 'PENDING');
   assert.equal(meso.progressionApplicationSummary.autoCount, 1);
   assert.equal(rootLog.progressionApplicationSummary.autoCount, 1);
-  assert.deepEqual(rootLog.entries, { progrec_1_0: f.parent });
+  assert.deepEqual(rootLog.entries, { progrec_1_0: f.parent, log_9_9_9_s9: other });
+  // a deletion the athlete made knowingly (the key was in the baseline) is a field-path delete and is also ALLOWED by the rules
+  vm.runInContext("_setBaselines({ progrec_1_0: LOGS.progrec_1_0, done_1_1: { ts: 1 } }, {}, {}); _logsHeal = false;", ctx);
+  await adminDb.doc(mesoRef.path).set({ entries: { done_1_1: { ts: 1 } } }, { merge: true });
+  assert.equal(await ctx._doSaveLogs(), true);
+  const after = (await getDoc(mesoRef)).data();
+  assert.ok(!('done_1_1' in after.entries), 'deleted by field path'); assert.ok('log_9_9_9_s9' in after.entries, 'the other device entry is still there'); assert.equal(after.progressionApplications.prior.state, 'PENDING');
 });
 
 test('Coach materialization repairs nothing in LOGS and uses the newer root source when the meso mirror lags (no false STALE)', { timeout: 30000 }, async () => {
