@@ -97,6 +97,10 @@ function _mapClientProfile(fichaData, clientDoc) {
     if (!_present(prio.evento_objetivo) && _present(fd.prioridades.evento_objetivo)) prio.evento_objetivo = fd.prioridades.evento_objetivo;
   }
 
+  // enfoque_actual is the focus of the mesocycle: a ficha that states objetivo_mesociclo but not enfoque_actual (the intake form marks enfoque as optional) uses
+  // that stated objective as its focus (same field the Coach reads for it); nothing is invented when neither is present.
+  if (!_present(prio.enfoque_actual) && _present(ent.objetivo_mesociclo)) prio.enfoque_actual = ent.objetivo_mesociclo;
+
   // preferencias
   var pref = _pick(fd, ['ejercicios_favoritos','ejercicios_evitar',
                           'estilo_entreno','alimentos_favoritos',

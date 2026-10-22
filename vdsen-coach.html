@@ -653,6 +653,8 @@
       if (!_present(prio.objetivo_corto)  && _present(fd.prioridades.objetivo_corto))  prio.objetivo_corto  = fd.prioridades.objetivo_corto;
       if (!_present(prio.evento_objetivo) && _present(fd.prioridades.evento_objetivo)) prio.evento_objetivo = fd.prioridades.evento_objetivo;
     }
+    // enfoque_actual = focus of the mesocycle: a ficha with objetivo_mesociclo but without the optional enfoque uses that stated objective (nothing invented when neither exists)
+    if (!_present(prio.enfoque_actual) && _present(ent.objetivo_mesociclo)) prio.enfoque_actual = ent.objetivo_mesociclo;
     var pref = _pick(fd, ['ejercicios_favoritos','ejercicios_evitar','estilo_entreno','alimentos_favoritos','alimentos_evitar','disponibilidad']);
     var nut  = _pick(fd, ['actividad_pasos_dia','objetivo_calorico','magnitud_ajuste_pct','num_comidas','horarios_comidas','restricciones_alimentarias','restriccion_otra','alimentos_disponibles','fase_ciclo_menstrual']);
     var supp = _pick(fd, ['restricciones_suplementos','objetivo_primario_supp']);
