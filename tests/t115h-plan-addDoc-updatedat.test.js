@@ -33,8 +33,8 @@ test('saveImportedPlan addDoc includes updatedAt', function() {
   var body = extractFnBody(src, 'async function saveImportedPlan(');
   assert.ok(body, 'saveImportedPlan found');
   // T591-B: the import creates the plan inside ONE transaction; its document literal is _newPlanDoc (createdAt / updatedAt from one ISO event)
-  var addDocIdx = body.indexOf('const _newPlanDoc = {');
-  assert.ok(addDocIdx > -1, '_newPlanDoc (transactional plan document) found');
+  var addDocIdx = body.indexOf('buildPlanDoc: function');   // T591-C: the import document literal is built for the shared transaction
+  assert.ok(addDocIdx > -1, 'buildPlanDoc (transactional plan document) found');
   var chunk = body.slice(addDocIdx, addDocIdx + 700);
   assert.ok(chunk.indexOf('updatedAt') > -1, 'updatedAt present in addDoc payload');
   assert.ok(chunk.indexOf('createdAt') > -1, 'createdAt also present');
@@ -43,8 +43,10 @@ test('saveImportedPlan addDoc includes updatedAt', function() {
 test('saveManualPlan addDoc includes updatedAt', function() {
   var body = extractFnBody(src, 'async function saveManualPlan(');
   assert.ok(body, 'saveManualPlan found');
-  var addDocIdx = body.indexOf('addDoc(collection(db, "plans")');
-  assert.ok(addDocIdx > -1, 'addDoc(plans) found');
+  // T591-C: the manual plan is created by the shared assignment transaction; buildPlanDoc is its document literal
+  var addDocIdx = body.indexOf('buildPlanDoc: function');
+  assert.ok(addDocIdx > -1, 'buildPlanDoc (transactional plan document) found');
+  assert.ok(body.indexOf('_assignPlanTxn(') > -1, 'saveManualPlan creates the plan through the single assignment transaction');
   var chunk = body.slice(addDocIdx, addDocIdx + 700);
   assert.ok(chunk.indexOf('updatedAt') > -1, 'updatedAt present in addDoc payload');
   assert.ok(chunk.indexOf('createdAt') > -1, 'createdAt also present');

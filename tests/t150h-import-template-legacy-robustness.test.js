@@ -99,12 +99,12 @@ console.log('_applyTemplateToClient filters malformed exercises and empty days �
 // ─────────────────────────────────────────────────────────────────────────────
 
 assert.ok(
-  applyTemplateFn.includes('days = _restampPrescriptionIds(days);'),
+  applyTemplateFn.includes('days = _restampPrescriptionIds(_tplDays);'),
   'T150-H regression: _applyTemplateToClient must still use _restampPrescriptionIds (templates never inherit identity)'
 );
 assert.ok(
-  applyTemplateFn.includes('await backupPlanIfExists(clientId);'),
-  'T150-H regression: the T138-H outgoing-plan backup must remain'
+  applyTemplateFn.includes('_assignPlanTxn(') && extractFunction(COACH, 'async function _assignPlanTxn(o)').includes("tx.set(doc(db, 'plans_backup'"),
+  'T150-H regression: the T138-H outgoing-plan backup must remain (T591-C: inside the assignment transaction)'
 );
 assert.ok(
   /catch\(e\) \{[\s\S]*?showToast\('Error al aplicar plantilla/.test(applyTemplateFn),

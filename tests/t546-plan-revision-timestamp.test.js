@@ -33,21 +33,18 @@ function fnSrc(src, name) {
 const ISO = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z$/;
 
 test('T546.M every Coach plan CREATION writes createdAt and updatedAt as ISO strings from one event (no Timestamp objects)', () => {
-  const sites = [];
-  const re = /addDoc\(collection\(db,\s*['"]plans['"]\)/g; let m;
-  while ((m = re.exec(coach))) {
-    const after = coach.slice(m.index, m.index + 900);
-    // `addDoc(collection(db,"plans"), newPlan)`: the literal is built just before the call
-    sites.push(/^addDoc\(collection\(db,\s*['"]plans['"]\),\s*[A-Za-z_]+\)/.test(after) ? coach.slice(m.index - 500, m.index + 80) : after);
-  }
-  assert.ok(sites.length >= 5, 'found the creation sites: ' + sites.length);   // T591-B: the 6th creation site (saveImportedPlan) is a transaction: checked right below
+  // T591-C: the six creation routes build their document for ONE transaction that owns the ISO event (nowIso); each stamps createdAt and updatedAt from that same event
+  const eng = coach.slice(coach.indexOf('async function _assignPlanTxn'));
+  assert.match(eng, /nowIso = new Date\(\)\.toISOString\(\)/, 'one ISO event for the whole assignment');
+  assert.match(eng, /o\.buildPlanDoc\(planId, nowIso\)/, 'the same event is handed to every builder');
+  const sites = []; const re = /buildPlanDoc: function\(_planId, _nowIso\)/g; let m;
+  while ((m = re.exec(coach))) sites.push(coach.slice(m.index, m.index + 1200));
+  assert.ok(sites.length >= 6, 'found the creation sites: ' + sites.length);
   for (const s of sites) {
-    assert.match(s, /createdAt:\s*new Date\(\)\.toISOString\(\)/, 'createdAt present');
-    assert.match(s, /updatedAt:\s*new Date\(\)\.toISOString\(\)/, 'updatedAt present');
+    assert.match(s, /createdAt:\s*_nowIso,\s*(?:\/\/[^\n]*\n\s*)?updatedAt:\s*_nowIso/, 'createdAt and updatedAt from the same ISO event');
     assert.ok(!/updatedAt:\s*serverTimestamp/.test(s));
   }
-  const imp = coach.slice(coach.indexOf('async function saveImportedPlan'));
-  assert.match(imp, /const _nowIso = new Date\(\)\.toISOString\(\);/, 'one ISO event'); assert.match(imp.slice(imp.indexOf('const _newPlanDoc = {'), imp.indexOf('const _newPlanDoc = {') + 900), /createdAt: _nowIso,\s*updatedAt: _nowIso/, 'import: createdAt/updatedAt from the same ISO event');
+  assert.ok(!/addDoc\(collection\(db,\s*['"]plans['"]\)/.test(coach), 'no loose plan creation is left: every creation is the transaction');
   const i = coach.indexOf('const draftDoc = {'); assert.ok(i > 0, 'AI draftDoc exists');
   const d = coach.slice(i, i + 1600);
   const cr = /createdAt:\s*([A-Za-z_]+)/.exec(d), up = /updatedAt:\s*([A-Za-z_]+)/.exec(d);

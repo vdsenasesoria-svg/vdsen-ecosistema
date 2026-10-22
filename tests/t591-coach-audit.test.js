@@ -89,7 +89,7 @@ test('T591-6 the outgoing plan IS backed up even when the client has no nutritio
   const snap = (p) => ({ exists: () => !!store[p], data: () => store[p] });
   const ctx = coachSandbox('bk', { currentCoach: { uid: 'coach' }, db: {}, doc: (_db, c, id) => c + '/' + id, collection: (_db, c) => c, getDoc: async (p) => { if (p.startsWith('plans_backup/')) { if (store[p]) return snap(p); throw new Error('permission-denied'); } return snap(p); },
     setDoc: async (p, d) => { for (const [k, v] of Object.entries(d)) if (v === undefined) throw new Error('Unsupported field value: undefined (' + k + ')'); store[p] = d; written.push({ c: p, d }); } });
-  vm.runInContext(fnSrc('backupPlanIfExists') + '\nthis.backupPlanIfExists = backupPlanIfExists;', ctx);
+  vm.runInContext(fnSrc('_planBackupDoc') + '\n' + fnSrc('backupPlanIfExists') + '\nthis.backupPlanIfExists = backupPlanIfExists;', ctx);
   assert.equal(await ctx.backupPlanIfExists('c1'), 'p1__replaced', 'backup written with a deterministic id'); assert.equal(written.length, 1);
   assert.equal(await ctx.backupPlanIfExists('c1'), 'p1__replaced', 'a retry returns the same backup'); assert.equal(written.length, 1, 'and never writes a second one');
   assert.equal(written[0].d.originalPlanId, 'p1'); assert.deepEqual(written[0].d.days, [{ exercises: [] }]); assert.ok(!('nutritionDisplay' in written[0].d), 'absent values are omitted, not undefined');

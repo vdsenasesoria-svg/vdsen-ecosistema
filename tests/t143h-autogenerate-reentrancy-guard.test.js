@@ -113,12 +113,12 @@ assert.ok(
   'T143-H regression: saveImportedPlan must still confirm before replacing an existing active plan'
 );
 assert.ok(
-  !/const confirmed = await _askConfirm/.test(saveImportedPlanFn.split('if (prevPlanId && prevPlanId !== _newPlanId)')[0]),
+  !/const confirmed = await _askConfirm/.test(saveImportedPlanFn.split('if (prevPlanId && prevPlanId !== _pendingId)')[0]),
   'T143-H regression: saveImportedPlan must still NOT confirm when there is no existing active plan (first plan)'
 );
 assert.ok(
-  saveImportedPlanFn.includes('await backupPlanIfExists(clientId);'),
-  'T143-H regression: saveImportedPlan must still back up the outgoing plan before overwriting activePlanId'
+  saveImportedPlanFn.includes('_assignPlanTxn(') && extractFunction(COACH, 'async function _assignPlanTxn(o)').includes("tx.set(doc(db, 'plans_backup'"),
+  'T143-H regression: saveImportedPlan must still back up the outgoing plan (T591-C: inside the transaction that overwrites activePlanId)'
 );
 
 console.log('saveImportedPlan contract (guard, confirm-on-replace, backup) unchanged — OK');

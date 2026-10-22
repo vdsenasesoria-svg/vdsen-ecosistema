@@ -34,7 +34,7 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 
 const saveDraftSrc = extractFunction(COACH, 'async function _vdsenSaveDraftToFirestore()');
 const activateSrc  = extractFunction(COACH, 'async function _vdsenActivatePlanInFirestore(planId, clientId)');
-const backupSrc     = extractFunction(COACH, 'async function backupPlanIfExists(clientId)');
+const backupSrc     = extractFunction(COACH, 'function _planBackupDoc(planData, clientData, activeId, nowIso, byUid)') + ';\n' + extractFunction(COACH, 'async function backupPlanIfExists(clientId)');   // T591-C: the content logic lives in the shared _planBackupDoc
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The T261/T265-fixed activation pipeline is untouched by T268-272 --

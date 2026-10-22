@@ -49,39 +49,42 @@ test('saveManualPlan function is present', function () {
   assert.ok(body, 'saveManualPlan function found in HTML source');
 });
 
-test('backupPlanIfExists(clientId) is called', function () {
+test('the outgoing plan is backed up by the single assignment transaction (T591-C)', function () {
   assert.ok(body, 'function body present');
-  assert.ok(
-    body.indexOf('backupPlanIfExists(clientId)') > -1,
-    'saveManualPlan must call backupPlanIfExists(clientId) to preserve the outgoing plan'
-  );
+  assert.ok(body.indexOf('_assignPlanTxn(') > -1, 'saveManualPlan must create the plan through _assignPlanTxn');
+   var eng = extractFnBody(src, 'async function _assignPlanTxn(');
+   assert.ok(eng, '_assignPlanTxn (single assignment transaction) present');
+    assert.ok(eng.indexOf("tx.set(doc(db, 'plans_backup'") > -1, 'the transaction writes the backup of the outgoing plan');
+  assert.ok(body.indexOf('addDoc(') === -1 && body.indexOf('updateDoc(') === -1, 'saveManualPlan has no loose addDoc/updateDoc left (the window between them is closed)');
 });
 
 test('backup call happens before the previous plan is looked up for deletion', function () {
   assert.ok(body, 'function body present');
-  var backupIdx = body.indexOf('backupPlanIfExists(clientId)');
-  var deleteIdx = body.indexOf('_supersedePlan(prevPlanId2');
-  assert.ok(backupIdx > -1, 'backupPlanIfExists(clientId) call present');
-  assert.ok(deleteIdx > -1, 'explicit retirement (_supersedePlan) of prevPlanId2 present');
-  assert.ok(backupIdx < deleteIdx, 'backup must run before the previous plan is retired');
+  var eng = extractFnBody(src, 'async function _assignPlanTxn(');
+  var backupIdx = eng.indexOf("tx.set(doc(db, 'plans_backup'");
+  var deleteIdx = eng.indexOf("tx.update(doc(db, 'plans', curActive), retire)");
+  assert.ok(backupIdx > -1, 'backup write present in the transaction');
+  assert.ok(deleteIdx > -1, 'explicit historical retirement of the previous plan present in the same transaction');
+  assert.ok(backupIdx < deleteIdx, 'backup is written before the previous plan is retired (and both commit together or not at all)');
 });
 
 test('backup call happens after prevPlanId2 is captured (so it backs up the right plan)', function () {
   assert.ok(body, 'function body present');
-  var capturedIdx = body.indexOf('prevPlanId2 = prevClientSnap2.exists()');
-  var backupIdx = body.indexOf('backupPlanIfExists(clientId)');
+  var capturedIdx = body.indexOf('prevPlanId2 = await _readActivePlanIdStrict(clientId)');
+  var txnIdx = body.indexOf('_assignPlanTxn(');
   assert.ok(capturedIdx > -1, 'prevPlanId2 capture present');
-  assert.ok(backupIdx > -1, 'backupPlanIfExists(clientId) call present');
-  assert.ok(capturedIdx < backupIdx, 'prevPlanId2 must be captured before the backup call');
+  assert.ok(txnIdx > -1, 'assignment transaction call present');
+  assert.ok(capturedIdx < txnIdx && body.indexOf('expectedPrevPlanId: prevPlanId2') > -1, 'the previous plan is captured first and passed as expectedPrevPlanId (the transaction re-checks it, so the backup is of the right plan)');
 });
 
 test('backup call happens before the new plan replaces activePlanId', function () {
   assert.ok(body, 'function body present');
-  var backupIdx = body.indexOf('backupPlanIfExists(clientId)');
-  var activateIdx = body.indexOf('updateDoc(doc(db, "clients", clientId), { activePlanId: planRef.id }');
-  assert.ok(backupIdx > -1, 'backupPlanIfExists(clientId) call present');
-  assert.ok(activateIdx > -1, 'activePlanId updateDoc present');
-  assert.ok(backupIdx < activateIdx, 'backup must happen before activePlanId is repointed to the new plan');
+  var eng = extractFnBody(src, 'async function _assignPlanTxn(');
+  var backupIdx = eng.indexOf("tx.set(doc(db, 'plans_backup'");
+  var activateIdx = eng.indexOf('tx.update(cRef, { activePlanId: planId })');
+  assert.ok(backupIdx > -1, 'backup write present');
+  assert.ok(activateIdx > -1, 'activePlanId write present');
+  assert.ok(eng.indexOf('runTransaction(db') > -1 && eng.indexOf('runTransaction(db') < Math.min(backupIdx, activateIdx), 'backup and the activePlanId repointing are writes of the SAME transaction: the pointer can never move without the backup');
 });
 
 console.log('\n' + PASS + '/' + (PASS + FAIL) + ' passed' + (FAIL ? ' — ' + FAIL + ' FAILED' : ''));

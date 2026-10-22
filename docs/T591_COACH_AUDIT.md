@@ -115,3 +115,48 @@ Suite unitaria completa: **1627 pasan / 18 fallan**; los 18 son **los mismos nom
 2. Cambiar la duración de un plan del Generador reemplaza su esquema RIR (registrado como `coach-edit`): confirmar si el producto quiere otra autoridad.
 3. No se midió memoria; los controles del Coach fuera del editor, el diálogo y la vista previa siguen siendo densos en móvil.
 4. El Generador externo no es accesible: solo se validó su contrato disponible; los campos sueltos desconocidos no se conservan (lista blanca).
+
+---
+
+# T591-C · Ciclo de vida de planes: las seis rutas de asignación son una sola transacción idempotente
+
+**Base:** `17bb8a3` (PR #109 fusionado). Solo Coach (`vdsen-coach.html`) y pruebas/documentos. Sin Rules, índices, IAM, Motor, Generador, Cliente, flags, `main` ni producción.
+
+## 1 · Qué cambió
+Un único motor, `_assignPlanTxn`, lo usan **las seis rutas** que reemplazan el plan activo de un cliente: `saveImportedPlan`, `saveManualPlan`, `_applyTemplateToClient`, `applyTemplate`, `duplicatePlan` y `duplicatePlanToClient`. Cada ruta solo aporta el documento del plan (`buildPlanDoc`) y el plan previo que esperaba (`expectedPrevPlanId`, leído al iniciar el flujo, antes de cualquier diálogo).
+
+Dentro de **una transacción** (`runTransaction`) se escribe todo o nada:
+1. plan nuevo (`tx.set`),
+2. `clients/{id}.activePlanId` (un único sitio de escritura del puntero para las seis rutas),
+3. respaldo del plan saliente en `plans_backup/<saliente>__replaced_by__<nuevo>` (un respaldo por reemplazo, sin colisiones, sin duplicados),
+4. retiro histórico del saliente: `status:'superseded'` (un borrador aprobado conserva su estado) + `supersededAt` + `supersededBy`; **nunca se borra nada** y `updatedAt` (revisión de prescripción, T546) no se toca.
+
+Dentro de la misma transacción se re-comprueba la propiedad (`coachId`) y que el plan activo siga siendo el esperado: si cambió en otra pestaña o dispositivo, **aborta sin escribir** (`CONFLICT`).
+
+## 2 · Idempotencia (doble clic, acuse perdido, recarga)
+El id del plan de un intento sin resolver vive en un diario (`vdsen_assign_journal_v1`, localStorage, mismo coach, 24 h). Un reintento reutiliza ese id: si el cliente ya apunta a él, se informa «ya estaba asignado» y **no se escribe nada más** (ni segundo plan, ni segundo respaldo, ni segundo retiro, ni segunda pregunta de reemplazo). El diario se limpia al terminar bien y ante fallos definitivos (la transacción abortó antes de escribir); se conserva ante fallos ambiguos (red / tiempo de espera) precisamente para reconocer un commit que sí ocurrió. Si un id reutilizado ya es historia (se confirmó y luego otro reemplazo lo desplazó), **no se sobrescribe**: se acuña uno nuevo. Un diario corrupto, caducado o de otro coach se ignora. El doble clic lo frena además `_saving…` y el propio id estable.
+
+Mensajes honestos: un fallo ambiguo ya no afirma «no se guardó nada» (podría haberse guardado): «No se pudo confirmar… Puede que SÍ se haya guardado: reintenta, es seguro; si ya estaba asignado se reconocerá y NO se duplicará». «NO se guardó nada» solo se dice ante fallos definitivos (conflicto, permiso, cliente inexistente).
+
+## 3 · Contrato del plan
+* `rirByWeek` explícito y válido del Generador **se conserva** (`rirByWeekSource:'generator'`) al importar y al duplicar; el esquema del Coach solo cuando falta o es inválido; las duplicaciones no heredan `supersededAt/supersededBy/id`, nacen `status:'active'` y solo re-acuñan los PID.
+* Las metas de fuerza y cardio (series, `duracionMin`, `exerciseType`) no se tocan.
+* `createdAt` = `updatedAt` = un único evento ISO del motor (T546).
+
+## 4 · Atomicidad: qué queda dentro y qué fuera
+Dentro de la transacción: plan, puntero, respaldo y retiro. **Fuera, por diseño:** efectos posteriores aditivos e idempotentes (autoañadir al catálogo de ejercicios, refrescar listas) y, en la importación, los espejos de nutrición/suplementos que escribe el llamador (T259). Ninguno puede dejar un plan huérfano ni un puntero sin plan. No se afirma atomicidad total de esos efectos.
+
+## 5 · Pruebas
+* `tests/t591c-plan-lifecycle.test.js` (46): para **cada una de las seis rutas**, reemplazo atómico con respaldo/retiro/historial, fallo antes del commit (cero escrituras) + reintento, acuse perdido + reintento, reintento tras **recarga** (misma web, nuevo vm, mismo almacenamiento), dos dispositivos (cambio ajeno ⇒ aborta sin escribir), doble clic, cliente de otro coach y primer plan; además historial sin pérdidas (respaldos distintos por reemplazo), integridad de duplicados (`rirByWeek`, cardio, PIDs), diario (caducidad, corrupción, id ya histórico) y ausencia de escrituras sueltas.
+* Fijadas **sin debilitar** y reapuntadas al motor: t134-H, t135-H, t137-H, t138-H, t119-H, t143-H, t150-H, qa_r4, qa_r5, t115-H, t263 (un único sitio transaccional, cero `updateDoc` sueltos del puntero), t265/t266/t273/t327 (contenido del respaldo en `_planBackupDoc`), t482 (las seis rutas **no** escriben `plans/` por sí mismas), t546.M (creación con un único evento ISO), t587-A4, t591/t591b. Arnés compartido en `tests/helpers/coach-assign-harness.js` (Firestore en memoria con transacciones y fallos inyectables).
+* Suite unitaria completa: **1673 pasan / 18 fallan**, los mismos 18 nombres heredados (documentos generados, CRLF, recuperación de release).
+
+## 6 · Validación en navegador real (Firebase Auth + Firestore Emulator con las reglas del repo, solo datos sintéticos)
+Coach real contra el emulador: manual, importación (con `rirByWeek` del Generador), plantilla de la biblioteca, plantilla builtin, duplicar y copiar a cliente, **todas** reemplazando el plan activo del mismo atleta sintético. Resultado: una cadena de planes (todos `superseded` salvo el último `active`), un respaldo distinto `<anterior>__replaced_by__<nuevo>` por reemplazo, cero borrados, cero duplicados. Fallo inyectado antes del commit (plantilla, copiar a cliente): cero escrituras, diario conservado, reintento ⇒ un plan. Acuse perdido (plantilla ×2, duplicar): el commit ocurrió, el reintento no creó otro plan ni otro respaldo. **Recarga de la página** tras acuse perdido: el reintento reconoció el plan y limpió el diario. Doble clic en importación: un plan. Dos dispositivos (otro actor cambia el puntero mientras el diálogo de confirmación está abierto): aborta, no escribe, respeta el cambio ajeno. El atleta sintético lee su plan activo con las reglas reales (`updatedAt` ISO, PID, `rirByWeek`, sin marcas históricas) y no puede leer los respaldos (403 esperado).
+
+## 7 · Riesgos residuales
+1. **Activación de borrador de IA** (`_vdsenActivatePlanInFirestore`): ya es transaccional e idempotente, pero **no** retira el plan previo (su contrato está fijado por t146-H/t262): el puntero cambia y el plan anterior conserva su `status`. Los lectores usan el puntero, sin efecto funcional; queda como el único camino que no marca el histórico.
+2. El diario es por navegador: un reintento desde **otro dispositivo** tras un acuse perdido no puede reconocer el commit (verá el plan ya activo; sin duplicado accidental, pero la operación se vuelve a pedir explícitamente).
+3. `applyTemplate` (plantilla builtin por selector) sigue sin escribir `rirByWeek` y sin filtrar ejercicios mal formados (comportamiento previo, no tocado).
+4. Planes reemplazados antes de T591-B (datos históricos) pueden seguir con `status:'active'` huérfano; no hay migración (no se tocaron datos reales). Ningún lector filtra por `status`.
+5. No se midió memoria ni se probó el service worker en un teléfono real.

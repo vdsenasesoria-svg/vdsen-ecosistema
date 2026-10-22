@@ -95,7 +95,7 @@ ok(activateClickSrc.includes('if (btn) { btn.disabled = false; btn.textContent =
   'activation failure re-enables the button and shows the real error -- the success branch never runs unless both backup+transaction awaits actually resolved');
 
 // ── Outgoing backup exactness. ──────────────────────────────────────────────
-const backupSrc = extractFunction(COACH, 'async function backupPlanIfExists(clientId) {');
+const backupSrc = extractFunction(COACH, 'function _planBackupDoc(planData, clientData, activeId, nowIso, byUid)') + ';\n' + extractFunction(COACH, 'async function backupPlanIfExists(clientId) {');   // T591-C: the content logic lives in the shared _planBackupDoc
 ok(backupSrc.includes('nutritionRaw:      clientData.nutritionRaw   !== undefined ? clientData.nutritionRaw   : planData.nutritionRaw,'),
   'the outgoing backup prefers the CLIENT doc\'s actual current nutrition/supplement state over the plan doc\'s own (T265) -- preserves what the client was really seeing, not a potentially-drifted copy');
 

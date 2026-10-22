@@ -82,9 +82,9 @@ test('_stampPrescriptionIds preserves existing IDs', function() {
 test('_applyTemplateToClient addDoc includes updatedAt', function() {
   var body = extractFnBody(src, 'async function _applyTemplateToClient(');
   assert.ok(body, '_applyTemplateToClient found');
-  var addDocIdx = body.indexOf('addDoc(collection(db');
-  assert.ok(addDocIdx > -1, 'addDoc found');
-  var chunk = body.slice(addDocIdx, addDocIdx + 600);
+  var addDocIdx = body.indexOf('buildPlanDoc: function');   // T591-C: plan document literal of the assignment transaction
+  assert.ok(addDocIdx > -1, 'buildPlanDoc found');
+  var chunk = body.slice(addDocIdx, addDocIdx + 900);
   assert.ok(chunk.indexOf('updatedAt') > -1, 'updatedAt present in addDoc payload');
 });
 
@@ -112,9 +112,9 @@ test('duplicatePlan sets explicit updatedAt after spread', function() {
   assert.ok(body, 'duplicatePlan found');
   // newPlan spread must have explicit updatedAt
   assert.ok(
-    body.indexOf('updatedAt: new Date().toISOString()') > -1 ||
-    body.indexOf("updatedAt:new Date().toISOString()") > -1,
-    'explicit updatedAt in duplicatePlan newPlan'
+    body.indexOf('createdAt: _nowIso, updatedAt: _nowIso') > -1 ||
+    body.indexOf('updatedAt: new Date().toISOString()') > -1,
+    'explicit updatedAt in duplicatePlan newPlan (one ISO event from the transaction)'
   );
 });
 
@@ -122,9 +122,9 @@ test('duplicatePlanToClient sets explicit updatedAt after spread', function() {
   var body = extractFnBody(src, 'async function duplicatePlanToClient(');
   assert.ok(body, 'duplicatePlanToClient found');
   assert.ok(
-    body.indexOf('updatedAt: new Date().toISOString()') > -1 ||
-    body.indexOf("updatedAt:new Date().toISOString()") > -1,
-    'explicit updatedAt in duplicatePlanToClient addDoc payload'
+    body.indexOf('updatedAt: _nowIso') > -1 ||
+    body.indexOf('updatedAt: new Date().toISOString()') > -1,
+    'explicit updatedAt in duplicatePlanToClient plan document (one ISO event from the transaction)'
   );
 });
 

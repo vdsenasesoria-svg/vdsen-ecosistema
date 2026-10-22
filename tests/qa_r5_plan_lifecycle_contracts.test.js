@@ -65,7 +65,7 @@ console.log('Contract 1: updatedAt in every active-plan writer');
 // 1-B saveManualPlan — addDoc
 {
   const body = extractFnBody(COACH, 'async function saveManualPlan(');
-  const present = body && updatedAtNearCall(body, 'addDoc(collection(db', 600);
+  const present = body && updatedAtNearCall(body, 'buildPlanDoc: function', 900);   // T591-C: plan document literal of the assignment transaction
   console.log('  C1-B saveManualPlan addDoc includes updatedAt:', present ? 'PASS' : 'GAP');
   assert.ok(body, 'C1-B: saveManualPlan function must exist');
   assert.ok(present, 'C1-B: saveManualPlan addDoc must include updatedAt');
@@ -74,7 +74,7 @@ console.log('Contract 1: updatedAt in every active-plan writer');
 // 1-C saveImportedPlan — addDoc
 {
   const body = extractFnBody(COACH, 'async function saveImportedPlan(');
-  const present = body && updatedAtNearCall(body, 'const _newPlanDoc = {', 600);   // T591-B: the plan is created inside a transaction; _newPlanDoc is its document literal
+  const present = body && updatedAtNearCall(body, 'buildPlanDoc: function', 900);   // T591-C: the plan is created inside the shared transaction; buildPlanDoc is its document literal
   console.log('  C1-C saveImportedPlan addDoc includes updatedAt:', present ? 'PASS' : 'GAP');
   assert.ok(body, 'C1-C: saveImportedPlan function must exist');
   assert.ok(present, 'C1-C: saveImportedPlan addDoc must include updatedAt');
@@ -103,10 +103,7 @@ console.log('Contract 1: updatedAt in every active-plan writer');
 // 1-F duplicatePlan — addDoc
 {
   const body = extractFnBody(COACH, 'async function duplicatePlan(');
-  const present = body && (
-    body.indexOf('updatedAt: new Date().toISOString()') !== -1 ||
-    body.indexOf("updatedAt:new Date().toISOString()") !== -1
-  );
+  const present = body && (body.indexOf('updatedAt: _nowIso') !== -1 || body.indexOf('updatedAt: new Date().toISOString()') !== -1);   // T591-C: one ISO event from the transaction
   console.log('  C1-F duplicatePlan addDoc includes explicit updatedAt:', present ? 'PASS' : 'GAP');
   assert.ok(body, 'C1-F: duplicatePlan must exist');
   assert.ok(present, 'C1-F: duplicatePlan must have explicit updatedAt after spread');
@@ -115,10 +112,7 @@ console.log('Contract 1: updatedAt in every active-plan writer');
 // 1-G duplicatePlanToClient — addDoc
 {
   const body = extractFnBody(COACH, 'async function duplicatePlanToClient(');
-  const present = body && (
-    body.indexOf('updatedAt: new Date().toISOString()') !== -1 ||
-    body.indexOf("updatedAt:new Date().toISOString()") !== -1
-  );
+  const present = body && (body.indexOf('updatedAt: _nowIso') !== -1 || body.indexOf('updatedAt: new Date().toISOString()') !== -1);   // T591-C: one ISO event from the transaction
   console.log('  C1-G duplicatePlanToClient addDoc includes explicit updatedAt:', present ? 'PASS' : 'GAP');
   assert.ok(body, 'C1-G: duplicatePlanToClient must exist');
   assert.ok(present, 'C1-G: duplicatePlanToClient must have explicit updatedAt');
@@ -127,7 +121,7 @@ console.log('Contract 1: updatedAt in every active-plan writer');
 // 1-H _applyTemplateToClient — addDoc
 {
   const body = extractFnBody(COACH, 'async function _applyTemplateToClient(');
-  const present = body && updatedAtNearCall(body, 'addDoc(collection(db', 600);
+  const present = body && updatedAtNearCall(body, 'buildPlanDoc: function', 900);   // T591-C
   console.log('  C1-H _applyTemplateToClient addDoc includes updatedAt:', present ? 'PASS' : 'GAP');
   assert.ok(body, 'C1-H: _applyTemplateToClient must exist');
   assert.ok(present, 'C1-H: _applyTemplateToClient addDoc must include updatedAt');
@@ -298,6 +292,7 @@ console.log('Contract 5: saveTrainingPlan stale-client guard (analogous to T118-
 }
 
 // ─── Contract 6: activePlanId written on client doc when plan is created ─────
+const ENGINE_WRITES_ACTIVE = (extractFnBody(COACH, 'async function _assignPlanTxn(') || '').indexOf('tx.update(cRef, { activePlanId: planId })') !== -1;
 
 console.log('');
 console.log('Contract 6: activePlanId set on clients/{clientId} for every plan creation path');
@@ -306,7 +301,7 @@ console.log('Contract 6: activePlanId set on clients/{clientId} for every plan c
 {
   const body = extractFnBody(COACH, 'async function saveImportedPlan(');
   // T591-B: the activation is the transactional tx.update(cRef, { activePlanId }) (all-or-nothing with the plan document)
-  const writesActiveId = body && body.indexOf('activePlanId') !== -1 && (body.indexOf('updateDoc') !== -1 || body.indexOf('tx.update(cRef, { activePlanId: planRef.id })') !== -1);
+  const writesActiveId = body && body.indexOf('_assignPlanTxn(') !== -1 && ENGINE_WRITES_ACTIVE;   // T591-C: activation is the transactional tx.update(cRef, { activePlanId }) of the shared engine
   console.log('  C6-A saveImportedPlan writes activePlanId:', writesActiveId ? 'PASS' : 'GAP');
   assert.ok(body, 'C6-A: saveImportedPlan must exist');
   assert.ok(writesActiveId, 'C6-A: saveImportedPlan must write activePlanId to clients doc');
@@ -315,7 +310,7 @@ console.log('Contract 6: activePlanId set on clients/{clientId} for every plan c
 // 6-B saveManualPlan writes activePlanId
 {
   const body = extractFnBody(COACH, 'async function saveManualPlan(');
-  const writesActiveId = body && body.indexOf('activePlanId') !== -1 && body.indexOf('updateDoc') !== -1;
+  const writesActiveId = body && body.indexOf('_assignPlanTxn(') !== -1 && ENGINE_WRITES_ACTIVE;
   console.log('  C6-B saveManualPlan writes activePlanId:', writesActiveId ? 'PASS' : 'GAP');
   assert.ok(body, 'C6-B: saveManualPlan must exist');
   assert.ok(writesActiveId, 'C6-B: saveManualPlan must write activePlanId to clients doc');
@@ -324,7 +319,7 @@ console.log('Contract 6: activePlanId set on clients/{clientId} for every plan c
 // 6-C duplicatePlan writes activePlanId
 {
   const body = extractFnBody(COACH, 'async function duplicatePlan(');
-  const writesActiveId = body && body.indexOf('activePlanId') !== -1 && body.indexOf('updateDoc') !== -1;
+  const writesActiveId = body && body.indexOf('_assignPlanTxn(') !== -1 && ENGINE_WRITES_ACTIVE;
   console.log('  C6-C duplicatePlan writes activePlanId:', writesActiveId ? 'PASS' : 'GAP');
   assert.ok(body, 'C6-C: duplicatePlan must exist');
   assert.ok(writesActiveId, 'C6-C: duplicatePlan must write activePlanId to clients doc');
@@ -333,7 +328,7 @@ console.log('Contract 6: activePlanId set on clients/{clientId} for every plan c
 // 6-D duplicatePlanToClient writes activePlanId
 {
   const body = extractFnBody(COACH, 'async function duplicatePlanToClient(');
-  const writesActiveId = body && body.indexOf('activePlanId') !== -1 && body.indexOf('updateDoc') !== -1;
+  const writesActiveId = body && body.indexOf('_assignPlanTxn(') !== -1 && ENGINE_WRITES_ACTIVE;
   console.log('  C6-D duplicatePlanToClient writes activePlanId:', writesActiveId ? 'PASS' : 'GAP');
   assert.ok(body, 'C6-D: duplicatePlanToClient must exist');
   assert.ok(writesActiveId, 'C6-D: duplicatePlanToClient must write activePlanId to clients doc');
@@ -342,7 +337,7 @@ console.log('Contract 6: activePlanId set on clients/{clientId} for every plan c
 // 6-E _applyTemplateToClient writes activePlanId
 {
   const body = extractFnBody(COACH, 'async function _applyTemplateToClient(');
-  const writesActiveId = body && body.indexOf('activePlanId') !== -1 && body.indexOf('updateDoc') !== -1;
+  const writesActiveId = body && body.indexOf('_assignPlanTxn(') !== -1 && ENGINE_WRITES_ACTIVE;
   console.log('  C6-E _applyTemplateToClient writes activePlanId:', writesActiveId ? 'PASS' : 'GAP');
   assert.ok(body, 'C6-E: _applyTemplateToClient must exist');
   assert.ok(writesActiveId, 'C6-E: _applyTemplateToClient must write activePlanId to clients doc');

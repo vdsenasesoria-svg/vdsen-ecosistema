@@ -32,8 +32,10 @@ function extractFunction(src, decl) {
 let pass = 0;
 function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + msg); }
 
-const backupSrc = extractFunction(COACH, 'async function backupPlanIfExists(clientId)');
-ok(backupSrc, 'backupPlanIfExists extracts cleanly');
+const backupFnSrc = extractFunction(COACH, 'async function backupPlanIfExists(clientId)');
+const backupDocSrc = extractFunction(COACH, 'function _planBackupDoc(planData, clientData, activeId, nowIso, byUid)');   // T591-C: the content of the backup is built by the shared _planBackupDoc
+const backupSrc = backupDocSrc + ';\n' + backupFnSrc;
+ok(backupFnSrc && backupDocSrc, 'backupPlanIfExists and its shared document builder extract cleanly');
 ok(backupSrc.includes('clientData.nutritionRaw   !== undefined ? clientData.nutritionRaw'), 'the backup now prefers the CLIENT doc\'s current nutritionRaw over the plan doc\'s own (T265 fix)');
 
 function makeHarness(clientDataFixture, planDataFixture) {
