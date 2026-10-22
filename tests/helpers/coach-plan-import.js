@@ -24,7 +24,7 @@ function fnSrc(name) {
   throw new Error('unbalanced ' + name);
 }
 const consts = () => (COACH.match(/const _PERF_[A-Z_]+\b[\s\S]*?;\n/g) || []).join('\n') + '\n' + (COACH.match(/const _NIVEL_MEDIO_ENUM\b[\s\S]*?;\n/g) || []).join('\n') + '\n' + (COACH.match(/const _MUSCLE_KEYS\b[\s\S]*?;\n/g) || []).join('\n');
-const HELPERS = ['_perfScalar', '_perfType', '_perfEffType', '_perfHasNoSetsOk', '_perfCarryEx', '_perfCarrySet', '_genPrescriptionId', '_stampPrescriptionIds', '_normRestSeconds',
+const HELPERS = ['_normRirByWeek', '_perfScalar', '_perfType', '_perfEffType', '_perfHasNoSetsOk', '_perfCarryEx', '_perfCarrySet', '_genPrescriptionId', '_stampPrescriptionIds', '_normRestSeconds',
   '_carryPrescriptionId', '_normNivelMedio', '_normVariacionVertical', '_carryClassification', '_carryExerciseIdentity', '_carryRepsRange', '_carryMuscleGroup', '_normalizeMusclePriorities', '_planMetaForRow', '_restorePlanMeta'];
 
 // idPrefix makes the minted PIDs unique per test (the sandbox uses a counter instead of crypto.randomUUID).
@@ -51,11 +51,11 @@ function importLikeCoach(motorPlan, opts) {
 // T587: the JSON-tab route (parsePlanFromJSON) with every carry helper present (as in the real page), driven through minimal DOM stubs. Returns the normalized plan the preview / save receive.
 function jsonTabImport(json, idPrefix) {
   const el = { value: typeof json === 'string' ? json : JSON.stringify(json), innerHTML: '' };
-  const ctx = coachSandbox(idPrefix || 'jt', { document: { getElementById: () => el }, showToast() {}, _escH: (x) => x, showParsedPreview(p) { ctx.preview = p; } });
+  const ctx = coachSandbox(idPrefix || 'jt', { document: { getElementById: () => el }, showToast() {}, _escH: (x) => x, showParsedPreview(p, w) { ctx.preview = p; ctx.warnings = w; } });
   ctx.window = Object.assign(ctx.window || {}, { VDSEN_EQUIPMENT_IDENTITY: identity, VDSEN_EXERCISE_VISUAL_CATALOG: catalog });
   vm.runInContext(fnSrc('parsePlanFromJSON') + '\nthis.parsePlanFromJSON = parsePlanFromJSON;', ctx);
   ctx.parsePlanFromJSON();
-  return { statusHtml: el.innerHTML, plan: ctx.window._importedPlan ? JSON.parse(JSON.stringify(ctx.window._importedPlan)) : null, sandbox: ctx };
+  return { statusHtml: el.innerHTML, warnings: ctx.warnings || [], plan: ctx.window._importedPlan ? JSON.parse(JSON.stringify(ctx.window._importedPlan)) : null, sandbox: ctx };
 }
 
 module.exports = { importLikeCoach, coachSandbox, jsonTabImport };

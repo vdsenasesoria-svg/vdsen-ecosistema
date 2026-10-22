@@ -40,12 +40,14 @@ test('T546.M every Coach plan CREATION writes createdAt and updatedAt as ISO str
     // `addDoc(collection(db,"plans"), newPlan)`: the literal is built just before the call
     sites.push(/^addDoc\(collection\(db,\s*['"]plans['"]\),\s*[A-Za-z_]+\)/.test(after) ? coach.slice(m.index - 500, m.index + 80) : after);
   }
-  assert.ok(sites.length >= 6, 'found the creation sites: ' + sites.length);
+  assert.ok(sites.length >= 5, 'found the creation sites: ' + sites.length);   // T591-B: the 6th creation site (saveImportedPlan) is a transaction: checked right below
   for (const s of sites) {
     assert.match(s, /createdAt:\s*new Date\(\)\.toISOString\(\)/, 'createdAt present');
     assert.match(s, /updatedAt:\s*new Date\(\)\.toISOString\(\)/, 'updatedAt present');
     assert.ok(!/updatedAt:\s*serverTimestamp/.test(s));
   }
+  const imp = coach.slice(coach.indexOf('async function saveImportedPlan'));
+  assert.match(imp, /const _nowIso = new Date\(\)\.toISOString\(\);/, 'one ISO event'); assert.match(imp.slice(imp.indexOf('const _newPlanDoc = {'), imp.indexOf('const _newPlanDoc = {') + 900), /createdAt: _nowIso,\s*updatedAt: _nowIso/, 'import: createdAt/updatedAt from the same ISO event');
   const i = coach.indexOf('const draftDoc = {'); assert.ok(i > 0, 'AI draftDoc exists');
   const d = coach.slice(i, i + 1600);
   const cr = /createdAt:\s*([A-Za-z_]+)/.exec(d), up = /updatedAt:\s*([A-Za-z_]+)/.exec(d);

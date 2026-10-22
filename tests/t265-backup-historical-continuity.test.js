@@ -43,11 +43,13 @@ function makeHarness(clientDataFixture, planDataFixture) {
     if (ref.__coll === 'clients') return { exists: function() { return !!clientDataFixture; }, data: function() { return clientDataFixture; } };
     if (ref.__coll === 'plans') return { exists: function() { return !!planDataFixture; }, data: function() { return planDataFixture; } };
   };
-  const fakeAddDoc = async function(collRef, data) { backups.push(data); return { id: 'backup-1' }; };
+  // T591-B: the backup is created with a deterministic id (setDoc) so a retried assignment never duplicates it; reading a missing backup throws (rules: null resource) => absent
+  const fakeSetDoc = async function(ref, data) { backups.push(data); };
+  const fakeAddDoc = fakeSetDoc;
   const fakeCollection = function(db, name) { return { __coll: name }; };
-  const fn = new Function('doc', 'getDoc', 'addDoc', 'collection', 'currentCoach', 'db',
+  const fn = new Function('doc', 'getDoc', 'addDoc', 'setDoc', 'collection', 'currentCoach', 'db',
     backupSrc + ';\nreturn backupPlanIfExists;'
-  )(fakeDoc, fakeGetDoc, fakeAddDoc, fakeCollection, { uid: 'coach-1' }, {});
+  )(fakeDoc, async function(ref) { if (ref.__coll === 'plans_backup') throw new Error('permission-denied (missing backup)'); return fakeGetDoc(ref); }, fakeAddDoc, fakeSetDoc, fakeCollection, { uid: 'coach-1' }, {});
   return { run: fn, backups: backups };
 }
 

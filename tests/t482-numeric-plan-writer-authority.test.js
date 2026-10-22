@@ -106,8 +106,12 @@ test('T482.7 explicit Coach manual plan editing remains functional', () => {
 });
 
 test('T482.8 plan authoring, activation and persistence remain functional', () => {
-  for (const fn of ['saveImportedPlan', 'saveManualPlan', '_applyTemplateToClient', 'applyTemplate', 'duplicatePlan', 'duplicatePlanToClient'])
+  for (const fn of ['saveManualPlan', '_applyTemplateToClient', 'applyTemplate', 'duplicatePlan', 'duplicatePlanToClient'])
     assert.ok(/addDoc\(collection\(db, ?['"]plans['"]\)/.test(functionSource(coach, fn)), fn);
+  // T591-B: the import path creates the plan inside ONE transaction (plan + activePlanId + historical retirement). It is still the same single authoring writer, and it writes only Coach-authored fields.
+  const imp = functionSource(coach, 'saveImportedPlan');
+  assert.ok(/tx\.set\(planRef, _newPlanDoc\)/.test(imp) && /tx\.update\(cRef, \{ activePlanId: planRef\.id \}\)/.test(imp), 'saveImportedPlan: transactional plan creation + activation');
+  assert.ok(!/addDoc\(collection\(db, ?['"]plans['"]\)/.test(imp) && !/deleteDoc/.test(imp), 'no separate addDoc / deleteDoc left in saveImportedPlan');
   assert.ok(/setDoc\(planRef, draftDoc\)/.test(functionSource(coach, '_vdsenSaveDraftToFirestore')));
   const activate = functionSource(coach, '_vdsenActivatePlanInFirestore');
   assert.ok(activate.includes('runTransaction') && /t\.update\(clientRef/.test(activate));

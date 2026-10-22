@@ -60,10 +60,10 @@ test('backupPlanIfExists(clientId) is called', function () {
 test('backup call happens before the previous plan is looked up for deletion', function () {
   assert.ok(body, 'function body present');
   var backupIdx = body.indexOf('backupPlanIfExists(clientId)');
-  var deleteIdx = body.indexOf('deleteDoc(doc(db, "plans", prevPlanId2)');
+  var deleteIdx = body.indexOf('_supersedePlan(prevPlanId2');
   assert.ok(backupIdx > -1, 'backupPlanIfExists(clientId) call present');
-  assert.ok(deleteIdx > -1, 'deleteDoc of prevPlanId2 present');
-  assert.ok(backupIdx < deleteIdx, 'backup must run before the previous plan doc is deleted');
+  assert.ok(deleteIdx > -1, 'explicit retirement (_supersedePlan) of prevPlanId2 present');
+  assert.ok(backupIdx < deleteIdx, 'backup must run before the previous plan is retired');
 });
 
 test('backup call happens after prevPlanId2 is captured (so it backs up the right plan)', function () {

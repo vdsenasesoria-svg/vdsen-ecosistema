@@ -113,7 +113,7 @@ assert.ok(
   'T143-H regression: saveImportedPlan must still confirm before replacing an existing active plan'
 );
 assert.ok(
-  !/const confirmed = await _askConfirm/.test(saveImportedPlanFn.split('if (prevPlanId)')[0]),
+  !/const confirmed = await _askConfirm/.test(saveImportedPlanFn.split('if (prevPlanId && prevPlanId !== _newPlanId)')[0]),
   'T143-H regression: saveImportedPlan must still NOT confirm when there is no existing active plan (first plan)'
 );
 assert.ok(
