@@ -187,6 +187,13 @@
     .intake-chip { border:1px solid var(--border); border-radius:20px; padding:6px 12px; font-size:12px; cursor:pointer; color:var(--text-muted); transition:all .15s; user-select:none; -webkit-tap-highlight-color:transparent; }
     .intake-chip.on { border-color:var(--accent); color:var(--accent); background:rgba(196,255,0,.08); }
     .intake-section { transition:opacity .15s; }
+    /* T591: the plan editor icon buttons (reorder, substitute, remove) and the type / duration controls reach a 44px touch target on phones (they were 16-30px).
+       The header row wraps so the exercise name keeps the full width and the buttons sit on their own line. */
+    .exrow-item button[data-reorder],.exrow-item button[title="Eliminar"],.exrow-item button[title="Sustituir ejercicio"]{min-width:40px;min-height:44px}
+    .exrow-item > .flex.items-center.mb-2:first-child{flex-wrap:wrap}
+    .exrow-item > .flex.items-center.mb-2:first-child > div[style*="position:relative"]{flex:1 1 100% !important;order:-1}
+    .exrow-item [data-field="extype"],.exrow-item [data-field="cardioDur"]{min-height:44px}
+    .exrow-item [data-field="extype"]{padding-left:6px;padding-right:16px;font-size:11px}
   </style>
 </head>
 <body>
@@ -1917,7 +1924,9 @@
       // `{...planData, ...}` (spread first, override after) never mutates
       // planData/clientData themselves -- both stay byte-identical after
       // this call, only a brand-new backup object is constructed.
-      const backupRef = await addDoc(collection(db, "plans_backup"), {
+      // T591: Firestore rejects `undefined` field values. A client without nutrition / supplements and a plan without display copies produced four `undefined` fields, the write threw
+      // and the outgoing plan was NEVER backed up (the error was swallowed below). Absent values are simply left out.
+      const _backupDoc = {
         ...planData,
         nutritionDisplay:  clientData.nutritionPlan  !== undefined ? clientData.nutritionPlan  : planData.nutritionDisplay,
         nutritionRaw:      clientData.nutritionRaw   !== undefined ? clientData.nutritionRaw   : planData.nutritionRaw,
@@ -1926,7 +1935,9 @@
         originalPlanId: activeId,
         backedUpAt: new Date().toISOString(),
         backedUpBy: currentCoach?.uid || null
-      });
+      };
+      Object.keys(_backupDoc).forEach(k => { if (_backupDoc[k] === undefined) delete _backupDoc[k]; });
+      const backupRef = await addDoc(collection(db, "plans_backup"), _backupDoc);
       return backupRef.id;
     } catch(e) { console.warn('backup falló:', e); return null; }
   }
@@ -6755,6 +6766,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       statusEl.innerHTML = `<span class="text-red-400">❌ El JSON debe tener "days" como arreglo no vacío (en entrenamiento.days o en la raíz)</span>`;
       return;
     }
+    // T591: nothing is dropped or ignored silently: every exercise that cannot be imported, and every cardio entry whose strength sets are ignored, is reported in the preview
+    const _importWarnings = [];
     // Normalizar: asegurar setIndex/dayIndex, defaults, campos mínimos
     const days = trainingBlock.days.map((d, di) => ({
       dayIndex: Number.isInteger(d.dayIndex) ? d.dayIndex : di,
@@ -6795,13 +6808,25 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         // Preservar techniqueFromWeek para activación condicional (Y3T/SST)
         if (ex.techniqueFromWeek) normEx.techniqueFromWeek = parseInt(ex.techniqueFromWeek);
         Object.assign(normEx, _perfCarryEx(ex));   // T544: exerciseType + Coach performance prescription (explicit whitelist)
+        normEx.__srcType = String(ex.exerciseType || ex.tipo || '').trim();
         if (!normEx.exerciseType && !normEx.tipo && typeof _exCatalogIsCardio === 'function' && _exCatalogIsCardio(normEx.exerciseName)) normEx.exerciseType = 'cardio';   // T589: the catalog of the Coach marks it Cardio (exact name)
         return normEx;
-      }).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
+      }).filter(ex => {
+        const src = ex.__srcType; delete ex.__srcType;
+        const ok = ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex));
+        if (!ok) {
+          const unknownType = src && !_perfType(src);
+          _importWarnings.push((ex.exerciseName || '(sin nombre)') + ': NO se importó — ' + (ex.exerciseName.length <= 1 ? 'falta el nombre' : unknownType ? 'tipo "' + src + '" no reconocido (válidos: fuerza, cardio, calistenia, estacion, circuito)' : 'ejercicio de fuerza sin series (sets)'));
+        } else if (_perfEffType(ex) === 'cardio' && ex.sets.length) {
+          _importWarnings.push(ex.exerciseName + ': es cardio; sus ' + ex.sets.length + ' serie(s) de fuerza se ignoraron (el cardio se prescribe por duración)');
+          ex.sets = [];
+        }
+        return ok;
+      }) : []
     })).filter(d => d.exercises.length > 0);
 
     if (days.length === 0) {
-      statusEl.innerHTML = `<span class="text-red-400">❌ Ningún día con ejercicios válidos tras normalizar</span>`;
+      statusEl.innerHTML = `<span class="text-red-400">❌ Ningún día con ejercicios válidos tras normalizar${_importWarnings.length ? ':<br>' + _importWarnings.map(_escH).join('<br>') : ''}</span>`;
       return;
     }
 
@@ -6817,7 +6842,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if (obj.distribucion_zonas_carga) planObj.distribucion_zonas_carga = obj.distribucion_zonas_carga;
     { const _mp = typeof _normalizeMusclePriorities === 'function' ? _normalizeMusclePriorities(trainingBlock.musclePriorities || obj.musclePriorities) : null; if (_mp) planObj.musclePriorities = _mp; }   // T586: declared muscle priorities (explicit only)
     statusEl.innerHTML = `<span class="text-green-400">✅ JSON válido: ${planObj.weeks} semanas, ${days.length} día(s)</span>`;
-    showParsedPreview(planObj);
+    showParsedPreview(planObj, _importWarnings);
     window._importedPlan = planObj;
   }
 
@@ -6947,9 +6972,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     return errors;
   }
 
-  function showParsedPreview(planObj) {
+  function showParsedPreview(planObj, importWarnings) {
     const preview = document.getElementById("parsedPlanPreview");
     if (!preview) return;
+    const warnHtml = (importWarnings && importWarnings.length)
+      ? `<div style="background:rgba(255,170,0,.08);border:1px solid rgba(255,170,0,.35);border-radius:10px;padding:10px 12px;margin-bottom:10px"><div style="font-size:11px;font-weight:700;color:#ffb020;letter-spacing:.5px;margin-bottom:6px">⚠ ${importWarnings.length} aviso(s) de importación — revísalos antes de guardar</div>${importWarnings.map(w => `<div style="font-size:11px;color:#ffcc66;margin-bottom:3px">· ${_escH(w)}</div>`).join('')}</div>`
+      : '';
     const validationErrors = validateTrainingPlan(planObj);
     const errorsHtml = validationErrors.length > 0
       ? `<div style="background:rgba(255,80,80,.08);border:1px solid rgba(255,80,80,.3);border-radius:10px;padding:10px 12px;margin-bottom:10px">
@@ -6966,6 +6994,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
                 const tech = (e.technique && e.technique !== 'straight') ? ` <span class="text-[10px] px-1.5 py-0.5 rounded" style="background:rgba(244,244,240,.15);color:#F4F4F0;text-transform:uppercase;font-weight:600">${_escH(e.technique)}</span>` : '';
                 const fromW = e.techniqueFromWeek ? ` <span style="font-size:9px;color:#9966cc;font-weight:700">desde sem ${e.techniqueFromWeek}</span>` : '';
                 const tnote = e.techniqueNote ? `<div class="text-[11px] text-[#888] ml-3 italic">↳ ${_escH(e.techniqueNote)}</div>` : '';
+                if (_perfEffType(e) === 'cardio') return `<li>· ${_escH(e.exerciseName)} — <strong>CARDIO</strong>${(e.duracionMin ?? e.targetMinutes) ? ' · ' + _escH(String(e.duracionMin ?? e.targetMinutes)) + ' min' : ' · sin duración objetivo'}${tnote}</li>`;
                 const repsDisp = _setsRepsLabel(e.sets);
                 return `<li>· ${_escH(e.exerciseName)}${tech}${fromW} — ${e.sets.length} serie(s) × ${repsDisp} reps${tnote}</li>`;
               }).join('')
@@ -6975,6 +7004,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const volPanel = renderVolumePanel(planObj);
     preview.innerHTML = `
       <div class="mb-3 text-sm text-[#888]">${planObj.days.length} día(s) detectado(s) · ${planObj.weeks || 6} semanas. Revisa y guarda:</div>
+      ${warnHtml}
       ${errorsHtml}
       ${volPanel}
       ${dayList}
@@ -21767,12 +21797,17 @@ El esfuerzo no es negociable.
           const en = (e.exerciseName || e.nombre || '').trim();
           if (en.toLowerCase() === nameLower) originalName = en;
         }));
+        // T591: the plan itself declares the type (exerciseType / tipo): a declared cardio keeps that classification in the catalog
+        let _declaredCardio = false;
+        days.forEach(d => (d.exercises || []).forEach(e => {
+          if (((e.exerciseName || e.nombre || '').trim().toLowerCase() === nameLower) && typeof _perfEffType === 'function' && _perfEffType(e) === 'cardio') _declaredCardio = true;
+        }));
         // Defaults conservadores: sin clasificar → escala como compuesto moderado
         // (evita inflar volumen/carga en ejercicios que el coach aún no catalogó)
         return addDoc(collection(db, 'exercises'), {
           name: originalName,
           coachId: currentCoach.uid,
-          motorPattern: '',
+          motorPattern: _declaredCardio ? 'Cardio' : '',
           equipment: '',
           muscleType: 'typeI',
           fatigueCost: 4,
@@ -21809,6 +21844,7 @@ El esfuerzo no es negociable.
   async function saveTrainingPlan() {
     if (_savingTrainingPlan) return;
     if (!_editingPlanId) return;
+    if (!document.querySelector('[id^="dayblock_"]')) return;   // T591: the editor is already closed (a repeated click after a finished save)
     _savingTrainingPlan = true;
     // T123-H: capture clientId before any await so stale-context can be detected post-write.
     // If the coach navigates to a different client while the backup writes are in flight,
