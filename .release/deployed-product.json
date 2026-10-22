@@ -1,10 +1,10 @@
 {
   "schema": "vdsen-deployed-product-v1",
-  "runtime_sha": "318b8724293cb66ef91c7c9ec1e507b356aad2ae",
+  "runtime_sha": "340c0ac8eb988cfc3b5dd674493c4657fbdb9b8e",
   "note": "Frozen per-file sha256 of the served surface at the DEPLOYED runtime commit. Regenerate only as part of an authorized deploy.",
   "files": {
     "vdsen-cliente.html": "e224f149b27bc9ff3c7a150630403968bc775b87a14e417329d4cd4e3d3ff7f5",
-    "vdsen-coach.html": "f0719a4543bdbb9ae97c906bfbc4f7a463b643e0574d45086876f63200645724",
+    "vdsen-coach.html": "1143216767ca28c014ae4c16f23e05d1246643e320a0d9488005a90f6ab13b90",
     "ficha-publica.html": "d8f43e838fa494d19c9698d30e61bdab0e36e01339ee2b5fbaf71391df6d3826",
     "sw.js": "2f0242bfcf17b4fff28743df99f7143053339872fc0ee51e59d13b7d2b52f1dc",
     "vdsen-push.js": "644801509b7c7bbcd570139b43190dfa15366b4b7c23b920cbddc7c098849fbb",
