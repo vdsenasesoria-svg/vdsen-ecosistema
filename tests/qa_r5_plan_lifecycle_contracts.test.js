@@ -74,7 +74,7 @@ console.log('Contract 1: updatedAt in every active-plan writer');
 // 1-C saveImportedPlan — addDoc
 {
   const body = extractFnBody(COACH, 'async function saveImportedPlan(');
-  const present = body && updatedAtNearCall(body, 'addDoc(collection(db', 600);
+  const present = body && updatedAtNearCall(body, 'const _newPlanDoc = {', 600);   // T591-B: the plan is created inside a transaction; _newPlanDoc is its document literal
   console.log('  C1-C saveImportedPlan addDoc includes updatedAt:', present ? 'PASS' : 'GAP');
   assert.ok(body, 'C1-C: saveImportedPlan function must exist');
   assert.ok(present, 'C1-C: saveImportedPlan addDoc must include updatedAt');
@@ -305,7 +305,8 @@ console.log('Contract 6: activePlanId set on clients/{clientId} for every plan c
 // 6-A saveImportedPlan writes activePlanId
 {
   const body = extractFnBody(COACH, 'async function saveImportedPlan(');
-  const writesActiveId = body && body.indexOf('activePlanId') !== -1 && body.indexOf('updateDoc') !== -1;
+  // T591-B: the activation is the transactional tx.update(cRef, { activePlanId }) (all-or-nothing with the plan document)
+  const writesActiveId = body && body.indexOf('activePlanId') !== -1 && (body.indexOf('updateDoc') !== -1 || body.indexOf('tx.update(cRef, { activePlanId: planRef.id })') !== -1);
   console.log('  C6-A saveImportedPlan writes activePlanId:', writesActiveId ? 'PASS' : 'GAP');
   assert.ok(body, 'C6-A: saveImportedPlan must exist');
   assert.ok(writesActiveId, 'C6-A: saveImportedPlan must write activePlanId to clients doc');

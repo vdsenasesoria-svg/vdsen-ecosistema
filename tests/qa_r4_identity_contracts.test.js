@@ -42,10 +42,10 @@ assert.ok(
 );
 
 // 1d. saveImportedPlan addDoc payload calls _stampPrescriptionIds
-// (distance from function start to _stampPrescriptionIds is ~3120 chars — has a
-// confirmation dialog before addDoc, plus T325's ownership check ahead of it)
+// (distance from function start to _stampPrescriptionIds is ~4100 chars — has a confirmation dialog, T325's ownership check and, since T591-B,
+// the stable plan id before the plan document of the transaction)
 assert.ok(
-  /async function saveImportedPlan[\s\S]{1,3300}_stampPrescriptionIds/.test(COACH),
+  /async function saveImportedPlan[\s\S]{1,6000}_stampPrescriptionIds/.test(COACH),
   'T1d: saveImportedPlan addDoc payload must call _stampPrescriptionIds'
 );
 

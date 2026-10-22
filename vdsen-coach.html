@@ -1666,8 +1666,8 @@
         <div style="background:#1a1a1a;border:1px solid #333;border-radius:12px;padding:24px;max-width:340px;width:100%;font-family:inherit">
           <p style="color:#f0ece4;font-size:14px;line-height:1.5;margin:0 0 20px">${msg}</p>
           <div style="display:flex;gap:10px;justify-content:flex-end">
-            <button id="_ack_cancel" style="padding:8px 18px;border-radius:8px;border:1px solid #444;background:#222;color:#888;font-size:13px;cursor:pointer">Cancelar</button>
-            <button id="_ack_ok" style="padding:8px 18px;border-radius:8px;border:none;background:#c94a3a;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Confirmar</button>
+            <button id="_ack_cancel" style="min-height:44px;padding:8px 18px;border-radius:8px;border:1px solid #444;background:#222;color:#888;font-size:13px;cursor:pointer">Cancelar</button>
+            <button id="_ack_ok" style="min-height:44px;padding:8px 18px;border-radius:8px;border:none;background:#c94a3a;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Confirmar</button>
           </div>
         </div>`;
       document.body.appendChild(ov);
@@ -1937,7 +1937,13 @@
         backedUpBy: currentCoach?.uid || null
       };
       Object.keys(_backupDoc).forEach(k => { if (_backupDoc[k] === undefined) delete _backupDoc[k]; });
-      const backupRef = await addDoc(collection(db, "plans_backup"), _backupDoc);
+      // T591-B: one backup per outgoing plan (deterministic id): a retried assignment never duplicates it. A read of a missing backup is denied by the rules (null resource) => treated as absent.
+      const _bkId = activeId + '__replaced';
+      const _bkRef = doc(db, "plans_backup", _bkId);
+      const _bkExisting = await getDoc(_bkRef).catch(() => null);
+      if (_bkExisting && _bkExisting.exists()) return _bkId;
+      await setDoc(_bkRef, _backupDoc);
+      const backupRef = { id: _bkId };
       return backupRef.id;
     } catch(e) { console.warn('backup falló:', e); return null; }
   }
@@ -5290,7 +5296,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           if (_activePlanCache && clientData.activePlanId) {
             try {
               const newRir = rirSchemeForWeeks(nw);
-              await updateDoc(doc(db, 'plans', clientData.activePlanId), { weeks: nw, rirByWeek: newRir, updatedAt: new Date().toISOString() });
+              await updateDoc(doc(db, 'plans', clientData.activePlanId), { weeks: nw, rirByWeek: newRir, rirByWeekSource: 'coach-edit', updatedAt: new Date().toISOString() });
               _activePlanCache.weeks = nw;
               _activePlanCache.rirByWeek = newRir;
             } catch(e) { showToast('No se pudo extender el plan: ' + e.message, true); return; }
@@ -5325,7 +5331,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         const btn = weekCtrl.querySelector('#planWeekAdd');
         btn.disabled = true; btn.textContent = '…';
         try {
-          await updateDoc(doc(db, 'plans', clientData.activePlanId), { weeks: newW, rirByWeek: newRir, updatedAt: new Date().toISOString() });
+          await updateDoc(doc(db, 'plans', clientData.activePlanId), { weeks: newW, rirByWeek: newRir, rirByWeekSource: 'coach-edit', updatedAt: new Date().toISOString() });
           if (_activePlanCache) { _activePlanCache.weeks = newW; _activePlanCache.rirByWeek = newRir; }
           const lbl = weekCtrl.querySelector('#planWeeksLabel');
           if (lbl) lbl.textContent = `${newW} sem`;
@@ -5346,7 +5352,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         btn.disabled = true; btn.textContent = '…';
         try {
           const newRir = rirSchemeForWeeks(newW);
-          await updateDoc(doc(db, 'plans', clientData.activePlanId), { weeks: newW, rirByWeek: newRir, updatedAt: new Date().toISOString() });
+          await updateDoc(doc(db, 'plans', clientData.activePlanId), { weeks: newW, rirByWeek: newRir, rirByWeekSource: 'coach-edit', updatedAt: new Date().toISOString() });
           if (_activePlanCache) { _activePlanCache.weeks = newW; _activePlanCache.rirByWeek = newRir; }
           const lbl = weekCtrl.querySelector('#planWeeksLabel');
           if (lbl) lbl.textContent = `${newW} sem`;
@@ -6486,6 +6492,7 @@ Reporte:
       await updateDoc(doc(db, 'plans', planId), {
         weeks: newW,
         rirByWeek: newRir,
+        rirByWeekSource: 'coach-edit',
         updatedAt: new Date().toISOString()
       });
       // Actualiza el contador visible sin recargar
@@ -6512,10 +6519,28 @@ Reporte:
     // Without this, a plan parsed for client A remains in window._importedPlan after the
     // coach switches planClientSelect to client B; clicking "Guardar y activar" would then
     // write client A's plan to client B.
-    select.onchange = function() {
+    // T591-B: with an UNSAVED import the change asks before discarding it. Cancel keeps the preview AND the previously selected client; Confirm discards the context (no plan can be assigned to the wrong
+    // client); the selector is locked while the question is open (fast repeated changes) and while a save is in flight.
+    select.dataset.prev = select.value || '';
+    select.onchange = async function() {
+      const sel = this, target = sel.value || '', prev = sel.dataset.prev || '';
+      if (sel.dataset.asking === '1') { sel.value = sel.dataset.askTarget || prev; return; }   // a question is already open: a repeated / programmatic change opens no second one
+      if (target === prev) return;
+      if (_savingImportedPlan) { sel.value = prev; showToast('Espera: se está guardando el plan importado', true); return; }
+      if (window._importedPlan) {
+        sel.disabled = true; sel.dataset.asking = '1'; sel.dataset.askTarget = target;
+        let ok = false;
+        try { ok = await _askConfirm('Tienes un plan importado sin guardar. Si cambias de cliente se descartará la vista previa.<br><span style="color:#888;font-size:12px">¿Descartarla y cambiar de cliente?</span>'); }
+        finally { sel.disabled = false; sel.dataset.asking = '0'; }
+        if (!ok) { sel.value = prev; return; }
+        sel.value = target;
+      }
+      sel.dataset.prev = target;
       window._importedPlan = null;
       var pb = document.getElementById('planBuilder');
       if (pb) pb.innerHTML = '';
+      var pp = document.getElementById('parsedPlanPreview');
+      if (pp) pp.innerHTML = '';
       var st = document.getElementById('autoGenStatus');
       if (st) st.innerHTML = '';
     };
@@ -6837,7 +6862,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     };
     // Preservar campos especiales del root (carb_cycling_y3t, rirByWeek, reverse_diet, etc.)
     if (obj.carb_cycling_y3t) planObj.carb_cycling_y3t = obj.carb_cycling_y3t;
-    if (obj.rirByWeek) planObj.rirByWeek = obj.rirByWeek;
+    { const _rawRir = obj.rirByWeek !== undefined && obj.rirByWeek !== null ? obj.rirByWeek : trainingBlock.rirByWeek;   // T591-B: root (like the server normalizer) or the training block
+      if (_rawRir !== undefined && _rawRir !== null) { const _r = _normRirByWeek(_rawRir, planObj.weeks); if (_r) planObj.rirByWeek = _r; else _importWarnings.push('rirByWeek del Generador inválido o incompleto (se requieren las semanas 1 a ' + planObj.weeks + ' con valores de 0 a 5): se usará el esquema por defecto del Coach'); } }
     if (obj.reverse_diet) planObj.reverse_diet = obj.reverse_diet;
     if (obj.distribucion_zonas_carga) planObj.distribucion_zonas_carga = obj.distribucion_zonas_carga;
     { const _mp = typeof _normalizeMusclePriorities === 'function' ? _normalizeMusclePriorities(trainingBlock.musclePriorities || obj.musclePriorities) : null; if (_mp) planObj.musclePriorities = _mp; }   // T586: declared muscle priorities (explicit only)
@@ -7054,6 +7080,39 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   // report "día(s) de entrenamiento" saved / write the other client fields even
   // when the coach cancelled the replace-plan confirm, leaving inconsistent
   // partial state with a misleading success message.
+  // T591-B ── plan assignment helpers ───────────────────────────────────────────────────────────────────────────────────────────────
+  // AUTHORITY OF THE ACTIVE PLAN: clients/{id}.activePlanId. Every reader in the repository resolves the plan through it (Client loadPlan, Coach detail / monitor / export `is_active`);
+  // no reader filters plans by `status`. A plan that is no longer the active one is HISTORICAL: it is marked `status:'superseded'` + `supersededAt` + `supersededBy` (the rules never allowed
+  // deleting an active plan, and the failed deleteDoc used to be swallowed, leaving two documents with status:'active'). Nothing is deleted; `updatedAt` (prescription revision) is never touched.
+  const _importPlanIds = new WeakMap();
+  // One id per (imported preview, client): a retry of the same assignment reuses it, so it can never create a second plan document.
+  function _stablePlanIdFor(planObj, clientId) {
+    let m = _importPlanIds.get(planObj); if (!m) { m = {}; _importPlanIds.set(planObj, m); }
+    if (!m[clientId]) m[clientId] = doc(collection(db, 'plans')).id;
+    return m[clientId];
+  }
+  // The Generator's own rirByWeek is authoritative when it is explicit and valid: every week 1..N present, finite values 0-5. Anything else => null (the Coach default scheme applies and the Coach is told).
+  function _normRirByWeek(raw, weeks) {
+    const W = parseInt(weeks); if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !(W >= 1 && W <= 52)) return null;
+    const out = {};
+    for (let w = 1; w <= W; w++) { const v = raw[w] !== undefined ? raw[w] : raw[String(w)]; const n = typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN); if (!Number.isFinite(n) || n < 0 || n > 5) return null; out[w] = n; }
+    return out;
+  }
+  async function _readActivePlanId(clientId) {
+    try { const s = await getDoc(doc(db, 'clients', clientId)); return s.exists() ? (s.data().activePlanId || null) : null; } catch (e) { return null; }
+  }
+  // Marks the plan that was just replaced as historical (explicit, surfaced on failure; the new plan is already active at this point).
+  async function _supersedePlan(prevPlanId, newPlanId) {
+    if (!prevPlanId || prevPlanId === newPlanId) return true;
+    try {
+      const ref = doc(db, 'plans', prevPlanId), s = await getDoc(ref);
+      if (!s.exists() || s.data().coachId !== currentCoach.uid) return true;
+      const patch = { supersededAt: new Date().toISOString(), supersededBy: newPlanId };
+      if (s.data().status === 'active') patch.status = 'superseded';
+      await updateDoc(ref, patch); return true;
+    } catch (e) { showToast('⚠️ El plan nuevo quedó activo, pero no se pudo marcar el anterior como histórico: ' + (e.code || e.message), true); return false; }
+  }
+  function _assignErr(code, message) { const e = new Error(message); e.assignCode = code; return e; }
   async function saveImportedPlan(clientIdArg) {
     if (_savingImportedPlan) return false;
     if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return false; }
@@ -7089,33 +7148,67 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       // they get a clean, honest message instead.
       if (!prevClientSnap.exists()) { showToast("Cliente no encontrado en Firestore", true); return false; }
       if (prevClientSnap.data().coachId !== currentCoach.uid) { showToast("❌ No tenés permiso sobre este cliente", true); return false; }
-      const prevPlanId = prevClientSnap.data().activePlanId;
-      if (prevPlanId) {
+      const prevPlanId = prevClientSnap.data().activePlanId || null;
+      const _newPlanId = _stablePlanIdFor(planObj, clientId);
+      if (prevPlanId && prevPlanId !== _newPlanId) {
         const prevPlanSnap = await getDoc(doc(db, "plans", prevPlanId)).catch(() => null);
         const prevDays = prevPlanSnap && prevPlanSnap.exists() ? (prevPlanSnap.data().days || []) : [];
         const newDays  = planObj.days || [];
         const confirmed = await _askConfirm(`⚠️ Reemplazar plan activo\n\nPlan actual: ${prevDays.length} días · ${prevPlanSnap?.data()?.weeks||'?'} semanas\nPlan nuevo: ${newDays.length} días · ${newDays[0]?.exercises?.length||'?'} ej. el primer día\n\nEl plan actual se guardará como respaldo y será reemplazado.`);
         if (!confirmed) return false;
       }
-      // Backup automático del plan anterior
-      await backupPlanIfExists(clientId);
+      // Backup automático del plan anterior (idempotente; no se repite si este mismo plan ya quedó asignado en un intento anterior)
+      if (prevPlanId && prevPlanId !== _newPlanId) await backupPlanIfExists(clientId);
 
-      const planRef = await addDoc(collection(db, "plans"), {
+      // T591-B: plan document + clients/{id}.activePlanId + retirement of the previous plan in ONE transaction (all or nothing).
+      //  · idempotent: the plan id is stable per (preview, client); if the client already points to it, an earlier attempt committed => success without writing again;
+      //  · ownership and the previously confirmed active plan are RE-CHECKED inside the transaction (a change made elsewhere while the Coach was confirming aborts, nothing is written);
+      //  · the Generator's explicit rirByWeek is kept; the Coach default scheme is used only when it is absent/invalid, and the source is recorded.
+      const planRef = doc(db, "plans", _newPlanId);
+      const _rirImp = _normRirByWeek(planObj.rirByWeek, planObj.weeks || 6);
+      const _nowIso = new Date().toISOString();
+      const _newPlanDoc = {
         ...planObj,
         days: _stampPrescriptionIds(planObj.days),
-        rirByWeek: rirSchemeForWeeks(planObj.weeks || 6),
+        rirByWeek: _rirImp || rirSchemeForWeeks(planObj.weeks || 6),
+        rirByWeekSource: _rirImp ? 'generator' : 'coach-default',
         coachId: currentCoach.uid,
         clientId,
         status: "active",
         generatedBy: "import",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-      await updateDoc(doc(db, "clients", clientId), { activePlanId: planRef.id });
-      if (prevPlanId && prevPlanId !== planRef.id) {
-        try { await deleteDoc(doc(db, "plans", prevPlanId)); } catch(e2) {}
+        createdAt: _nowIso,
+        updatedAt: _nowIso
+      };
+      let _txOutcome = null;
+      try {
+        await runTransaction(db, async (tx) => {
+          _txOutcome = null;
+          const cRef = doc(db, "clients", clientId);
+          const cSnap = await tx.get(cRef);
+          if (!cSnap.exists()) throw _assignErr('CLIENT_NOT_FOUND', 'Cliente no encontrado');
+          const cur = cSnap.data();
+          if (cur.coachId !== currentCoach.uid) throw _assignErr('NOT_OWNER', 'Sin permiso sobre este cliente');
+          const curActive = cur.activePlanId || null;
+          if (curActive === planRef.id) { _txOutcome = 'ALREADY_ASSIGNED'; return; }
+          if (curActive !== prevPlanId) throw _assignErr('CONFLICT', 'El plan activo cambió');
+          const prevSnap = curActive ? await tx.get(doc(db, "plans", curActive)) : null;
+          tx.set(planRef, _newPlanDoc);
+          tx.update(cRef, { activePlanId: planRef.id });
+          if (prevSnap && prevSnap.exists() && prevSnap.data().coachId === currentCoach.uid) {
+            const _retire = { supersededAt: _nowIso, supersededBy: planRef.id };
+            if (prevSnap.data().status === 'active') _retire.status = 'superseded';
+            tx.update(doc(db, "plans", curActive), _retire);
+          }
+          _txOutcome = 'COMMITTED';
+        });
+      } catch (txErr) {
+        if (txErr && txErr.assignCode === 'CONFLICT') showToast('⚠️ El plan activo de este cliente cambió mientras confirmabas (otra pestaña o dispositivo). NO se guardó nada: vuelve a abrir al cliente y repite la importación.', true);
+        else if (txErr && txErr.assignCode === 'NOT_OWNER') showToast('❌ No tenés permiso sobre este cliente. No se guardó nada.', true);
+        else if (txErr && txErr.assignCode === 'CLIENT_NOT_FOUND') showToast('Cliente no encontrado en Firestore. No se guardó nada.', true);
+        else showToast('No se pudo asignar el plan (' + ((txErr && (txErr.code || txErr.message)) || 'error') + '). NO se guardó nada: reintenta, es seguro y no se duplicará.', true);
+        return false;
       }
-      showToast("✅ Plan importado y activado correctamente");
+      showToast(_txOutcome === 'ALREADY_ASSIGNED' ? "ℹ️ Este plan ya estaba asignado a este cliente (reintento: no se duplicó)" : "✅ Plan importado y activado correctamente");
       _autoAddExercisesToCatalog(planObj.days || []); // auto-agregar ejercicios al catálogo
       window._importedPlan = null;
       document.getElementById("planBuilder").innerHTML = "";
@@ -10998,7 +11091,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       weeks:               (training.weeks      !== undefined ? training.weeks      : 0),
       daysPerWeek:         (training.daysPerWeek !== undefined ? training.daysPerWeek : 0),
       days:                _stampPrescriptionIds(Array.isArray(training.days) ? training.days : []),
-      rirByWeek:           rirSchemeForWeeks(training.weeks || 6),
+      ...(function() { const _r = typeof _normRirByWeek === 'function' ? _normRirByWeek(training.rirByWeek, training.weeks || 6) : null; return { rirByWeek: _r || rirSchemeForWeeks(training.weeks || 6), rirByWeekSource: _r ? 'generator' : 'coach-default' }; })(),   // T591-B
       ...(training.musclePriorities && typeof _normalizeMusclePriorities === 'function' && _normalizeMusclePriorities(training.musclePriorities) ? { musclePriorities: _normalizeMusclePriorities(training.musclePriorities) } : {}),   // T586: declared priorities only
       // Review summary (no individual clicks, no raw response, no secrets)
       reviewSummary: { totalItems: totalItems, acceptedItems: acceptedItems },
@@ -11865,9 +11958,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         updatedAt: new Date().toISOString()
       });
       await updateDoc(doc(db, "clients", clientId), { activePlanId: planRef.id });
-      if (prevPlanId2 && prevPlanId2 !== planRef.id) {
-        try { await deleteDoc(doc(db, "plans", prevPlanId2)); } catch(e2) {}
-      }
+      await _supersedePlan(prevPlanId2, planRef.id);   // T591-B: explicit historical retirement (the old silent deleteDoc was denied by the rules)
       showToast("✅ Plan guardado y activado correctamente");
       _autoAddExercisesToCatalog(manualPlan.days || []); // auto-agregar ejercicios al catálogo
       markEditorClean();
@@ -20182,6 +20273,7 @@ El esfuerzo no es negociable.
       // (saveManualPlan/duplicatePlan): applying a template silently made any
       // existing active plan unreachable and invisible to the "plan anterior"
       // compare view (reads plans_backup), with no backup and no confirmation.
+      const _prevTplActive = await _readActivePlanId(clientId);
       await backupPlanIfExists(clientId);
       // Crear plan primero; solo asignar activePlanId si el create tiene éxito
       const planRef = await addDoc(collection(db, 'plans'), {
@@ -20197,6 +20289,7 @@ El esfuerzo no es negociable.
         updatedAt: new Date().toISOString()  // T119-H (QA-R3-02): client listener requires updatedAt
       });
       await updateDoc(doc(db, 'clients', clientId), { activePlanId: planRef.id });
+      await _supersedePlan(_prevTplActive, planRef.id);
       if (closeModal) closeModal();
       showToast('Plan aplicado desde template ✅');
       _autoAddExercisesToCatalog(days);
@@ -22439,6 +22532,7 @@ El esfuerzo no es negociable.
           daysPerWeek: days.length,
           weeks: obj.weeks || cur.weeks || 6,
           rirByWeek: obj.rirByWeek || cur.rirByWeek || null,
+          ...(obj.rirByWeek ? { rirByWeekSource: 'generator' } : {}),
           coachId: currentCoach.uid,
           updatedAt: new Date().toISOString()
         };
@@ -22606,6 +22700,7 @@ El esfuerzo no es negociable.
       // silently making the target's previous active plan unreachable from the
       // app (and invisible to the "plan anterior" compare view, which reads
       // plans_backup) whenever the chosen target already had a plan.
+      const _prevDupActive = await _readActivePlanId(targetId);
       await backupPlanIfExists(targetId);
 
       // Crear copia del plan (nueva prescripción = nuevos IDs)
@@ -22614,6 +22709,7 @@ El esfuerzo no es negociable.
       delete newPlan.id; // limpiar ID anterior si existía
       const newRef = await addDoc(collection(db, "plans"), newPlan);
       await updateDoc(doc(db, "clients", targetId), { activePlanId: newRef.id });
+      await _supersedePlan(_prevDupActive, newRef.id);
 
       showToast('Plan duplicado y asignado ✓');
       showClientDetail(targetId, { tab: 'plan' });
@@ -22869,6 +22965,7 @@ El esfuerzo no es negociable.
       // T138-H: back up the client's outgoing active plan before it is
       // orphaned below — same gap fixed in _applyTemplateToClient/
       // saveManualPlan/duplicatePlan (T134-H/T135-H).
+      const _prevTplActive2 = await _readActivePlanId(clientId);
       await backupPlanIfExists(clientId);
       const planRef = await addDoc(collection(db, "plans"), {
         days: _stampPrescriptionIds(days), weeks: template.weeks || 6, daysPerWeek: days.length,
@@ -22877,6 +22974,7 @@ El esfuerzo no es negociable.
         updatedAt: new Date().toISOString()  // T119-H (QA-R3-02): client listener requires updatedAt
       });
       await updateDoc(doc(db, "clients", clientId), { activePlanId: planRef.id });
+      await _supersedePlan(_prevTplActive2, planRef.id);
       // T137-H: this used to reference an undefined loop-index variable here,
       // throwing a ReferenceError AFTER the plan had already been created and
       // activated above, so the coach saw a false error toast for an
@@ -23155,7 +23253,7 @@ El esfuerzo no es negociable.
           const tgtClient = await getDoc(doc(db, "clients", targetId));
           const prevId = tgtClient.exists() ? tgtClient.data().activePlanId : null;
           await updateDoc(doc(db, "clients", targetId), { activePlanId: newRef.id });
-          if (prevId && prevId !== newRef.id) { try { await deleteDoc(doc(db, "plans", prevId)); } catch(e) {} }
+          await _supersedePlan(prevId, newRef.id);   // T591-B: explicit historical retirement
           showToast('✅ Plan copiado al cliente destino');
         } catch(e) { showToast('Error: ' + e.message, true); }
       };

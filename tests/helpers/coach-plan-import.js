@@ -24,7 +24,7 @@ function fnSrc(name) {
   throw new Error('unbalanced ' + name);
 }
 const consts = () => (COACH.match(/const _PERF_[A-Z_]+\b[\s\S]*?;\n/g) || []).join('\n') + '\n' + (COACH.match(/const _NIVEL_MEDIO_ENUM\b[\s\S]*?;\n/g) || []).join('\n') + '\n' + (COACH.match(/const _MUSCLE_KEYS\b[\s\S]*?;\n/g) || []).join('\n');
-const HELPERS = ['_perfScalar', '_perfType', '_perfEffType', '_perfHasNoSetsOk', '_perfCarryEx', '_perfCarrySet', '_genPrescriptionId', '_stampPrescriptionIds', '_normRestSeconds',
+const HELPERS = ['_normRirByWeek', '_perfScalar', '_perfType', '_perfEffType', '_perfHasNoSetsOk', '_perfCarryEx', '_perfCarrySet', '_genPrescriptionId', '_stampPrescriptionIds', '_normRestSeconds',
   '_carryPrescriptionId', '_normNivelMedio', '_normVariacionVertical', '_carryClassification', '_carryExerciseIdentity', '_carryRepsRange', '_carryMuscleGroup', '_normalizeMusclePriorities', '_planMetaForRow', '_restorePlanMeta'];
 
 // idPrefix makes the minted PIDs unique per test (the sandbox uses a counter instead of crypto.randomUUID).

@@ -77,11 +77,12 @@ function makeHarness() {
   const plansDb = {}, clientsDb = {}, backupsDb = [];
   const fakeDoc = function(db, coll, id) { return { __coll: coll, __id: id }; };
   const fakeGetDoc = async function(ref) {
+    if (ref.__coll === 'plans_backup') throw new Error('permission-denied (missing backup)');   // T591-B: the backup uses a deterministic id; a missing one reads as denied
     const store = ref.__coll === 'plans' ? plansDb : clientsDb;
     const data = store[ref.__id];
     return { exists: function() { return data !== undefined; }, data: function() { return data; } };
   };
-  const fakeSetDoc = async function(ref, data) { (ref.__coll === 'plans' ? plansDb : clientsDb)[ref.__id] = data; };
+  const fakeSetDoc = async function(ref, data) { if (ref.__coll === 'plans_backup') { backupsDb.push(data); return; } (ref.__coll === 'plans' ? plansDb : clientsDb)[ref.__id] = data; };
   const fakeAddDoc = async function(collRef, data) { backupsDb.push(data); return { id: 'backup-' + backupsDb.length }; };
   const fakeCollection = function(db, name) { return { __coll: name }; };
   const fakeServerTimestamp = function() { return '__SERVER_TS__'; };

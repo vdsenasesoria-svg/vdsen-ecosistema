@@ -40,7 +40,9 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 // ─────────────────────────────────────────────────────────────────────────────
 
 const minimalActivations = (COACH.match(/updateDoc\(doc\(db, ["']clients["'], clientId\), \{ activePlanId: planRef\.id \}\);/g) || []).length;
-ok(minimalActivations === 4, 'exactly 4 OTHER activation sites (saveImportedPlan/saveManualPlan/_applyTemplateToClient/duplicatePlan) write ONLY activePlanId -- confirmed via the literal minimal-update pattern, no accidental nutrition/supplement mirror added to any of them');
+const txActivations = (COACH.match(/tx\.update\(cRef, \{ activePlanId: planRef\.id \}\);/g) || []).length;
+ok(txActivations === 1, 'T591-B: saveImportedPlan activates inside its single transaction and writes ONLY activePlanId (exactly one such site)');
+ok(minimalActivations === 3, 'exactly 3 OTHER activation sites (saveManualPlan/applyTemplate/duplicatePlan, plus the single-quoted _applyTemplateToClient and duplicatePlanToClient variants) write ONLY activePlanId -- confirmed via the literal minimal-update pattern, no accidental nutrition/supplement mirror added to any of them');
 ok(COACH.includes('var clientUpdate = { activePlanId: planId };'), 'the 5th (and ONLY) place that conditionally mirrors nutrition/supplements is _vdsenActivatePlanInFirestore, T261-fixed');
 
 // ─────────────────────────────────────────────────────────────────────────────

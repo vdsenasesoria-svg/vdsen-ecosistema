@@ -54,3 +54,64 @@ Mixto → editar → guardar → recuperar: ningún ejercicio cambió de signifi
 
 ## Lo que falta para cerrar T591 como COMPLETO
 Ficha 360 completa en navegador con un cliente sintético con todas las secciones; plan heredado en navegador; revisión de rendimiento con instrumentos; decisión sobre los riesgos 1–5.
+
+---
+
+# T591-B · Resolución de los bloqueos del dictamen REQUEST_CHANGES del PR #109
+
+**HEAD base de esta ronda:** `752bee5` (el HEAD final está en el PR). Solo Coach (`vdsen-coach.html`) y pruebas/documentos. Sin Rules, índices, IAM, Motor, Cliente, flags ni producción.
+
+## 1 · Asignación de planes (P1): una sola transacción, idempotente
+`saveImportedPlan` ya no hace `addDoc` + `updateDoc`. Dentro de **una transacción** (`runTransaction`): lee el cliente, comprueba la propiedad (`coachId`) y que el plan activo siga siendo el que el Coach confirmó, y escribe en conjunto el plan nuevo, `clients/{id}.activePlanId` y el retiro histórico del plan anterior.
+* **Consistencia:** todo o nada. Un fallo antes del commit no deja plan huérfano ni cambia el cliente ni el plan anterior.
+* **Idempotencia:** el id del plan es estable por (vista previa, cliente) (`_stablePlanIdFor`). Si el commit se hizo pero se perdió el acuse, el reintento detecta que `activePlanId` ya es ese plan y responde «ya estaba asignado» sin duplicar, sin pedir otra confirmación y sin segundo respaldo. El respaldo del plan saliente usa id determinista (`<planId>__replaced`).
+* **Contienda:** si el plan activo cambió mientras el Coach confirmaba (otra pestaña o dispositivo), la transacción aborta con un mensaje explícito y no escribe nada.
+* **Doble clic:** `_savingImportedPlan` + id estable ⇒ un solo plan.
+* **Fallos:** mensajes explícitos («NO se guardó nada: reintenta, es seguro»); la vista previa se conserva para reintentar.
+* **Reglas actuales:** compatible sin cambiarlas (el create de `plans` exige `ownsClient` sobre el cliente existente; el update del plan anterior lo permite su dueño). **Demostrado contra las reglas reales en el emulador.**
+
+Las otras cinco rutas de asignación (manual, plantillas ×2, duplicar ×2) mantienen sus escrituras separadas (siguen fijadas por pruebas propias, T134-H/T135-H/T137-H/T138-H); ahora cierran el plan anterior con el mismo retiro histórico explícito. **Riesgo residual:** esas rutas conservan la ventana entre `addDoc` y `updateDoc`.
+
+### Pruebas de seguridad ajustadas (sin debilitar garantías)
+t482 (escritores de `plans/`: ahora se exige la transacción única, sin `addDoc`/`deleteDoc` en el import), t546.M (createdAt/updatedAt de un mismo evento ISO también en la transacción), t263 (exactamente 1 activación transaccional + 3 simples), t115h y qa_r5 (updatedAt en el documento transaccional; activación por `tx.update`), qa_r4/t143h/t134h/t587-A4 (nuevo texto), t265/t266 (respaldo con id determinista).
+
+## 2 · Autoridad del plan activo (P1)
+**Autoridad única: `clients/{id}.activePlanId`.** Auditoría de lectores: la app Cliente (`loadPlan`) y el Coach (detalle, monitor, editor) resuelven siempre `plans/{activePlanId}`; el Expediente marca `is_active` con `activePlanId`; **ningún lector filtra planes por `status`** (comprobado en Coach, Cliente, `api/`, `assets/` y `assets/client-export`). Los escritores que ponen `status:'active'` son solo de creación.
+Los planes reemplazados quedan **históricos de forma explícita**: `status:'superseded'` + `supersededAt` + `supersededBy` (un borrador aprobado conserva su `status`). El `deleteDoc` silencioso (las reglas nunca permitieron borrar un plan activo) se reemplazó por `_supersedePlan`, que **no borra nada, no toca `updatedAt`** y avisa si falla. Aplicado en las seis rutas de reemplazo. Verificado en el emulador: tras reemplazar queda un plan `active` y el anterior `superseded`.
+
+## 3 · `rirByWeek` del Generador (P1)
+* Contrato implementado: el `rirByWeek` **explícito y válido** del Generador (semanas 1..N completas, valores 0–5; claves numéricas o texto) se **preserva** y se guarda `rirByWeekSource:'generator'`. Si falta o es inválido ⇒ esquema del Coach con `rirByWeekSource:'coach-default'`, y un inválido se **avisa** en la vista previa. Si el Coach cambia la duración del plan (acción explícita) el esquema se recalcula y queda registrado `rirByWeekSource:'coach-edit'`.
+* Corrección adicional: el importador solo leía `rirByWeek` de la raíz; ahora también de `entrenamiento.rirByWeek` (igual que el normalizador del servidor). La ruta del borrador de IA aplica el mismo contrato.
+* **Round-trip completo verificado en navegador real:** Generador (`{1:3,2:2,3:1,4:4}`, distinto del esquema del Coach) → importar → guardar → editor del Coach (guardar) → app Cliente (`PLAN.rirByWeek` idéntico, semana 4 con RIR 4).
+* T587-A4 actualizado al nuevo contrato. Decisión de producto pendiente: **si el Coach cambia la duración de un plan del Generador, se reemplaza su esquema** (queda registrado como `coach-edit`).
+
+## 4 · Vista previa importada (P2)
+Cambiar de cliente con una importación sin guardar **pide confirmación**: Cancelar conserva el cliente y la vista previa; Confirmar descarta el contexto (vista previa, constructor, estado). El selector se bloquea mientras se pregunta y durante un guardado; cambios repetidos o programáticos no abren una segunda pregunta. Los botones del diálogo compartido miden 44 px.
+
+## 5 · Validación (navegador real, Firebase Auth + Firestore Emulator con las reglas del repo, solo datos sintéticos)
+| Caso | Resultado |
+|---|---|
+| Ficha 360 completa (cliente D: respuestas + renovación + antropometría + fotometría + campo compatible desconocido + plan mixto con registros) | **PASS** — TXT con las 4 secciones, campo desconocido conservado, cardio como duración + RPE, series solo de fuerza |
+| Ficha 360 incompleta (cliente E) | **PASS** — solo lo respondido, ausencias explícitas, sin mesociclo ⇒ «sin datos» |
+| Plan heredado (cliente C: sin PID, sin createdAt/updatedAt) | **PASS** — el editor lo abre, guardar estampa PID y `updatedAt`; el TXT lo exporta con sus registros |
+| Plan mixto fuerza/cardio | **PASS** |
+| Importación, edición, asignación y recuperación | **PASS** (cardio 30→35, `rirByWeek` intacto) |
+| Fallo intermedio durante la asignación (inyectado tras armar las escrituras, antes del commit) | **PASS** — 0 planes, activo sin cambio, vista previa conservada, aviso explícito |
+| Reintento | **PASS** — un solo plan |
+| Acuse perdido (commit hecho, error al llamante) + reintento | **PASS** — sin segundo plan, sin segunda confirmación, un respaldo, aviso «ya estaba asignado» |
+| Concurrencia (el plan activo cambia mientras se confirma) | **PASS** — aborta, no escribe, respeta el cambio ajeno |
+| Doble clic / guardados repetidos | **PASS** (unidad + navegador) |
+| Expediente TXT y aislamiento | **PASS** — un archivo, 4 secciones, sin otros clientes ni secretos |
+| Compatibilidad T589 / T590 / T592 / T596 | **PASS** — el Cliente real lee el plan asignado por el Coach (cardio con su formulario, fuerza con series), registra y cierra sesión (resumen con cardio) y el Coach lo exporta; el cardio se importa sin series (T590); doble toque protegido (T592); T596 es solo Cliente, sin cambios (sus pruebas pasan) |
+| Móvil 320 / 390 / 430 | **PASS** — vista previa con avisos, diálogo y editor sin desbordes; áreas táctiles del editor y del diálogo en 44 px |
+
+**Lecturas y listeners (contadores en el arnés):** iniciar sesión en Coach = 10 `getDoc` + 3 `getDocs` (5 documentos) y **0 listeners**; abrir un cliente = 4–5 `getDoc`, 0 `getDocs`, **0 listeners**, sin fugas al cerrar el modal. No se midió memoria.
+
+## Suite y CI
+Suite unitaria completa: **1627 pasan / 18 fallan**; los 18 son **los mismos nombres** que fallan en la base sin cambios (`6a9c866` y `2d2e715`, ejecutadas aparte; documentos generados, CRLF y recuperación de release). Diferencia contra la línea base: **ninguna**. Pruebas nuevas: `t591b-plan-assignment` (9, con un Firestore en memoria con transacciones y fallos inyectables). Los checks de CI se informan en el PR.
+
+## Riesgos pendientes
+1. Las cinco rutas de asignación no convertidas (manual, plantillas ×2, duplicar ×2) siguen con dos escrituras (ventana de plan huérfano).
+2. Cambiar la duración de un plan del Generador reemplaza su esquema RIR (registrado como `coach-edit`): confirmar si el producto quiere otra autoridad.
+3. No se midió memoria; los controles del Coach fuera del editor, el diálogo y la vista previa siguen siendo densos en móvil.
+4. El Generador externo no es accesible: solo se validó su contrato disponible; los campos sueltos desconocidos no se conservan (lista blanca).
