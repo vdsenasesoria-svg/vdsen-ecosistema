@@ -53,7 +53,7 @@ function fixture(mesoSource = parent) {
 
 function contextFor(f, storage, online = () => true) {
   const context = { window: { VDSEN_AUTO_APPLY_SHADOW: shadow }, USER: { uid: 'client-A' },
-    ACTIVE_PLAN_ID: 'plan-A', FB: { db: {}, doc: (_db, ...parts) => parts.join('/'),
+    ACTIVE_PLAN_ID: 'plan-A', FB: { FieldPath: function() { this.segments = Array.prototype.slice.call(arguments); }, deleteField: () => ({ __delete: true }), db: {}, doc: (_db, ...parts) => parts.join('/'),
       getDoc: async ref => f.tx.get(ref),
       setDoc: async (ref, value) => {
         if (ref === 'logs/client-A/mesos/plan-A' && !online()) throw new Error('mirror unavailable');
@@ -68,6 +68,7 @@ function contextFor(f, storage, online = () => true) {
     _logsWriteInFlight: 0, _showSaveOk: () => {},
     document: { getElementById: () => null }, showToast: () => {}, console };
   vm.createContext(context);
+  vm.runInContext(require(path.join(root, 'tests', 'helpers', 'client-log-merge.js')).MERGE_HELPERS_SRC, context);   // T593-R: the save and the root listener merge per entry
   const names = ['_doSaveLogs',
     '_getSessionCompletionState', '_sessionHasRealLoggedSets', '_getSessionLifecycleState',
     '_logDocHasEvidence', '_isLegacyUnboundLog', '_selectLogAuthority',

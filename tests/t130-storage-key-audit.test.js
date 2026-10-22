@@ -12,6 +12,7 @@
  *   vdsen_uid              user-scoped  — set/removed by onAuthStateChanged directly
  *   vdsen_active_plan_id   user-scoped  — cleared in doLogout (R8-GAP-01)
  *   vdsen_logs_backup      user-scoped  — cleared in doLogout (T129)
+ *   vdsen_log_conflicts    user-scoped  — cleared in doLogout (T593-R: journal of entries dropped by a concurrent-edit resolution)
  *   vdsen_shadow_progression_queue user/plan-scoped — cleared in doLogout
  *   vdsen_menu_custom      user-scoped  — cleared in doLogout (T129)
  *   vdsen_restEnd/Total    session-scoped — cleared via stopRestTimer() in doLogout (T129)
@@ -82,7 +83,7 @@ console.log('COACH vdsen_apikey cleared on logout — OK');
 const doLogoutFn = extractFunction(CLIENT, 'async function doLogout()');
 assert.ok(doLogoutFn, 'doLogout must exist in CLIENT');
 
-for (const key of ['vdsen_active_plan_id', 'vdsen_logs_backup', 'vdsen_shadow_progression_queue', 'vdsen_menu_custom']) {
+for (const key of ['vdsen_active_plan_id', 'vdsen_logs_backup', 'vdsen_log_conflicts', 'vdsen_shadow_progression_queue', 'vdsen_menu_custom']) {
   assert.ok(
     new RegExp("removeItem\\s*\\(\\s*['\"]" + key + "['\"]").test(doLogoutFn),
     'T130 regression: doLogout must still clear ' + key
@@ -119,7 +120,7 @@ function collectKeys(src) {
 }
 
 const knownClientKeys = new Set([
-  'vdsen_uid', 'vdsen_active_plan_id', 'vdsen_logs_backup', 'vdsen_shadow_progression_queue', 'vdsen_menu_custom',
+  'vdsen_uid', 'vdsen_active_plan_id', 'vdsen_logs_backup', 'vdsen_log_conflicts', 'vdsen_shadow_progression_queue', 'vdsen_menu_custom',
   'vdsen_restEnd', 'vdsen_restTotal', 'vdsen_light_mode', 'vdsen_timer_off',
   'vdsen_express_off', 'vdsen_last_tab', 'vdsen_last_dia',
   'vdsen_plan_changed', 'vdsen_plan_updated_info',

@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const sra = require('../assets/sra-context.js');
+const { MERGE_HELPERS_SRC, withMergeSdk } = require(__dirname + '/helpers/client-log-merge.js');   // T593-R
 const client = fs.readFileSync('vdsen-cliente.html', 'utf8'), coach = fs.readFileSync('vdsen-coach.html', 'utf8'), engine = fs.readFileSync('assets/sra-context.js', 'utf8');
 function extract(src, decl) { const start = src.indexOf(decl), b = src.indexOf('{', start); let d = 0; assert.ok(start >= 0); for (let i = b; i < src.length; i++) { d += (src[i] === '{') - (src[i] === '}'); if (!d) return src.slice(start, i + 1); } throw Error(decl); }
 function harness() {
@@ -12,8 +13,8 @@ function harness() {
     EXERCISE_UNITS: {}, EXERCISE_HISTORY: {}, _saveLogsTimer: null, _logsReqSeq: 0, _logsAckedSeq: 0, _logsWriteInFlight: 0,
     _logsAuthorityUpdatedAt: 0, _rootLogUnbound: false, _sraSaveGeneration: 0, _sraPersisted: { version: 0, entries: {} },
     console: { warn() {}, error() {} }, document: { getElementById: () => badge }, showToast() {}, _showSaveOk() {}, _maybeConsumeOverlays() {},
-    FB: { db: {}, doc: (...a) => a.slice(1).join('/'), setDoc: (path, payload) => path.includes('/mesos/') ? Promise.resolve() : new Promise((resolve, reject) => pending.push({ resolve, reject, payload })) } };
-  vm.createContext(box); vm.runInContext(extract(client, 'function _acceptSraPersisted(') + '\n' + extract(client, 'function _fbWriteOrQueue(') + '\n' + extract(client, 'function _writeLocalBackup(') + '\n' + extract(client, 'async function _doSaveLogs('), box);
+    FB: withMergeSdk({ db: {}, doc: (...a) => a.slice(1).join('/'), setDoc: (path, payload) => path.includes('/mesos/') ? Promise.resolve() : new Promise((resolve, reject) => pending.push({ resolve, reject, payload })) }) };
+  vm.createContext(box); vm.runInContext(MERGE_HELPERS_SRC + '\n' + extract(client, 'function _acceptSraPersisted(') + '\n' + extract(client, 'function _fbWriteOrQueue(') + '\n' + extract(client, 'function _writeLocalBackup(') + '\n' + extract(client, 'async function _doSaveLogs('), box);
   return { box, pending };
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));

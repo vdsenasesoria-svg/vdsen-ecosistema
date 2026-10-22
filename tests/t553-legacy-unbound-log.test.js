@@ -85,7 +85,9 @@ test('T553.U10 NEW EXECUTION after LEGACY_UNBOUND: saved through the plan-bound 
       var _saveLogsTimer = null, _logsWriteInFlight = 0, _logsReqSeq = 0, _logsAckedSeq = 0, _logsAuthorityUpdatedAt = 0, _rootLogUnbound = ${unbound}, calls = arguments[0];
       var document = { getElementById: function(){ return null; }, createElement: function(){ return { style:{}, addEventListener:function(){} }; }, body:{ appendChild:function(){} } };
       var navigator = { onLine: true }; function showToast() {} function _showSaveOk() {} function _maybeConsumeOverlays() {}
-      var FB = { doc: function(){ return Array.prototype.join.call(arguments, '/'); }, setDoc: async function(path, payload) { calls.push({ path: path, payload: payload }); } };
+      ${require('./helpers/client-log-merge.js').FB_SDK_SRC}
+      ${require('./helpers/client-log-merge.js').MERGE_HELPERS_SRC}
+      var FB = { FieldPath: FieldPath, deleteField: deleteField, doc: function(){ return Array.prototype.join.call(arguments, '/'); }, setDoc: async function(path, payload) { calls.push({ path: path, payload: payload }); } };
       ${src}
       return { save: _doSaveLogs };`)(calls);
     const ok = await rt.save(); return { ok, calls };

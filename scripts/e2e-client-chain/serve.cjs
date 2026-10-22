@@ -39,9 +39,9 @@ http.createServer(async (q, r) => {
     html = html.split(GS).join('/gs/');
     html = html.replace(MOD, (m, code) => {
       let c = code.split("'/gs/").join("'http://localhost:" + PORT + "/gs/").split('"/gs/').join('"http://localhost:' + PORT + '/gs/');
-      c = c.replace('import { getAuth,', 'import { connectAuthEmulator, getAuth,').replace('import { initializeFirestore,', 'import { connectFirestoreEmulator, initializeFirestore,');
+      c = c.replace('import { getAuth,', 'import { connectAuthEmulator, getAuth,').replace('import { initializeFirestore,', 'import { connectFirestoreEmulator, disableNetwork, enableNetwork, initializeFirestore,');
       c = c.replace('const auth = getAuth(app);', 'const auth = getAuth(app); connectAuthEmulator(auth, "http://127.0.0.1:' + AUTH_PORT + '", { disableWarnings: true });');
-      c = c.replace('const db = initializeFirestore(app, { localCache: persistentLocalCache() });', 'const db = initializeFirestore(app, { localCache: persistentLocalCache() }); connectFirestoreEmulator(db, "127.0.0.1", ' + FS_PORT + ');');
+      c = c.replace('const db = initializeFirestore(app, { localCache: persistentLocalCache() });', 'const db = initializeFirestore(app, { localCache: persistentLocalCache() }); connectFirestoreEmulator(db, "127.0.0.1", ' + FS_PORT + '); window.__net = { off: () => disableNetwork(db), on: () => enableNetwork(db) };');
       if (!/connectAuthEmulator\(auth/.test(c) || !/connectFirestoreEmulator\(db/.test(c)) throw new Error('emulator patch not applied');
       return '<script type="text/plain" id="clientModuleSrc">' + c.replace(/<\/script>/gi, '<\\/script>') + '</' + 'script>';
     });
