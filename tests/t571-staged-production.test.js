@@ -95,9 +95,18 @@ test('T571-1e the export genuinely round-trips real binary assets', () => {
   const paths = app.servedSurface();
   assert.ok(paths.some((p) => /\.(jpg|png|ttf|woff2?|ico)$/i.test(p)), 'la superficie servida incluye binarios');
   const dir = path.join(os.tmpdir(), 'vdsen-t571-export');
-  app.exportCandidateTree(sha, dir);
-  assert.equal(app.verifyExportedTree(sha, dir, paths), paths.length, 'todas las rutas verifican');
-  fs.rmSync(dir, { recursive: true, force: true });
+  // Simulate a Windows developer checkout.  The exporter must still use canonical
+  // Git blobs, rather than letting core.autocrlf rewrite text inside the candidate.
+  const previous = ['GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0']
+    .map(k => [k, process.env[k]]);
+  try {
+    Object.assign(process.env, { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.autocrlf', GIT_CONFIG_VALUE_0: 'true' });
+    app.exportCandidateTree(sha, dir);
+    assert.equal(app.verifyExportedTree(sha, dir, paths), paths.length, 'todas las rutas verifican');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    for (const [k, value] of previous) { if (value === undefined) delete process.env[k]; else process.env[k] = value; }
+  }
 });
 
 // ── 2 & 3. production environment and skip-domain ─────────────────────────────────────────────
