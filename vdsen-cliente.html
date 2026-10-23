@@ -547,7 +547,7 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .ro-v small{font-size:13px;margin-left:3px;color:var(--mt);font-weight:700}
 .ci-cta{width:100%}
 /* ══ TRAINING (Entreno) ══ */
-#tabEntr{padding:0 0 96px!important}
+#tabEntr{padding:0 0 96px!important;overflow-x:hidden}   /* the tab scrolls vertically only: no accidental sideways drag of the whole workout */
 .tr-nav{background:var(--bg);border-bottom:1px solid var(--rule)}
 .wkbar{display:flex;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--rule)}
 .wkbar::-webkit-scrollbar,.daytabs::-webkit-scrollbar,.xnav::-webkit-scrollbar{display:none}
@@ -1276,7 +1276,8 @@ button[onclick="guardarCI()"]{border-radius:14px!important;min-height:56px;font-
 .xh-idx{font-size:30px;color:var(--acero);line-height:1}
 :root.light-mode .xh-idx{color:rgba(0,0,0,.22)}
 .ro-cell .ro-v{font-size:21px}
-.xnav{border:0;gap:8px;padding:2px 14px 6px;margin:14px -14px 0}
+/* Issue 115 follow-up: #tabEntr has NO horizontal padding, so the old -14px bleed pushed the exercise strip 14px past both edges and the whole tab scrolled sideways (seen on a real phone). The strip keeps its own 14px inner padding and now fits the screen. */
+.xnav{border:0;gap:8px;padding:2px 14px 6px;margin:14px 0 0}
 .xc{width:104px;min-height:72px;border:1px solid var(--rule);border-radius:14px;background:var(--plate);border-bottom:1px solid var(--rule)}
 .xc-n{color:var(--mt)}
 .spec{border-radius:var(--r-2);overflow:hidden}
