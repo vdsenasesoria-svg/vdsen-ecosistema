@@ -8,7 +8,16 @@ const CHROME = process.argv[2] || 'C:/Program Files/Google/Chrome/Application/ch
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = []; const rec = (name, ok, detail) => { results.push({ name, ok, detail }); console.log((ok ? 'PASS ' : 'FAIL ') + name + (detail ? ' — ' + JSON.stringify(detail) : '')); };
 let server = null;
-function startServer() { server = spawn(process.execPath, [path.join(root, 'scripts/e2e-client-chain/serve.cjs'), root, String(PORT)], { env: Object.assign({}, process.env, { E2E_NUMERIC: '0' }), stdio: 'ignore' }); return sleep(2500); }
+async function startServer() {
+  server = spawn(process.execPath, [path.join(root, 'scripts/e2e-client-chain/serve.cjs'), root, String(PORT)], { env: Object.assign({}, process.env, { E2E_NUMERIC: '0' }), stdio: 'ignore' });
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    if (server.exitCode !== null) throw new Error('local Client E2E server exited before listening');
+    try { const response = await fetch(ORIGIN + '/cliente'); if (response.ok) return; } catch (_) { /* wait for the child */ }
+    await sleep(150);
+  }
+  throw new Error('local Client E2E server did not become reachable');
+}
 function stopServer() { if (server) { server.kill(); server = null; } return sleep(800); }
 async function cdpSession() {
   const t = await (await fetch('http://127.0.0.1:' + DBG + '/json/new?about:blank', { method: 'PUT' })).json();
