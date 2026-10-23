@@ -12,4 +12,5 @@ test('client Auth E2E installs its test-only dependencies and fixes the emulator
   assert.match(source, /shell: process\.platform === 'win32'/);
   assert.match(source, /projectId: PROJECT/);
   assert.match(source, /VDSEN_E2E_CHROME/);
+  assert.match(source, /pathname === '\/' \|\| pathname === '\/cliente'/);
 });

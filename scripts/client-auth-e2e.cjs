@@ -193,7 +193,7 @@ async function main() {
     const pathname = decodeURIComponent(new URL(request.url, 'http://local').pathname);
     let file;
     if (pathname.startsWith('/sdk/')) file = path.join(sdk, pathname.slice(5));
-    else file = pathname === '/' || pathname === '/vdsen-cliente.html' ? clientFile : path.join(productRoot, pathname.slice(1));
+    else file = pathname === '/' || pathname === '/cliente' || pathname === '/vdsen-cliente.html' ? clientFile : path.join(productRoot, pathname.slice(1));
     const allowedRoot = pathname.startsWith('/sdk/') ? sdk : productRoot;
     if (!file.startsWith(allowedRoot) || !fs.existsSync(file) || !fs.statSync(file).isFile()) { response.writeHead(404); return response.end(); }
     let body = fs.readFileSync(file);
