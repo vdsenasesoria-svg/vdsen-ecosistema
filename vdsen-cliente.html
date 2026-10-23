@@ -11763,7 +11763,8 @@ async function _doSaveLogs() {
     var _rootUnbound = (typeof _rootLogUnbound !== 'undefined' && _rootLogUnbound);
     // T441: the root write is only issued while the same athlete is still signed in (checked synchronously, no wait added).
     if (!_rootUnbound && USER && USER.uid === _uidAtStart) {
-      _rootP = _fbWriteOrQueue(FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart), _mw.data, { mergeFields: _ownedFields }));
+      const ref = FB.doc(FB.db, 'logs', _uidAtStart);
+      _rootP = _fbWriteOrQueue(FB.setDoc(ref, _mw.data, { mergeFields: _ownedFields }));
       _rootP.catch(function() { /* settled and handled below */ });
     }
     if (_mesoP) {
