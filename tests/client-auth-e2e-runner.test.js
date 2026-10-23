@@ -13,4 +13,6 @@ test('client Auth E2E installs its test-only dependencies and fixes the emulator
   assert.match(source, /projectId: PROJECT/);
   assert.match(source, /VDSEN_E2E_CHROME/);
   assert.match(source, /pathname === '\/' \|\| pathname === '\/cliente'/);
+  assert.match(source, /pathname === '\/api\/autonomous-progression-trigger'/);
+  assert.match(source, /authorized \? 202 : 401/);
 });

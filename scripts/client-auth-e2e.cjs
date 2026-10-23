@@ -191,6 +191,14 @@ async function main() {
 
   const server = http.createServer((request, response) => {
     const pathname = decodeURIComponent(new URL(request.url, 'http://local').pathname);
+    // The real endpoint is authenticated and background-only. This local
+    // contract stub lets the Client complete that fire-and-forget request
+    // without pointing an emulator test at the real Motor.
+    if (pathname === '/api/autonomous-progression-trigger') {
+      const authorized = /^Bearer\s+.+/.test(request.headers.authorization || '');
+      response.writeHead(authorized ? 202 : 401, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      return response.end(JSON.stringify({ accepted: authorized }));
+    }
     let file;
     if (pathname.startsWith('/sdk/')) file = path.join(sdk, pathname.slice(5));
     else file = pathname === '/' || pathname === '/cliente' || pathname === '/vdsen-cliente.html' ? clientFile : path.join(productRoot, pathname.slice(1));
@@ -220,7 +228,7 @@ async function main() {
   page.setDefaultTimeout(30000);
   const browserErrors = [];
   page.on('pageerror', error => browserErrors.push(`pageerror:${error.message}`));
-  page.on('console', message => { if (message.type() === 'error') browserErrors.push(`console:${message.text()}`); });
+  page.on('console', message => { if (message.type() === 'error') browserErrors.push(`console:${message.text()} @ ${message.location().url}`); });
   const login = async account => {
     await page.fill('#liEmail', account.email); await page.fill('#liPass', password); await page.click('.login-btn');
     await page.waitForFunction(expected => document.getElementById('scrApp')?.classList.contains('on') && PLAN?.nombre === expected && PLAN?.entrenamiento?.sesiones?.length === 1, account.name);
