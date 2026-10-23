@@ -7,6 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="VDSEN">
 <meta name="theme-color" content="#0a0a0a">
+<meta name="vdsen-client-build" content="issue-115-cache-cutover-20261022-01">
 <title>VDSEN — Mi Plan v14</title>
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -15,11 +16,30 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <!-- Service Worker (offline support) -->
 <script>
+// Runtime identity for support and the service-worker URL.  It is deliberately
+// separate from the product version: a deployed Preview can report exactly
+// which app shell is executing without reading a guessed SHA from its URL.
+window.VDSEN_CLIENT_BUILD = 'issue-115-cache-cutover-20261022-01';
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
-    navigator.serviceWorker.register('/sw.js').catch(function(){});
+    // A new script URL makes this cutover visible even to a browser that still
+    // controls the page with a previous worker.  updateViaCache:none prevents
+    // an HTTP cache from hiding an updated worker script; no user cache, Auth
+    // state, or Firestore local persistence is cleared here.
+    navigator.serviceWorker.register('/sw.js?build='+encodeURIComponent(window.VDSEN_CLIENT_BUILD), { updateViaCache: 'none' }).catch(function(){});
   });
 }
+// Read-only support probe.  It records the runtime facts needed to distinguish
+// a stale shell/worker from a layout defect without touching user data.
+window.getVdsenRuntimeDiagnostics = async function() {
+  var ctas = Array.prototype.slice.call(document.querySelectorAll('.workout-set-current .set-actions,.setpanel .set-actions'));
+  var rect = function(el) { var r=el.getBoundingClientRect(); return { top:r.top, bottom:r.bottom, left:r.left, right:r.right, width:r.width, height:r.height }; };
+  var chain = function(el) { var out=[]; for (var p=el && el.parentElement;p;p=p.parentElement) { var s=getComputedStyle(p); out.push({ tag:p.tagName, id:p.id || null, className:typeof p.className==='string'?p.className:null, overflowX:s.overflowX, overflowY:s.overflowY, scrollTop:p.scrollTop, scrollLeft:p.scrollLeft, clientWidth:p.clientWidth, clientHeight:p.clientHeight, scrollWidth:p.scrollWidth, scrollHeight:p.scrollHeight }); } return out; };
+  var sheetRules=[]; Array.prototype.slice.call(document.styleSheets).forEach(function(sheet) { try { Array.prototype.slice.call(sheet.cssRules || []).forEach(function(rule) { if (rule.selectorText && /set-actions|workout-set-current/.test(rule.selectorText)) sheetRules.push({ href:sheet.href || 'inline', selector:rule.selectorText, cssText:rule.cssText }); }); } catch (_) { sheetRules.push({ href:sheet.href || 'inline', unreadable:true }); } });
+  var regs=[]; if (navigator.serviceWorker) { var all=await navigator.serviceWorker.getRegistrations(); regs=all.map(function(reg) { return { scope:reg.scope, active:reg.active && reg.active.scriptURL, waiting:reg.waiting && reg.waiting.scriptURL, installing:reg.installing && reg.installing.scriptURL }; }); }
+  var cacheNames=(window.caches && caches.keys) ? await caches.keys() : [];
+  return { build:window.VDSEN_CLIENT_BUILD, url:location.href, readyState:document.readyState, viewport:{ innerWidth:innerWidth, innerHeight:innerHeight, visual:window.visualViewport && { width:visualViewport.width, height:visualViewport.height, offsetTop:visualViewport.offsetTop, offsetLeft:visualViewport.offsetLeft, scale:visualViewport.scale } }, serviceWorker:{ controller:navigator.serviceWorker && navigator.serviceWorker.controller && navigator.serviceWorker.controller.scriptURL, registrations:regs, caches:cacheNames }, ctas:ctas.map(function(el) { var s=getComputedStyle(el); return { text:el.innerText, rect:rect(el), position:s.position, bottom:s.bottom, top:s.top, zIndex:s.zIndex, transform:s.transform, scrollChain:chain(el) }; }), matchingRules:sheetRules, resources:performance.getEntriesByType('resource').map(function(e) { return e.name; }).filter(function(name) { return /(?:vdsen-cliente|sw\.js|manifest|\.css)/.test(name); }) };
+};
 // T155-H: capture beforeinstallprompt as early as possible (it can fire
 // before the module script below finishes loading/defining the UI updater).
 window._pwaDeferredPrompt = null;

@@ -84,7 +84,7 @@ test('T542.11 rest timer keeps lifecycle hooks and uses tokenized state (no inli
 });
 test('T542.12 service worker: no new local asset is required by the redesign (icons/fonts are inline / already cached)', () => {
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(/CACHE = 'vdsen-v\d+'/.test(sw));
+  assert.ok(/CACHE = 'vdsen-' \+ BUILD;/.test(sw) && /searchParams\.get\('build'\) \|\| 'legacy-v\d+'/.test(sw), 'Issue 115: the cache name derives from the build identity of the registration (legacy fallback kept)');
   const localImgs = (html.slice(bodyStart).match(/<img[^>]+src="(assets\/[^"]+)"/g) || []).map(m => m.match(/src="([^"]+)"/)[1]);
   for (const src of new Set(localImgs.filter(x => !x.startsWith('assets/exercises/')))) assert.ok(sw.includes('/' + src), 'precached: ' + src);
   assert.ok(sw.includes('/assets/vdsen-logo-official.jpg'));

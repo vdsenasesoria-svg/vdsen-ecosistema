@@ -35,9 +35,9 @@
  *     .jpg/.webp files anywhere in the repo, no favicon/apple-touch-icon
  *     references). Left for a follow-up ticket once real assets are
  *     supplied.
- *  7. service worker registration — 'navigator.serviceWorker.register(\'/sw.js\')'
- *     with no explicit scope option -> default scope "/", consistent with
- *     the manifest's now-explicit "/" scope — OK, unchanged.
+ *  7. root-scoped service worker registration with an explicit build identity
+ *     and no explicit scope option -> default scope "/", consistent with
+ *     the manifest's now-explicit "/" scope — OK.
  *  8. start_url route does not 404 — confirmed via the vercel.json rewrite
  *     — OK, unchanged.
  *  9. standalone opens Client, not Coach — start_url is "/cliente"
@@ -154,9 +154,9 @@ console.log('Icon format limitation confirmed and left as a documented finding (
 // Item 7 — SW registration path/scope.
 // ─────────────────────────────────────────────────────────────────────────────
 
-assert.ok(CLIENT.includes("navigator.serviceWorker.register('/sw.js')"), 'T156-H Item7: SW must register at the root-scoped path "/sw.js" (unchanged)');
+assert.ok(/navigator\.serviceWorker\.register\('\/sw\.js\?build='/.test(CLIENT), 'T156-H Item7: SW stays root-scoped and identifies its app shell build');
 assert.ok(
-  !/register\('\/sw\.js',\s*\{\s*scope:/.test(CLIENT),
+  !/register\('\/sw\.js\?build=',\s*\{\s*scope:/.test(CLIENT),
   'T156-H Item7: registration must not pass a narrower explicit scope option that would conflict with the manifest\'s "/" scope'
 );
 
@@ -167,7 +167,7 @@ console.log('Service worker registered at root path, scope consistent with manif
 // stale-cache cleanup on activate, skipWaiting + clients.claim).
 // ─────────────────────────────────────────────────────────────────────────────
 
-assert.ok(/const CACHE = 'vdsen-v\d+';/.test(SW), 'T156-H Item10: SW must use a versioned cache name');
+assert.ok(/const CACHE = 'vdsen-' \+ BUILD;/.test(SW), 'T156-H Item10: SW cache name must derive from the versioned build URL');
 assert.ok(/self\.skipWaiting\(\)/.test(SW), 'T156-H Item10: install handler must call skipWaiting()');
 assert.ok(/keys\.filter\(k => k !== CACHE\)\.map\(k => caches\.delete\(k\)\)/.test(SW), 'T156-H Item10: activate handler must delete stale caches');
 assert.ok(/self\.clients\.claim\(\)/.test(SW), 'T156-H Item10: activate handler must call clients.claim()');

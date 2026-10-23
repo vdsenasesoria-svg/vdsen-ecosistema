@@ -88,8 +88,9 @@ test('T537.6 shadow.selectLogAuthority is equivalent to the athlete app selector
   for (const [m, r] of cases) assert.deepEqual(shadow.selectLogAuthority(m, r, 'p'), ctx._selectLogAuthority(m, r, 'p'));
 });
 
-test('T537.7 SERVICE WORKER: cache version vdsen-v13 and every local script the athlete app needs is precached (canonical progression path included)', () => {
-  assert.ok(/const CACHE = 'vdsen-v13';/.test(sw));
+test('T537.7 SERVICE WORKER: cache identity follows the registered build and every local script the athlete app needs is precached (canonical progression path included)', () => {
+  assert.ok(/const BUILD = new URL\(self\.location\.href\)\.searchParams\.get\('build'\)/.test(sw));
+  assert.ok(/const CACHE = 'vdsen-' \+ BUILD;/.test(sw));
   const pre = new Set(/const PRECACHE = \[([\s\S]*?)\];/.exec(sw)[1].split(',').map(x => x.trim().replace(/['"]/g, '')).filter(Boolean));
   const needed = [...client.matchAll(/<script src="(assets\/[^"]+\.js)"><\/script>/g)].map(m => '/' + m[1]);
   assert.ok(needed.length >= 5);
