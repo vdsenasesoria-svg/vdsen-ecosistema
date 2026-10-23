@@ -112,7 +112,7 @@ function buildFirebaseSdk() {
   if (install.status !== 0) throw new Error('esbuild binary initialization failed');
   for (const [file, moduleName] of [['app.js', 'firebase/app'], ['auth.js', 'firebase/auth'], ['firestore.js', 'firebase/firestore']]) fs.writeFileSync(path.join(runtime, file), `export * from '${moduleName}';\n`);
   const esbuild = path.join(runtime, 'node_modules', '.bin', process.platform === 'win32' ? 'esbuild.cmd' : 'esbuild');
-  const build = spawnSync(esbuild, [path.join(runtime, 'app.js'), path.join(runtime, 'auth.js'), path.join(runtime, 'firestore.js'), '--bundle', '--format=esm', '--splitting', '--platform=browser', '--minify', `--outdir=${out}`], { cwd: runtime, encoding: 'utf8' });
+  const build = spawnSync(esbuild, [path.join(runtime, 'app.js'), path.join(runtime, 'auth.js'), path.join(runtime, 'firestore.js'), '--bundle', '--format=esm', '--splitting', '--platform=browser', '--minify', `--outdir=${out}`], { cwd: runtime, encoding: 'utf8', shell: process.platform === 'win32' });
   if (build.status !== 0) throw new Error(`esbuild failed: ${(build.stderr || '').slice(0, 300)}`);
   return out;
 }
