@@ -11751,21 +11751,31 @@ async function _doSaveLogs() {
     if (!(REAL_WEEK < _remoteWeekSeen)) _scalars.currentWeek = _payload.currentWeek;   // a stale device never moves the week backwards
     var _mw = _buildMergeWrite(_scalars, { entries: _dE, exerciseUnits: _dU, exerciseHistory: _dH });
     const _ownedFields = _mw.fields;
-    // T1 dual-write: nuevo path por mesociclo primero (future source), legacy segundo (compatibilidad coach).
+    // T1 dual-write: nuevo path por mesociclo (future source) + legacy (compatibilidad coach), ambos con el MISMO payload por-entrada (T593-R).
+    // T573: both writes are STARTED together so a set save is gated by the slowest acknowledgement, not by their sum (each used to wait for the other, up to 2 x the grace window).
+    // Nothing changes in what counts as saved: the save still waits for BOTH to settle through _fbWriteOrQueue (acked / held locally / rejected); no optimistic success.
     // El fallo del path nuevo es no-fatal: datos seguros en legacy y localStorage.
-    var _mesoOk = false, _rootWrite = null, _mesoWrite = null;
+    var _mesoOk = false, _rootWrite = null, _mesoWrite = null, _mesoP = null, _rootP = null;
     if (ACTIVE_PLAN_ID) {
-      try { _mesoWrite = await _fbWriteOrQueue(FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart, 'mesos', ACTIVE_PLAN_ID), _mw.data, { mergeFields: _ownedFields })); _mesoOk = true; }
+      _mesoP = _fbWriteOrQueue(FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart, 'mesos', ACTIVE_PLAN_ID), _mw.data, { mergeFields: _ownedFields }));
+      _mesoP.catch(function() { /* settled and handled below; never an unhandled rejection */ });
+    }
+    var _rootUnbound = (typeof _rootLogUnbound !== 'undefined' && _rootLogUnbound);
+    // T441: the root write is only issued while the same athlete is still signed in (checked synchronously, no wait added).
+    if (!_rootUnbound && USER && USER.uid === _uidAtStart) {
+      _rootP = _fbWriteOrQueue(FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart), _mw.data, { mergeFields: _ownedFields }));
+      _rootP.catch(function() { /* settled and handled below */ });
+    }
+    if (_mesoP) {
+      try { _mesoWrite = await _mesoP; _mesoOk = true; }
       catch(_me) { console.warn('[logs/mesos] write:', _me && _me.code, _me && _me.message); }
     }
-    if (!USER || USER.uid !== _uidAtStart) return false;
-    if (typeof _rootLogUnbound !== 'undefined' && _rootLogUnbound) {
+    if (_rootUnbound) {
       // T553: the root doc holds LEGACY_UNBOUND_EVIDENCE: it is neither rewritten (its entries would be replaced) nor stamped with the plan id. The plan-bound meso
       // doc is the only durable path while that is true; without it nothing durable was written => report the failure like any failed save.
-      if (!_mesoOk) throw new Error('plan-bound log write failed');
-    } else {
-      const ref = FB.doc(FB.db, 'logs', _uidAtStart);
-      _rootWrite = await _fbWriteOrQueue(FB.setDoc(ref, _mw.data, { mergeFields: _ownedFields }));
+      if (USER && USER.uid === _uidAtStart && !_mesoOk) throw new Error('plan-bound log write failed');
+    } else if (_rootP) {
+      _rootWrite = await _rootP;
     }
     if (!USER || USER.uid !== _uidAtStart) return false;
     // T593-R: the baseline advances by exactly what was sent, and only once the server confirmed it (a held write keeps it dirty so it is re-sent if it is ever rejected)
