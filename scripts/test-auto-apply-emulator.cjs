@@ -47,6 +47,10 @@ const SUITES = [
 ].filter(x => fs.existsSync(path.join(__dirname, '..', x.file)));
 const ONLY = process.env.VDSEN_EMU_ONLY;   // e.g. "rules" to run a single suite (used for RED demonstrations)
 const isWin = process.platform === 'win32';
+// Firestore Emulator 1.19.8 lacks the rules-validation message bundle for some
+// host locales (for example es_US).  Pin its own JVM locale without changing
+// the developer machine or the tests' locale.
+const JAVA_LOCALE_ARGS = ['-Duser.language=en', '-Duser.country=US'];
 
 let runtime = null;
 let emulator = null;
@@ -125,7 +129,7 @@ async function startEmulator(jar) {
   port = await freePort();
   const out = fs.openSync(path.join(runtime, 'firestore-stdout.log'), 'w');
   const err = fs.openSync(path.join(runtime, 'firestore-stderr.log'), 'w');
-  emulator = spawn('java', ['-jar', jar, '--host', '127.0.0.1', '--port', String(port),
+  emulator = spawn('java', [...JAVA_LOCALE_ARGS, '-jar', jar, '--host', '127.0.0.1', '--port', String(port),
     '--project_id', PROJECT, '--rules', path.join(repo, 'firestore.rules'),
     '--single_project_mode'], { cwd: repo, stdio: ['ignore', out, err], windowsHide: true });
   let exited = false;

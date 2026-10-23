@@ -1,4 +1,5 @@
-vdsen-cliente.html text eol=lf
-vdsen-coach.html text eol=lf
+# The release tooling verifies content-addressed source bytes.  Keep text checkouts
+# canonical on Windows as well as Linux; Git's binary detection leaves assets untouched.
+* text=auto eol=lf
 storage.rules text eol=lf
 .release/storage-rollback/*.rules text eol=lf

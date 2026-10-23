@@ -391,7 +391,10 @@ function exportCandidateTree(sha, destDir) {
   assert.match(sha, /^[0-9a-f]{40}$/, 'Tree export requires a full commit SHA');
   fs.rmSync(destDir, { recursive: true, force: true });
   fs.mkdirSync(destDir, { recursive: true });
-  const tar = spawnSync('git', ['archive', '--format=tar', sha], { encoding: 'buffer', maxBuffer: 512 * 1024 * 1024 });
+  // `git archive` otherwise honours a Windows core.autocrlf setting and produces a
+  // tree whose text bytes differ from the reviewed commit.  A staged deployment
+  // must always be the exact Git blobs, irrespective of the runner checkout.
+  const tar = spawnSync('git', ['-c', 'core.autocrlf=false', 'archive', '--format=tar', sha], { encoding: 'buffer', maxBuffer: 512 * 1024 * 1024 });
   if (tar.status !== 0) {
     throw new Error('git archive failed for ' + sha + ': ' + String(tar.stderr || '').slice(0, 300));
   }

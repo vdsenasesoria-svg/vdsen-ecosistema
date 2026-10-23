@@ -19,6 +19,8 @@ const PROJECT = 'demo-vdsen-e2e';
 const JAR_NAME = 'cloud-firestore-emulator-v1.19.8.jar';
 const JAR_SHA256 = '9d43599ed6151199e8d604dc87fac51218e49e5f3a48519b1ae560bbe5e3382d';
 const JAR_URL = `https://storage.googleapis.com/firebase-preview-drop/emulator/${JAR_NAME}`;
+const TEST_PACKAGES = ['firebase-admin@13.10.0', 'firebase-tools@13.35.1', 'firebase@10.12.0', 'esbuild@0.25.10', 'playwright-core@1.56.1'];
+const JAVA_LOCALE_ARGS = ['-Duser.language=en', '-Duser.country=US'];
 const arg = (name, fallback) => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : fallback; };
 const outFile = arg('out', null);
 const results = [];
@@ -62,19 +64,26 @@ async function ensureJar() {
 async function startEmulators() {
   const ports = { firestore: await freePort(), auth: await freePort(), hub: await freePort() };
   const jar = await ensureJar();
-  processes.push(spawn('java', ['-jar', jar, '--host', '127.0.0.1', '--port', String(ports.firestore), '--project_id', PROJECT, '--rules', rulesFile, '--single_project_mode'], {
+  processes.push(spawn('java', [...JAVA_LOCALE_ARGS, '-jar', jar, '--host', '127.0.0.1', '--port', String(ports.firestore), '--project_id', PROJECT, '--rules', rulesFile, '--single_project_mode'], {
     cwd: productRoot, stdio: ['ignore', fs.openSync(path.join(runtime, 'firestore.out'), 'w'), fs.openSync(path.join(runtime, 'firestore.err'), 'w')]
   }));
   await waitPort(ports.firestore, 'Firestore Emulator');
   const config = path.join(runtime, 'firebase.json');
   fs.writeFileSync(config, JSON.stringify({ emulators: { auth: { host: '127.0.0.1', port: ports.auth }, hub: { host: '127.0.0.1', port: ports.hub }, ui: { enabled: false }, singleProjectMode: true } }));
-  const firebaseCli = path.join(repo, 'node_modules', 'firebase-tools', 'lib', 'bin', 'firebase.js');
+  const firebaseCli = path.join(runtime, 'node_modules', 'firebase-tools', 'lib', 'bin', 'firebase.js');
   processes.push(spawn(process.execPath, [firebaseCli, 'emulators:start', '--only', 'auth', '--project', PROJECT, '--config', config], {
     cwd: runtime, env: { ...process.env, CI: 'true', FIREBASE_CLI_DISABLE_UPDATE_CHECK: 'true' },
     stdio: ['ignore', fs.openSync(path.join(runtime, 'auth.out'), 'w'), fs.openSync(path.join(runtime, 'auth.err'), 'w')]
   }));
   await waitPort(ports.auth, 'Auth Emulator');
   return ports;
+}
+
+function installTestPackages() {
+  const result = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm',
+    ['install', '--prefix', runtime, '--no-save', '--no-package-lock', '--no-audit', '--no-fund', '--ignore-scripts', ...TEST_PACKAGES],
+    { stdio: ['ignore', 'inherit', 'inherit'], shell: process.platform === 'win32' });
+  if (result.status !== 0) throw new Error('Installing isolated E2E packages failed');
 }
 
 async function stopAll() {
@@ -99,13 +108,11 @@ async function signUp(authPort, email, password) {
 function buildFirebaseSdk() {
   const out = path.join(runtime, 'sdk');
   fs.mkdirSync(out, { recursive: true });
-  // esbuild resolves bare imports from the entry file's ancestor directories.
-  // The disposable entries live under /tmp, so expose the already-isolated
-  // workflow dependencies there without copying or changing product files.
-  fs.symlinkSync(path.join(repo, 'node_modules'), path.join(runtime, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
+  const install = spawnSync(process.execPath, [path.join(runtime, 'node_modules', 'esbuild', 'install.js')], { stdio: 'ignore' });
+  if (install.status !== 0) throw new Error('esbuild binary initialization failed');
   for (const [file, moduleName] of [['app.js', 'firebase/app'], ['auth.js', 'firebase/auth'], ['firestore.js', 'firebase/firestore']]) fs.writeFileSync(path.join(runtime, file), `export * from '${moduleName}';\n`);
-  const esbuild = path.join(repo, 'node_modules', '.bin', process.platform === 'win32' ? 'esbuild.cmd' : 'esbuild');
-  const build = spawnSync(esbuild, [path.join(runtime, 'app.js'), path.join(runtime, 'auth.js'), path.join(runtime, 'firestore.js'), '--bundle', '--format=esm', '--splitting', '--platform=browser', '--minify', `--outdir=${out}`], { cwd: repo, encoding: 'utf8' });
+  const esbuild = path.join(runtime, 'node_modules', '.bin', process.platform === 'win32' ? 'esbuild.cmd' : 'esbuild');
+  const build = spawnSync(esbuild, [path.join(runtime, 'app.js'), path.join(runtime, 'auth.js'), path.join(runtime, 'firestore.js'), '--bundle', '--format=esm', '--splitting', '--platform=browser', '--minify', `--outdir=${out}`], { cwd: runtime, encoding: 'utf8', shell: process.platform === 'win32' });
   if (build.status !== 0) throw new Error(`esbuild failed: ${(build.stderr || '').slice(0, 300)}`);
   return out;
 }
@@ -145,6 +152,7 @@ const canonical = value => JSON.stringify(value, (_, current) => {
 async function main() {
   if (!fs.existsSync(clientFile) || !fs.existsSync(rulesFile)) throw new Error('Immutable product checkout is incomplete');
   runtime = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'vdsen-client-e2e-'));
+  installTestPackages();
   const ports = await startEmulators();
   process.env.FIRESTORE_EMULATOR_HOST = `127.0.0.1:${ports.firestore}`;
   process.env.FIREBASE_AUTH_EMULATOR_HOST = `127.0.0.1:${ports.auth}`;
@@ -154,9 +162,10 @@ async function main() {
   delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
   delete process.env.FIREBASE_CONFIG;
 
-  const { initializeApp, deleteApp } = require('firebase-admin/app');
-  const { getFirestore } = require('firebase-admin/firestore');
-  const { chromium } = require('playwright');
+  const runtimeRequire = require('node:module').createRequire(path.join(runtime, 'noop.js'));
+  const { initializeApp, deleteApp } = runtimeRequire('firebase-admin/app');
+  const { getFirestore } = runtimeRequire('firebase-admin/firestore');
+  const { chromium } = runtimeRequire('playwright-core');
   const adminApp = initializeApp({ projectId: PROJECT }, 'client-auth-e2e');
   const db = getFirestore(adminApp);
   const sdk = buildFirebaseSdk();
@@ -182,9 +191,17 @@ async function main() {
 
   const server = http.createServer((request, response) => {
     const pathname = decodeURIComponent(new URL(request.url, 'http://local').pathname);
+    // The real endpoint is authenticated and background-only. This local
+    // contract stub lets the Client complete that fire-and-forget request
+    // without pointing an emulator test at the real Motor.
+    if (pathname === '/api/autonomous-progression-trigger') {
+      const authorized = /^Bearer\s+.+/.test(request.headers.authorization || '');
+      response.writeHead(authorized ? 202 : 401, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      return response.end(JSON.stringify({ accepted: authorized }));
+    }
     let file;
     if (pathname.startsWith('/sdk/')) file = path.join(sdk, pathname.slice(5));
-    else file = pathname === '/' || pathname === '/vdsen-cliente.html' ? clientFile : path.join(productRoot, pathname.slice(1));
+    else file = pathname === '/' || pathname === '/cliente' || pathname === '/vdsen-cliente.html' ? clientFile : path.join(productRoot, pathname.slice(1));
     const allowedRoot = pathname.startsWith('/sdk/') ? sdk : productRoot;
     if (!file.startsWith(allowedRoot) || !fs.existsSync(file) || !fs.statSync(file).isFile()) { response.writeHead(404); return response.end(); }
     let body = fs.readFileSync(file);
@@ -196,7 +213,9 @@ async function main() {
   processes.push({ kill: () => server.close(), once: (_, fn) => fn(), get exitCode() { return 0; } });
 
   const appUrl = `http://127.0.0.1:${server.address().port}/vdsen-cliente.html`;
-  const browser = await chromium.launch({ headless: true });
+  const chrome = process.env.VDSEN_E2E_CHROME || (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined);
+  if (!chrome || !fs.existsSync(chrome)) throw new Error('VDSEN_E2E_CHROME must name an installed Chrome/Chromium executable');
+  const browser = await chromium.launch({ headless: true, executablePath: chrome });
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
   const externalRequests = [];
   await context.route('**/*', async route => {
@@ -209,7 +228,7 @@ async function main() {
   page.setDefaultTimeout(30000);
   const browserErrors = [];
   page.on('pageerror', error => browserErrors.push(`pageerror:${error.message}`));
-  page.on('console', message => { if (message.type() === 'error') browserErrors.push(`console:${message.text()}`); });
+  page.on('console', message => { if (message.type() === 'error') browserErrors.push(`console:${message.text()} @ ${message.location().url}`); });
   const login = async account => {
     await page.fill('#liEmail', account.email); await page.fill('#liPass', password); await page.click('.login-btn');
     await page.waitForFunction(expected => document.getElementById('scrApp')?.classList.contains('on') && PLAN?.nombre === expected && PLAN?.entrenamiento?.sesiones?.length === 1, account.name);

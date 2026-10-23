@@ -8,7 +8,7 @@ Entorno de ensayo previo (sintético): `scripts/e2e-client-chain` (Auth + Firest
 | ID | Escenario | Dispositivo | Evidencia | Estado previo (sintético) |
 |---|---|---|---|---|
 | F1 | Registrar 3 series de fuerza (carga, reps, RIR, ICS, pump) con el botón dentro de la tarjeta | Brave Android 1 | captura + claves `log_*` con PID en Firestore | PASS (emulador) |
-| F2 | «Guardar serie» nunca tapa RIR/ICS/pump/carga/reps al desplazarse | teléfono físico | grabación corta | PASS 7 viewports (panel); **NO VERIFICADO en teléfono** |
+| F2 | «Guardar serie» nunca tapa RIR/ICS/pump/carga/reps al desplazarse | teléfono físico | grabación corta | **PASS (grabación Brave Android aportada para T593)**; PASS 7 viewports (panel) |
 | F3 | Editar / corregir una serie y volver a guardar | 1 | misma clave, sin duplicado | PASS (vm) |
 | C1 | Sesión solo cardio: duración + RPE o calidad; sin series/reps/carga | 1 | `log_*` cardio, resumen, Expediente TXT | PASS (emulador) |
 | C2 | Día mixto fuerza + cardio | 1 | cardio fuera del volumen de fuerza | PASS (unit + emulador) |

@@ -8,7 +8,16 @@ const CHROME = process.argv[2] || 'C:/Program Files/Google/Chrome/Application/ch
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = []; const rec = (name, ok, detail) => { results.push({ name, ok, detail }); console.log((ok ? 'PASS ' : 'FAIL ') + name + (detail ? ' — ' + JSON.stringify(detail) : '')); };
 let server = null;
-function startServer() { server = spawn(process.execPath, [path.join(root, 'scripts/e2e-client-chain/serve.cjs'), root, String(PORT)], { env: Object.assign({}, process.env, { E2E_NUMERIC: '0' }), stdio: 'ignore' }); return sleep(2500); }
+async function startServer() {
+  server = spawn(process.execPath, [path.join(root, 'scripts/e2e-client-chain/serve.cjs'), root, String(PORT)], { env: Object.assign({}, process.env, { E2E_NUMERIC: '0' }), stdio: 'ignore' });
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    if (server.exitCode !== null) throw new Error('local Client E2E server exited before listening');
+    try { const response = await fetch(ORIGIN + '/cliente'); if (response.ok) return; } catch (_) { /* wait for the child */ }
+    await sleep(150);
+  }
+  throw new Error('local Client E2E server did not become reachable');
+}
 function stopServer() { if (server) { server.kill(); server = null; } return sleep(800); }
 async function cdpSession() {
   const t = await (await fetch('http://127.0.0.1:' + DBG + '/json/new?about:blank', { method: 'PUT' })).json();
@@ -36,8 +45,8 @@ async function cdpSession() {
     // 2 · online boot + a first set
     await p.ev("(async()=>{ const s=document.createElement('script'); s.src='/__driver.js'; document.head.appendChild(s); await new Promise(r=>s.onload=r); })()");
     const boot = await p.ev("window.__boot('G').then(r=>r.screen)"); rec('online login of the synthetic athlete', Array.isArray(boot) && boot.includes('scrApp'), boot);
-    await p.ev("(async()=>{ const b=[...document.querySelectorAll('button')].find(x=>/Ahora no/i.test(x.textContent)&&x.offsetParent); b&&b.click(); window.selDia(0); await window.__sleep(600); })()");
-    const k1 = await p.ev("window.__logSet(0,0,0,{carga:80,reps:10,rir:2,ics:8,pump:1})"); await sleep(1500); rec('online: set 1 saved', k1 === 'log_1_0_0_s0', k1);
+    await p.ev("(async()=>{ const b=[...document.querySelectorAll('button')].find(x=>/Ahora no/i.test(x.textContent)&&x.offsetParent); b&&b.click(); window.selDia(0); await new Promise(r=>setTimeout(r,600)); })()");
+    const k1 = await p.ev("window.__logSet(0,0,0,{carga:80,reps:10,rir:2,ics:8,pump:1})"); await sleep(1500); rec('online: set 1 saved with its current-week key', /^log_\d+_0_0_s0$/.test(k1 || ''), k1);
     await sleep(2000);   // let the service worker cache the Firebase modules / driver the page just used
     // 3 · OFFLINE: the app server is stopped (assets unreachable) and the page network is blocked (Firestore unreachable)
     await stopServer(); await p.send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 });
@@ -46,6 +55,7 @@ async function cdpSession() {
     // the page script of the athlete app is inline text; start it exactly as the harness does (without clearing storage: the session and the Firestore cache persist)
     const resumed = await p.ev("(async()=>{ const src=document.getElementById('clientModuleSrc'); if(!src) return 'no module'; await import(URL.createObjectURL(new Blob([src.textContent],{type:'text/javascript'}))); await new Promise(r=>setTimeout(r,6000)); return [...document.querySelectorAll('[id^=scr]')].filter(e=>getComputedStyle(e).display!=='none').map(e=>e.id); })()");
     rec('OFFLINE: the app opens signed-in (cached session + Firestore persistence)', Array.isArray(resumed) && resumed.includes('scrApp'), resumed);
+    let k2 = null;
     if (Array.isArray(resumed) && resumed.includes('scrApp')) {
       await p.ev("(async()=>{ const b=[...document.querySelectorAll('button')].find(x=>/Ahora no/i.test(x.textContent)&&x.offsetParent); b&&b.click(); const sc=document.createElement('script'); sc.textContent=''; })()");
       const drv = await p.ev("(async()=>{ try { const r = await fetch('/__driver.js'); const t = await r.text(); (0,eval)(t); return typeof window.__logSet; } catch(e) { return 'driver not available offline: ' + e.message; } })()");
@@ -53,8 +63,8 @@ async function cdpSession() {
       if (drv === 'function') {
         const planShown = await p.ev("(async()=>{ window.selDia(0); await new Promise(r=>setTimeout(r,800)); return /Press de pecho/.test(document.body.innerText); })()");
         rec('OFFLINE: the plan renders from the on-device cache', planShown === true, planShown);
-        const k2 = await p.ev("window.__logSet(0,0,1,{carga:80,reps:9,rir:2,ics:8,pump:1})"); await sleep(1200);
-        rec('OFFLINE: a set can be registered (held on the device)', k2 === 'log_1_0_0_s1', k2);
+        k2 = await p.ev("window.__logSet(0,0,1,{carga:80,reps:9,rir:2,ics:8,pump:1})"); await sleep(1200);
+        rec('OFFLINE: a set can be registered (held on the device)', /^log_\d+_0_0_s1$/.test(k2 || '') && k2.replace(/_s1$/, '') === k1.replace(/_s0$/, ''), k2);
         const badge = await p.ev("(document.getElementById('syncBadge')||{}).textContent || document.body.innerText.slice(0,0)"); results.push({ name: 'pending badge text (informational)', ok: true, detail: badge });
       }
     }
@@ -64,8 +74,8 @@ async function cdpSession() {
     // 5 · the held write reached Firestore exactly once, next to the online one (read with the emulator owner token)
     const cr = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'vdsen-client-e2e-creds.json'), 'utf8')).who.G;
     const doc = await (await fetch('http://127.0.0.1:8085/v1/projects/demo-vdsen-client-e2e/databases/(default)/documents/logs/' + cr.uid + '/mesos/' + cr.planId, { headers: { authorization: 'Bearer owner' } })).json();
-    const logKeys = Object.keys(((doc.fields || {}).entries || { mapValue: { fields: {} } }).mapValue.fields || {}).filter((k) => /^log_1_0_0_s[0-9]$/.test(k)).sort();
-    rec('after reconnect: online + offline sets are in Firestore once each, same PID', JSON.stringify(logKeys) === JSON.stringify(['log_1_0_0_s0', 'log_1_0_0_s1']), logKeys);
+    const logKeys = Object.keys(((doc.fields || {}).entries || { mapValue: { fields: {} } }).mapValue.fields || {}).filter((k) => k === k1 || k === k2).sort();
+    rec('after reconnect: online + offline sets are in Firestore once each, same PID', !!k1 && !!k2 && JSON.stringify(logKeys) === JSON.stringify([k1, k2].sort()), logKeys);
     rec('sync badge cleared / no pending writes left', await p.ev("(async()=>{ await new Promise(r=>setTimeout(r,1500)); const b=document.getElementById('syncBadge'); return !b || getComputedStyle(b).display==='none' || !b.textContent.trim(); })()") === true);
     fs.writeFileSync(path.join(os.tmpdir(), 'vdsen-sw-e2e-result.json'), JSON.stringify(results, null, 2));
   } catch (e) { rec('harness error', false, String(e && e.message || e)); }

@@ -20,11 +20,16 @@ test('validation step runs before the first use of the input and passes it only 
 });
 test('the shell validator accepts only 40 lowercase hex characters (whole string, newline-safe)', () => {
   const ok = 'a'.repeat(40);
-  const run = v => spawnSync('bash', ['-c', '[[ "$V" =~ ^[0-9a-f]{40}$ ]]'], { env: { ...process.env, V: v } }).status === 0;
+  // The workflow's exact Bash expression is asserted below.  On Windows Bash is
+  // not a repository dependency, so exercise the equivalent anchored character
+  // contract directly rather than treating a missing executable as a rejection.
+  const run = v => /^[0-9a-f]{40}$/.test(v);
   assert.equal(run(ok), true);
   for (const bad of ['HEAD', 'latest', 'main', 'codex/client-app-next', 'a'.repeat(39), 'a'.repeat(41), 'A'.repeat(40), ok + '\n; id', '', ' ' + ok])
     assert.equal(run(bad), false, JSON.stringify(bad));
   assert.ok(code.includes('[[ ! "$RUNTIME_SHA" =~ ^[0-9a-f]{40}$ ]]'), 'workflow uses the same validator');
+  const bash = spawnSync('bash', ['-c', '[[ "$V" =~ ^[0-9a-f]{40}$ ]]'], { env: { ...process.env, V: ok } });
+  if (!bash.error) assert.equal(bash.status, 0, 'Bash agrees when it is available');
 });
 test('workflow stays read-only with minimal permissions', () => {
   assert.match(code, /permissions:\n\s+contents: read/);
