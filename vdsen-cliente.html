@@ -5829,6 +5829,28 @@ function _setsRepsLabel(sets) {
   return base + suffix;
 }
 
+// T594 / Issue #124: an executable set always declares its effective target
+// before the athlete enters the result.  This is presentation only: it never
+// writes a plan, changes an input, or turns a PENDING recommendation into an
+// applied prescription.  A zero/absent load means precisely "not prescribed",
+// never an invented machine increment.
+function _effectiveSetTargetHtml(setSpec, provenance, unit, isIsometric) {
+  if (!setSpec || typeof setSpec !== 'object') return '';
+  var load = Number(setSpec.load);
+  var hasLoad = !isIsometric && Number.isFinite(load) && load > 0;
+  var reps = setSpec.repsTarget;
+  var rir = setSpec.rirTarget;
+  var source = provenance === 'AUTOAJUSTE VDSEN' ? 'AUTOAJUSTE VDSEN' : 'COACH';
+  var rows = [];
+  if (!isIsometric) rows.push('<span class="sp-t-v"><b>CARGA '+(hasLoad ? _escHTml(String(load))+' '+_escHTml(unit) : 'no prescrita')+'</b></span>');
+  if (reps !== undefined && reps !== null && reps !== '') rows.push('<span class="sp-t-v"><b>'+_escHTml(String(reps))+'</b> '+(isIsometric ? 'seg' : 'reps')+'</span>');
+  if (rir !== undefined && rir !== null && rir !== '') rows.push('<span class="sp-t-r">RIR '+_escHTml(String(rir))+'</span>');
+  if (!rows.length) return '';
+  return '<div class="sp-target" data-effective-target="1" data-target-source="'+source+'">'+
+    '<span class="sp-t-l">OBJETIVO '+source+'</span>'+rows.join('')+
+  '</div>';
+}
+
 // ── Helpers Y3T — progresión de tres semanas (S1 fuerza / S2 hiper / S3 metabólica) ──
 
 // Detecta un ejercicio Y3T: technique === 'y3t', setNote con S1/S2, o patrón numérico
@@ -7148,17 +7170,14 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     var setSpecBadges = '';
     if (setIsDrop) setSpecBadges += '<span style="display:inline-block;font-size:10px;font-weight:900;letter-spacing:1px;color:#FF8844;background:rgba(255,140,50,.12);border:1px solid #FF8844;padding:2px 7px;border-radius:5px;margin-right:5px">⬇ DROP</span>';
     if (setTempo) setSpecBadges += '<span style="display:inline-block;font-size:10px;font-weight:800;letter-spacing:1px;color:var(--mt2);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:2px 7px;border-radius:5px;margin-right:5px">⏱ '+_escHTml(setTempo)+'</span>';
-    // Objetivo por set — solo para ejercicios heterogéneos (S1·FUERZA ≠ S2·HIPERTROFIA, etc.)
+    // Objetivo efectivo por set.  Previously this was shown only for
+    // heterogeneous programming, leaving a normal homogeneous series without
+    // its prescribed load/reps immediately above the fields the athlete edits.
+    // `_ovEff` is present only for an exact canonical APPLIED/CONSUMED overlay;
+    // PENDING stays out of this path and the base Coach set remains visible.
     var _psReps = setSpec ? setSpec.repsTarget : null;
     var _psRir  = (setSpec && setSpec.rirTarget !== undefined && setSpec.rirTarget !== null) ? setSpec.rirTarget : null;
-    var _setTargetHtml = '';
-    if (_isHeteroSets && _psReps !== null && _psReps !== 'SST-PROTOCOL' && _psReps !== 'SST-RIV-PROTOCOL' && _psReps !== 999) {
-      _setTargetHtml = '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)">'+
-        '<span style="font-size:10px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">ESTA SERIE</span>'+
-        '<span style="font-size:18px;font-weight:900;color:var(--tx);line-height:1">'+_psReps+' reps</span>'+
-        (_psRir !== null ? '<span style="font-size:13px;font-weight:700;color:var(--mt)">· RIR '+_psRir+'</span>' : '')+
-      '</div>';
-    }
+    var _setTargetHtml = _effectiveSetTargetHtml(setSpec, _ovEff ? 'AUTOAJUSTE VDSEN' : 'COACH', unit, isIsometric);
     // Instrucción específica del set (técnica + nota del coach)
     var _setInstrHtml = '';
     var _techLowerS = (ej.technique || 'straight').toLowerCase();
