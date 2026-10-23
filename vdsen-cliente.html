@@ -255,7 +255,7 @@ button[onclick^="setRestTimerDisabled"]::before,button[onclick^="toggleLightMode
 .exercise-name-trigger{display:block;width:100%;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;text-transform:inherit;letter-spacing:inherit;line-height:inherit}
 .exercise-sheet-overlay{position:fixed;inset:0;z-index:10000;display:none;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.82);padding:20px 0 0}
 .exercise-sheet-overlay.open{display:flex}
-.exercise-sheet-dialog{width:min(720px,100%);max-height:92vh;overflow-y:auto;background:var(--bg);border-top:2px solid var(--accent);box-shadow:0 -20px 60px rgba(0,0,0,.55)}
+.exercise-sheet-dialog{width:min(720px,100%);max-height:92vh;max-height:92dvh;overflow-y:auto;background:var(--bg);border-top:2px solid var(--accent);box-shadow:0 -20px 60px rgba(0,0,0,.55)}
 .exercise-sheet-head{position:sticky;top:0;z-index:2;display:flex;align-items:flex-start;gap:16px;padding:18px 18px 14px;background:rgba(10,10,10,.98);border-bottom:1px solid var(--border)}
 .exercise-sheet-kicker{font-size:10px;font-weight:800;letter-spacing:1.8px;color:var(--accent);text-transform:uppercase;margin-bottom:4px}
 .exercise-sheet-title{font-family:var(--font-display);font-size:27px;font-weight:800;line-height:1.05;color:var(--tx);text-transform:uppercase}
@@ -270,7 +270,7 @@ button[onclick^="setRestTimerDisabled"]::before,button[onclick^="toggleLightMode
 .exercise-sheet-label{font-size:10px;font-weight:800;letter-spacing:1.7px;color:var(--mt);text-transform:uppercase;margin-bottom:7px}
 .exercise-sheet-copy{font-size:14px;line-height:1.58;color:var(--tx)}
 .exercise-sheet-variant{padding:12px;margin:14px 0 0;border-left:3px solid var(--accent);background:rgba(198,255,0,.06)}
-@media (min-width:721px){.exercise-sheet-overlay{align-items:center;padding:24px}.exercise-sheet-dialog{border:2px solid var(--accent);max-height:88vh}}
+@media (min-width:721px){.exercise-sheet-overlay{align-items:center;padding:24px}.exercise-sheet-dialog{border:2px solid var(--accent);max-height:88vh;max-height:88dvh}}
 .advanced-client{margin:14px 0 10px;border-top:2px solid var(--accent);border-bottom:1px solid var(--border);padding:14px 0}
 .advanced-client-title{font-family:var(--font-display);font-size:24px;font-weight:800;color:var(--tx);letter-spacing:.4px}
 .advanced-client-meta{font-size:11px;color:var(--mt);line-height:1.55;margin-top:4px}
@@ -589,8 +589,9 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .tr-sub .ok{color:var(--grn);font-weight:700}
 .tr-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
 .sess-hdr-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 14px;background:transparent;border:1px solid var(--rule-strong);border-radius:var(--r-1);color:var(--mt);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:none}
-.workout-set-current .set-actions{position:sticky;bottom:calc(env(safe-area-inset-bottom,0px));z-index:4;margin:6px -14px -14px;padding:12px 14px 12px;background:linear-gradient(to top,var(--sa-bg,var(--card)) 80%,transparent)}
-.setpanel .set-actions{--sa-bg:var(--plate);margin:6px -16px -16px;padding:12px 16px}
+/* T593-FINAL / Issue 115: the save button lives IN the flow of its card, after every field (load, reps, RIR, ICS, pump). It used to be position:sticky to the bottom of the scroller, so in a card taller
+   than the screen it floated over the fields above it (RIR / quality / pump) while the athlete scrolled. */
+.workout-set-current .set-actions,.setpanel .set-actions{position:static;margin:16px 0 0;padding:0;background:none}
 .workout-set-current .set-actions .set-save-primary{margin-top:0}
 .sp-opt{font-weight:600;letter-spacing:.06em;text-transform:lowercase;opacity:.7;margin-left:4px;font-size:.9em}
 .sess-hdr-btn.sess-live{color:var(--accent);border-color:var(--accent);text-transform:uppercase;letter-spacing:.1em;font-weight:800}
@@ -1264,9 +1265,8 @@ input,select,textarea{border-radius:12px}
 :root.light-mode #exPanel div[style*="opacity:.65"]{opacity:1!important}
 :root.light-mode .sp-gl small,:root.light-mode .sp-gl .sp-opt{color:#555;opacity:1}
 button[onclick="guardarCI()"]{border-radius:14px!important;min-height:56px;font-size:15px!important;letter-spacing:.08em!important;text-transform:uppercase}
-/* short viewports (on-screen keyboard open): the sticky save bar would cover the fields being typed into -> it flows with the form instead */
+/* short viewports (on-screen keyboard open): the save button already flows with the form (never sticky); only the panel padding tightens */
 @media (max-height:560px){
-  .workout-set-current .set-actions,.setpanel .set-actions{position:static;background:transparent;margin:10px 0 0;padding:0}
   .setpanel{padding-bottom:12px}
 }
 /* training: calmer header, scannable exercise strip */
@@ -16571,7 +16571,7 @@ function showExHistory(di, ei) {
   el.id = 'exHistModal';
   el.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);display:flex;align-items:flex-end;justify-content:center';
   el.innerHTML =
-    '<div style="width:100%;max-width:480px;background:var(--card);border-radius:24px 24px 0 0;padding:24px 20px 32px;max-height:85vh;overflow-y:auto">'
+    '<div style="width:100%;max-width:480px;background:var(--card);border-radius:24px 24px 0 0;padding:24px 20px 32px;max-height:85vh;max-height:85dvh;overflow-y:auto">'
     + '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px">'
     +   '<div>'
     +     '<div style="font-size:10px;font-weight:800;letter-spacing:2px;color:var(--mt2);margin-bottom:2px">HISTORIAL · ÚLTIMAS '+Math.max(exposures.length,1)+'</div>'
@@ -17842,7 +17842,7 @@ function _renderClientMissingHints(items) {
 
 <!-- Overlay sustitución de ejercicio -->
 <div id="exSubOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:400;align-items:flex-end;justify-content:center" onclick="this.style.display='none'">
-  <div onclick="event.stopPropagation()" style="background:var(--surface);border-radius:20px 20px 0 0;padding:20px 16px 44px;width:100%;max-width:500px;max-height:72vh;overflow-y:auto;box-sizing:border-box">
+  <div onclick="event.stopPropagation()" style="background:var(--surface);border-radius:20px 20px 0 0;padding:20px 16px 44px;width:100%;max-width:500px;max-height:72vh;max-height:72dvh;overflow-y:auto;box-sizing:border-box">
     <div style="width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 20px"></div>
     <div id="exSubContent"></div>
   </div>

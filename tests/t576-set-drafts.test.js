@@ -24,6 +24,7 @@ test('T576.3 a draft is restored only into an EMPTY input and is dropped when em
 test('T576.4 the layer never writes values to LOGS (execution stays what the athlete saved)', () => {
   assert.ok(!/LOGS\s*\[[^\]]+\]\s*=|LOGS\.[a-z_]+\s*=/i.test(block));
 });
-test('T576.5 short-viewport rule: the sticky save bar flows with the form when the keyboard is open', () => {
-  assert.ok(/@media \(max-height:560px\)\{\s*\.workout-set-current \.set-actions,\.setpanel \.set-actions\{position:static/.test(html));
+test('T576.5 (T593-FINAL / Issue 115) the save button flows with the form at every height, so it can never cover the field being typed into when the keyboard is open', () => {
+  assert.ok(/\.workout-set-current \.set-actions,\.setpanel \.set-actions\{position:static;/.test(html), 'static at every height (no sticky bar to switch off)');
+  assert.ok(/@media \(max-height:560px\)\{\s*\.setpanel\{padding-bottom:12px\}/.test(html), 'the short-viewport rule only tightens the panel padding');
 });

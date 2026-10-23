@@ -106,14 +106,15 @@ test('T566-7 el helper queda expuesto como window._revealActiveSet', () => {
   assert.ok(/window\._revealActiveSet = _revealActiveSet;/.test(CLIENT), 'expuesto para el harness');
 });
 
-test('T566-8 el sticky esta DENTRO del area visible del contenedor', () => {
-  // bottom:-88px lo aparcaba fuera del area visible: era el defecto original.
-  const rule = CLIENT.match(/\.workout-set-current \.set-actions\{([^}]*)\}/);
-  assert.ok(rule, 'debe existir la regla sticky del set activo');
+test('T566-8 (T593-FINAL / Issue 115) el boton de guardar va EN EL FLUJO de su tarjeta, despues de todos los campos: nunca sticky ni superpuesto', () => {
+  // T566 lo dejo sticky dentro del area visible; en una tarjeta mas alta que la pantalla ese sticky FLOTABA sobre carga / reps / RIR / ICS / pump (grabacion real en
+  // Brave Android). La alcanzabilidad la garantiza ahora el desplazamiento de la tarjeta (T566 scroll-into-view) y el flujo normal, no un overlay.
+  const rule = CLIENT.match(/\.workout-set-current \.set-actions,\.setpanel \.set-actions\{([^}]*)\}/);
+  assert.ok(rule, 'debe existir la regla en flujo del set activo');
   const css = rule[1];
-  assert.ok(/position:sticky/.test(css), 'el set activo conserva su sticky');
+  assert.ok(/position:static/.test(css), 'el contenedor del boton es position:static');
+  assert.ok(!/sticky|fixed|absolute/.test(css) && !/margin[^;]*-\d/.test(css) && !/z-index/.test(css), 'sin sticky/fixed/absolute, sin margenes negativos ni z-index');
   assert.ok(!/bottom:-88px/.test(css), 'no debe volver a aparcarse 88px fuera');
-  assert.ok(/bottom:calc\(env\(safe-area-inset-bottom/.test(css), 'bottom debe respetar el safe-area del iPhone');
 });
 
 test('T566-9 el boton primario cumple el minimo tactil de 40px', () => {

@@ -32,7 +32,7 @@ http.createServer(async (q, r) => {
     try { const u = await fetch(GS + p.slice(4)); let b = Buffer.from(await u.arrayBuffer()); b = Buffer.from(b.toString('utf8').split(GS).join('/gs/')); r.writeHead(u.status, { 'content-type': 'text/javascript' }); return r.end(b); }
     catch (e) { r.writeHead(502); return r.end('proxy err'); }
   }
-  if (p === '/' || p === '/vdsen-cliente.html') {
+  if (p === '/' || p === '/vdsen-cliente.html' || p === '/cliente') {   // /cliente = the production rewrite (the service worker precaches it)
     let html = fs.readFileSync(path.join(root, 'vdsen-cliente.html'), 'utf8');
     if (!CFG.test(html)) throw new Error('config block not found');
     html = html.replace(CFG, () => 'const firebaseConfig = { apiKey: "demo-key", authDomain: "' + PROJECT + '.firebaseapp.com", projectId: "' + PROJECT + '", storageBucket: "' + PROJECT + '.appspot.com", messagingSenderId: "0", appId: "1:0:web:0" };');
