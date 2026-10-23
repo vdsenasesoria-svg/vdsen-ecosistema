@@ -1,9 +1,9 @@
 {
-  "runtime_sha": "141fa124d93afc73dfc4ca48fbc06273ee8aa990",
-  "production_deployment": "dpl_5D3KouY3QyQibJmahZjUPZhZZsTu",
-  "rollback_deployment": "dpl_2z6fyJMjrYDwaKYXeYXmCgMeVdYB",
-  "rollback_runtime_sha": "340c0ac8eb988cfc3b5dd674493c4657fbdb9b8e",
-  "target_deployment": "dpl_5D3KouY3QyQibJmahZjUPZhZZsTu",
+  "runtime_sha": "c161fdbf291316bc960120f996a702e2e8696963",
+  "production_deployment": "dpl_GfBVe46gHe3GSwkGx8yufoJLMLeB",
+  "rollback_deployment": "dpl_5D3KouY3QyQibJmahZjUPZhZZsTu",
+  "rollback_runtime_sha": "141fa124d93afc73dfc4ca48fbc06273ee8aa990",
+  "target_deployment": "dpl_GfBVe46gHe3GSwkGx8yufoJLMLeB",
   "production_project": "prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN",
   "vercel_team": "team_VZc5H7Q1DBIJ3g0mwrSBz1o8",
   "production_origin": "https://vdsen-ecosistema.vercel.app",
@@ -41,16 +41,16 @@
     "preview_production_env_verified": true,
     "human_ux_approved": true
   },
-  "observation_source": "Client App release 2026-10-20 (run 39853417833, promotion_model staged_production): app-result reported SUCCESS, production_deployment dpl_5D3KouY3QyQibJmahZjUPZhZZsTu (runtime 141fa124d93afc73dfc4ca48fbc06273ee8aa990, T593-R per-entry log writes (multi-device)).",
+  "observation_source": "Client App release 2026-10-20 (run 39900707561, promotion_model staged_production): app-result reported SUCCESS, production_deployment dpl_GfBVe46gHe3GSwkGx8yufoJLMLeB (runtime c161fdbf291316bc960120f996a702e2e8696963, Issue 115 mobile UX: save button in flow, no sideways scroll, build-versioned service worker).",
   "release_mode": "app_only",
   "app_release": {
-    "runtime_sha": "141fa124d93afc73dfc4ca48fbc06273ee8aa990",
-    "deployment": "dpl_5D3KouY3QyQibJmahZjUPZhZZsTu",
+    "runtime_sha": "c161fdbf291316bc960120f996a702e2e8696963",
+    "deployment": "dpl_GfBVe46gHe3GSwkGx8yufoJLMLeB",
     "promotion_model": "staged_production",
-    "previous_deployment": "dpl_2z6fyJMjrYDwaKYXeYXmCgMeVdYB",
-    "previous_runtime_sha": "340c0ac8eb988cfc3b5dd674493c4657fbdb9b8e",
+    "previous_deployment": "dpl_5D3KouY3QyQibJmahZjUPZhZZsTu",
+    "previous_runtime_sha": "141fa124d93afc73dfc4ca48fbc06273ee8aa990",
     "verified_surfaces": 25,
-    "source_release_run": "39853417833",
-    "completed_at": "2026-10-22T21:01:58Z"
+    "source_release_run": "39900707561",
+    "completed_at": "2026-10-23T04:34:02Z"
   }
 }
