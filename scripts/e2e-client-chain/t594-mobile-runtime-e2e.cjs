@@ -8,6 +8,8 @@ const chromePath = process.argv[2] || 'C:/Program Files/Google/Chrome/Applicatio
 const PORT = 5199, DEBUG = 9334, origin = 'http://localhost:' + PORT;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const checks = [];
+// Every run uses a FRESH synthetic athlete (a previous run leaves sets saved, which would hide the set card): seed it here.
+require('child_process').spawnSync(process.execPath, [path.join(root, 'scripts/e2e-client-chain/seed.cjs'), root, 'G'], { stdio: 'ignore' });
 function check(name, ok, detail) { checks.push({ name, ok, detail }); console.log((ok ? 'PASS ' : 'FAIL ') + name + (detail ? ' — ' + JSON.stringify(detail) : '')); }
 
 async function session() {
@@ -18,7 +20,7 @@ async function session() {
   const send = (method, params) => new Promise((resolve) => { const n = ++id; pending.set(n, resolve); ws.send(JSON.stringify({ id:n, method, params:params || {} })); });
   const ev = async (expression) => { const r = await send('Runtime.evaluate', { expression, awaitPromise:true, returnByValue:true }); if (r.result && r.result.exceptionDetails) throw new Error(r.result.exceptionDetails.text || 'page evaluation failed'); return r.result && r.result.result && r.result.result.value; };
   await send('Page.enable'); await send('Runtime.enable'); await send('Emulation.setTouchEmulationEnabled', { enabled:true, maxTouchPoints:1 });
-  return { send, ev, ws, async size(width, height) { await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor:1, mobile:true, screenWidth:width, screenHeight:height }); }, async nav(url) { await send('Page.navigate', { url }); await sleep(3500); } };
+  return { send, ev, ws, async size(width, height) { await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor:1, mobile:true, screenWidth:width, screenHeight:height }); }, async nav(url) { await send('Page.navigate', { url }); const t0 = Date.now(); while (Date.now() - t0 < 20000) { await sleep(300); const ready = await ev("document.readyState === 'complete' && !!document.getElementById('clientModuleSrc')").catch(() => false); if (ready === true) break; } await sleep(1500); } };
 }
 
 (async () => {
@@ -33,8 +35,8 @@ async function session() {
     // The harness keeps the production module inert until this explicit import;
     // the ensuing login/actions are the app's real DOM handlers.
     console.log('INFO mobile runtime: signing in synthetic athlete');
-    await p.ev("(async()=>{const s=document.createElement('script');s.src='/__driver.js';document.head.appendChild(s);await new Promise(r=>s.onload=r);return window.__boot('G');})()");
-    await p.ev("(async()=>{const b=[...document.querySelectorAll('button')].find(x=>/Ahora no/i.test(x.textContent)&&x.offsetParent);if(b)b.click();window.selDia(0);await window.__sleep(700);const s=document.createElement('script');s.src='/scripts/e2e-client-chain/mobile-audit.js';document.head.appendChild(s);await new Promise(r=>s.onload=r);})()");
+    await p.ev("(async()=>{const s=document.createElement('script');s.src='/__driver.js';document.head.appendChild(s);await new Promise(r=>s.onload=r);return window.__boot('G');})()").then((b) => console.log('INFO boot', JSON.stringify(b)));
+    await p.ev("(async()=>{for(let i=0;i<150&&typeof window.selDia!=='function';i++)await new Promise(r=>setTimeout(r,200));const b=[...document.querySelectorAll('button')].find(x=>/Ahora no/i.test(x.textContent)&&x.offsetParent);if(b)b.click();window.selDia(0);await window.__sleep(700);const s=document.createElement('script');s.src='/scripts/e2e-client-chain/mobile-audit.js';document.head.appendChild(s);await new Promise(r=>s.onload=r);})()");
     const sizes = [[320,640],[360,740],[360,780],[390,844],[430,932],[740,360],[360,320]];
     for (const [width, height] of sizes) { await p.size(width, height); await sleep(300); const audit = await p.ev('window.__auditCta(0,0)'); check('CTA flow ' + width + 'x' + height, !!(audit && audit.ok && audit.touchOk && !audit.docOverflow), audit); }
     const allScrollers = [];

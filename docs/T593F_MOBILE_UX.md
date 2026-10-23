@@ -51,3 +51,10 @@ La página expone además `window.getVdsenRuntimeDiagnostics()` solo para lectur
 **Ensayo automatizado local (22/oct):** `scripts/e2e-client-chain/t594-mobile-runtime-e2e.cjs` ejecuta el Cliente real contra Auth + Firestore Emulator y Chrome con emulación táctil: 320×640, 360×740, 360×780, 390×844, 430×932, 740×360 y 360×320; cinco posiciones de scroll por tamaño; cinco pestañas y todos sus scroll containers; control negativo con el CSS sticky histórico; y tres guardados reales con claves `log_2_0_0_s0..s2`. No toca una cuenta, caché ni worker de un atleta real.
 
 **Límite vigente:** no hay Brave Android instalado ni un dispositivo Android accesible en este entorno. La regresión se valida en Chromium móvil emulado y la migración del worker se prueba contra un perfil aislado; eso no autoriza declarar PASS en Brave físico. La validación de release/rollback y cualquier producción siguen fuera de alcance.
+
+**Continuación (23/oct) — comprobaciones añadidas al PR de identidad de build:**
+* `t594-mobile-runtime-e2e.cjs` ahora siembra su propio atleta sintético en cada ejecución (una ejecución previa dejaba series guardadas y ocultaba la tarjeta) y espera a que la página esté realmente cargada; 4 ejecuciones seguidas con atleta nuevo: **11/11 cada una** (antes fallaba de forma intermitente por carrera de carga).
+* `scripts/e2e-client-chain/sw-cutover-e2e.cjs <oldRoot>` (Chrome real, dos servidores en el mismo origen): un navegador con el service worker **anterior** (`/sw.js`, caché `vdsen-v13`) pasa al worker versionado (`/sw.js?build=issue-115-cache-cutover-20261022-01`), **elimina la caché antigua** y la página queda controlada por el worker nuevo: **4/4 PASS**. No toca sesión ni persistencia de Firestore.
+* `sw-offline-e2e.cjs` con el worker versionado: **13/13 PASS** (registro, caché `vdsen-issue-115-…`, reapertura sin red, serie offline, sincronización una sola vez).
+* El único fallo de CI del PR era `T542.12` (fijaba `CACHE = 'vdsen-v13'`); actualizado a la nueva regla (nombre derivado del build, con respaldo `legacy-v13`).
+* Suite local: 1693 pasan; los mismos 18 fallos heredados de Windows/CRLF.
