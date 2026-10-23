@@ -36,7 +36,7 @@ async function cdpSession() {
     // 2 · online boot + a first set
     await p.ev("(async()=>{ const s=document.createElement('script'); s.src='/__driver.js'; document.head.appendChild(s); await new Promise(r=>s.onload=r); })()");
     const boot = await p.ev("window.__boot('G').then(r=>r.screen)"); rec('online login of the synthetic athlete', Array.isArray(boot) && boot.includes('scrApp'), boot);
-    await p.ev("(async()=>{ const b=[...document.querySelectorAll('button')].find(x=>/Ahora no/i.test(x.textContent)&&x.offsetParent); b&&b.click(); window.selDia(0); await window.__sleep(600); })()");
+    await p.ev("(async()=>{ const b=[...document.querySelectorAll('button')].find(x=>/Ahora no/i.test(x.textContent)&&x.offsetParent); b&&b.click(); window.selDia(0); await new Promise(r=>setTimeout(r,600)); })()");
     const k1 = await p.ev("window.__logSet(0,0,0,{carga:80,reps:10,rir:2,ics:8,pump:1})"); await sleep(1500); rec('online: set 1 saved', k1 === 'log_1_0_0_s0', k1);
     await sleep(2000);   // let the service worker cache the Firebase modules / driver the page just used
     // 3 · OFFLINE: the app server is stopped (assets unreachable) and the page network is blocked (Firestore unreachable)
