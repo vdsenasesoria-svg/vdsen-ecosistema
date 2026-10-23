@@ -61,7 +61,7 @@ function extractFunction(src, decl) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 assert.ok(CLIENT.includes('<link rel="manifest" href="manifest.json">'), 'manifest link must remain in <head>');
-assert.ok(CLIENT.includes("navigator.serviceWorker.register('/sw.js')"), 'service worker registration must remain unchanged');
+assert.ok(/navigator\.serviceWorker\.register\('\/sw\.js\?build='/.test(CLIENT), 'service worker stays root-scoped and is registered with its explicit build identity');
 assert.strictEqual(MANIFEST.display, 'standalone', 'manifest display must remain standalone');
 assert.strictEqual(MANIFEST.start_url, '/cliente', 'manifest start_url must remain unchanged');
 

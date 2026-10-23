@@ -73,7 +73,7 @@ test('T555.10 (T556) the rest alert is the original one: vibration + beep + a no
   assert.ok(/playTimerBeep\(\)/.test(fnSrc('_restFeedback')) && /navigator\.vibrate/.test(fnSrc('_restFeedback')));
 });
 test('T555.11 (T556) the service worker still precaches and serves network-first (cache version bumped, no extra handlers)', () => {
-  assert.ok(/const CACHE = 'vdsen-v13';/.test(SW) && /addEventListener\('fetch'/.test(SW) && /addEventListener\('install'/.test(SW));
+  assert.ok(/const CACHE = 'vdsen-' \+ BUILD;/.test(SW) && /addEventListener\('fetch'/.test(SW) && /addEventListener\('install'/.test(SW));
 });
 
 // ---------------- 4. cardio ----------------

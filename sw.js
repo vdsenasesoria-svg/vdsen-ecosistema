@@ -1,5 +1,9 @@
-// VDSEN Service Worker — offline support. T555: cache v13 so every device drops the older client build; HTML stays NETWORK-FIRST (the cache is only an offline fallback).
-const CACHE = 'vdsen-v13';
+// VDSEN Service Worker — offline support.  The build query is supplied by the
+// app shell registration.  A new build gets a distinct script URL and cache,
+// so an older worker cannot make the currently executing Preview ambiguous.
+// The legacy fallback only describes pre-Issue-115 registrations.
+const BUILD = new URL(self.location.href).searchParams.get('build') || 'legacy-v13';
+const CACHE = 'vdsen-' + BUILD;
 
 // Assets to pre-cache on install (propio HTML)
 const PRECACHE = [
@@ -17,10 +21,13 @@ const PRECACHE = [
 ];
 
 self.addEventListener('install', e => {
+  // Ask to replace a previous controller as soon as this install succeeds.
+  // Calling it before precache completion avoids leaving a new build in
+  // `waiting` behind an old shell while its cache is being populated.
+  self.skipWaiting();
   e.waitUntil(
     caches.open(CACHE)
       .then(c => c.addAll(PRECACHE))
-      .then(() => self.skipWaiting())
   );
 });
 

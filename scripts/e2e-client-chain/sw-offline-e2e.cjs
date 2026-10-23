@@ -32,7 +32,7 @@ async function cdpSession() {
     await p.nav(ORIGIN + '/'); await sleep(1500);   // second load: now controlled
     rec('page controlled by the service worker', await p.ev('!!navigator.serviceWorker.controller') === true);
     const keys = await p.ev("(async()=>{ const ks = await caches.keys(); const c = await caches.open(ks[0]); const reqs = await c.keys(); return { caches: ks, n: reqs.length, hasHtml: reqs.some(r => /vdsen-cliente\\.html$|\\/cliente$|localhost:" + PORT + "\\/$/.test(r.url)) }; })()");
-    rec('cache vdsen-v13 holds the app shell', !!(keys && keys.caches && keys.caches.includes('vdsen-v13') && keys.n >= 5), keys);
+    rec('cache keyed by the current worker build holds the app shell', !!(keys && keys.caches && keys.caches.some((name) => /^vdsen-/.test(name)) && keys.n >= 5), keys);
     // 2 · online boot + a first set
     await p.ev("(async()=>{ const s=document.createElement('script'); s.src='/__driver.js'; document.head.appendChild(s); await new Promise(r=>s.onload=r); })()");
     const boot = await p.ev("window.__boot('G').then(r=>r.screen)"); rec('online login of the synthetic athlete', Array.isArray(boot) && boot.includes('scrApp'), boot);
