@@ -27,4 +27,19 @@
     out.btnHeight = Math.round(R(btn).h); out.touchOk = R(btn).h >= 44; out.docOverflow = document.documentElement.scrollWidth > innerWidth;
     sc.scrollTop = 0; return out;
   };
+
+  // Horizontal overflow of EVERY vertical scroller (tabs, panels, modals), not only of the document: a scroller can drag sideways while document.scrollWidth stays equal to the viewport
+  // (seen on a real phone: a 14px negative-margin strip made the training tab scroll sideways). Lists the widest offending descendants that are not inside their own horizontal scroller.
+  window.__auditScrollers = async function () {
+    document.getAnimations().forEach((an) => { try { an.finish(); } catch (e) { /* ignore */ } });
+    const out = [];
+    document.querySelectorAll('.scroll, [id^=tab], .tab-in, [class*=modal], [id*=Modal]').forEach((sc) => {
+      if (!sc.offsetParent && getComputedStyle(sc).position !== 'fixed') return;
+      const over = sc.scrollWidth - sc.clientWidth; if (over <= 1) return;
+      const sr = sc.getBoundingClientRect();
+      const culprits = [...sc.querySelectorAll('*')].filter((e) => e.offsetParent && (e.getBoundingClientRect().right > sr.right + 1 || e.getBoundingClientRect().left < sr.left - 1)).filter((e) => { let p = e.parentElement; while (p && p !== sc) { if (/(auto|scroll)/.test(getComputedStyle(p).overflowX)) return false; p = p.parentElement; } return true; }).slice(0, 3).map((e) => e.tagName + '.' + String(e.className).slice(0, 24));
+      out.push({ scroller: sc.id || String(sc.className).slice(0, 24), over, overflowX: getComputedStyle(sc).overflowX, culprits });
+    });
+    return { viewport: innerWidth + 'x' + innerHeight, docOverflow: document.documentElement.scrollWidth > innerWidth, offenders: out, ok: out.length === 0 && !(document.documentElement.scrollWidth > innerWidth)   /* strict: even a hidden overflow means clipped content */ };
+  };
 })();

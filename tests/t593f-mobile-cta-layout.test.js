@@ -51,3 +51,14 @@ test('T593F-5 the semantics of saving are untouched: the button still calls comp
   assert.ok(/onclick="completeSet\(/.test(client) || /completeSet\('/.test(client));
   assert.ok(/_buildMergeWrite\(/.test(client) && !/mergeFields: \['entries'/.test(client));
 });
+
+test('T593F-6 (real-phone finding) the training tab never scrolls sideways: the exercise strip has no negative horizontal margin inside the padding-less #tabEntr, which is vertical-only', () => {
+  for (const d of declared(/(^|[\s,])\.xnav$/, 'margin')) {
+    const parts = d.value.split(/\s+/);   // margin: top [right [bottom [left]]]
+    const right = parts.length >= 2 ? parts[1] : parts[0], left = parts.length === 4 ? parts[3] : right;
+    assert.ok(!/^-/.test(right) && !/^-/.test(left), d.selector + ' has a negative horizontal margin: ' + d.value);
+  }
+  const tab = declared(/^#tabEntr$/, 'padding').concat(declared(/^#tabEntr$/, 'overflow-x'));
+  assert.ok(tab.some((d) => /^0 0 96px/.test(d.value)), '#tabEntr is padding-less sideways (so no child may bleed out of it)');
+  assert.ok(tab.some((d) => d.value === 'hidden'), '#tabEntr has overflow-x:hidden');
+});
