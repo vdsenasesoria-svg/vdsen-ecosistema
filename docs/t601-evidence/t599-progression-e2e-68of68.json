@@ -1,0 +1,3372 @@
+{
+  "project": "demo-vdsen-client-e2e",
+  "source": "real Chrome mobile emulation + Auth/Firestore emulators + real server handler; no physical Brave claim",
+  "checks": [
+    {
+      "name": "LOAD real UI exposure confirmed in Firestore",
+      "ok": true,
+      "detail": {
+        "logged": 3,
+        "fin": {
+          "triggerCalls": 6,
+          "last": {
+            "status": 200,
+            "body": {
+              "status": "NO_CHANGE",
+              "created": [],
+              "applied": [],
+              "consumed": []
+            }
+          },
+          "errs": []
+        }
+      }
+    },
+    {
+      "name": "LOAD server generates PENDING before numeric sandbox gate opens",
+      "ok": true,
+      "detail": {
+        "state": "PENDING",
+        "magnitude": {
+          "schema": "vdsen-magnitude-shadow-v1",
+          "ruleAuthority": "VDSEN_HEURISTIC",
+          "evidence": {
+            "repsExecuted": 10,
+            "repsTarget": 10,
+            "rirObserved": 4,
+            "dayIndex": 0,
+            "unit": "KG",
+            "week": 2,
+            "load": 10,
+            "rirPrescribed": 2,
+            "setIndex": 2,
+            "repRange": {
+              "min": 10,
+              "max": 10
+            },
+            "basis": "VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET",
+            "workingSetCount": 3
+          },
+          "applied": false,
+          "comparableExposureCount": 2,
+          "excludedExposures": [],
+          "mode": "SHADOW",
+          "previousExposure": {
+            "dayIndex": 0,
+            "week": 1
+          },
+          "reasonCodes": [
+            "NUMERIC_ACTIVATION_DISABLED",
+            "EQUIPMENT_INCREMENT_POLICY_MISSING"
+          ],
+          "coachReview": [],
+          "eligible": true,
+          "activationBlockers": [
+            "NUMERIC_ACTIVATION_DISABLED"
+          ],
+          "prescriptionExerciseId": "pid-e2e-l-1",
+          "ruleId": "A",
+          "dimension": "LOAD",
+          "numericApplyAllowed": false,
+          "direction": "UP",
+          "directionConsistency": "CONSISTENT",
+          "comparableExposures": [
+            {
+              "week": 1,
+              "dayIndex": 0
+            },
+            {
+              "week": 2,
+              "dayIndex": 0
+            }
+          ],
+          "previousExposureSignal": "UP",
+          "candidates": [
+            {
+              "dimension": "LOAD",
+              "ruleId": "A",
+              "unitPct": 5,
+              "previousValue": 10,
+              "rawCandidate": 10.5,
+              "finalCandidate": null,
+              "boundState": null,
+              "blockers": [
+                "EQUIPMENT_INCREMENT_POLICY_MISSING"
+              ]
+            }
+          ],
+          "collision": null,
+          "unresolved": null,
+          "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+          "actionable": false,
+          "evidenceLevel": "C",
+          "coachReviewRequired": null
+        },
+        "reason": "MAGNITUDE_POLICY_MISSING"
+      }
+    },
+    {
+      "name": "LOAD PENDING never changes effective prescription",
+      "ok": true,
+      "detail": {
+        "target": "OBJETIVO DE ESTA SERIE\nESTRUCTURA COACH\n10 reps\nRIR 2\n3 series\nDescanso 2:30",
+        "authority": "PENDIENTE · calculado, aún no aplicado\n\nEl cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique.",
+        "state": "PENDING",
+        "history": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "effective": [
+          {
+            "setIndex": 0,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 1,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 2,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          }
+        ],
+        "count": 3,
+        "rows": 3,
+        "copy": "USAR CARGA/REPS\nSEM 2 · S1 · 10 kg × 10",
+        "errors": []
+      }
+    },
+    {
+      "name": "LOAD authenticated trusted handler produces APPLIED in sandbox",
+      "ok": true,
+      "detail": {
+        "response": {
+          "status": 200,
+          "body": {
+            "status": "NO_CHANGE",
+            "created": [],
+            "applied": [
+              {
+                "recordKey": "v1_e8e782d5a6ffe641",
+                "written": true,
+                "reason": null,
+                "blocked": null
+              }
+            ],
+            "consumed": []
+          }
+        },
+        "overlay": {
+          "roundingReason": "ADVISORY_GRAIN_0.5",
+          "schema": "vdsen-next-exposure-overlay-v1",
+          "components": null,
+          "clientId": "lhkXp8boZOoAx3uDNbpbS3SBQMJg",
+          "loadUnit": null,
+          "appliedValue": 10.5,
+          "requestedValue": 10.5,
+          "source": {
+            "dayIndex": 0,
+            "week": 2,
+            "calculatedAt": "2026-10-24T21:02:03.191Z"
+          },
+          "equipmentId": null,
+          "previousValue": 10,
+          "reversibleUntil": "TARGET_EXPOSURE_START",
+          "equipmentSnapshot": {
+            "unit": "KG",
+            "kind": null,
+            "scope": null,
+            "configuredAt": null,
+            "source": "ADVISORY_GENERIC",
+            "revision": null
+          },
+          "target": {
+            "dayIndex": 0,
+            "week": 3
+          },
+          "operationKey": "apply:v1_e8e782d5a6ffe641",
+          "unit": "KG",
+          "provenance": {
+            "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+            "ruleAuthority": "VDSEN_HEURISTIC",
+            "comparableExposureCount": 2,
+            "ruleId": "A",
+            "evidenceLevel": "C",
+            "directionConsistency": "CONSISTENT"
+          },
+          "sourceRevision": 1,
+          "planId": "plan-e2e-l-5ec4",
+          "prescriptionExerciseId": "pid-e2e-l-1",
+          "dimension": "LOAD",
+          "appliedAt": "2026-10-24T21:02:18.789Z",
+          "key": "ovl_v1_e8e782d5a6ffe641",
+          "sourceRecordKey": "v1_e8e782d5a6ffe641",
+          "status": "APPLIED"
+        }
+      }
+    },
+    {
+      "name": "LOAD athlete-visible numbers match the operational sets",
+      "ok": true,
+      "detail": "OBJETIVO DE ESTA SERIE\nOBJETIVO AUTOAJUSTE VDSEN\nCARGA 10.5 KG\n10 reps\nRIR 2\n3 series\nDescanso 2:30"
+    },
+    {
+      "name": "LOAD real next-exposure DOM has exact server objective and row count",
+      "ok": true,
+      "detail": {
+        "target": "OBJETIVO DE ESTA SERIE\nOBJETIVO AUTOAJUSTE VDSEN\nCARGA 10.5 KG\n10 reps\nRIR 2\n3 series\nDescanso 2:30",
+        "authority": "AUTOAJUSTE APLICADO\nCAMBIO RESPECTO DE LA EXPOSICIÓN ANTERIOR\nCarga: 10 KG → 10.5 KG · Reps: sin cambios · Series: sin cambios · RIR: sin cambios · Descanso: sin cambios\n\n10 → 10.5 kg. Motivo: rendiste con más reserva (RIR) de la prevista en las últimas sesiones. Regla A. Origen: aplicación del servidor (no es una sugerencia). Carga orientativa: incremento exacto del equipo no resuelto; adapta y registra lo ejecutado.",
+        "state": "APPLIED",
+        "history": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "effective": [
+          {
+            "setIndex": 0,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 10.5,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 1,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 10.5,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 2,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 10.5,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          }
+        ],
+        "count": 3,
+        "rows": 3,
+        "copy": "USAR CARGA/REPS\nSEM 2 · S1 · 10 kg × 10",
+        "errors": []
+      }
+    },
+    {
+      "name": "LOAD real save starts effective rest timer",
+      "ok": true,
+      "detail": {
+        "stored": 150,
+        "visible": "2:30"
+      }
+    },
+    {
+      "name": "LOAD real Client receipt + persisted PID execution become CONSUMED",
+      "ok": true,
+      "detail": {
+        "receipt": {
+          "provenance": "CANONICAL_OVERLAY",
+          "overlayKey": "ovl_v1_e8e782d5a6ffe641",
+          "recordKey": "v1_e8e782d5a6ffe641",
+          "ackAt": "2026-10-24T21:02:29.338Z",
+          "appliedValue": 10.5,
+          "dimension": "LOAD"
+        },
+        "stored": {
+          "carga": "10.5",
+          "reps": "10",
+          "unit": "KG",
+          "done": true,
+          "rir": 2,
+          "rir_real": "2",
+          "ics": 7,
+          "pump": 1,
+          "ts": 1792875749150,
+          "prescriptionExerciseId": "pid-e2e-l-1",
+          "exerciseNameSnapshot": "Press de pecho E2E"
+        }
+      }
+    },
+    {
+      "name": "LOAD rendered count, completed session progress and both stored log documents agree",
+      "ok": true,
+      "detail": {
+        "expectedN": 3,
+        "executedKeys": [
+          "log_3_0_0_s0",
+          "log_3_0_0_s1",
+          "log_3_0_0_s2"
+        ],
+        "progressComplete": true
+      }
+    },
+    {
+      "name": "LOAD consumed overlay remains effective after a new browser session",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "LOAD continuity respects carried vs exposure-scoped authority",
+      "ok": true,
+      "detail": [
+        {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 10.5,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 10.5,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 10.5,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        }
+      ]
+    },
+    {
+      "name": "REPS real UI exposure confirmed in Firestore",
+      "ok": true,
+      "detail": {
+        "logged": 3,
+        "fin": {
+          "triggerCalls": 13,
+          "last": {
+            "status": 200,
+            "body": {
+              "status": "NO_CHANGE",
+              "created": [],
+              "applied": [],
+              "consumed": []
+            }
+          },
+          "errs": []
+        }
+      }
+    },
+    {
+      "name": "REPS server generates PENDING before numeric sandbox gate opens",
+      "ok": true,
+      "detail": {
+        "state": "PENDING",
+        "magnitude": {
+          "schema": "vdsen-magnitude-shadow-v1",
+          "ruleAuthority": "VDSEN_HEURISTIC",
+          "evidence": {
+            "repsExecuted": 10,
+            "repsTarget": 10,
+            "rirObserved": 3,
+            "dayIndex": 0,
+            "unit": "KG",
+            "week": 2,
+            "load": 10,
+            "rirPrescribed": 1,
+            "setIndex": 2,
+            "repRange": {
+              "min": 8,
+              "max": 12
+            },
+            "basis": "VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET",
+            "workingSetCount": 3
+          },
+          "applied": false,
+          "comparableExposureCount": 2,
+          "excludedExposures": [],
+          "mode": "SHADOW",
+          "previousExposure": {
+            "dayIndex": 0,
+            "week": 1
+          },
+          "reasonCodes": [
+            "NUMERIC_ACTIVATION_DISABLED"
+          ],
+          "coachReview": [],
+          "eligible": true,
+          "activationBlockers": [
+            "NUMERIC_ACTIVATION_DISABLED"
+          ],
+          "prescriptionExerciseId": "pid-e2e-r-1",
+          "ruleId": "A",
+          "dimension": "REPS",
+          "numericApplyAllowed": false,
+          "direction": "UP",
+          "directionConsistency": "CONSISTENT",
+          "comparableExposures": [
+            {
+              "week": 1,
+              "dayIndex": 0
+            },
+            {
+              "week": 2,
+              "dayIndex": 0
+            }
+          ],
+          "previousExposureSignal": "UP",
+          "candidates": [
+            {
+              "dimension": "REPS",
+              "ruleId": "A",
+              "delta": 2,
+              "previousValue": 10,
+              "rawCandidate": 12,
+              "finalCandidate": 12,
+              "boundState": null,
+              "blockers": []
+            }
+          ],
+          "collision": null,
+          "unresolved": null,
+          "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+          "actionable": false,
+          "evidenceLevel": "C",
+          "coachReviewRequired": null
+        },
+        "reason": "MAGNITUDE_POLICY_MISSING"
+      }
+    },
+    {
+      "name": "REPS PENDING never changes effective prescription",
+      "ok": true,
+      "detail": {
+        "target": "OBJETIVO DE ESTA SERIE\nESTRUCTURA COACH\n10 reps\nRIR 1\n3 series\nDescanso 2:30",
+        "authority": "PENDIENTE · calculado, aún no aplicado\n\nEl cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique.",
+        "state": "PENDING",
+        "history": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "effective": [
+          {
+            "setIndex": 0,
+            "repsTarget": 10,
+            "rirTarget": 1,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 1,
+            "repsTarget": 10,
+            "rirTarget": 1,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 2,
+            "repsTarget": 10,
+            "rirTarget": 1,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          }
+        ],
+        "count": 3,
+        "rows": 3,
+        "copy": "USAR CARGA/REPS\nSEM 2 · S1 · 10 kg × 10",
+        "errors": []
+      }
+    },
+    {
+      "name": "REPS authenticated trusted handler produces APPLIED in sandbox",
+      "ok": true,
+      "detail": {
+        "response": {
+          "status": 200,
+          "body": {
+            "status": "NO_CHANGE",
+            "created": [],
+            "applied": [
+              {
+                "recordKey": "v1_47901cc324f3ca59",
+                "written": true,
+                "reason": null,
+                "blocked": null
+              }
+            ],
+            "consumed": []
+          }
+        },
+        "overlay": {
+          "roundingReason": null,
+          "schema": "vdsen-next-exposure-overlay-v1",
+          "components": null,
+          "clientId": "S7s8YbYXbsdSXvQxIarLiZIcZGrj",
+          "loadUnit": null,
+          "appliedValue": 12,
+          "requestedValue": 12,
+          "source": {
+            "dayIndex": 0,
+            "week": 2,
+            "calculatedAt": "2026-10-24T21:03:10.080Z"
+          },
+          "equipmentId": null,
+          "previousValue": 10,
+          "reversibleUntil": "TARGET_EXPOSURE_START",
+          "equipmentSnapshot": null,
+          "target": {
+            "dayIndex": 0,
+            "week": 3
+          },
+          "operationKey": "apply:v1_47901cc324f3ca59",
+          "unit": "REPS",
+          "provenance": {
+            "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+            "ruleAuthority": "VDSEN_HEURISTIC",
+            "comparableExposureCount": 2,
+            "ruleId": "A",
+            "evidenceLevel": "C",
+            "directionConsistency": "CONSISTENT"
+          },
+          "sourceRevision": 1,
+          "planId": "plan-e2e-r-08db",
+          "prescriptionExerciseId": "pid-e2e-r-1",
+          "dimension": "REPS",
+          "appliedAt": "2026-10-24T21:03:26.038Z",
+          "key": "ovl_v1_47901cc324f3ca59",
+          "sourceRecordKey": "v1_47901cc324f3ca59",
+          "status": "APPLIED"
+        }
+      }
+    },
+    {
+      "name": "REPS athlete-visible numbers match the operational sets",
+      "ok": true,
+      "detail": "OBJETIVO DE ESTA SERIE\nOBJETIVO AUTOAJUSTE VDSEN\n12 reps\nRIR 1\n3 series\nDescanso 2:30"
+    },
+    {
+      "name": "REPS real next-exposure DOM has exact server objective and row count",
+      "ok": true,
+      "detail": {
+        "target": "OBJETIVO DE ESTA SERIE\nOBJETIVO AUTOAJUSTE VDSEN\n12 reps\nRIR 1\n3 series\nDescanso 2:30",
+        "authority": "AUTOAJUSTE APLICADO\nCAMBIO RESPECTO DE LA EXPOSICIÓN ANTERIOR\nCarga: sin cambios · Reps: 10 → 12 · Series: sin cambios · RIR: sin cambios · Descanso: sin cambios\n\n10 → 12 reps. Motivo: rendiste con más reserva (RIR) de la prevista en las últimas sesiones. Regla A. Origen: aplicación del servidor (no es una sugerencia).",
+        "state": "APPLIED",
+        "history": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "effective": [
+          {
+            "setIndex": 0,
+            "repsTarget": 12,
+            "rirTarget": 1,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 1,
+            "repsTarget": 12,
+            "rirTarget": 1,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 2,
+            "repsTarget": 12,
+            "rirTarget": 1,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          }
+        ],
+        "count": 3,
+        "rows": 3,
+        "copy": "USAR CARGA/REPS · COPIAR HISTORIAL\nSEM 2 · S1 · 10 kg × 10 · Objetivo vigente: 12 reps · No es una recomendación",
+        "errors": []
+      }
+    },
+    {
+      "name": "REPS real save starts effective rest timer",
+      "ok": true,
+      "detail": {
+        "stored": 150,
+        "visible": "2:29"
+      }
+    },
+    {
+      "name": "REPS real Client receipt + persisted PID execution become CONSUMED",
+      "ok": true,
+      "detail": {
+        "receipt": {
+          "provenance": "CANONICAL_OVERLAY",
+          "overlayKey": "ovl_v1_47901cc324f3ca59",
+          "recordKey": "v1_47901cc324f3ca59",
+          "ackAt": "2026-10-24T21:03:36.033Z",
+          "appliedValue": 12,
+          "dimension": "REPS"
+        },
+        "stored": {
+          "carga": "10",
+          "reps": "12",
+          "unit": "KG",
+          "done": true,
+          "rir": 1,
+          "rir_real": "1",
+          "ics": 7,
+          "pump": 1,
+          "ts": 1792875815865,
+          "prescriptionExerciseId": "pid-e2e-r-1",
+          "exerciseNameSnapshot": "Press de pecho E2E"
+        }
+      }
+    },
+    {
+      "name": "REPS rendered count, completed session progress and both stored log documents agree",
+      "ok": true,
+      "detail": {
+        "expectedN": 3,
+        "executedKeys": [
+          "log_3_0_0_s0",
+          "log_3_0_0_s1",
+          "log_3_0_0_s2"
+        ],
+        "progressComplete": true
+      }
+    },
+    {
+      "name": "REPS consumed overlay remains effective after a new browser session",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "REPS continuity respects carried vs exposure-scoped authority",
+      "ok": true,
+      "detail": [
+        {
+          "setIndex": 0,
+          "repsTarget": 12,
+          "rirTarget": 1,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 1,
+          "repsTarget": 12,
+          "rirTarget": 1,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 2,
+          "repsTarget": 12,
+          "rirTarget": 1,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        }
+      ]
+    },
+    {
+      "name": "SETS real UI exposure confirmed in Firestore",
+      "ok": true,
+      "detail": {
+        "logged": 3,
+        "fin": {
+          "triggerCalls": 20,
+          "last": {
+            "status": 200,
+            "body": {
+              "status": "NO_CHANGE",
+              "created": [],
+              "applied": [],
+              "consumed": []
+            }
+          },
+          "errs": []
+        }
+      }
+    },
+    {
+      "name": "SETS server generates PENDING before numeric sandbox gate opens",
+      "ok": true,
+      "detail": {
+        "state": "PENDING",
+        "magnitude": {
+          "schema": "vdsen-magnitude-shadow-v1",
+          "ruleAuthority": "VDSEN_HEURISTIC",
+          "evidence": {
+            "repsExecuted": 10,
+            "repsTarget": 10,
+            "rirObserved": 2,
+            "dayIndex": 0,
+            "unit": "KG",
+            "week": 2,
+            "load": 10,
+            "rirPrescribed": 2,
+            "setIndex": 2,
+            "repRange": {
+              "min": 10,
+              "max": 10
+            },
+            "basis": "VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET",
+            "workingSetCount": 3
+          },
+          "applied": false,
+          "comparableExposureCount": 2,
+          "excludedExposures": [],
+          "mode": "SHADOW",
+          "reasonCodes": [
+            "NUMERIC_ACTIVATION_DISABLED"
+          ],
+          "coachReview": [],
+          "structural": {
+            "volume": {
+              "ceiling": 22,
+              "muscle": "pectoral",
+              "priority": null,
+              "weekly": 3
+            },
+            "candidate": {
+              "rawCandidate": 4,
+              "finalCandidate": 4,
+              "blockers": [],
+              "ruleId": "S-ADD",
+              "dimension": "SETS",
+              "previousValue": 3
+            },
+            "evidence": {
+              "dayIndex": 0,
+              "unit": "KG",
+              "avgICS": 8,
+              "week": 2,
+              "fatigueTriggers": [],
+              "workingSets": 3,
+              "maxSets": 4,
+              "model": "vdsen-structural-v1",
+              "avgRIR": 2,
+              "avgLoad": 10
+            },
+            "kind": "ADD_SETS",
+            "safety": false,
+            "minExposures": 2,
+            "model": "vdsen-structural-v1",
+            "ruleId": "S-ADD",
+            "dimension": "SETS",
+            "direction": "UP"
+          },
+          "eligible": true,
+          "activationBlockers": [
+            "NUMERIC_ACTIVATION_DISABLED"
+          ],
+          "prescriptionExerciseId": "pid-e2e-s-1",
+          "ruleId": "S-ADD",
+          "dimension": "SETS",
+          "numericApplyAllowed": false,
+          "direction": "UP",
+          "directionConsistency": "NOT_APPLICABLE",
+          "comparableExposures": [
+            {
+              "week": 1,
+              "dayIndex": 0
+            },
+            {
+              "week": 2,
+              "dayIndex": 0
+            }
+          ],
+          "candidates": [
+            {
+              "dimension": "SETS",
+              "ruleId": "S-ADD",
+              "previousValue": 3,
+              "rawCandidate": 4,
+              "finalCandidate": 4,
+              "blockers": []
+            }
+          ],
+          "collision": null,
+          "unresolved": null,
+          "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+          "actionable": false,
+          "minExposures": 2,
+          "evidenceLevel": "C",
+          "coachReviewRequired": null
+        },
+        "reason": "MAGNITUDE_POLICY_MISSING"
+      }
+    },
+    {
+      "name": "SETS PENDING never changes effective prescription",
+      "ok": true,
+      "detail": {
+        "target": "OBJETIVO DE ESTA SERIE\nESTRUCTURA COACH\n10 reps\nRIR 2\n3 series\nDescanso 2:30",
+        "authority": "PENDIENTE · calculado, aún no aplicado\n\nEl cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique.",
+        "state": "PENDING",
+        "history": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "effective": [
+          {
+            "setIndex": 0,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 1,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 2,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          }
+        ],
+        "count": 3,
+        "rows": 3,
+        "copy": "USAR CARGA/REPS\nSEM 2 · S1 · 10 kg × 10",
+        "errors": []
+      }
+    },
+    {
+      "name": "SETS authenticated trusted handler produces APPLIED in sandbox",
+      "ok": true,
+      "detail": {
+        "response": {
+          "status": 200,
+          "body": {
+            "status": "NO_CHANGE",
+            "created": [],
+            "applied": [
+              {
+                "recordKey": "v1_e06c349d19d5fc21",
+                "written": true,
+                "reason": null,
+                "blocked": null
+              }
+            ],
+            "consumed": []
+          }
+        },
+        "overlay": {
+          "roundingReason": null,
+          "schema": "vdsen-next-exposure-overlay-v1",
+          "components": null,
+          "clientId": "ANy1mQvs10Sm1Rm9mSZvpUL8ZJaP",
+          "loadUnit": "KG",
+          "appliedValue": 4,
+          "requestedValue": 4,
+          "source": {
+            "dayIndex": 0,
+            "week": 2,
+            "calculatedAt": "2026-10-24T21:04:16.032Z"
+          },
+          "equipmentId": null,
+          "previousValue": 3,
+          "reversibleUntil": "TARGET_EXPOSURE_START",
+          "equipmentSnapshot": null,
+          "target": {
+            "dayIndex": 0,
+            "week": 3
+          },
+          "operationKey": "apply:v1_e06c349d19d5fc21",
+          "unit": "SETS",
+          "provenance": {
+            "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+            "ruleAuthority": "VDSEN_HEURISTIC",
+            "comparableExposureCount": 2,
+            "ruleId": "S-ADD",
+            "evidenceLevel": "C",
+            "directionConsistency": "NOT_APPLICABLE"
+          },
+          "sourceRevision": 1,
+          "planId": "plan-e2e-s-18a5",
+          "prescriptionExerciseId": "pid-e2e-s-1",
+          "dimension": "SETS",
+          "appliedAt": "2026-10-24T21:04:31.877Z",
+          "key": "ovl_v1_e06c349d19d5fc21",
+          "sourceRecordKey": "v1_e06c349d19d5fc21",
+          "status": "APPLIED"
+        }
+      }
+    },
+    {
+      "name": "SETS athlete-visible numbers match the operational sets",
+      "ok": true,
+      "detail": "OBJETIVO DE ESTA SERIE\nOBJETIVO AUTOAJUSTE VDSEN\n10 reps\nRIR 2\n4 series\nDescanso 2:30"
+    },
+    {
+      "name": "SETS real next-exposure DOM has exact server objective and row count",
+      "ok": true,
+      "detail": {
+        "target": "OBJETIVO DE ESTA SERIE\nOBJETIVO AUTOAJUSTE VDSEN\n10 reps\nRIR 2\n4 series\nDescanso 2:30",
+        "authority": "AUTOAJUSTE APLICADO\nCAMBIO RESPECTO DE LA EXPOSICIÓN ANTERIOR\nCarga: sin cambios · Reps: sin cambios · Series: 3 → 4 · RIR: sin cambios · Descanso: sin cambios\n\n3 → 4 series. Motivo: rendimiento sostenido y buena calidad de serie (ICS ≥ 8). Regla S-ADD. Origen: aplicación del servidor (no es una sugerencia).",
+        "state": "APPLIED",
+        "history": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "effective": [
+          {
+            "setIndex": 0,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 1,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 2,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 3,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          }
+        ],
+        "count": 4,
+        "rows": 4,
+        "copy": "USAR CARGA/REPS\nSEM 2 · S1 · 10 kg × 10",
+        "errors": []
+      }
+    },
+    {
+      "name": "SETS real save starts effective rest timer",
+      "ok": true,
+      "detail": {
+        "stored": 150,
+        "visible": "2:29"
+      }
+    },
+    {
+      "name": "SETS real Client receipt + persisted PID execution become CONSUMED",
+      "ok": true,
+      "detail": {
+        "receipt": {
+          "provenance": "CANONICAL_OVERLAY",
+          "overlayKey": "ovl_v1_e06c349d19d5fc21",
+          "recordKey": "v1_e06c349d19d5fc21",
+          "ackAt": "2026-10-24T21:04:45.275Z",
+          "appliedValue": 4,
+          "dimension": "SETS"
+        },
+        "stored": {
+          "carga": "10",
+          "reps": "10",
+          "unit": "KG",
+          "done": true,
+          "rir": 2,
+          "rir_real": "2",
+          "ics": 7,
+          "pump": 1,
+          "ts": 1792875885118,
+          "prescriptionExerciseId": "pid-e2e-s-1",
+          "exerciseNameSnapshot": "Press de pecho E2E"
+        }
+      }
+    },
+    {
+      "name": "SETS rendered count, completed session progress and both stored log documents agree",
+      "ok": true,
+      "detail": {
+        "expectedN": 4,
+        "executedKeys": [
+          "log_3_0_0_s0",
+          "log_3_0_0_s1",
+          "log_3_0_0_s2",
+          "log_3_0_0_s3"
+        ],
+        "progressComplete": true
+      }
+    },
+    {
+      "name": "SETS consumed overlay remains effective after a new browser session",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "SETS continuity respects carried vs exposure-scoped authority",
+      "ok": true,
+      "detail": [
+        {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 3,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        }
+      ]
+    },
+    {
+      "name": "REST real UI exposure confirmed in Firestore",
+      "ok": true,
+      "detail": {
+        "logged": 3,
+        "fin": {
+          "triggerCalls": 27,
+          "last": {
+            "status": 200,
+            "body": {
+              "status": "NO_CHANGE",
+              "created": [],
+              "applied": [],
+              "consumed": []
+            }
+          },
+          "errs": []
+        }
+      }
+    },
+    {
+      "name": "REST server generates PENDING before numeric sandbox gate opens",
+      "ok": true,
+      "detail": {
+        "state": "PENDING",
+        "magnitude": {
+          "schema": "vdsen-magnitude-shadow-v1",
+          "ruleAuthority": "VDSEN_HEURISTIC",
+          "evidence": {
+            "repsExecuted": 8,
+            "repsTarget": 10,
+            "rirObserved": 2,
+            "dayIndex": 0,
+            "unit": "KG",
+            "week": 2,
+            "load": 10,
+            "rirPrescribed": 2,
+            "setIndex": 2,
+            "repRange": {
+              "min": 10,
+              "max": 10
+            },
+            "basis": "VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET",
+            "workingSetCount": 3
+          },
+          "applied": false,
+          "comparableExposureCount": 2,
+          "excludedExposures": [],
+          "mode": "SHADOW",
+          "previousExposure": {
+            "dayIndex": 0,
+            "week": 1
+          },
+          "reasonCodes": [
+            "NUMERIC_ACTIVATION_DISABLED"
+          ],
+          "coachReview": [],
+          "eligible": true,
+          "activationBlockers": [
+            "NUMERIC_ACTIVATION_DISABLED"
+          ],
+          "prescriptionExerciseId": "pid-e2e-t-1",
+          "ruleId": "C",
+          "dimension": "REST",
+          "numericApplyAllowed": false,
+          "direction": "REST",
+          "directionConsistency": "NOT_APPLICABLE",
+          "comparableExposures": [
+            {
+              "week": 1,
+              "dayIndex": 0
+            },
+            {
+              "week": 2,
+              "dayIndex": 0
+            }
+          ],
+          "candidates": [
+            {
+              "dimension": "REST",
+              "ruleId": "C",
+              "deltaSeconds": 30,
+              "previousValue": 150,
+              "rawCandidate": 180,
+              "finalCandidate": 180,
+              "boundState": null,
+              "blockers": []
+            }
+          ],
+          "unresolved": null,
+          "collision": {
+            "rules": [
+              "C",
+              "E"
+            ],
+            "deferredRule": "E",
+            "classification": "EXPLICIT_VDSEN_PRECEDENCE",
+            "order": "C_FIRST_THEN_E_IF_PERSISTS",
+            "policy": "VDSEN_PRODUCT_POLICY"
+          },
+          "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+          "actionable": false,
+          "evidenceLevel": "C",
+          "coachReviewRequired": null
+        },
+        "reason": "MAGNITUDE_POLICY_MISSING"
+      }
+    },
+    {
+      "name": "REST PENDING never changes effective prescription",
+      "ok": true,
+      "detail": {
+        "target": "OBJETIVO DE ESTA SERIE\nESTRUCTURA COACH\n10 reps\nRIR 2\n3 series\nDescanso 2:30",
+        "authority": "PENDIENTE · calculado, aún no aplicado\n\nEl cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique.",
+        "state": "PENDING",
+        "history": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "effective": [
+          {
+            "setIndex": 0,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 1,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 2,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          }
+        ],
+        "count": 3,
+        "rows": 3,
+        "copy": "USAR CARGA/REPS · COPIAR HISTORIAL\nSEM 2 · S1 · 10 kg × 8 · Objetivo vigente: 10 reps · No es una recomendación",
+        "errors": []
+      }
+    },
+    {
+      "name": "REST authenticated trusted handler produces APPLIED in sandbox",
+      "ok": true,
+      "detail": {
+        "response": {
+          "status": 200,
+          "body": {
+            "status": "NO_CHANGE",
+            "created": [],
+            "applied": [
+              {
+                "recordKey": "v1_d0536c0db3ecb3d5",
+                "written": true,
+                "reason": null,
+                "blocked": null
+              }
+            ],
+            "consumed": []
+          }
+        },
+        "overlay": {
+          "roundingReason": null,
+          "schema": "vdsen-next-exposure-overlay-v1",
+          "components": null,
+          "clientId": "beCApoKLqBSO0KxgRynMILvt5ldH",
+          "loadUnit": null,
+          "appliedValue": 180,
+          "requestedValue": 180,
+          "source": {
+            "dayIndex": 0,
+            "week": 2,
+            "calculatedAt": "2026-10-24T21:05:53.272Z"
+          },
+          "equipmentId": null,
+          "previousValue": 150,
+          "reversibleUntil": "TARGET_EXPOSURE_START",
+          "equipmentSnapshot": null,
+          "target": {
+            "dayIndex": 0,
+            "week": 3
+          },
+          "operationKey": "apply:v1_d0536c0db3ecb3d5",
+          "unit": "SECONDS",
+          "provenance": {
+            "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+            "ruleAuthority": "VDSEN_HEURISTIC",
+            "comparableExposureCount": 2,
+            "ruleId": "C",
+            "evidenceLevel": "C",
+            "directionConsistency": "NOT_APPLICABLE"
+          },
+          "sourceRevision": 1,
+          "planId": "plan-e2e-t-b139",
+          "prescriptionExerciseId": "pid-e2e-t-1",
+          "dimension": "REST",
+          "appliedAt": "2026-10-24T21:06:08.120Z",
+          "key": "ovl_v1_d0536c0db3ecb3d5",
+          "sourceRecordKey": "v1_d0536c0db3ecb3d5",
+          "status": "APPLIED"
+        }
+      }
+    },
+    {
+      "name": "REST athlete-visible numbers match the operational sets",
+      "ok": true,
+      "detail": "OBJETIVO DE ESTA SERIE\nOBJETIVO AUTOAJUSTE VDSEN\n10 reps\nRIR 2\n3 series\nDescanso 3:00"
+    },
+    {
+      "name": "REST real next-exposure DOM has exact server objective and row count",
+      "ok": true,
+      "detail": {
+        "target": "OBJETIVO DE ESTA SERIE\nOBJETIVO AUTOAJUSTE VDSEN\n10 reps\nRIR 2\n3 series\nDescanso 3:00",
+        "authority": "AUTOAJUSTE APLICADO\nCAMBIO RESPECTO DE LA EXPOSICIÓN ANTERIOR\nCarga: sin cambios · Reps: sin cambios · Series: sin cambios · RIR: sin cambios · Descanso: 2:30 → 3:00\n\n150 → 180 s. Motivo: repeticiones incompletas con el RIR previsto: más descanso. Regla C. Origen: aplicación del servidor (no es una sugerencia).",
+        "state": "APPLIED",
+        "history": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "effective": [
+          {
+            "setIndex": 0,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 180,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 1,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 180,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 2,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 180,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          }
+        ],
+        "count": 3,
+        "rows": 3,
+        "copy": "USAR CARGA/REPS · COPIAR HISTORIAL\nSEM 2 · S1 · 10 kg × 8 · Objetivo vigente: 10 reps · No es una recomendación",
+        "errors": []
+      }
+    },
+    {
+      "name": "REST real save starts effective rest timer",
+      "ok": true,
+      "detail": {
+        "stored": 180,
+        "visible": "3:00"
+      }
+    },
+    {
+      "name": "REST real Client receipt + persisted PID execution become CONSUMED",
+      "ok": true,
+      "detail": {
+        "receipt": {
+          "provenance": "CANONICAL_OVERLAY",
+          "overlayKey": "ovl_v1_d0536c0db3ecb3d5",
+          "recordKey": "v1_d0536c0db3ecb3d5",
+          "ackAt": "2026-10-24T21:06:18.569Z",
+          "appliedValue": 180,
+          "dimension": "REST"
+        },
+        "stored": {
+          "carga": "10",
+          "reps": "10",
+          "unit": "KG",
+          "done": true,
+          "rir": 2,
+          "rir_real": "2",
+          "ics": 7,
+          "pump": 1,
+          "ts": 1792875978376,
+          "prescriptionExerciseId": "pid-e2e-t-1",
+          "exerciseNameSnapshot": "Press de pecho E2E"
+        }
+      }
+    },
+    {
+      "name": "REST rendered count, completed session progress and both stored log documents agree",
+      "ok": true,
+      "detail": {
+        "expectedN": 3,
+        "executedKeys": [
+          "log_3_0_0_s0",
+          "log_3_0_0_s1",
+          "log_3_0_0_s2"
+        ],
+        "progressComplete": true
+      }
+    },
+    {
+      "name": "REST consumed overlay remains effective after a new browser session",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "REST continuity respects carried vs exposure-scoped authority",
+      "ok": true,
+      "detail": [
+        {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 180,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 180,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 180,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        }
+      ]
+    },
+    {
+      "name": "DELOAD real UI exposure confirmed in Firestore",
+      "ok": true,
+      "detail": {
+        "logged": 3,
+        "fin": {
+          "triggerCalls": 34,
+          "last": {
+            "status": 200,
+            "body": {
+              "status": "NO_CHANGE",
+              "created": [],
+              "applied": [],
+              "consumed": []
+            }
+          },
+          "errs": []
+        }
+      }
+    },
+    {
+      "name": "DELOAD server generates PENDING before numeric sandbox gate opens",
+      "ok": true,
+      "detail": {
+        "state": "PENDING",
+        "magnitude": {
+          "schema": "vdsen-magnitude-shadow-v1",
+          "ruleAuthority": "VDSEN_HEURISTIC",
+          "evidence": {
+            "repsExecuted": 10,
+            "repsTarget": 10,
+            "rirObserved": 2,
+            "dayIndex": 0,
+            "unit": "KG",
+            "week": 2,
+            "load": 10,
+            "rirPrescribed": 2,
+            "setIndex": 2,
+            "repRange": {
+              "min": 10,
+              "max": 10
+            },
+            "basis": "VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET",
+            "workingSetCount": 3
+          },
+          "applied": false,
+          "comparableExposureCount": 2,
+          "excludedExposures": [],
+          "mode": "SHADOW",
+          "reasonCodes": [
+            "NUMERIC_ACTIVATION_DISABLED"
+          ],
+          "coachReview": [],
+          "structural": {
+            "candidate": {
+              "rawCandidate": 2,
+              "components": {
+                "LOAD": 9,
+                "SETS": 2,
+                "RIR": 4
+              },
+              "finalCandidate": 2,
+              "blockers": [],
+              "ruleId": "S-DELOAD",
+              "dimension": "DELOAD",
+              "previousValue": 3,
+              "previousLoad": 10,
+              "factors": {
+                "load": 0.9,
+                "sets": 0.5
+              }
+            },
+            "evidence": {
+              "dayIndex": 0,
+              "unit": "KG",
+              "avgICS": 7,
+              "week": 2,
+              "fatigueTriggers": [
+                "RPE_HIGH",
+                "SLEEP_LOW"
+              ],
+              "workingSets": 3,
+              "model": "vdsen-structural-v1",
+              "avgRIR": 2,
+              "avgLoad": 10
+            },
+            "kind": "DELOAD",
+            "safety": true,
+            "minExposures": 1,
+            "model": "vdsen-structural-v1",
+            "ruleId": "S-DELOAD",
+            "dimension": "DELOAD",
+            "direction": "DOWN"
+          },
+          "eligible": true,
+          "activationBlockers": [
+            "NUMERIC_ACTIVATION_DISABLED"
+          ],
+          "prescriptionExerciseId": "pid-e2e-d-1",
+          "ruleId": "S-DELOAD",
+          "dimension": "DELOAD",
+          "numericApplyAllowed": false,
+          "direction": "DOWN",
+          "directionConsistency": "NOT_APPLICABLE",
+          "comparableExposures": [
+            {
+              "week": 1,
+              "dayIndex": 0
+            },
+            {
+              "week": 2,
+              "dayIndex": 0
+            }
+          ],
+          "candidates": [
+            {
+              "dimension": "DELOAD",
+              "ruleId": "S-DELOAD",
+              "previousValue": 3,
+              "rawCandidate": 2,
+              "finalCandidate": 2,
+              "components": {
+                "SETS": 2,
+                "LOAD": 9,
+                "RIR": 4
+              },
+              "previousLoad": 10,
+              "factors": {
+                "load": 0.9,
+                "sets": 0.5
+              },
+              "blockers": []
+            }
+          ],
+          "collision": null,
+          "unresolved": null,
+          "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+          "actionable": false,
+          "minExposures": 1,
+          "evidenceLevel": "C",
+          "coachReviewRequired": null
+        },
+        "reason": "MAGNITUDE_POLICY_MISSING"
+      }
+    },
+    {
+      "name": "DELOAD PENDING never changes effective prescription",
+      "ok": true,
+      "detail": {
+        "target": "OBJETIVO DE ESTA SERIE\nESTRUCTURA COACH\n10 reps\nRIR 2\n3 series\nDescanso 2:30",
+        "authority": "PENDIENTE · calculado, aún no aplicado\n\nEl cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique.",
+        "state": "PENDING",
+        "history": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "effective": [
+          {
+            "setIndex": 0,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 1,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 2,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          }
+        ],
+        "count": 3,
+        "rows": 3,
+        "copy": "USAR CARGA/REPS\nSEM 2 · S1 · 10 kg × 10",
+        "errors": []
+      }
+    },
+    {
+      "name": "DELOAD authenticated trusted handler produces APPLIED in sandbox",
+      "ok": true,
+      "detail": {
+        "response": {
+          "status": 200,
+          "body": {
+            "status": "NO_CHANGE",
+            "created": [],
+            "applied": [
+              {
+                "recordKey": "v1_e2e0c64008f7f534",
+                "written": true,
+                "reason": null,
+                "blocked": null
+              }
+            ],
+            "consumed": []
+          }
+        },
+        "overlay": {
+          "roundingReason": null,
+          "schema": "vdsen-next-exposure-overlay-v1",
+          "components": {
+            "LOAD": 9,
+            "SETS": 2,
+            "RIR": 4
+          },
+          "clientId": "NScpNdwYLptlsIPPrlWrNy6W2ekk",
+          "loadUnit": "KG",
+          "appliedValue": 2,
+          "requestedValue": 2,
+          "source": {
+            "dayIndex": 0,
+            "week": 2,
+            "calculatedAt": "2026-10-24T21:06:58.579Z"
+          },
+          "equipmentId": null,
+          "previousValue": 3,
+          "reversibleUntil": "TARGET_EXPOSURE_START",
+          "equipmentSnapshot": null,
+          "target": {
+            "dayIndex": 0,
+            "week": 3
+          },
+          "operationKey": "apply:v1_e2e0c64008f7f534",
+          "unit": "SETS",
+          "provenance": {
+            "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+            "ruleAuthority": "VDSEN_HEURISTIC",
+            "comparableExposureCount": 2,
+            "ruleId": "S-DELOAD",
+            "evidenceLevel": "C",
+            "directionConsistency": "NOT_APPLICABLE"
+          },
+          "sourceRevision": 1,
+          "planId": "plan-e2e-d-a5b6",
+          "prescriptionExerciseId": "pid-e2e-d-1",
+          "dimension": "DELOAD",
+          "appliedAt": "2026-10-24T21:07:13.218Z",
+          "key": "ovl_v1_e2e0c64008f7f534",
+          "sourceRecordKey": "v1_e2e0c64008f7f534",
+          "status": "APPLIED"
+        }
+      }
+    },
+    {
+      "name": "DELOAD athlete-visible numbers match the operational sets",
+      "ok": true,
+      "detail": "OBJETIVO DE ESTA SERIE\nOBJETIVO AUTOAJUSTE VDSEN\nCARGA 9 KG\n10 reps\nRIR 4\n2 series\nDescanso 2:30"
+    },
+    {
+      "name": "DELOAD real next-exposure DOM has exact server objective and row count",
+      "ok": true,
+      "detail": {
+        "target": "OBJETIVO DE ESTA SERIE\nOBJETIVO AUTOAJUSTE VDSEN\nCARGA 9 KG\n10 reps\nRIR 4\n2 series\nDescanso 2:30",
+        "authority": "AUTOAJUSTE APLICADO\nCAMBIO RESPECTO DE LA EXPOSICIÓN ANTERIOR\nCarga: 10 KG → 9 KG · Reps: sin cambios · Series: 3 → 2 · RIR: 2 → 4 · Descanso: sin cambios\n\nDescarga: 3 → 2 series · carga 9 kg. Motivo: señales de fatiga acumulada (2 o más). Regla S-DELOAD. Origen: aplicación del servidor (no es una sugerencia). Carga de descarga calculada; disponibilidad exacta del equipo sin verificar.",
+        "state": "APPLIED",
+        "history": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "effective": [
+          {
+            "setIndex": 0,
+            "repsTarget": 10,
+            "rirTarget": 4,
+            "rirDefaulted": false,
+            "load": 9,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 1,
+            "repsTarget": 10,
+            "rirTarget": 4,
+            "rirDefaulted": false,
+            "load": 9,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          }
+        ],
+        "count": 2,
+        "rows": 2,
+        "copy": "USAR CARGA/REPS\nSEM 2 · S1 · 10 kg × 10",
+        "errors": []
+      }
+    },
+    {
+      "name": "DELOAD real save starts effective rest timer",
+      "ok": true,
+      "detail": {
+        "stored": 150,
+        "visible": "2:29"
+      }
+    },
+    {
+      "name": "DELOAD real Client receipt + persisted PID execution become CONSUMED",
+      "ok": true,
+      "detail": {
+        "receipt": {
+          "provenance": "CANONICAL_OVERLAY",
+          "overlayKey": "ovl_v1_e2e0c64008f7f534",
+          "recordKey": "v1_e2e0c64008f7f534",
+          "ackAt": "2026-10-24T21:07:27.411Z",
+          "appliedValue": 2,
+          "dimension": "DELOAD"
+        },
+        "stored": {
+          "carga": "9",
+          "reps": "10",
+          "unit": "KG",
+          "done": true,
+          "rir": 4,
+          "rir_real": "4",
+          "ics": 7,
+          "pump": 1,
+          "ts": 1792876047253,
+          "prescriptionExerciseId": "pid-e2e-d-1",
+          "exerciseNameSnapshot": "Press de pecho E2E"
+        }
+      }
+    },
+    {
+      "name": "DELOAD rendered count, completed session progress and both stored log documents agree",
+      "ok": true,
+      "detail": {
+        "expectedN": 2,
+        "executedKeys": [
+          "log_3_0_0_s0",
+          "log_3_0_0_s1"
+        ],
+        "progressComplete": true
+      }
+    },
+    {
+      "name": "DELOAD consumed overlay remains effective after a new browser session",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "DELOAD continuity respects carried vs exposure-scoped authority",
+      "ok": true,
+      "detail": [
+        {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        }
+      ]
+    },
+    {
+      "name": "FREEZE real UI exposure confirmed in Firestore",
+      "ok": true,
+      "detail": {
+        "logged": 3,
+        "fin": {
+          "triggerCalls": 41,
+          "last": {
+            "status": 200,
+            "body": {
+              "status": "NO_CHANGE",
+              "created": [],
+              "applied": [],
+              "consumed": []
+            }
+          },
+          "errs": []
+        }
+      }
+    },
+    {
+      "name": "FREEZE server generates PENDING before numeric sandbox gate opens",
+      "ok": true,
+      "detail": {
+        "state": "PENDING",
+        "magnitude": {
+          "schema": "vdsen-magnitude-shadow-v1",
+          "ruleAuthority": "VDSEN_HEURISTIC",
+          "evidence": {
+            "repsExecuted": 10,
+            "repsTarget": 10,
+            "rirObserved": 0,
+            "dayIndex": 0,
+            "unit": "KG",
+            "week": 2,
+            "load": 10,
+            "rirPrescribed": 2,
+            "setIndex": 2,
+            "repRange": {
+              "min": 10,
+              "max": 10
+            },
+            "basis": "VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET",
+            "workingSetCount": 3
+          },
+          "applied": false,
+          "comparableExposureCount": 2,
+          "excludedExposures": [],
+          "mode": "SHADOW",
+          "reasonCodes": [
+            "NUMERIC_ACTIVATION_DISABLED"
+          ],
+          "coachReview": [],
+          "structural": {
+            "volume": {
+              "ceiling": 22,
+              "muscle": "pectoral",
+              "priority": null,
+              "weekly": 3
+            },
+            "candidate": {
+              "rawCandidate": 10,
+              "finalCandidate": 10,
+              "blockers": [],
+              "ruleId": "S-FREEZE-ZERO",
+              "dimension": "FREEZE",
+              "previousValue": 10
+            },
+            "evidence": {
+              "dayIndex": 0,
+              "unit": "KG",
+              "avgICS": 7,
+              "week": 2,
+              "fatigueTriggers": [],
+              "workingSets": 3,
+              "model": "vdsen-structural-v1",
+              "avgRIR": 0,
+              "avgLoad": 10
+            },
+            "kind": "FREEZE_LOAD",
+            "safety": true,
+            "minExposures": 1,
+            "model": "vdsen-structural-v1",
+            "ruleId": "S-FREEZE-ZERO",
+            "dimension": "FREEZE",
+            "direction": "HOLD"
+          },
+          "eligible": true,
+          "activationBlockers": [
+            "NUMERIC_ACTIVATION_DISABLED"
+          ],
+          "prescriptionExerciseId": "pid-e2e-f-1",
+          "ruleId": "S-FREEZE-ZERO",
+          "dimension": "FREEZE",
+          "numericApplyAllowed": false,
+          "direction": "HOLD",
+          "directionConsistency": "NOT_APPLICABLE",
+          "comparableExposures": [
+            {
+              "week": 1,
+              "dayIndex": 0
+            },
+            {
+              "week": 2,
+              "dayIndex": 0
+            }
+          ],
+          "candidates": [
+            {
+              "dimension": "FREEZE",
+              "ruleId": "S-FREEZE-ZERO",
+              "previousValue": 10,
+              "rawCandidate": 10,
+              "finalCandidate": 10,
+              "blockers": []
+            }
+          ],
+          "collision": null,
+          "unresolved": null,
+          "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+          "actionable": false,
+          "minExposures": 1,
+          "evidenceLevel": "C",
+          "coachReviewRequired": null
+        },
+        "reason": "MAGNITUDE_POLICY_MISSING"
+      }
+    },
+    {
+      "name": "FREEZE PENDING never changes effective prescription",
+      "ok": true,
+      "detail": {
+        "target": "OBJETIVO DE ESTA SERIE\nESTRUCTURA COACH\n10 reps\nRIR 2\n3 series\nDescanso 2:30",
+        "authority": "PENDIENTE · calculado, aún no aplicado\n\nEl cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique.",
+        "state": "PENDING",
+        "history": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "effective": [
+          {
+            "setIndex": 0,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 1,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 2,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          }
+        ],
+        "count": 3,
+        "rows": 3,
+        "copy": "USAR CARGA/REPS\nSEM 2 · S1 · 10 kg × 10",
+        "errors": []
+      }
+    },
+    {
+      "name": "FREEZE authenticated trusted handler produces APPLIED in sandbox",
+      "ok": true,
+      "detail": {
+        "response": {
+          "status": 200,
+          "body": {
+            "status": "NO_CHANGE",
+            "created": [],
+            "applied": [
+              {
+                "recordKey": "v1_75787f23a3129e69",
+                "written": true,
+                "reason": null,
+                "blocked": null
+              }
+            ],
+            "consumed": []
+          }
+        },
+        "overlay": {
+          "roundingReason": null,
+          "schema": "vdsen-next-exposure-overlay-v1",
+          "components": null,
+          "clientId": "LY7YGMRZf0HPBs80XVugpEB6FfDu",
+          "loadUnit": "KG",
+          "appliedValue": 10,
+          "requestedValue": 10,
+          "source": {
+            "dayIndex": 0,
+            "week": 2,
+            "calculatedAt": "2026-10-24T21:08:04.929Z"
+          },
+          "equipmentId": null,
+          "previousValue": 10,
+          "reversibleUntil": "TARGET_EXPOSURE_START",
+          "equipmentSnapshot": null,
+          "target": {
+            "dayIndex": 0,
+            "week": 3
+          },
+          "operationKey": "apply:v1_75787f23a3129e69",
+          "unit": "KG",
+          "provenance": {
+            "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+            "ruleAuthority": "VDSEN_HEURISTIC",
+            "comparableExposureCount": 2,
+            "ruleId": "S-FREEZE-ZERO",
+            "evidenceLevel": "C",
+            "directionConsistency": "NOT_APPLICABLE"
+          },
+          "sourceRevision": 1,
+          "planId": "plan-e2e-f-7b0c",
+          "prescriptionExerciseId": "pid-e2e-f-1",
+          "dimension": "FREEZE",
+          "appliedAt": "2026-10-24T21:08:19.528Z",
+          "key": "ovl_v1_75787f23a3129e69",
+          "sourceRecordKey": "v1_75787f23a3129e69",
+          "status": "APPLIED"
+        }
+      }
+    },
+    {
+      "name": "FREEZE athlete-visible numbers match the operational sets",
+      "ok": true,
+      "detail": "OBJETIVO DE ESTA SERIE\nOBJETIVO AUTOAJUSTE VDSEN\nCARGA 10 KG\n10 reps\nRIR 2\n3 series\nDescanso 2:30"
+    },
+    {
+      "name": "FREEZE real next-exposure DOM has exact server objective and row count",
+      "ok": true,
+      "detail": {
+        "target": "OBJETIVO DE ESTA SERIE\nOBJETIVO AUTOAJUSTE VDSEN\nCARGA 10 KG\n10 reps\nRIR 2\n3 series\nDescanso 2:30",
+        "authority": "AUTOAJUSTE APLICADO\nCAMBIO RESPECTO DE LA EXPOSICIÓN ANTERIOR\nCarga: 10 KG → 10 KG · congelación autorizada · Reps: sin cambios · Series: sin cambios · RIR: sin cambios · Descanso: sin cambios\n\nCarga congelada · 10 kg. Motivo: llegaste al fallo antes de lo previsto: se mantiene la carga. Regla S-FREEZE-ZERO. Origen: aplicación del servidor (no es una sugerencia).",
+        "state": "APPLIED",
+        "history": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "effective": [
+          {
+            "setIndex": 0,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 10,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 1,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 10,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 2,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 10,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          }
+        ],
+        "count": 3,
+        "rows": 3,
+        "copy": "USAR CARGA/REPS\nSEM 2 · S1 · 10 kg × 10",
+        "errors": []
+      }
+    },
+    {
+      "name": "FREEZE real save starts effective rest timer",
+      "ok": true,
+      "detail": {
+        "stored": 150,
+        "visible": "2:29"
+      }
+    },
+    {
+      "name": "FREEZE real Client receipt + persisted PID execution become CONSUMED",
+      "ok": true,
+      "detail": {
+        "receipt": {
+          "provenance": "CANONICAL_OVERLAY",
+          "overlayKey": "ovl_v1_75787f23a3129e69",
+          "recordKey": "v1_75787f23a3129e69",
+          "ackAt": "2026-10-24T21:08:29.533Z",
+          "appliedValue": 10,
+          "dimension": "FREEZE"
+        },
+        "stored": {
+          "carga": "10",
+          "reps": "10",
+          "unit": "KG",
+          "done": true,
+          "rir": 2,
+          "rir_real": "2",
+          "ics": 7,
+          "pump": 1,
+          "ts": 1792876109383,
+          "prescriptionExerciseId": "pid-e2e-f-1",
+          "exerciseNameSnapshot": "Press de pecho E2E"
+        }
+      }
+    },
+    {
+      "name": "FREEZE rendered count, completed session progress and both stored log documents agree",
+      "ok": true,
+      "detail": {
+        "expectedN": 3,
+        "executedKeys": [
+          "log_3_0_0_s0",
+          "log_3_0_0_s1",
+          "log_3_0_0_s2"
+        ],
+        "progressComplete": true
+      }
+    },
+    {
+      "name": "FREEZE consumed overlay remains effective after a new browser session",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "FREEZE continuity respects carried vs exposure-scoped authority",
+      "ok": true,
+      "detail": [
+        {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        }
+      ]
+    },
+    {
+      "name": "Brave reported case: historical 10 KG remains separate from 3x8 RIR3 rest2:30, no invented adjustment",
+      "ok": true,
+      "detail": {
+        "target": "OBJETIVO DE ESTA SERIE\nESTRUCTURA COACH\n8 reps\nRIR 3\n3 series\nDescanso 2:30",
+        "authority": "Sin autoajuste aplicado · la referencia no es una progresión",
+        "state": "NO_AUTHORIZED_ADJUSTMENT",
+        "history": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "effective": [
+          {
+            "setIndex": 0,
+            "repsTarget": 8,
+            "rirTarget": 3,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 1,
+            "repsTarget": 8,
+            "rirTarget": 3,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 2,
+            "repsTarget": 8,
+            "rirTarget": 3,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          }
+        ],
+        "count": 3,
+        "rows": 3,
+        "copy": "USAR CARGA/REPS · COPIAR HISTORIAL\nSEM 1 · S1 · 10 kg × 10 · Objetivo vigente: 8 reps · No es una recomendación",
+        "errors": []
+      }
+    },
+    {
+      "name": "historical copy warns about 10 vs 8 reps; editable execution stays separate from objective",
+      "ok": true,
+      "detail": {
+        "warning": "SERIE 1\nMOD. PESADAS\nTU EJECUCIÓN\nOBJETIVO DE ESTA SERIE\nESTRUCTURA COACH\n8 reps\nRIR 3\n3 series\nDescanso 2:30\nREFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.\nSin autoajuste aplicado · la referencia no es una progresión\nUSAR CARGA/REPS · COPIAR HISTORIAL\nSEM 1 · S1 · 10 kg × 10 · Objetivo vigente: 8 reps · No es una recomendación\nCARGA (KG)\n−2.5\n+2.5\nREPS\nRIR REAL\nreps que te quedaban\n0\nFallo\n1\n1 rep\n2\n2 reps\n3\n3 reps\n4+\nFácil\nCALIDAD DE LA SERIE (ICS) opcional\n¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente\nPUMP opcional\nBUENO\nOK\nBAJO\n✓ GUARDAR SERIE 1",
+        "draft": "10",
+        "target": "OBJETIVO DE ESTA SERIE\nESTRUCTURA COACH\n8 reps\nRIR 3\n3 series\nDescanso 2:30"
+      }
+    }
+  ],
+  "evidence": [
+    {
+      "dimension": "LOAD",
+      "overlay": {
+        "roundingReason": "ADVISORY_GRAIN_0.5",
+        "schema": "vdsen-next-exposure-overlay-v1",
+        "components": null,
+        "clientId": "lhkXp8boZOoAx3uDNbpbS3SBQMJg",
+        "loadUnit": null,
+        "appliedValue": 10.5,
+        "requestedValue": 10.5,
+        "source": {
+          "dayIndex": 0,
+          "week": 2,
+          "calculatedAt": "2026-10-24T21:02:03.191Z"
+        },
+        "equipmentId": null,
+        "previousValue": 10,
+        "reversibleUntil": "TARGET_EXPOSURE_START",
+        "equipmentSnapshot": {
+          "unit": "KG",
+          "kind": null,
+          "scope": null,
+          "configuredAt": null,
+          "source": "ADVISORY_GENERIC",
+          "revision": null
+        },
+        "target": {
+          "dayIndex": 0,
+          "week": 3
+        },
+        "operationKey": "apply:v1_e8e782d5a6ffe641",
+        "unit": "KG",
+        "provenance": {
+          "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+          "ruleAuthority": "VDSEN_HEURISTIC",
+          "comparableExposureCount": 2,
+          "ruleId": "A",
+          "evidenceLevel": "C",
+          "directionConsistency": "CONSISTENT"
+        },
+        "sourceRevision": 1,
+        "planId": "plan-e2e-l-5ec4",
+        "prescriptionExerciseId": "pid-e2e-l-1",
+        "dimension": "LOAD",
+        "appliedAt": "2026-10-24T21:02:18.789Z",
+        "key": "ovl_v1_e8e782d5a6ffe641",
+        "sourceRecordKey": "v1_e8e782d5a6ffe641",
+        "status": "APPLIED"
+      },
+      "pending": {
+        "state": "PENDING",
+        "key": "v1_e8e782d5a6ffe641"
+      },
+      "ui": {
+        "target": "OBJETIVO DE ESTA SERIE\nOBJETIVO AUTOAJUSTE VDSEN\nCARGA 10.5 KG\n10 reps\nRIR 2\n3 series\nDescanso 2:30",
+        "authority": "AUTOAJUSTE APLICADO\nCAMBIO RESPECTO DE LA EXPOSICIÓN ANTERIOR\nCarga: 10 KG → 10.5 KG · Reps: sin cambios · Series: sin cambios · RIR: sin cambios · Descanso: sin cambios\n\n10 → 10.5 kg. Motivo: rendiste con más reserva (RIR) de la prevista en las últimas sesiones. Regla A. Origen: aplicación del servidor (no es una sugerencia). Carga orientativa: incremento exacto del equipo no resuelto; adapta y registra lo ejecutado.",
+        "state": "APPLIED",
+        "history": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "effective": [
+          {
+            "setIndex": 0,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 10.5,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 1,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 10.5,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 2,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 10.5,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          }
+        ],
+        "count": 3,
+        "rows": 3,
+        "copy": "USAR CARGA/REPS\nSEM 2 · S1 · 10 kg × 10",
+        "errors": []
+      },
+      "timer": {
+        "stored": 150,
+        "visible": "2:30"
+      },
+      "receipt": {
+        "provenance": "CANONICAL_OVERLAY",
+        "overlayKey": "ovl_v1_e8e782d5a6ffe641",
+        "recordKey": "v1_e8e782d5a6ffe641",
+        "ackAt": "2026-10-24T21:02:29.338Z",
+        "appliedValue": 10.5,
+        "dimension": "LOAD"
+      },
+      "execution": {
+        "carga": "10.5",
+        "reps": "10",
+        "unit": "KG",
+        "done": true,
+        "rir": 2,
+        "rir_real": "2",
+        "ics": 7,
+        "pump": 1,
+        "ts": 1792875749150,
+        "prescriptionExerciseId": "pid-e2e-l-1",
+        "exerciseNameSnapshot": "Press de pecho E2E"
+      },
+      "continuity": [
+        {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 10.5,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 10.5,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 10.5,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        }
+      ]
+    },
+    {
+      "dimension": "REPS",
+      "overlay": {
+        "roundingReason": null,
+        "schema": "vdsen-next-exposure-overlay-v1",
+        "components": null,
+        "clientId": "S7s8YbYXbsdSXvQxIarLiZIcZGrj",
+        "loadUnit": null,
+        "appliedValue": 12,
+        "requestedValue": 12,
+        "source": {
+          "dayIndex": 0,
+          "week": 2,
+          "calculatedAt": "2026-10-24T21:03:10.080Z"
+        },
+        "equipmentId": null,
+        "previousValue": 10,
+        "reversibleUntil": "TARGET_EXPOSURE_START",
+        "equipmentSnapshot": null,
+        "target": {
+          "dayIndex": 0,
+          "week": 3
+        },
+        "operationKey": "apply:v1_47901cc324f3ca59",
+        "unit": "REPS",
+        "provenance": {
+          "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+          "ruleAuthority": "VDSEN_HEURISTIC",
+          "comparableExposureCount": 2,
+          "ruleId": "A",
+          "evidenceLevel": "C",
+          "directionConsistency": "CONSISTENT"
+        },
+        "sourceRevision": 1,
+        "planId": "plan-e2e-r-08db",
+        "prescriptionExerciseId": "pid-e2e-r-1",
+        "dimension": "REPS",
+        "appliedAt": "2026-10-24T21:03:26.038Z",
+        "key": "ovl_v1_47901cc324f3ca59",
+        "sourceRecordKey": "v1_47901cc324f3ca59",
+        "status": "APPLIED"
+      },
+      "pending": {
+        "state": "PENDING",
+        "key": "v1_47901cc324f3ca59"
+      },
+      "ui": {
+        "target": "OBJETIVO DE ESTA SERIE\nOBJETIVO AUTOAJUSTE VDSEN\n12 reps\nRIR 1\n3 series\nDescanso 2:30",
+        "authority": "AUTOAJUSTE APLICADO\nCAMBIO RESPECTO DE LA EXPOSICIÓN ANTERIOR\nCarga: sin cambios · Reps: 10 → 12 · Series: sin cambios · RIR: sin cambios · Descanso: sin cambios\n\n10 → 12 reps. Motivo: rendiste con más reserva (RIR) de la prevista en las últimas sesiones. Regla A. Origen: aplicación del servidor (no es una sugerencia).",
+        "state": "APPLIED",
+        "history": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "effective": [
+          {
+            "setIndex": 0,
+            "repsTarget": 12,
+            "rirTarget": 1,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 1,
+            "repsTarget": 12,
+            "rirTarget": 1,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 2,
+            "repsTarget": 12,
+            "rirTarget": 1,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          }
+        ],
+        "count": 3,
+        "rows": 3,
+        "copy": "USAR CARGA/REPS · COPIAR HISTORIAL\nSEM 2 · S1 · 10 kg × 10 · Objetivo vigente: 12 reps · No es una recomendación",
+        "errors": []
+      },
+      "timer": {
+        "stored": 150,
+        "visible": "2:29"
+      },
+      "receipt": {
+        "provenance": "CANONICAL_OVERLAY",
+        "overlayKey": "ovl_v1_47901cc324f3ca59",
+        "recordKey": "v1_47901cc324f3ca59",
+        "ackAt": "2026-10-24T21:03:36.033Z",
+        "appliedValue": 12,
+        "dimension": "REPS"
+      },
+      "execution": {
+        "carga": "10",
+        "reps": "12",
+        "unit": "KG",
+        "done": true,
+        "rir": 1,
+        "rir_real": "1",
+        "ics": 7,
+        "pump": 1,
+        "ts": 1792875815865,
+        "prescriptionExerciseId": "pid-e2e-r-1",
+        "exerciseNameSnapshot": "Press de pecho E2E"
+      },
+      "continuity": [
+        {
+          "setIndex": 0,
+          "repsTarget": 12,
+          "rirTarget": 1,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 1,
+          "repsTarget": 12,
+          "rirTarget": 1,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 2,
+          "repsTarget": 12,
+          "rirTarget": 1,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        }
+      ]
+    },
+    {
+      "dimension": "SETS",
+      "overlay": {
+        "roundingReason": null,
+        "schema": "vdsen-next-exposure-overlay-v1",
+        "components": null,
+        "clientId": "ANy1mQvs10Sm1Rm9mSZvpUL8ZJaP",
+        "loadUnit": "KG",
+        "appliedValue": 4,
+        "requestedValue": 4,
+        "source": {
+          "dayIndex": 0,
+          "week": 2,
+          "calculatedAt": "2026-10-24T21:04:16.032Z"
+        },
+        "equipmentId": null,
+        "previousValue": 3,
+        "reversibleUntil": "TARGET_EXPOSURE_START",
+        "equipmentSnapshot": null,
+        "target": {
+          "dayIndex": 0,
+          "week": 3
+        },
+        "operationKey": "apply:v1_e06c349d19d5fc21",
+        "unit": "SETS",
+        "provenance": {
+          "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+          "ruleAuthority": "VDSEN_HEURISTIC",
+          "comparableExposureCount": 2,
+          "ruleId": "S-ADD",
+          "evidenceLevel": "C",
+          "directionConsistency": "NOT_APPLICABLE"
+        },
+        "sourceRevision": 1,
+        "planId": "plan-e2e-s-18a5",
+        "prescriptionExerciseId": "pid-e2e-s-1",
+        "dimension": "SETS",
+        "appliedAt": "2026-10-24T21:04:31.877Z",
+        "key": "ovl_v1_e06c349d19d5fc21",
+        "sourceRecordKey": "v1_e06c349d19d5fc21",
+        "status": "APPLIED"
+      },
+      "pending": {
+        "state": "PENDING",
+        "key": "v1_e06c349d19d5fc21"
+      },
+      "ui": {
+        "target": "OBJETIVO DE ESTA SERIE\nOBJETIVO AUTOAJUSTE VDSEN\n10 reps\nRIR 2\n4 series\nDescanso 2:30",
+        "authority": "AUTOAJUSTE APLICADO\nCAMBIO RESPECTO DE LA EXPOSICIÓN ANTERIOR\nCarga: sin cambios · Reps: sin cambios · Series: 3 → 4 · RIR: sin cambios · Descanso: sin cambios\n\n3 → 4 series. Motivo: rendimiento sostenido y buena calidad de serie (ICS ≥ 8). Regla S-ADD. Origen: aplicación del servidor (no es una sugerencia).",
+        "state": "APPLIED",
+        "history": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "effective": [
+          {
+            "setIndex": 0,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 1,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 2,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 3,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          }
+        ],
+        "count": 4,
+        "rows": 4,
+        "copy": "USAR CARGA/REPS\nSEM 2 · S1 · 10 kg × 10",
+        "errors": []
+      },
+      "timer": {
+        "stored": 150,
+        "visible": "2:29"
+      },
+      "receipt": {
+        "provenance": "CANONICAL_OVERLAY",
+        "overlayKey": "ovl_v1_e06c349d19d5fc21",
+        "recordKey": "v1_e06c349d19d5fc21",
+        "ackAt": "2026-10-24T21:04:45.275Z",
+        "appliedValue": 4,
+        "dimension": "SETS"
+      },
+      "execution": {
+        "carga": "10",
+        "reps": "10",
+        "unit": "KG",
+        "done": true,
+        "rir": 2,
+        "rir_real": "2",
+        "ics": 7,
+        "pump": 1,
+        "ts": 1792875885118,
+        "prescriptionExerciseId": "pid-e2e-s-1",
+        "exerciseNameSnapshot": "Press de pecho E2E"
+      },
+      "continuity": [
+        {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 3,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        }
+      ]
+    },
+    {
+      "dimension": "REST",
+      "overlay": {
+        "roundingReason": null,
+        "schema": "vdsen-next-exposure-overlay-v1",
+        "components": null,
+        "clientId": "beCApoKLqBSO0KxgRynMILvt5ldH",
+        "loadUnit": null,
+        "appliedValue": 180,
+        "requestedValue": 180,
+        "source": {
+          "dayIndex": 0,
+          "week": 2,
+          "calculatedAt": "2026-10-24T21:05:53.272Z"
+        },
+        "equipmentId": null,
+        "previousValue": 150,
+        "reversibleUntil": "TARGET_EXPOSURE_START",
+        "equipmentSnapshot": null,
+        "target": {
+          "dayIndex": 0,
+          "week": 3
+        },
+        "operationKey": "apply:v1_d0536c0db3ecb3d5",
+        "unit": "SECONDS",
+        "provenance": {
+          "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+          "ruleAuthority": "VDSEN_HEURISTIC",
+          "comparableExposureCount": 2,
+          "ruleId": "C",
+          "evidenceLevel": "C",
+          "directionConsistency": "NOT_APPLICABLE"
+        },
+        "sourceRevision": 1,
+        "planId": "plan-e2e-t-b139",
+        "prescriptionExerciseId": "pid-e2e-t-1",
+        "dimension": "REST",
+        "appliedAt": "2026-10-24T21:06:08.120Z",
+        "key": "ovl_v1_d0536c0db3ecb3d5",
+        "sourceRecordKey": "v1_d0536c0db3ecb3d5",
+        "status": "APPLIED"
+      },
+      "pending": {
+        "state": "PENDING",
+        "key": "v1_d0536c0db3ecb3d5"
+      },
+      "ui": {
+        "target": "OBJETIVO DE ESTA SERIE\nOBJETIVO AUTOAJUSTE VDSEN\n10 reps\nRIR 2\n3 series\nDescanso 3:00",
+        "authority": "AUTOAJUSTE APLICADO\nCAMBIO RESPECTO DE LA EXPOSICIÓN ANTERIOR\nCarga: sin cambios · Reps: sin cambios · Series: sin cambios · RIR: sin cambios · Descanso: 2:30 → 3:00\n\n150 → 180 s. Motivo: repeticiones incompletas con el RIR previsto: más descanso. Regla C. Origen: aplicación del servidor (no es una sugerencia).",
+        "state": "APPLIED",
+        "history": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "effective": [
+          {
+            "setIndex": 0,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 180,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 1,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 180,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 2,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 0,
+            "restSeconds": 180,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          }
+        ],
+        "count": 3,
+        "rows": 3,
+        "copy": "USAR CARGA/REPS · COPIAR HISTORIAL\nSEM 2 · S1 · 10 kg × 8 · Objetivo vigente: 10 reps · No es una recomendación",
+        "errors": []
+      },
+      "timer": {
+        "stored": 180,
+        "visible": "3:00"
+      },
+      "receipt": {
+        "provenance": "CANONICAL_OVERLAY",
+        "overlayKey": "ovl_v1_d0536c0db3ecb3d5",
+        "recordKey": "v1_d0536c0db3ecb3d5",
+        "ackAt": "2026-10-24T21:06:18.569Z",
+        "appliedValue": 180,
+        "dimension": "REST"
+      },
+      "execution": {
+        "carga": "10",
+        "reps": "10",
+        "unit": "KG",
+        "done": true,
+        "rir": 2,
+        "rir_real": "2",
+        "ics": 7,
+        "pump": 1,
+        "ts": 1792875978376,
+        "prescriptionExerciseId": "pid-e2e-t-1",
+        "exerciseNameSnapshot": "Press de pecho E2E"
+      },
+      "continuity": [
+        {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 180,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 180,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 180,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        }
+      ]
+    },
+    {
+      "dimension": "DELOAD",
+      "overlay": {
+        "roundingReason": null,
+        "schema": "vdsen-next-exposure-overlay-v1",
+        "components": {
+          "LOAD": 9,
+          "SETS": 2,
+          "RIR": 4
+        },
+        "clientId": "NScpNdwYLptlsIPPrlWrNy6W2ekk",
+        "loadUnit": "KG",
+        "appliedValue": 2,
+        "requestedValue": 2,
+        "source": {
+          "dayIndex": 0,
+          "week": 2,
+          "calculatedAt": "2026-10-24T21:06:58.579Z"
+        },
+        "equipmentId": null,
+        "previousValue": 3,
+        "reversibleUntil": "TARGET_EXPOSURE_START",
+        "equipmentSnapshot": null,
+        "target": {
+          "dayIndex": 0,
+          "week": 3
+        },
+        "operationKey": "apply:v1_e2e0c64008f7f534",
+        "unit": "SETS",
+        "provenance": {
+          "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+          "ruleAuthority": "VDSEN_HEURISTIC",
+          "comparableExposureCount": 2,
+          "ruleId": "S-DELOAD",
+          "evidenceLevel": "C",
+          "directionConsistency": "NOT_APPLICABLE"
+        },
+        "sourceRevision": 1,
+        "planId": "plan-e2e-d-a5b6",
+        "prescriptionExerciseId": "pid-e2e-d-1",
+        "dimension": "DELOAD",
+        "appliedAt": "2026-10-24T21:07:13.218Z",
+        "key": "ovl_v1_e2e0c64008f7f534",
+        "sourceRecordKey": "v1_e2e0c64008f7f534",
+        "status": "APPLIED"
+      },
+      "pending": {
+        "state": "PENDING",
+        "key": "v1_e2e0c64008f7f534"
+      },
+      "ui": {
+        "target": "OBJETIVO DE ESTA SERIE\nOBJETIVO AUTOAJUSTE VDSEN\nCARGA 9 KG\n10 reps\nRIR 4\n2 series\nDescanso 2:30",
+        "authority": "AUTOAJUSTE APLICADO\nCAMBIO RESPECTO DE LA EXPOSICIÓN ANTERIOR\nCarga: 10 KG → 9 KG · Reps: sin cambios · Series: 3 → 2 · RIR: 2 → 4 · Descanso: sin cambios\n\nDescarga: 3 → 2 series · carga 9 kg. Motivo: señales de fatiga acumulada (2 o más). Regla S-DELOAD. Origen: aplicación del servidor (no es una sugerencia). Carga de descarga calculada; disponibilidad exacta del equipo sin verificar.",
+        "state": "APPLIED",
+        "history": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "effective": [
+          {
+            "setIndex": 0,
+            "repsTarget": 10,
+            "rirTarget": 4,
+            "rirDefaulted": false,
+            "load": 9,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 1,
+            "repsTarget": 10,
+            "rirTarget": 4,
+            "rirDefaulted": false,
+            "load": 9,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          }
+        ],
+        "count": 2,
+        "rows": 2,
+        "copy": "USAR CARGA/REPS\nSEM 2 · S1 · 10 kg × 10",
+        "errors": []
+      },
+      "timer": {
+        "stored": 150,
+        "visible": "2:29"
+      },
+      "receipt": {
+        "provenance": "CANONICAL_OVERLAY",
+        "overlayKey": "ovl_v1_e2e0c64008f7f534",
+        "recordKey": "v1_e2e0c64008f7f534",
+        "ackAt": "2026-10-24T21:07:27.411Z",
+        "appliedValue": 2,
+        "dimension": "DELOAD"
+      },
+      "execution": {
+        "carga": "9",
+        "reps": "10",
+        "unit": "KG",
+        "done": true,
+        "rir": 4,
+        "rir_real": "4",
+        "ics": 7,
+        "pump": 1,
+        "ts": 1792876047253,
+        "prescriptionExerciseId": "pid-e2e-d-1",
+        "exerciseNameSnapshot": "Press de pecho E2E"
+      },
+      "continuity": [
+        {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        }
+      ]
+    },
+    {
+      "dimension": "FREEZE",
+      "overlay": {
+        "roundingReason": null,
+        "schema": "vdsen-next-exposure-overlay-v1",
+        "components": null,
+        "clientId": "LY7YGMRZf0HPBs80XVugpEB6FfDu",
+        "loadUnit": "KG",
+        "appliedValue": 10,
+        "requestedValue": 10,
+        "source": {
+          "dayIndex": 0,
+          "week": 2,
+          "calculatedAt": "2026-10-24T21:08:04.929Z"
+        },
+        "equipmentId": null,
+        "previousValue": 10,
+        "reversibleUntil": "TARGET_EXPOSURE_START",
+        "equipmentSnapshot": null,
+        "target": {
+          "dayIndex": 0,
+          "week": 3
+        },
+        "operationKey": "apply:v1_75787f23a3129e69",
+        "unit": "KG",
+        "provenance": {
+          "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+          "ruleAuthority": "VDSEN_HEURISTIC",
+          "comparableExposureCount": 2,
+          "ruleId": "S-FREEZE-ZERO",
+          "evidenceLevel": "C",
+          "directionConsistency": "NOT_APPLICABLE"
+        },
+        "sourceRevision": 1,
+        "planId": "plan-e2e-f-7b0c",
+        "prescriptionExerciseId": "pid-e2e-f-1",
+        "dimension": "FREEZE",
+        "appliedAt": "2026-10-24T21:08:19.528Z",
+        "key": "ovl_v1_75787f23a3129e69",
+        "sourceRecordKey": "v1_75787f23a3129e69",
+        "status": "APPLIED"
+      },
+      "pending": {
+        "state": "PENDING",
+        "key": "v1_75787f23a3129e69"
+      },
+      "ui": {
+        "target": "OBJETIVO DE ESTA SERIE\nOBJETIVO AUTOAJUSTE VDSEN\nCARGA 10 KG\n10 reps\nRIR 2\n3 series\nDescanso 2:30",
+        "authority": "AUTOAJUSTE APLICADO\nCAMBIO RESPECTO DE LA EXPOSICIÓN ANTERIOR\nCarga: 10 KG → 10 KG · congelación autorizada · Reps: sin cambios · Series: sin cambios · RIR: sin cambios · Descanso: sin cambios\n\nCarga congelada · 10 kg. Motivo: llegaste al fallo antes de lo previsto: se mantiene la carga. Regla S-FREEZE-ZERO. Origen: aplicación del servidor (no es una sugerencia).",
+        "state": "APPLIED",
+        "history": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "effective": [
+          {
+            "setIndex": 0,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 10,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 1,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 10,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          },
+          {
+            "setIndex": 2,
+            "repsTarget": 10,
+            "rirTarget": 2,
+            "rirDefaulted": false,
+            "load": 10,
+            "restSeconds": 150,
+            "restDefaulted": false,
+            "setNote": "",
+            "drop": false,
+            "tempo": ""
+          }
+        ],
+        "count": 3,
+        "rows": 3,
+        "copy": "USAR CARGA/REPS\nSEM 2 · S1 · 10 kg × 10",
+        "errors": []
+      },
+      "timer": {
+        "stored": 150,
+        "visible": "2:29"
+      },
+      "receipt": {
+        "provenance": "CANONICAL_OVERLAY",
+        "overlayKey": "ovl_v1_75787f23a3129e69",
+        "recordKey": "v1_75787f23a3129e69",
+        "ackAt": "2026-10-24T21:08:29.533Z",
+        "appliedValue": 10,
+        "dimension": "FREEZE"
+      },
+      "execution": {
+        "carga": "10",
+        "reps": "10",
+        "unit": "KG",
+        "done": true,
+        "rir": 2,
+        "rir_real": "2",
+        "ics": 7,
+        "pump": 1,
+        "ts": 1792876109383,
+        "prescriptionExerciseId": "pid-e2e-f-1",
+        "exerciseNameSnapshot": "Press de pecho E2E"
+      },
+      "continuity": [
+        {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        },
+        {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "rirDefaulted": false,
+          "load": 0,
+          "restSeconds": 150,
+          "restDefaulted": false,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+        }
+      ]
+    }
+  ]
+}

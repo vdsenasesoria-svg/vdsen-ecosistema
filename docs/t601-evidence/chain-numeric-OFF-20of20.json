@@ -1,0 +1,2700 @@
+{
+ "sha": "1b36318d557e76bb148f1a12f8ac3d625c165c33",
+ "numericSandbox": false,
+ "note": "Emulator only; synthetic athletes; week-2 session executed through the real Client UI.",
+ "results": [
+  {
+   "case": "T1",
+   "desc": "progression dimensions",
+   "numericServer": false,
+   "exercises": [
+    {
+     "name": "Press T599R LOAD",
+     "pid": "pid#0",
+     "expect": {
+      "dimension": "LOAD",
+      "ruleId": "A",
+      "previous": 100,
+      "candidate": 105,
+      "applied": 105,
+      "unit": "KG"
+     },
+     "records": [
+      {
+       "state": "PENDING",
+       "reasonCode": "MAGNITUDE_POLICY_MISSING",
+       "action": "increase_load",
+       "dimension": "LOAD",
+       "nextExposure": {
+        "dayIndex": 0,
+        "week": 3
+       },
+       "magnitude": {
+        "eligible": true,
+        "ruleId": "A",
+        "dimension": "LOAD",
+        "direction": "UP",
+        "directionConsistency": "CONSISTENT",
+        "comparableExposureCount": 2,
+        "reasonCodes": [
+         "NUMERIC_ACTIVATION_DISABLED",
+         "EQUIPMENT_INCREMENT_POLICY_MISSING"
+        ],
+        "coachReviewRequired": null,
+        "candidates": [
+         {
+          "dimension": "LOAD",
+          "ruleId": "A",
+          "previousValue": 100,
+          "rawCandidate": 105,
+          "finalCandidate": null,
+          "blockers": [
+           "EQUIPMENT_INCREMENT_POLICY_MISSING"
+          ]
+         }
+        ]
+       }
+      }
+     ],
+     "overlays": [],
+     "view": {
+      "setRows": 1,
+      "setRowIds": [
+       "setrow_log_3_0_0_s0"
+      ],
+      "autoadjust": null,
+      "autoadjustMain": null,
+      "autoadjustNote": null,
+      "chips": [],
+      "targets": [
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       }
+      ],
+      "current": {
+       "id": "setrow_log_3_0_0_s0",
+       "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG.",
+       "hasReference": true
+      },
+      "authority": "PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique.",
+      "authorityState": "PENDING",
+      "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG.",
+      "exerciseName": "- T599R",
+      "pageText": "✓ 2 SEMS › 3 ACTIVA 4 · D1 - T599R SEM 3 · PEAK - T599R 0/5 ejercicios COMPLETAR Saltar Copiar sem. anterior 0/15 SERIES --:-- TIEMPO — RIR MEDIO — ICS MEDIO 01 Press T599R LOAD 02 Curl T599R REPS 03 Remo T599R SETS 04 Ext T599R REST 05 Ext T599R REST2 01 Press T599R LOAD FICHA ESTRUCTURA COACH SERIES 3 REPS 10 RIR 2 DESCANSO 1:30 KG Omitir ejercicio CALENTAMIENTO referencia ÚLTIMA SEMANA · SEM 2 Referencia de tu sesión anterior S1 · 100 kg × 10 · RIR 4 S2 · 100 kg × 10 · RIR 4 S3 · 100 kg × 10 · RIR 4 SERIES 0/3 SERIE 1 MODERADAS TU EJECUCIÓN OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. USAR CARGA/REPS SEM 2 · S1 · 100 kg × 10 CARGA (KG) −2.5 +2.5 REPS RIR REAL reps que te quedaban 0 Fallo 1 1 rep 2 2 reps 3 3 reps 4+ Fácil CALIDAD DE LA SERIE (ICS) opcional ¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente PUMP opcional BUENO OK BAJO ✓ GUARDAR SERIE 1 2 SERIE 2 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. 3 SERIE 3 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. SEM 3 — 1 sesión(es) pendiente(s) DESDE HISTORIAL QUÉ ES RIR Y QUÉ ES ICS"
+     }
+    },
+    {
+     "name": "Curl T599R REPS",
+     "pid": "pid#1",
+     "expect": {
+      "dimension": "REPS",
+      "ruleId": "A",
+      "previous": 10,
+      "candidate": 11,
+      "applied": 11
+     },
+     "records": [
+      {
+       "state": "PENDING",
+       "reasonCode": "MAGNITUDE_POLICY_MISSING",
+       "action": "increase_load",
+       "dimension": "REPS",
+       "nextExposure": {
+        "dayIndex": 0,
+        "week": 3
+       },
+       "magnitude": {
+        "eligible": true,
+        "ruleId": "A",
+        "dimension": "REPS",
+        "direction": "UP",
+        "directionConsistency": "CONSISTENT",
+        "comparableExposureCount": 2,
+        "reasonCodes": [
+         "NUMERIC_ACTIVATION_DISABLED"
+        ],
+        "coachReviewRequired": null,
+        "candidates": [
+         {
+          "dimension": "REPS",
+          "ruleId": "A",
+          "previousValue": 10,
+          "rawCandidate": 11,
+          "finalCandidate": 11,
+          "blockers": []
+         }
+        ]
+       }
+      }
+     ],
+     "overlays": [],
+     "view": {
+      "setRows": 1,
+      "setRowIds": [
+       "setrow_log_3_0_1_s0"
+      ],
+      "autoadjust": null,
+      "autoadjustMain": null,
+      "autoadjustNote": null,
+      "chips": [],
+      "targets": [
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 1 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 1 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 1 3 series Descanso 1:30"
+       }
+      ],
+      "current": {
+       "id": "setrow_log_3_0_1_s0",
+       "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 60 KG.",
+       "hasReference": true
+      },
+      "authority": "PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique.",
+      "authorityState": "PENDING",
+      "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 60 KG.",
+      "exerciseName": "- T599R",
+      "pageText": "✓ 2 SEMS › 3 ACTIVA 4 · D1 - T599R SEM 3 · PEAK - T599R 0/5 ejercicios COMPLETAR Saltar Copiar sem. anterior 0/15 SERIES --:-- TIEMPO — RIR MEDIO — ICS MEDIO 01 Press T599R LOAD 02 Curl T599R REPS 03 Remo T599R SETS 04 Ext T599R REST 05 Ext T599R REST2 02 Curl T599R REPS FICHA ESTRUCTURA COACH SERIES 3 REPS 10 RIR 1 DESCANSO 1:30 KG Omitir ejercicio ÚLTIMA SEMANA · SEM 2 Referencia de tu sesión anterior S1 · 60 kg × 10 · RIR 2 S2 · 60 kg × 10 · RIR 2 S3 · 60 kg × 10 · RIR 2 SERIES 0/3 SERIE 1 MODERADAS TU EJECUCIÓN OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 1 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 60 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. USAR CARGA/REPS SEM 2 · S1 · 60 kg × 10 CARGA (KG) −2.5 +2.5 REPS RIR REAL reps que te quedaban 0 Fallo 1 1 rep 2 2 reps 3 3 reps 4+ Fácil CALIDAD DE LA SERIE (ICS) opcional ¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente PUMP opcional BUENO OK BAJO ✓ GUARDAR SERIE 1 2 SERIE 2 10 reps · RIR 1 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 1 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 60 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. 3 SERIE 3 10 reps · RIR 1 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 1 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 60 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. SEM 3 — 1 sesión(es) pendiente(s) DESDE HISTORIAL QUÉ ES RIR Y QUÉ ES ICS"
+     }
+    },
+    {
+     "name": "Remo T599R SETS",
+     "pid": "pid#2",
+     "expect": {
+      "dimension": "SETS",
+      "ruleId": "S-ADD",
+      "previous": 3,
+      "candidate": 4,
+      "applied": 4
+     },
+     "records": [
+      {
+       "state": "PENDING",
+       "reasonCode": "MAGNITUDE_POLICY_MISSING",
+       "action": "add_sets",
+       "dimension": "SETS",
+       "nextExposure": {
+        "dayIndex": 0,
+        "week": 3
+       },
+       "magnitude": {
+        "eligible": true,
+        "ruleId": "S-ADD",
+        "dimension": "SETS",
+        "direction": "UP",
+        "directionConsistency": "NOT_APPLICABLE",
+        "comparableExposureCount": 2,
+        "reasonCodes": [
+         "NUMERIC_ACTIVATION_DISABLED"
+        ],
+        "coachReviewRequired": null,
+        "candidates": [
+         {
+          "dimension": "SETS",
+          "ruleId": "S-ADD",
+          "previousValue": 3,
+          "rawCandidate": 4,
+          "finalCandidate": 4,
+          "blockers": []
+         }
+        ],
+        "structural": "ADD_SETS"
+       }
+      }
+     ],
+     "overlays": [],
+     "view": {
+      "setRows": 1,
+      "setRowIds": [
+       "setrow_log_3_0_2_s0"
+      ],
+      "autoadjust": null,
+      "autoadjustMain": null,
+      "autoadjustNote": null,
+      "chips": [],
+      "targets": [
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       }
+      ],
+      "current": {
+       "id": "setrow_log_3_0_2_s0",
+       "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 80 KG.",
+       "hasReference": true
+      },
+      "authority": "PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique.",
+      "authorityState": "PENDING",
+      "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 80 KG.",
+      "exerciseName": "- T599R",
+      "pageText": "✓ 2 SEMS › 3 ACTIVA 4 · D1 - T599R SEM 3 · PEAK - T599R 0/5 ejercicios COMPLETAR Saltar Copiar sem. anterior 0/15 SERIES --:-- TIEMPO — RIR MEDIO — ICS MEDIO 01 Press T599R LOAD 02 Curl T599R REPS 03 Remo T599R SETS 04 Ext T599R REST 05 Ext T599R REST2 03 Remo T599R SETS FICHA ESTRUCTURA COACH SERIES 3 REPS 10 RIR 2 DESCANSO 1:30 KG Omitir ejercicio ÚLTIMA SEMANA · SEM 2 Referencia de tu sesión anterior S1 · 80 kg × 10 · RIR 2 S2 · 80 kg × 10 · RIR 2 S3 · 80 kg × 10 · RIR 2 SERIES 0/3 SERIE 1 MODERADAS TU EJECUCIÓN OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 80 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. USAR CARGA/REPS SEM 2 · S1 · 80 kg × 10 CARGA (KG) −2.5 +2.5 REPS RIR REAL reps que te quedaban 0 Fallo 1 1 rep 2 2 reps 3 3 reps 4+ Fácil CALIDAD DE LA SERIE (ICS) opcional ¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente PUMP opcional BUENO OK BAJO ✓ GUARDAR SERIE 1 2 SERIE 2 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 80 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. 3 SERIE 3 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 80 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. SEM 3 — 1 sesión(es) pendiente(s) DESDE HISTORIAL QUÉ ES RIR Y QUÉ ES ICS"
+     }
+    },
+    {
+     "name": "Ext T599R REST",
+     "pid": "pid#3",
+     "expect": {
+      "dimension": "REST",
+      "ruleId": "C",
+      "previous": 90,
+      "candidate": 120,
+      "applied": 120,
+      "rest": 120,
+      "note": "D-01: natural rule-C evidence, the Client says \"maintain\""
+     },
+     "records": [
+      {
+       "state": "PENDING",
+       "reasonCode": "MAGNITUDE_POLICY_MISSING",
+       "action": "maintain",
+       "dimension": "REST",
+       "nextExposure": {
+        "dayIndex": 0,
+        "week": 3
+       },
+       "magnitude": {
+        "eligible": true,
+        "ruleId": "C",
+        "dimension": "REST",
+        "direction": "REST",
+        "directionConsistency": "NOT_APPLICABLE",
+        "comparableExposureCount": 2,
+        "reasonCodes": [
+         "NUMERIC_ACTIVATION_DISABLED"
+        ],
+        "coachReviewRequired": null,
+        "candidates": [
+         {
+          "dimension": "REST",
+          "ruleId": "C",
+          "previousValue": 90,
+          "rawCandidate": 120,
+          "finalCandidate": 120,
+          "blockers": []
+         }
+        ]
+       }
+      }
+     ],
+     "overlays": [],
+     "view": {
+      "setRows": 1,
+      "setRowIds": [
+       "setrow_log_3_0_3_s0"
+      ],
+      "autoadjust": null,
+      "autoadjustMain": null,
+      "autoadjustNote": null,
+      "chips": [],
+      "targets": [
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       }
+      ],
+      "current": {
+       "id": "setrow_log_3_0_3_s0",
+       "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 40 KG.",
+       "hasReference": true
+      },
+      "authority": "PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique.",
+      "authorityState": "PENDING",
+      "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 40 KG.",
+      "exerciseName": "- T599R",
+      "pageText": "✓ 2 SEMS › 3 ACTIVA 4 · D1 - T599R SEM 3 · PEAK - T599R 0/5 ejercicios COMPLETAR Saltar Copiar sem. anterior 0/15 SERIES --:-- TIEMPO — RIR MEDIO — ICS MEDIO 01 Press T599R LOAD 02 Curl T599R REPS 03 Remo T599R SETS 04 Ext T599R REST 05 Ext T599R REST2 04 Ext T599R REST FICHA ESTRUCTURA COACH SERIES 3 REPS 10 RIR 2 DESCANSO 1:30 KG Omitir ejercicio ÚLTIMA SEMANA · SEM 2 Referencia de tu sesión anterior S1 · 40 kg × 10 · RIR 2 S2 · 40 kg × 10 · RIR 2 S3 · 40 kg × 8 · RIR 2 SERIES 0/3 SERIE 1 MODERADAS TU EJECUCIÓN OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 40 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. USAR CARGA/REPS SEM 2 · S1 · 40 kg × 10 CARGA (KG) −2.5 +2.5 REPS RIR REAL reps que te quedaban 0 Fallo 1 1 rep 2 2 reps 3 3 reps 4+ Fácil CALIDAD DE LA SERIE (ICS) opcional ¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente PUMP opcional BUENO OK BAJO ✓ GUARDAR SERIE 1 2 SERIE 2 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 40 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. 3 SERIE 3 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 40 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. SEM 3 — 1 sesión(es) pendiente(s) DESDE HISTORIAL QUÉ ES RIR Y QUÉ ES ICS"
+     }
+    },
+    {
+     "name": "Ext T599R REST2",
+     "pid": "pid#4",
+     "expect": {
+      "dimension": "REST",
+      "ruleId": "C",
+      "previous": 90,
+      "candidate": 120,
+      "applied": 120,
+      "rest": 120,
+      "note": "earlier sets easier but the LAST working set is C"
+     },
+     "records": [
+      {
+       "state": "PENDING",
+       "reasonCode": "MAGNITUDE_POLICY_MISSING",
+       "action": "maintain",
+       "dimension": "REST",
+       "nextExposure": {
+        "dayIndex": 0,
+        "week": 3
+       },
+       "magnitude": {
+        "eligible": true,
+        "ruleId": "C",
+        "dimension": "REST",
+        "direction": "REST",
+        "directionConsistency": "NOT_APPLICABLE",
+        "comparableExposureCount": 2,
+        "reasonCodes": [
+         "NUMERIC_ACTIVATION_DISABLED"
+        ],
+        "coachReviewRequired": null,
+        "candidates": [
+         {
+          "dimension": "REST",
+          "ruleId": "C",
+          "previousValue": 90,
+          "rawCandidate": 120,
+          "finalCandidate": 120,
+          "blockers": []
+         }
+        ]
+       }
+      }
+     ],
+     "overlays": [],
+     "view": {
+      "setRows": 1,
+      "setRowIds": [
+       "setrow_log_3_0_4_s0"
+      ],
+      "autoadjust": null,
+      "autoadjustMain": null,
+      "autoadjustNote": null,
+      "chips": [],
+      "targets": [
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       }
+      ],
+      "current": {
+       "id": "setrow_log_3_0_4_s0",
+       "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 40 KG.",
+       "hasReference": true
+      },
+      "authority": "PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique.",
+      "authorityState": "PENDING",
+      "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 40 KG.",
+      "exerciseName": "- T599R",
+      "pageText": "✓ 2 SEMS › 3 ACTIVA 4 · D1 - T599R SEM 3 · PEAK - T599R 0/5 ejercicios COMPLETAR Saltar Copiar sem. anterior 0/15 SERIES --:-- TIEMPO — RIR MEDIO — ICS MEDIO 01 Press T599R LOAD 02 Curl T599R REPS 03 Remo T599R SETS 04 Ext T599R REST 05 Ext T599R REST2 05 Ext T599R REST2 FICHA ESTRUCTURA COACH SERIES 3 REPS 10 RIR 2 DESCANSO 1:30 KG Omitir ejercicio ÚLTIMA SEMANA · SEM 2 Referencia de tu sesión anterior S1 · 40 kg × 10 · RIR 4 S2 · 40 kg × 10 · RIR 4 S3 · 40 kg × 8 · RIR 2 SERIES 0/3 SERIE 1 MODERADAS TU EJECUCIÓN OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 40 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. USAR CARGA/REPS SEM 2 · S1 · 40 kg × 10 CARGA (KG) −2.5 +2.5 REPS RIR REAL reps que te quedaban 0 Fallo 1 1 rep 2 2 reps 3 3 reps 4+ Fácil CALIDAD DE LA SERIE (ICS) opcional ¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente PUMP opcional BUENO OK BAJO ✓ GUARDAR SERIE 1 2 SERIE 2 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 40 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. 3 SERIE 3 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 40 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. SEM 3 — 1 sesión(es) pendiente(s) DESDE HISTORIAL QUÉ ES RIR Y QUÉ ES ICS"
+     }
+    }
+   ],
+   "weekAtStart": 2,
+   "weekAfterSession": 3,
+   "progrecSeenByClient": [
+    {
+     "exerciseName": "Press T599R LOAD",
+     "action": "increase_load",
+     "newLoad": 101.5,
+     "newReps": 10,
+     "newSets": 3,
+     "prescriptionExerciseId": "t599r-t1-1"
+    },
+    {
+     "exerciseName": "Curl T599R REPS",
+     "action": "increase_load",
+     "newLoad": 61.5,
+     "newReps": 10,
+     "newSets": 3,
+     "prescriptionExerciseId": "t599r-t1-2"
+    },
+    {
+     "exerciseName": "Remo T599R SETS",
+     "action": "add_sets",
+     "newLoad": 80,
+     "newReps": 10,
+     "newSets": 4,
+     "prescriptionExerciseId": "t599r-t1-3"
+    },
+    {
+     "exerciseName": "Ext T599R REST",
+     "action": "maintain",
+     "newLoad": 40,
+     "newReps": 10,
+     "newSets": 3,
+     "prescriptionExerciseId": "t599r-t1-4"
+    },
+    {
+     "exerciseName": "Ext T599R REST2",
+     "action": "maintain",
+     "newLoad": 40,
+     "newReps": 10,
+     "newSets": 3,
+     "prescriptionExerciseId": "t599r-t1-5"
+    }
+   ],
+   "deloadTriggers": [],
+   "summary": {
+    "counts": {
+     "STALE": 0,
+     "REVERTED": 0,
+     "CONSUMED": 0,
+     "PENDING": 5,
+     "OVERRIDDEN": 0,
+     "APPLIED": 0,
+     "REJECTED": 0
+    },
+    "autoCount": 5,
+    "planId": "plan-t599r-t1-df0e",
+    "items": [
+     {
+      "key": "v1_7adbd2c9902683dd",
+      "revision": 1,
+      "state": "PENDING",
+      "reasonCode": "MAGNITUDE_POLICY_MISSING",
+      "exerciseNameSnapshot": "Press T599R LOAD",
+      "prescriptionExerciseId": "t599r-t1-1",
+      "action": "increase_load",
+      "dimension": "LOAD",
+      "lifecycle": null,
+      "source": {
+       "week": 2,
+       "dayIndex": 0,
+       "calculatedAt": "2026-10-24T20:56:54.588Z"
+      },
+      "nextExposure": {
+       "week": 3,
+       "dayIndex": 0
+      },
+      "updatedAt": "2026-10-24T20:56:54.820Z",
+      "magnitude": {
+       "mode": "SHADOW",
+       "eligible": true,
+       "ruleId": "A",
+       "dimension": "LOAD",
+       "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+       "ruleAuthority": "VDSEN_HEURISTIC",
+       "evidenceLevel": "C",
+       "comparableExposureCount": 2,
+       "unresolved": null,
+       "direction": "UP",
+       "directionConsistency": "CONSISTENT",
+       "review": null,
+       "coachReviewRequired": null,
+       "candidates": [
+        {
+         "dimension": "LOAD",
+         "ruleId": "A",
+         "rawCandidate": 105,
+         "finalCandidate": null,
+         "deltaSeconds": null,
+         "blockers": [
+          "EQUIPMENT_INCREMENT_POLICY_MISSING"
+         ]
+        }
+       ],
+       "evidence": {
+        "basis": "VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET",
+        "rirPrescribed": 2,
+        "rirObserved": 4,
+        "repsTarget": 10,
+        "repsExecuted": 10,
+        "load": 100,
+        "unit": "KG"
+       },
+       "activationBlockers": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "coachReview": [],
+       "reasonCodes": [
+        "NUMERIC_ACTIVATION_DISABLED",
+        "EQUIPMENT_INCREMENT_POLICY_MISSING"
+       ],
+       "numericApplyAllowed": false,
+       "applied": false,
+       "structural": null,
+       "primaryRaw": 105
+      }
+     },
+     {
+      "key": "v1_903e8edc85c8cfb4",
+      "revision": 1,
+      "state": "PENDING",
+      "reasonCode": "MAGNITUDE_POLICY_MISSING",
+      "exerciseNameSnapshot": "Curl T599R REPS",
+      "prescriptionExerciseId": "t599r-t1-2",
+      "action": "increase_load",
+      "dimension": "REPS",
+      "lifecycle": null,
+      "source": {
+       "week": 2,
+       "dayIndex": 0,
+       "calculatedAt": "2026-10-24T20:56:54.588Z"
+      },
+      "nextExposure": {
+       "week": 3,
+       "dayIndex": 0
+      },
+      "updatedAt": "2026-10-24T20:56:54.820Z",
+      "magnitude": {
+       "mode": "SHADOW",
+       "eligible": true,
+       "ruleId": "A",
+       "dimension": "REPS",
+       "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+       "ruleAuthority": "VDSEN_HEURISTIC",
+       "evidenceLevel": "C",
+       "comparableExposureCount": 2,
+       "unresolved": null,
+       "direction": "UP",
+       "directionConsistency": "CONSISTENT",
+       "review": null,
+       "coachReviewRequired": null,
+       "candidates": [
+        {
+         "dimension": "REPS",
+         "ruleId": "A",
+         "rawCandidate": 11,
+         "finalCandidate": 11,
+         "deltaSeconds": null,
+         "blockers": []
+        }
+       ],
+       "evidence": {
+        "basis": "VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET",
+        "rirPrescribed": 1,
+        "rirObserved": 2,
+        "repsTarget": 10,
+        "repsExecuted": 10,
+        "load": 60,
+        "unit": "KG"
+       },
+       "activationBlockers": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "coachReview": [],
+       "reasonCodes": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "numericApplyAllowed": false,
+       "applied": false,
+       "structural": null,
+       "primaryRaw": 11
+      }
+     },
+     {
+      "key": "v1_ecdc7edf8be3d06b",
+      "revision": 1,
+      "state": "PENDING",
+      "reasonCode": "MAGNITUDE_POLICY_MISSING",
+      "exerciseNameSnapshot": "Remo T599R SETS",
+      "prescriptionExerciseId": "t599r-t1-3",
+      "action": "add_sets",
+      "dimension": "SETS",
+      "lifecycle": null,
+      "source": {
+       "week": 2,
+       "dayIndex": 0,
+       "calculatedAt": "2026-10-24T20:56:54.588Z"
+      },
+      "nextExposure": {
+       "week": 3,
+       "dayIndex": 0
+      },
+      "updatedAt": "2026-10-24T20:56:54.820Z",
+      "magnitude": {
+       "mode": "SHADOW",
+       "eligible": true,
+       "ruleId": "S-ADD",
+       "dimension": "SETS",
+       "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+       "ruleAuthority": "VDSEN_HEURISTIC",
+       "evidenceLevel": "C",
+       "comparableExposureCount": 2,
+       "unresolved": null,
+       "direction": "UP",
+       "directionConsistency": "NOT_APPLICABLE",
+       "review": null,
+       "coachReviewRequired": null,
+       "candidates": [
+        {
+         "dimension": "SETS",
+         "ruleId": "S-ADD",
+         "rawCandidate": 4,
+         "finalCandidate": 4,
+         "deltaSeconds": null,
+         "blockers": []
+        }
+       ],
+       "evidence": {
+        "basis": "VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET",
+        "rirPrescribed": 2,
+        "rirObserved": 2,
+        "repsTarget": 10,
+        "repsExecuted": 10,
+        "load": 80,
+        "unit": "KG"
+       },
+       "activationBlockers": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "coachReview": [],
+       "reasonCodes": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "numericApplyAllowed": false,
+       "applied": false,
+       "structural": {
+        "model": "vdsen-structural-v1",
+        "kind": "ADD_SETS",
+        "safety": false,
+        "volume": {
+         "muscle": "dorsal_ancho",
+         "priority": null,
+         "weekly": 3,
+         "ceiling": 20
+        },
+        "components": null
+       },
+       "primaryRaw": 4
+      }
+     },
+     {
+      "key": "v1_8b5bbaff1b21416b",
+      "revision": 1,
+      "state": "PENDING",
+      "reasonCode": "MAGNITUDE_POLICY_MISSING",
+      "exerciseNameSnapshot": "Ext T599R REST",
+      "prescriptionExerciseId": "t599r-t1-4",
+      "action": "maintain",
+      "dimension": "REST",
+      "lifecycle": null,
+      "source": {
+       "week": 2,
+       "dayIndex": 0,
+       "calculatedAt": "2026-10-24T20:56:54.588Z"
+      },
+      "nextExposure": {
+       "week": 3,
+       "dayIndex": 0
+      },
+      "updatedAt": "2026-10-24T20:56:54.820Z",
+      "magnitude": {
+       "mode": "SHADOW",
+       "eligible": true,
+       "ruleId": "C",
+       "dimension": "REST",
+       "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+       "ruleAuthority": "VDSEN_HEURISTIC",
+       "evidenceLevel": "C",
+       "comparableExposureCount": 2,
+       "unresolved": null,
+       "direction": "REST",
+       "directionConsistency": "NOT_APPLICABLE",
+       "review": null,
+       "coachReviewRequired": null,
+       "candidates": [
+        {
+         "dimension": "REST",
+         "ruleId": "C",
+         "rawCandidate": 120,
+         "finalCandidate": 120,
+         "deltaSeconds": 30,
+         "blockers": []
+        }
+       ],
+       "evidence": {
+        "basis": "VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET",
+        "rirPrescribed": 2,
+        "rirObserved": 2,
+        "repsTarget": 10,
+        "repsExecuted": 8,
+        "load": 40,
+        "unit": "KG"
+       },
+       "activationBlockers": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "coachReview": [],
+       "reasonCodes": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "numericApplyAllowed": false,
+       "applied": false,
+       "structural": null,
+       "primaryRaw": 120
+      }
+     },
+     {
+      "key": "v1_8f99429028820e78",
+      "revision": 1,
+      "state": "PENDING",
+      "reasonCode": "MAGNITUDE_POLICY_MISSING",
+      "exerciseNameSnapshot": "Ext T599R REST2",
+      "prescriptionExerciseId": "t599r-t1-5",
+      "action": "maintain",
+      "dimension": "REST",
+      "lifecycle": null,
+      "source": {
+       "week": 2,
+       "dayIndex": 0,
+       "calculatedAt": "2026-10-24T20:56:54.588Z"
+      },
+      "nextExposure": {
+       "week": 3,
+       "dayIndex": 0
+      },
+      "updatedAt": "2026-10-24T20:56:54.820Z",
+      "magnitude": {
+       "mode": "SHADOW",
+       "eligible": true,
+       "ruleId": "C",
+       "dimension": "REST",
+       "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+       "ruleAuthority": "VDSEN_HEURISTIC",
+       "evidenceLevel": "C",
+       "comparableExposureCount": 2,
+       "unresolved": null,
+       "direction": "REST",
+       "directionConsistency": "NOT_APPLICABLE",
+       "review": null,
+       "coachReviewRequired": null,
+       "candidates": [
+        {
+         "dimension": "REST",
+         "ruleId": "C",
+         "rawCandidate": 120,
+         "finalCandidate": 120,
+         "deltaSeconds": 30,
+         "blockers": []
+        }
+       ],
+       "evidence": {
+        "basis": "VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET",
+        "rirPrescribed": 2,
+        "rirObserved": 2,
+        "repsTarget": 10,
+        "repsExecuted": 8,
+        "load": 40,
+        "unit": "KG"
+       },
+       "activationBlockers": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "coachReview": [],
+       "reasonCodes": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "numericApplyAllowed": false,
+       "applied": false,
+       "structural": null,
+       "primaryRaw": 120
+      }
+     }
+    ]
+   },
+   "postsession": {
+    "eimd": 1,
+    "articularPain": {
+     "present": false,
+     "pattern": ""
+    },
+    "sleepHours": 8,
+    "rpeAverage": 7,
+    "ts": 1792875414585
+   },
+   "twoBrowsers": {
+    "beforeConsume": {
+     "equal": true,
+     "A": [
+      {
+       "adj": null,
+       "note": null,
+       "chips": "",
+       "targets": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30",
+       "sheet": "3,10,2,1:30"
+      },
+      {
+       "adj": null,
+       "note": null,
+       "chips": "",
+       "targets": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 1 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 1 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 1 3 series Descanso 1:30",
+       "sheet": "3,10,1,1:30"
+      },
+      {
+       "adj": null,
+       "note": null,
+       "chips": "",
+       "targets": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30",
+       "sheet": "3,10,2,1:30"
+      },
+      {
+       "adj": null,
+       "note": null,
+       "chips": "",
+       "targets": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30",
+       "sheet": "3,10,2,1:30"
+      },
+      {
+       "adj": null,
+       "note": null,
+       "chips": "",
+       "targets": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30",
+       "sheet": "3,10,2,1:30"
+      }
+     ],
+     "B": [
+      {
+       "adj": null,
+       "note": null,
+       "chips": "",
+       "targets": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30",
+       "sheet": "3,10,2,1:30"
+      },
+      {
+       "adj": null,
+       "note": null,
+       "chips": "",
+       "targets": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 1 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 1 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 1 3 series Descanso 1:30",
+       "sheet": "3,10,1,1:30"
+      },
+      {
+       "adj": null,
+       "note": null,
+       "chips": "",
+       "targets": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30",
+       "sheet": "3,10,2,1:30"
+      },
+      {
+       "adj": null,
+       "note": null,
+       "chips": "",
+       "targets": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30",
+       "sheet": "3,10,2,1:30"
+      },
+      {
+       "adj": null,
+       "note": null,
+       "chips": "",
+       "targets": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30",
+       "sheet": "3,10,2,1:30"
+      }
+     ]
+    }
+   },
+   "errors": []
+  },
+  {
+   "case": "T2",
+   "desc": "deload (>=2 fatigue signals: sleep 5 h + session RPE 10)",
+   "numericServer": false,
+   "exercises": [
+    {
+     "name": "Sentadilla T599R DELOAD",
+     "pid": "pid#0",
+     "expect": {
+      "dimension": "DELOAD",
+      "ruleId": "S-DELOAD",
+      "previous": 3,
+      "candidate": 2,
+      "applied": 2,
+      "components": {
+       "SETS": 2,
+       "LOAD": 90
+      }
+     },
+     "records": [
+      {
+       "state": "PENDING",
+       "reasonCode": "MAGNITUDE_POLICY_MISSING",
+       "action": "deload",
+       "dimension": "DELOAD",
+       "nextExposure": {
+        "dayIndex": 0,
+        "week": 3
+       },
+       "magnitude": {
+        "eligible": true,
+        "ruleId": "S-DELOAD",
+        "dimension": "DELOAD",
+        "direction": "DOWN",
+        "directionConsistency": "NOT_APPLICABLE",
+        "comparableExposureCount": 2,
+        "reasonCodes": [
+         "NUMERIC_ACTIVATION_DISABLED"
+        ],
+        "coachReviewRequired": null,
+        "candidates": [
+         {
+          "dimension": "DELOAD",
+          "ruleId": "S-DELOAD",
+          "previousValue": 3,
+          "rawCandidate": 2,
+          "finalCandidate": 2,
+          "components": {
+           "SETS": 2,
+           "LOAD": 90
+          },
+          "blockers": []
+         }
+        ],
+        "structural": "DELOAD"
+       }
+      }
+     ],
+     "overlays": [],
+     "view": {
+      "setRows": 1,
+      "setRowIds": [
+       "setrow_log_3_0_0_s0"
+      ],
+      "autoadjust": null,
+      "autoadjustMain": null,
+      "autoadjustNote": null,
+      "chips": [],
+      "targets": [
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       }
+      ],
+      "current": {
+       "id": "setrow_log_3_0_0_s0",
+       "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG.",
+       "hasReference": true
+      },
+      "authority": "PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique.",
+      "authorityState": "PENDING",
+      "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG.",
+      "exerciseName": "- T599R",
+      "pageText": "✓ 2 SEMS › 3 ACTIVA 4 · D1 - T599R SEM 3 · PEAK - T599R 0/1 ejercicios COMPLETAR Saltar Copiar sem. anterior 0/3 SERIES --:-- TIEMPO — RIR MEDIO — ICS MEDIO 01 Sentadilla T599R DELOAD 01 Sentadilla T599R DELOAD FICHA ESTRUCTURA COACH SERIES 3 REPS 10 RIR 2 DESCANSO 1:30 KG Omitir ejercicio CALENTAMIENTO referencia ÚLTIMA SEMANA · SEM 2 Referencia de tu sesión anterior S1 · 100 kg × 10 · RIR 2 S2 · 100 kg × 10 · RIR 2 S3 · 100 kg × 10 · RIR 2 SERIES 0/3 SERIE 1 MODERADAS TU EJECUCIÓN OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. USAR CARGA/REPS SEM 2 · S1 · 100 kg × 10 CARGA (KG) −2.5 +2.5 REPS RIR REAL reps que te quedaban 0 Fallo 1 1 rep 2 2 reps 3 3 reps 4+ Fácil CALIDAD DE LA SERIE (ICS) opcional ¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente PUMP opcional BUENO OK BAJO ✓ GUARDAR SERIE 1 2 SERIE 2 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. 3 SERIE 3 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. SEM 3 — 1 sesión(es) pendiente(s) DESDE HISTORIAL QUÉ ES RIR Y QUÉ ES ICS"
+     }
+    }
+   ],
+   "weekAtStart": 2,
+   "weekAfterSession": 3,
+   "progrecSeenByClient": [
+    {
+     "exerciseName": "Sentadilla T599R DELOAD",
+     "action": "deload",
+     "newLoad": 90,
+     "newReps": 10,
+     "newSets": 2,
+     "prescriptionExerciseId": "t599r-t2-1"
+    }
+   ],
+   "deloadTriggers": [
+    "RPE promedio > 9",
+    "Sueño < 6h"
+   ],
+   "summary": {
+    "counts": {
+     "STALE": 0,
+     "REVERTED": 0,
+     "CONSUMED": 0,
+     "PENDING": 1,
+     "OVERRIDDEN": 0,
+     "APPLIED": 0,
+     "REJECTED": 0
+    },
+    "autoCount": 1,
+    "planId": "plan-t599r-t2-797b",
+    "items": [
+     {
+      "key": "v1_3dd706d1a46c9d3d",
+      "revision": 1,
+      "state": "PENDING",
+      "reasonCode": "MAGNITUDE_POLICY_MISSING",
+      "exerciseNameSnapshot": "Sentadilla T599R DELOAD",
+      "prescriptionExerciseId": "t599r-t2-1",
+      "action": "deload",
+      "dimension": "DELOAD",
+      "lifecycle": null,
+      "source": {
+       "week": 2,
+       "dayIndex": 0,
+       "calculatedAt": "2026-10-24T20:57:52.244Z"
+      },
+      "nextExposure": {
+       "week": 3,
+       "dayIndex": 0
+      },
+      "updatedAt": "2026-10-24T20:57:52.390Z",
+      "magnitude": {
+       "mode": "SHADOW",
+       "eligible": true,
+       "ruleId": "S-DELOAD",
+       "dimension": "DELOAD",
+       "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+       "ruleAuthority": "VDSEN_HEURISTIC",
+       "evidenceLevel": "C",
+       "comparableExposureCount": 2,
+       "unresolved": null,
+       "direction": "DOWN",
+       "directionConsistency": "NOT_APPLICABLE",
+       "review": null,
+       "coachReviewRequired": null,
+       "candidates": [
+        {
+         "dimension": "DELOAD",
+         "ruleId": "S-DELOAD",
+         "rawCandidate": 2,
+         "finalCandidate": 2,
+         "deltaSeconds": null,
+         "blockers": []
+        }
+       ],
+       "evidence": {
+        "basis": "VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET",
+        "rirPrescribed": 2,
+        "rirObserved": 2,
+        "repsTarget": 10,
+        "repsExecuted": 10,
+        "load": 100,
+        "unit": "KG"
+       },
+       "activationBlockers": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "coachReview": [],
+       "reasonCodes": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "numericApplyAllowed": false,
+       "applied": false,
+       "structural": {
+        "model": "vdsen-structural-v1",
+        "kind": "DELOAD",
+        "safety": true,
+        "volume": null,
+        "components": {
+         "SETS": 2,
+         "LOAD": 90
+        }
+       },
+       "primaryRaw": 2
+      }
+     }
+    ]
+   },
+   "postsession": {
+    "eimd": 1,
+    "articularPain": {
+     "present": false,
+     "pattern": ""
+    },
+    "sleepHours": 5,
+    "rpeAverage": 10,
+    "ts": 1792875472243
+   },
+   "errors": []
+  },
+  {
+   "case": "T3",
+   "desc": "freeze / hard-twice",
+   "numericServer": false,
+   "exercises": [
+    {
+     "name": "Press T599R FZERO",
+     "pid": "pid#0",
+     "expect": {
+      "dimension": "FREEZE",
+      "ruleId": "S-FREEZE-ZERO",
+      "previous": 100,
+      "candidate": 100,
+      "applied": 100
+     },
+     "records": [
+      {
+       "state": "PENDING",
+       "reasonCode": "MAGNITUDE_POLICY_MISSING",
+       "action": "increase_load",
+       "dimension": "FREEZE",
+       "nextExposure": {
+        "dayIndex": 0,
+        "week": 3
+       },
+       "magnitude": {
+        "eligible": true,
+        "ruleId": "S-FREEZE-ZERO",
+        "dimension": "FREEZE",
+        "direction": "HOLD",
+        "directionConsistency": "NOT_APPLICABLE",
+        "comparableExposureCount": 2,
+        "reasonCodes": [
+         "NUMERIC_ACTIVATION_DISABLED"
+        ],
+        "coachReviewRequired": null,
+        "candidates": [
+         {
+          "dimension": "FREEZE",
+          "ruleId": "S-FREEZE-ZERO",
+          "previousValue": 100,
+          "rawCandidate": 100,
+          "finalCandidate": 100,
+          "blockers": []
+         }
+        ],
+        "structural": "FREEZE_LOAD"
+       }
+      }
+     ],
+     "overlays": [],
+     "view": {
+      "setRows": 1,
+      "setRowIds": [
+       "setrow_log_3_0_0_s0"
+      ],
+      "autoadjust": null,
+      "autoadjustMain": null,
+      "autoadjustNote": null,
+      "chips": [],
+      "targets": [
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       }
+      ],
+      "current": {
+       "id": "setrow_log_3_0_0_s0",
+       "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG.",
+       "hasReference": true
+      },
+      "authority": "PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique.",
+      "authorityState": "PENDING",
+      "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG.",
+      "exerciseName": "- T599R",
+      "pageText": "✓ 2 SEMS › 3 ACTIVA 4 · D1 - T599R SEM 3 · PEAK - T599R 0/3 ejercicios COMPLETAR Saltar Copiar sem. anterior 0/9 SERIES --:-- TIEMPO — RIR MEDIO — ICS MEDIO 01 Press T599R FZERO 02 Remo T599R HARD2 03 Curl T599R FHARD 01 Press T599R FZERO FICHA ESTRUCTURA COACH SERIES 3 REPS 10 RIR 2 DESCANSO 1:30 KG Omitir ejercicio CALENTAMIENTO referencia ÚLTIMA SEMANA · SEM 2 Referencia de tu sesión anterior S1 · 100 kg × 10 · RIR 0 S2 · 100 kg × 10 · RIR 0 S3 · 100 kg × 10 · RIR 0 SERIES 0/3 SERIE 1 MODERADAS TU EJECUCIÓN OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. USAR CARGA/REPS SEM 2 · S1 · 100 kg × 10 CARGA (KG) −2.5 +2.5 REPS RIR REAL reps que te quedaban 0 Fallo 1 1 rep 2 2 reps 3 3 reps 4+ Fácil CALIDAD DE LA SERIE (ICS) opcional ¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente PUMP opcional BUENO OK BAJO ✓ GUARDAR SERIE 1 2 SERIE 2 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. 3 SERIE 3 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. SEM 3 — 1 sesión(es) pendiente(s) DESDE HISTORIAL QUÉ ES RIR Y QUÉ ES ICS"
+     }
+    },
+    {
+     "name": "Remo T599R HARD2",
+     "pid": "pid#1",
+     "expect": {
+      "dimension": "LOAD",
+      "ruleId": "S-HARD-TWICE",
+      "previous": 80,
+      "candidate": 76,
+      "applied": 76
+     },
+     "records": [
+      {
+       "state": "PENDING",
+       "reasonCode": "MAGNITUDE_POLICY_MISSING",
+       "action": "increase_load",
+       "dimension": "LOAD",
+       "nextExposure": {
+        "dayIndex": 0,
+        "week": 3
+       },
+       "magnitude": {
+        "eligible": true,
+        "ruleId": "S-HARD-TWICE",
+        "dimension": "LOAD",
+        "direction": "DOWN",
+        "directionConsistency": "NOT_APPLICABLE",
+        "comparableExposureCount": 2,
+        "reasonCodes": [
+         "NUMERIC_ACTIVATION_DISABLED"
+        ],
+        "coachReviewRequired": null,
+        "candidates": [
+         {
+          "dimension": "LOAD",
+          "ruleId": "S-HARD-TWICE",
+          "previousValue": 80,
+          "rawCandidate": 76,
+          "finalCandidate": null,
+          "blockers": []
+         }
+        ],
+        "structural": "LOAD_DOWN"
+       }
+      }
+     ],
+     "overlays": [],
+     "view": {
+      "setRows": 1,
+      "setRowIds": [
+       "setrow_log_3_0_1_s0"
+      ],
+      "autoadjust": null,
+      "autoadjustMain": null,
+      "autoadjustNote": null,
+      "chips": [],
+      "targets": [
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 3 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 3 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 3 3 series Descanso 1:30"
+       }
+      ],
+      "current": {
+       "id": "setrow_log_3_0_1_s0",
+       "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 80 KG.",
+       "hasReference": true
+      },
+      "authority": "PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique.",
+      "authorityState": "PENDING",
+      "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 80 KG.",
+      "exerciseName": "- T599R",
+      "pageText": "✓ 2 SEMS › 3 ACTIVA 4 · D1 - T599R SEM 3 · PEAK - T599R 0/3 ejercicios COMPLETAR Saltar Copiar sem. anterior 0/9 SERIES --:-- TIEMPO — RIR MEDIO — ICS MEDIO 01 Press T599R FZERO 02 Remo T599R HARD2 03 Curl T599R FHARD 02 Remo T599R HARD2 FICHA ESTRUCTURA COACH SERIES 3 REPS 10 RIR 3 DESCANSO 1:30 KG Omitir ejercicio ÚLTIMA SEMANA · SEM 2 Referencia de tu sesión anterior S1 · 80 kg × 10 · RIR 1 S2 · 80 kg × 10 · RIR 1 S3 · 80 kg × 10 · RIR 1 SERIES 0/3 SERIE 1 MODERADAS TU EJECUCIÓN OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 3 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 80 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. USAR CARGA/REPS SEM 2 · S1 · 80 kg × 10 CARGA (KG) −2.5 +2.5 REPS RIR REAL reps que te quedaban 0 Fallo 1 1 rep 2 2 reps 3 3 reps 4+ Fácil CALIDAD DE LA SERIE (ICS) opcional ¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente PUMP opcional BUENO OK BAJO ✓ GUARDAR SERIE 1 2 SERIE 2 10 reps · RIR 3 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 3 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 80 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. 3 SERIE 3 10 reps · RIR 3 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 3 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 80 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. SEM 3 — 1 sesión(es) pendiente(s) DESDE HISTORIAL QUÉ ES RIR Y QUÉ ES ICS"
+     }
+    },
+    {
+     "name": "Curl T599R FHARD",
+     "pid": "pid#2",
+     "expect": {
+      "dimension": "FREEZE",
+      "ruleId": "S-FREEZE-HARD",
+      "previous": 30,
+      "candidate": 30,
+      "applied": 30
+     },
+     "records": [
+      {
+       "state": "PENDING",
+       "reasonCode": "MAGNITUDE_POLICY_MISSING",
+       "action": "increase_load",
+       "dimension": "FREEZE",
+       "nextExposure": {
+        "dayIndex": 0,
+        "week": 3
+       },
+       "magnitude": {
+        "eligible": true,
+        "ruleId": "S-FREEZE-HARD",
+        "dimension": "FREEZE",
+        "direction": "HOLD",
+        "directionConsistency": "NOT_APPLICABLE",
+        "comparableExposureCount": 2,
+        "reasonCodes": [
+         "NUMERIC_ACTIVATION_DISABLED"
+        ],
+        "coachReviewRequired": null,
+        "candidates": [
+         {
+          "dimension": "FREEZE",
+          "ruleId": "S-FREEZE-HARD",
+          "previousValue": 30,
+          "rawCandidate": 30,
+          "finalCandidate": 30,
+          "blockers": []
+         }
+        ],
+        "structural": "FREEZE_LOAD"
+       }
+      }
+     ],
+     "overlays": [],
+     "view": {
+      "setRows": 1,
+      "setRowIds": [
+       "setrow_log_3_0_2_s0"
+      ],
+      "autoadjust": null,
+      "autoadjustMain": null,
+      "autoadjustNote": null,
+      "chips": [],
+      "targets": [
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 3 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 3 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 3 3 series Descanso 1:30"
+       }
+      ],
+      "current": {
+       "id": "setrow_log_3_0_2_s0",
+       "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 30 KG.",
+       "hasReference": true
+      },
+      "authority": "PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique.",
+      "authorityState": "PENDING",
+      "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 30 KG.",
+      "exerciseName": "- T599R",
+      "pageText": "✓ 2 SEMS › 3 ACTIVA 4 · D1 - T599R SEM 3 · PEAK - T599R 0/3 ejercicios COMPLETAR Saltar Copiar sem. anterior 0/9 SERIES --:-- TIEMPO — RIR MEDIO — ICS MEDIO 01 Press T599R FZERO 02 Remo T599R HARD2 03 Curl T599R FHARD 03 Curl T599R FHARD FICHA ESTRUCTURA COACH SERIES 3 REPS 10 RIR 3 DESCANSO 1:30 KG Omitir ejercicio ÚLTIMA SEMANA · SEM 2 Referencia de tu sesión anterior S1 · 30 kg × 10 · RIR 1 S2 · 30 kg × 10 · RIR 1 S3 · 30 kg × 10 · RIR 1 SERIES 0/3 SERIE 1 MODERADAS TU EJECUCIÓN OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 3 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 30 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. USAR CARGA/REPS SEM 2 · S1 · 30 kg × 10 CARGA (KG) −2.5 +2.5 REPS RIR REAL reps que te quedaban 0 Fallo 1 1 rep 2 2 reps 3 3 reps 4+ Fácil CALIDAD DE LA SERIE (ICS) opcional ¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente PUMP opcional BUENO OK BAJO ✓ GUARDAR SERIE 1 2 SERIE 2 10 reps · RIR 3 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 3 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 30 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. 3 SERIE 3 10 reps · RIR 3 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 3 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 30 KG. PENDIENTE · calculado, aún no aplicado El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique. SEM 3 — 1 sesión(es) pendiente(s) DESDE HISTORIAL QUÉ ES RIR Y QUÉ ES ICS"
+     }
+    }
+   ],
+   "weekAtStart": 2,
+   "weekAfterSession": 3,
+   "progrecSeenByClient": [
+    {
+     "exerciseName": "Press T599R FZERO",
+     "action": "increase_load",
+     "newLoad": 101.5,
+     "newReps": 10,
+     "newSets": 3,
+     "prescriptionExerciseId": "t599r-t3-1"
+    },
+    {
+     "exerciseName": "Remo T599R HARD2",
+     "action": "increase_load",
+     "newLoad": 81.5,
+     "newReps": 10,
+     "newSets": 3,
+     "prescriptionExerciseId": "t599r-t3-2"
+    },
+    {
+     "exerciseName": "Curl T599R FHARD",
+     "action": "increase_load",
+     "newLoad": 31,
+     "newReps": 10,
+     "newSets": 3,
+     "prescriptionExerciseId": "t599r-t3-3"
+    }
+   ],
+   "deloadTriggers": [],
+   "summary": {
+    "counts": {
+     "STALE": 0,
+     "REVERTED": 0,
+     "CONSUMED": 0,
+     "PENDING": 3,
+     "OVERRIDDEN": 0,
+     "APPLIED": 0,
+     "REJECTED": 0
+    },
+    "autoCount": 3,
+    "planId": "plan-t599r-t3-c125",
+    "items": [
+     {
+      "key": "v1_dd68ea00c037ecbe",
+      "revision": 1,
+      "state": "PENDING",
+      "reasonCode": "MAGNITUDE_POLICY_MISSING",
+      "exerciseNameSnapshot": "Press T599R FZERO",
+      "prescriptionExerciseId": "t599r-t3-1",
+      "action": "increase_load",
+      "dimension": "FREEZE",
+      "lifecycle": null,
+      "source": {
+       "week": 2,
+       "dayIndex": 0,
+       "calculatedAt": "2026-10-24T20:58:43.351Z"
+      },
+      "nextExposure": {
+       "week": 3,
+       "dayIndex": 0
+      },
+      "updatedAt": "2026-10-24T20:58:43.545Z",
+      "magnitude": {
+       "mode": "SHADOW",
+       "eligible": true,
+       "ruleId": "S-FREEZE-ZERO",
+       "dimension": "FREEZE",
+       "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+       "ruleAuthority": "VDSEN_HEURISTIC",
+       "evidenceLevel": "C",
+       "comparableExposureCount": 2,
+       "unresolved": null,
+       "direction": "HOLD",
+       "directionConsistency": "NOT_APPLICABLE",
+       "review": null,
+       "coachReviewRequired": null,
+       "candidates": [
+        {
+         "dimension": "FREEZE",
+         "ruleId": "S-FREEZE-ZERO",
+         "rawCandidate": 100,
+         "finalCandidate": 100,
+         "deltaSeconds": null,
+         "blockers": []
+        }
+       ],
+       "evidence": {
+        "basis": "VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET",
+        "rirPrescribed": 2,
+        "rirObserved": 0,
+        "repsTarget": 10,
+        "repsExecuted": 10,
+        "load": 100,
+        "unit": "KG"
+       },
+       "activationBlockers": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "coachReview": [],
+       "reasonCodes": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "numericApplyAllowed": false,
+       "applied": false,
+       "structural": {
+        "model": "vdsen-structural-v1",
+        "kind": "FREEZE_LOAD",
+        "safety": true,
+        "volume": {
+         "muscle": "pectoral",
+         "priority": null,
+         "weekly": 3,
+         "ceiling": 22
+        },
+        "components": null
+       },
+       "primaryRaw": 100
+      }
+     },
+     {
+      "key": "v1_5c98482defb13c7f",
+      "revision": 1,
+      "state": "PENDING",
+      "reasonCode": "MAGNITUDE_POLICY_MISSING",
+      "exerciseNameSnapshot": "Remo T599R HARD2",
+      "prescriptionExerciseId": "t599r-t3-2",
+      "action": "increase_load",
+      "dimension": "LOAD",
+      "lifecycle": null,
+      "source": {
+       "week": 2,
+       "dayIndex": 0,
+       "calculatedAt": "2026-10-24T20:58:43.351Z"
+      },
+      "nextExposure": {
+       "week": 3,
+       "dayIndex": 0
+      },
+      "updatedAt": "2026-10-24T20:58:43.545Z",
+      "magnitude": {
+       "mode": "SHADOW",
+       "eligible": true,
+       "ruleId": "S-HARD-TWICE",
+       "dimension": "LOAD",
+       "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+       "ruleAuthority": "VDSEN_HEURISTIC",
+       "evidenceLevel": "C",
+       "comparableExposureCount": 2,
+       "unresolved": null,
+       "direction": "DOWN",
+       "directionConsistency": "NOT_APPLICABLE",
+       "review": null,
+       "coachReviewRequired": null,
+       "candidates": [
+        {
+         "dimension": "LOAD",
+         "ruleId": "S-HARD-TWICE",
+         "rawCandidate": 76,
+         "finalCandidate": null,
+         "deltaSeconds": null,
+         "blockers": []
+        }
+       ],
+       "evidence": {
+        "basis": "VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET",
+        "rirPrescribed": 3,
+        "rirObserved": 1,
+        "repsTarget": 10,
+        "repsExecuted": 10,
+        "load": 80,
+        "unit": "KG"
+       },
+       "activationBlockers": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "coachReview": [],
+       "reasonCodes": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "numericApplyAllowed": false,
+       "applied": false,
+       "structural": {
+        "model": "vdsen-structural-v1",
+        "kind": "LOAD_DOWN",
+        "safety": true,
+        "volume": null,
+        "components": null
+       },
+       "primaryRaw": 76
+      }
+     },
+     {
+      "key": "v1_1a61743b853138a7",
+      "revision": 1,
+      "state": "PENDING",
+      "reasonCode": "MAGNITUDE_POLICY_MISSING",
+      "exerciseNameSnapshot": "Curl T599R FHARD",
+      "prescriptionExerciseId": "t599r-t3-3",
+      "action": "increase_load",
+      "dimension": "FREEZE",
+      "lifecycle": null,
+      "source": {
+       "week": 2,
+       "dayIndex": 0,
+       "calculatedAt": "2026-10-24T20:58:43.351Z"
+      },
+      "nextExposure": {
+       "week": 3,
+       "dayIndex": 0
+      },
+      "updatedAt": "2026-10-24T20:58:43.545Z",
+      "magnitude": {
+       "mode": "SHADOW",
+       "eligible": true,
+       "ruleId": "S-FREEZE-HARD",
+       "dimension": "FREEZE",
+       "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+       "ruleAuthority": "VDSEN_HEURISTIC",
+       "evidenceLevel": "C",
+       "comparableExposureCount": 2,
+       "unresolved": null,
+       "direction": "HOLD",
+       "directionConsistency": "NOT_APPLICABLE",
+       "review": null,
+       "coachReviewRequired": null,
+       "candidates": [
+        {
+         "dimension": "FREEZE",
+         "ruleId": "S-FREEZE-HARD",
+         "rawCandidate": 30,
+         "finalCandidate": 30,
+         "deltaSeconds": null,
+         "blockers": []
+        }
+       ],
+       "evidence": {
+        "basis": "VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET",
+        "rirPrescribed": 3,
+        "rirObserved": 1,
+        "repsTarget": 10,
+        "repsExecuted": 10,
+        "load": 30,
+        "unit": "KG"
+       },
+       "activationBlockers": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "coachReview": [],
+       "reasonCodes": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "numericApplyAllowed": false,
+       "applied": false,
+       "structural": {
+        "model": "vdsen-structural-v1",
+        "kind": "FREEZE_LOAD",
+        "safety": true,
+        "volume": {
+         "muscle": "biceps",
+         "priority": null,
+         "weekly": 3,
+         "ceiling": 18
+        },
+        "components": null
+       },
+       "primaryRaw": 30
+      }
+     }
+    ]
+   },
+   "postsession": {
+    "eimd": 1,
+    "articularPain": {
+     "present": false,
+     "pattern": ""
+    },
+    "sleepHours": 8,
+    "rpeAverage": 7,
+    "ts": 1792875523349
+   },
+   "errors": []
+  },
+  {
+   "case": "T4",
+   "desc": "safety: articular pain reported after the source session",
+   "numericServer": false,
+   "exercises": [
+    {
+     "name": "Press T599R PAIN",
+     "pid": "pid#0",
+     "expect": {
+      "blocked": true,
+      "reason": "SAFETY_CONFLICT"
+     },
+     "records": [
+      {
+       "state": "PENDING",
+       "reasonCode": "MAGNITUDE_POLICY_MISSING",
+       "action": "increase_load",
+       "dimension": "LOAD",
+       "nextExposure": {
+        "dayIndex": 0,
+        "week": 3
+       },
+       "magnitude": {
+        "eligible": false,
+        "ruleId": "A",
+        "dimension": "LOAD",
+        "direction": "UP",
+        "directionConsistency": "CONSISTENT",
+        "comparableExposureCount": 2,
+        "reasonCodes": [
+         "NUMERIC_ACTIVATION_DISABLED",
+         "EQUIPMENT_INCREMENT_POLICY_MISSING",
+         "SAFETY_CONFLICT"
+        ],
+        "coachReviewRequired": null,
+        "candidates": [
+         {
+          "dimension": "LOAD",
+          "ruleId": "A",
+          "previousValue": 100,
+          "rawCandidate": 105,
+          "finalCandidate": null,
+          "blockers": [
+           "EQUIPMENT_INCREMENT_POLICY_MISSING"
+          ]
+         }
+        ]
+       }
+      }
+     ],
+     "overlays": [],
+     "view": {
+      "setRows": 1,
+      "setRowIds": [
+       "setrow_log_3_0_0_s0"
+      ],
+      "autoadjust": null,
+      "autoadjustMain": null,
+      "autoadjustNote": null,
+      "chips": [],
+      "targets": [
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       }
+      ],
+      "current": {
+       "id": "setrow_log_3_0_0_s0",
+       "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG.",
+       "hasReference": true
+      },
+      "authority": "BLOQUEADO · Sin autoajuste aplicado La señal de seguridad requiere revisión.",
+      "authorityState": "BLOCKED",
+      "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG.",
+      "exerciseName": "- T599R",
+      "pageText": "✓ 2 SEMS › 3 ACTIVA 4 · D1 - T599R SEM 3 · PEAK - T599R 0/1 ejercicios COMPLETAR Saltar Copiar sem. anterior 0/3 SERIES --:-- TIEMPO — RIR MEDIO — ICS MEDIO 01 Press T599R PAIN 01 Press T599R PAIN FICHA ESTRUCTURA COACH SERIES 3 REPS 10 RIR 2 DESCANSO 1:30 KG Omitir ejercicio CALENTAMIENTO referencia ÚLTIMA SEMANA · SEM 2 Referencia de tu sesión anterior S1 · 100 kg × 10 · RIR 4 S2 · 100 kg × 10 · RIR 4 S3 · 100 kg × 10 · RIR 4 SERIES 0/3 SERIE 1 MODERADAS TU EJECUCIÓN OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG. BLOQUEADO · Sin autoajuste aplicado La señal de seguridad requiere revisión. USAR CARGA/REPS SEM 2 · S1 · 100 kg × 10 CARGA (KG) −2.5 +2.5 REPS RIR REAL reps que te quedaban 0 Fallo 1 1 rep 2 2 reps 3 3 reps 4+ Fácil CALIDAD DE LA SERIE (ICS) opcional ¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente PUMP opcional BUENO OK BAJO ✓ GUARDAR SERIE 1 2 SERIE 2 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG. BLOQUEADO · Sin autoajuste aplicado La señal de seguridad requiere revisión. 3 SERIE 3 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG. BLOQUEADO · Sin autoajuste aplicado La señal de seguridad requiere revisión. SEM 3 — 1 sesión(es) pendiente(s) DESDE HISTORIAL QUÉ ES RIR Y QUÉ ES ICS"
+     }
+    }
+   ],
+   "weekAtStart": 2,
+   "weekAfterSession": 3,
+   "progrecSeenByClient": [
+    {
+     "exerciseName": "Press T599R PAIN",
+     "action": "increase_load",
+     "newLoad": 101.5,
+     "newReps": 10,
+     "newSets": 3,
+     "prescriptionExerciseId": "t599r-t4-1"
+    }
+   ],
+   "deloadTriggers": [],
+   "summary": {
+    "counts": {
+     "STALE": 0,
+     "REVERTED": 0,
+     "CONSUMED": 0,
+     "PENDING": 1,
+     "OVERRIDDEN": 0,
+     "APPLIED": 0,
+     "REJECTED": 0
+    },
+    "autoCount": 1,
+    "planId": "plan-t599r-t4-657c",
+    "items": [
+     {
+      "key": "v1_d6d75d80716f727a",
+      "revision": 1,
+      "state": "PENDING",
+      "reasonCode": "MAGNITUDE_POLICY_MISSING",
+      "exerciseNameSnapshot": "Press T599R PAIN",
+      "prescriptionExerciseId": "t599r-t4-1",
+      "action": "increase_load",
+      "dimension": "LOAD",
+      "lifecycle": null,
+      "source": {
+       "week": 2,
+       "dayIndex": 0,
+       "calculatedAt": "2026-10-24T20:59:33.677Z"
+      },
+      "nextExposure": {
+       "week": 3,
+       "dayIndex": 0
+      },
+      "updatedAt": "2026-10-24T20:59:33.855Z",
+      "magnitude": {
+       "mode": "SHADOW",
+       "eligible": false,
+       "ruleId": "A",
+       "dimension": "LOAD",
+       "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+       "ruleAuthority": "VDSEN_HEURISTIC",
+       "evidenceLevel": "C",
+       "comparableExposureCount": 2,
+       "unresolved": null,
+       "direction": "UP",
+       "directionConsistency": "CONSISTENT",
+       "review": null,
+       "coachReviewRequired": null,
+       "candidates": [
+        {
+         "dimension": "LOAD",
+         "ruleId": "A",
+         "rawCandidate": 105,
+         "finalCandidate": null,
+         "deltaSeconds": null,
+         "blockers": [
+          "EQUIPMENT_INCREMENT_POLICY_MISSING"
+         ]
+        }
+       ],
+       "evidence": {
+        "basis": "VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET",
+        "rirPrescribed": 2,
+        "rirObserved": 4,
+        "repsTarget": 10,
+        "repsExecuted": 10,
+        "load": 100,
+        "unit": "KG"
+       },
+       "activationBlockers": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "coachReview": [],
+       "reasonCodes": [
+        "NUMERIC_ACTIVATION_DISABLED",
+        "EQUIPMENT_INCREMENT_POLICY_MISSING",
+        "SAFETY_CONFLICT"
+       ],
+       "numericApplyAllowed": false,
+       "applied": false,
+       "structural": null,
+       "primaryRaw": 105
+      }
+     }
+    ]
+   },
+   "postsession": {
+    "eimd": 1,
+    "articularPain": {
+     "present": true,
+     "pattern": ""
+    },
+    "sleepHours": 8,
+    "rpeAverage": 7,
+    "ts": 1792875573675
+   },
+   "errors": []
+  },
+  {
+   "case": "T5",
+   "desc": "no prior history at all (first ever execution)",
+   "numericServer": false,
+   "exercises": [
+    {
+     "name": "Press T599R FIRST",
+     "pid": "pid#0",
+     "expect": {
+      "blocked": true,
+      "reason": "INSUFFICIENT_COMPARABLE_EXPOSURES"
+     },
+     "records": [
+      {
+       "state": "PENDING",
+       "reasonCode": "MAGNITUDE_POLICY_MISSING",
+       "action": "increase_load",
+       "dimension": "LOAD",
+       "nextExposure": {
+        "dayIndex": 0,
+        "week": 2
+       },
+       "magnitude": {
+        "eligible": false,
+        "ruleId": "MAINTAIN",
+        "dimension": null,
+        "direction": "HOLD",
+        "directionConsistency": "NOT_APPLICABLE",
+        "comparableExposureCount": 1,
+        "reasonCodes": [
+         "NUMERIC_ACTIVATION_DISABLED",
+         "INSUFFICIENT_COMPARABLE_EXPOSURES",
+         "NO_ADJUSTMENT_NEEDED"
+        ],
+        "coachReviewRequired": null,
+        "candidates": []
+       }
+      }
+     ],
+     "overlays": [],
+     "view": {
+      "setRows": 1,
+      "setRowIds": [
+       "setrow_log_2_0_0_s0"
+      ],
+      "autoadjust": null,
+      "autoadjustMain": null,
+      "autoadjustNote": null,
+      "chips": [],
+      "targets": [
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       }
+      ],
+      "current": {
+       "id": "setrow_log_2_0_0_s0",
+       "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 10 KG.",
+       "hasReference": true
+      },
+      "authority": "BLOQUEADO · Sin autoajuste aplicado Faltan exposiciones comparables o una dirección confirmada.",
+      "authorityState": "BLOCKED",
+      "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 10 KG.",
+      "exerciseName": "- T599R",
+      "pageText": "✓ 1 SEM › 2 ACTIVA 3 4 · D1 - T599R SEM 2 · INTENSIF. - T599R 0/1 ejercicios COMPLETAR Saltar Copiar sem. anterior 0/3 SERIES --:-- TIEMPO — RIR MEDIO — ICS MEDIO 01 Press T599R FIRST 01 Press T599R FIRST FICHA ESTRUCTURA COACH SERIES 3 REPS 10 RIR 2 DESCANSO 1:30 KG Omitir ejercicio CALENTAMIENTO referencia ÚLTIMA SEMANA · SEM 1 Referencia de tu sesión anterior S1 · 10 kg × 10 · RIR 2 S2 · 10 kg × 10 · RIR 2 S3 · 10 kg × 10 · RIR 2 SERIES 0/3 SERIE 1 MODERADAS TU EJECUCIÓN OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 10 KG. BLOQUEADO · Sin autoajuste aplicado Faltan exposiciones comparables o una dirección confirmada. USAR CARGA/REPS SEM 1 · S1 · 10 kg × 10 CARGA (KG) −2.5 +2.5 REPS RIR REAL reps que te quedaban 0 Fallo 1 1 rep 2 2 reps 3 3 reps 4+ Fácil CALIDAD DE LA SERIE (ICS) opcional ¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente PUMP opcional BUENO OK BAJO ✓ GUARDAR SERIE 1 2 SERIE 2 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 10 KG. BLOQUEADO · Sin autoajuste aplicado Faltan exposiciones comparables o una dirección confirmada. 3 SERIE 3 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 10 KG. BLOQUEADO · Sin autoajuste aplicado Faltan exposiciones comparables o una dirección confirmada. SEM 2 — 1 sesión(es) pendiente(s) DESDE HISTORIAL QUÉ ES RIR Y QUÉ ES ICS"
+     }
+    }
+   ],
+   "caseA": {
+    "before": {
+     "setRows": 1,
+     "setRowIds": [
+      "setrow_log_1_0_0_s0"
+     ],
+     "autoadjust": null,
+     "autoadjustMain": null,
+     "autoadjustNote": null,
+     "chips": [],
+     "targets": [
+      {
+       "source": "COACH",
+       "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+      },
+      {
+       "source": "COACH",
+       "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+      },
+      {
+       "source": "COACH",
+       "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+      }
+     ],
+     "current": {
+      "id": "setrow_log_1_0_0_s0",
+      "reference": "SIN HISTORIAL Primera ejecución: registra la carga utilizada.",
+      "hasReference": true
+     },
+     "authority": "Sin autoajuste aplicado · la referencia no es una progresión",
+     "authorityState": "NO_AUTHORIZED_ADJUSTMENT",
+     "reference": "SIN HISTORIAL Primera ejecución: registra la carga utilizada.",
+     "exerciseName": "- T599R",
+     "pageText": "1 ACTIVA 2 3 4 · D1 - T599R SEM 1 · ADAPTACIÓN - T599R 0/1 ejercicios COMPLETAR Saltar 0/3 SERIES --:-- TIEMPO — RIR MEDIO — ICS MEDIO 01 Press T599R FIRST 01 Press T599R FIRST FICHA ESTRUCTURA COACH SERIES 3 REPS 10 RIR 2 DESCANSO 1:30 KG Omitir ejercicio CALENTAMIENTO referencia SERIES 0/3 SERIE 1 MODERADAS TU EJECUCIÓN OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 SIN HISTORIAL Primera ejecución: registra la carga utilizada. Sin autoajuste aplicado · la referencia no es una progresión CARGA (KG) −2.5 +2.5 REPS RIR REAL reps que te quedaban 0 Fallo 1 1 rep 2 2 reps 3 3 reps 4+ Fácil CALIDAD DE LA SERIE (ICS) opcional ¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente PUMP opcional BUENO OK BAJO ✓ GUARDAR SERIE 1 2 SERIE 2 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 SIN HISTORIAL Primera ejecución: registra la carga utilizada. Sin autoajuste aplicado · la referencia no es una progresión 3 SERIE 3 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 SIN HISTORIAL Primera ejecución: registra la carga utilizada. Sin autoajuste aplicado · la referencia no es una progresión SEM 1 — 1 sesión(es) pendiente(s) DESDE HISTORIAL QUÉ ES RIR Y QUÉ ES ICS"
+    },
+    "afterFirstSave": {
+     "setRows": 1,
+     "setRowIds": [
+      "setrow_log_1_0_0_s1"
+     ],
+     "autoadjust": null,
+     "autoadjustMain": null,
+     "autoadjustNote": null,
+     "chips": [],
+     "targets": [
+      {
+       "source": "COACH",
+       "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+      },
+      {
+       "source": "COACH",
+       "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+      }
+     ],
+     "current": {
+      "id": "setrow_log_1_0_0_s1",
+      "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 10 KG.",
+      "hasReference": true
+     },
+     "authority": "Sin autoajuste aplicado · la referencia no es una progresión",
+     "authorityState": "NO_AUTHORIZED_ADJUSTMENT",
+     "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 10 KG.",
+     "exerciseName": "- T599R",
+     "pageText": "1 ACTIVA 2 3 4 · D1 - T599R SEM 1 · ADAPTACIÓN - T599R 0/1 ejercicios COMPLETAR Saltar 1/3 SERIES 00:02 TIEMPO 2 RIR MEDIO 7 ICS MEDIO 01 Press T599R FIRST 01 Press T599R FIRST FICHA ESTRUCTURA COACH SERIES 3 REPS 10 RIR 2 DESCANSO 1:30 KG Omitir ejercicio CALENTAMIENTO referencia SERIES 1/3 · 100 vol ✓ SERIE 1 10 KG × 10 reps RIR 2 · ICS 7 · 💪 ✏ Corregir SERIE 2 MODERADAS TU EJECUCIÓN OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 10 KG. Sin autoajuste aplicado · la referencia no es una progresión CARGA (KG) −2.5 +2.5 REPS RIR REAL reps que te quedaban 0 Fallo 1 1 rep 2 2 reps 3 3 reps 4+ Fácil CALIDAD DE LA SERIE (ICS) opcional ¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente PUMP opcional BUENO OK BAJO = Copiar ✓ GUARDAR SERIE 2 3 SERIE 3 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 10 KG. Sin autoajuste aplicado · la referencia no es una progresión SEM 1 — 1 sesión(es) pendiente(s) DESDE HISTORIAL QUÉ ES RIR Y QUÉ ES ICS DESCANSO ACTIVO MINIMIZAR DESCANSANDO DE · SERIE 1 DE 3 Press T599R FIRST ✓ 10 KG × 10 reps · RIR 2 1:28 SIGUIENTE · SERIE 2 DE 3 Press T599R FIRST 10 reps · RIR 2 30s 1:00 1:30 2:00 3:00 −15s +15s +30s CONTINUAR TOCA FUERA PARA CERRAR"
+    }
+   },
+   "weekAtStart": 1,
+   "weekAfterSession": 2,
+   "progrecSeenByClient": [
+    {
+     "exerciseName": "Press T599R FIRST",
+     "action": "increase_load",
+     "newLoad": 10.5,
+     "newReps": 10,
+     "newSets": 3,
+     "prescriptionExerciseId": "t599r-t5-1"
+    }
+   ],
+   "deloadTriggers": [],
+   "summary": {
+    "counts": {
+     "STALE": 0,
+     "REVERTED": 0,
+     "CONSUMED": 0,
+     "PENDING": 1,
+     "OVERRIDDEN": 0,
+     "APPLIED": 0,
+     "REJECTED": 0
+    },
+    "autoCount": 1,
+    "planId": "plan-t599r-t5-9600",
+    "items": [
+     {
+      "key": "v1_288b341abe9465fc",
+      "revision": 1,
+      "state": "PENDING",
+      "reasonCode": "MAGNITUDE_POLICY_MISSING",
+      "exerciseNameSnapshot": "Press T599R FIRST",
+      "prescriptionExerciseId": "t599r-t5-1",
+      "action": "increase_load",
+      "dimension": "LOAD",
+      "lifecycle": null,
+      "source": {
+       "week": 1,
+       "dayIndex": 0,
+       "calculatedAt": "2026-10-24T21:00:16.059Z"
+      },
+      "nextExposure": {
+       "week": 2,
+       "dayIndex": 0
+      },
+      "updatedAt": "2026-10-24T21:00:16.255Z",
+      "magnitude": {
+       "mode": "SHADOW",
+       "eligible": false,
+       "ruleId": "MAINTAIN",
+       "dimension": null,
+       "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+       "ruleAuthority": "VDSEN_HEURISTIC",
+       "evidenceLevel": "C",
+       "comparableExposureCount": 1,
+       "unresolved": null,
+       "direction": "HOLD",
+       "directionConsistency": "NOT_APPLICABLE",
+       "review": null,
+       "coachReviewRequired": null,
+       "candidates": [],
+       "evidence": {
+        "basis": "VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET",
+        "rirPrescribed": 2,
+        "rirObserved": 2,
+        "repsTarget": 10,
+        "repsExecuted": 10,
+        "load": 10,
+        "unit": "KG"
+       },
+       "activationBlockers": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "coachReview": [],
+       "reasonCodes": [
+        "NUMERIC_ACTIVATION_DISABLED",
+        "INSUFFICIENT_COMPARABLE_EXPOSURES",
+        "NO_ADJUSTMENT_NEEDED"
+       ],
+       "numericApplyAllowed": false,
+       "applied": false,
+       "structural": null,
+       "primaryRaw": null
+      }
+     }
+    ]
+   },
+   "postsession": {
+    "eimd": 1,
+    "articularPain": {
+     "present": false,
+     "pattern": ""
+    },
+    "sleepHours": 8,
+    "rpeAverage": 7,
+    "ts": 1792875616057
+   },
+   "errors": []
+  },
+  {
+   "case": "T12",
+   "desc": "rules D / E: effort harder than prescribed, or reps incomplete without RIR -> COACH REVIEW only (no numeric candidate)",
+   "numericServer": false,
+   "exercises": [
+    {
+     "name": "Press T599R RULE-D",
+     "pid": "pid#0",
+     "expect": {
+      "review": "D"
+     },
+     "records": [
+      {
+       "state": "PENDING",
+       "reasonCode": "MAGNITUDE_POLICY_MISSING",
+       "action": "increase_load",
+       "dimension": "LOAD",
+       "nextExposure": {
+        "dayIndex": 0,
+        "week": 3
+       },
+       "magnitude": {
+        "eligible": false,
+        "ruleId": "D",
+        "dimension": null,
+        "direction": "DOWN",
+        "directionConsistency": "NOT_APPLICABLE",
+        "comparableExposureCount": 2,
+        "reasonCodes": [
+         "NUMERIC_ACTIVATION_DISABLED",
+         "COACH_REVIEW_REQUIRED"
+        ],
+        "coachReviewRequired": "D",
+        "candidates": []
+       }
+      }
+     ],
+     "overlays": [],
+     "view": {
+      "setRows": 1,
+      "setRowIds": [
+       "setrow_log_3_0_0_s0"
+      ],
+      "autoadjust": null,
+      "autoadjustMain": null,
+      "autoadjustNote": null,
+      "chips": [],
+      "targets": [
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       }
+      ],
+      "current": {
+       "id": "setrow_log_3_0_0_s0",
+       "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG.",
+       "hasReference": true
+      },
+      "authority": "REVISIÓN REQUERIDA · Sin autoajuste aplicado La decisión del Coach o la revisión del plan tiene prioridad.",
+      "authorityState": "COACH_REVIEW",
+      "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG.",
+      "exerciseName": "- T599R",
+      "pageText": "✓ 2 SEMS › 3 ACTIVA 4 · D1 - T599R SEM 3 · PEAK - T599R 0/2 ejercicios COMPLETAR Saltar Copiar sem. anterior 0/6 SERIES --:-- TIEMPO — RIR MEDIO — ICS MEDIO 01 Press T599R RULE-D 02 Remo T599R RULE-E 01 Press T599R RULE-D FICHA ESTRUCTURA COACH SERIES 3 REPS 10 RIR 2 DESCANSO 1:30 KG Omitir ejercicio CALENTAMIENTO referencia ÚLTIMA SEMANA · SEM 2 Referencia de tu sesión anterior S1 · 100 kg × 10 · RIR 1 S2 · 100 kg × 10 · RIR 1 S3 · 100 kg × 10 · RIR 1 SERIES 0/3 SERIE 1 MODERADAS TU EJECUCIÓN OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG. REVISIÓN REQUERIDA · Sin autoajuste aplicado La decisión del Coach o la revisión del plan tiene prioridad. USAR CARGA/REPS SEM 2 · S1 · 100 kg × 10 CARGA (KG) −2.5 +2.5 REPS RIR REAL reps que te quedaban 0 Fallo 1 1 rep 2 2 reps 3 3 reps 4+ Fácil CALIDAD DE LA SERIE (ICS) opcional ¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente PUMP opcional BUENO OK BAJO ✓ GUARDAR SERIE 1 2 SERIE 2 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG. REVISIÓN REQUERIDA · Sin autoajuste aplicado La decisión del Coach o la revisión del plan tiene prioridad. 3 SERIE 3 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 100 KG. REVISIÓN REQUERIDA · Sin autoajuste aplicado La decisión del Coach o la revisión del plan tiene prioridad. SEM 3 — 1 sesión(es) pendiente(s) DESDE HISTORIAL QUÉ ES RIR Y QUÉ ES ICS"
+     }
+    },
+    {
+     "name": "Remo T599R RULE-E",
+     "pid": "pid#1",
+     "expect": {
+      "review": "E",
+      "note": "D-01: reps incomplete without RIR -> Coach review"
+     },
+     "records": [
+      {
+       "state": "PENDING",
+       "reasonCode": "MAGNITUDE_POLICY_MISSING",
+       "action": "maintain",
+       "dimension": null,
+       "nextExposure": {
+        "dayIndex": 0,
+        "week": 3
+       },
+       "magnitude": {
+        "eligible": false,
+        "ruleId": "E",
+        "dimension": null,
+        "direction": "DOWN",
+        "directionConsistency": "NOT_APPLICABLE",
+        "comparableExposureCount": 2,
+        "reasonCodes": [
+         "NUMERIC_ACTIVATION_DISABLED",
+         "COACH_REVIEW_REQUIRED"
+        ],
+        "coachReviewRequired": "E",
+        "candidates": []
+       }
+      }
+     ],
+     "overlays": [],
+     "view": {
+      "setRows": 1,
+      "setRowIds": [
+       "setrow_log_3_0_1_s0"
+      ],
+      "autoadjust": null,
+      "autoadjustMain": null,
+      "autoadjustNote": null,
+      "chips": [],
+      "targets": [
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       },
+       {
+        "source": "COACH",
+        "text": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30"
+       }
+      ],
+      "current": {
+       "id": "setrow_log_3_0_1_s0",
+       "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 80 KG.",
+       "hasReference": true
+      },
+      "authority": "REVISIÓN REQUERIDA · Sin autoajuste aplicado La decisión del Coach o la revisión del plan tiene prioridad.",
+      "authorityState": "COACH_REVIEW",
+      "reference": "REFERENCIA DE BITÁCORA Última carga de trabajo válida: 80 KG.",
+      "exerciseName": "- T599R",
+      "pageText": "✓ 2 SEMS › 3 ACTIVA 4 · D1 - T599R SEM 3 · PEAK - T599R 0/2 ejercicios COMPLETAR Saltar Copiar sem. anterior 0/6 SERIES --:-- TIEMPO — RIR MEDIO — ICS MEDIO 01 Press T599R RULE-D 02 Remo T599R RULE-E 02 Remo T599R RULE-E FICHA ESTRUCTURA COACH SERIES 3 REPS 10 RIR 2 DESCANSO 1:30 KG Omitir ejercicio ÚLTIMA SEMANA · SEM 2 Referencia de tu sesión anterior S1 · 80 kg × 10 · RIR — S2 · 80 kg × 10 · RIR — S3 · 80 kg × 7 · RIR — SERIES 0/3 SERIE 1 MODERADAS TU EJECUCIÓN OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 80 KG. REVISIÓN REQUERIDA · Sin autoajuste aplicado La decisión del Coach o la revisión del plan tiene prioridad. USAR CARGA/REPS SEM 2 · S1 · 80 kg × 10 CARGA (KG) −2.5 +2.5 REPS RIR REAL reps que te quedaban 0 Fallo 1 1 rep 2 2 reps 3 3 reps 4+ Fácil CALIDAD DE LA SERIE (ICS) opcional ¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente PUMP opcional BUENO OK BAJO ✓ GUARDAR SERIE 1 2 SERIE 2 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 80 KG. REVISIÓN REQUERIDA · Sin autoajuste aplicado La decisión del Coach o la revisión del plan tiene prioridad. 3 SERIE 3 10 reps · RIR 2 OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30 REFERENCIA DE BITÁCORA Última carga de trabajo válida: 80 KG. REVISIÓN REQUERIDA · Sin autoajuste aplicado La decisión del Coach o la revisión del plan tiene prioridad. SEM 3 — 1 sesión(es) pendiente(s) DESDE HISTORIAL QUÉ ES RIR Y QUÉ ES ICS"
+     }
+    }
+   ],
+   "weekAtStart": 2,
+   "weekAfterSession": 3,
+   "progrecSeenByClient": [
+    {
+     "exerciseName": "Press T599R RULE-D",
+     "action": "increase_load",
+     "newLoad": 101.5,
+     "newReps": 10,
+     "newSets": 3,
+     "prescriptionExerciseId": "t599r-t12-1"
+    },
+    {
+     "exerciseName": "Remo T599R RULE-E",
+     "action": "maintain",
+     "newLoad": 80,
+     "newReps": 10,
+     "newSets": 3,
+     "prescriptionExerciseId": "t599r-t12-2"
+    }
+   ],
+   "deloadTriggers": [],
+   "summary": {
+    "counts": {
+     "STALE": 0,
+     "REVERTED": 0,
+     "CONSUMED": 0,
+     "PENDING": 2,
+     "OVERRIDDEN": 0,
+     "APPLIED": 0,
+     "REJECTED": 0
+    },
+    "autoCount": 2,
+    "planId": "plan-t599r-t12-1b6b",
+    "items": [
+     {
+      "key": "v1_ab2a0f7cf2ba50ea",
+      "revision": 1,
+      "state": "PENDING",
+      "reasonCode": "MAGNITUDE_POLICY_MISSING",
+      "exerciseNameSnapshot": "Press T599R RULE-D",
+      "prescriptionExerciseId": "t599r-t12-1",
+      "action": "increase_load",
+      "dimension": "LOAD",
+      "lifecycle": null,
+      "source": {
+       "week": 2,
+       "dayIndex": 0,
+       "calculatedAt": "2026-10-24T21:01:02.017Z"
+      },
+      "nextExposure": {
+       "week": 3,
+       "dayIndex": 0
+      },
+      "updatedAt": "2026-10-24T21:01:02.212Z",
+      "magnitude": {
+       "mode": "SHADOW",
+       "eligible": false,
+       "ruleId": "D",
+       "dimension": null,
+       "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+       "ruleAuthority": "VDSEN_HEURISTIC",
+       "evidenceLevel": "C",
+       "comparableExposureCount": 2,
+       "unresolved": null,
+       "direction": "DOWN",
+       "directionConsistency": "NOT_APPLICABLE",
+       "review": null,
+       "coachReviewRequired": {
+        "code": "COACH_REVIEW_REQUIRED",
+        "branch": "D",
+        "reason": "EFFORT_HARDER_THAN_PRESCRIBED",
+        "policy": "VDSEN_PRODUCT_POLICY_COACH_REVIEW_ONLY",
+        "observed": {
+         "repsExecuted": 10,
+         "rirObserved": 1
+        },
+        "prescribed": {
+         "repsTarget": 10,
+         "rirTarget": 2
+        },
+        "sourceExposure": {
+         "week": 2,
+         "dayIndex": 0
+        },
+        "previousExposure": {
+         "week": 1,
+         "dayIndex": 0
+        }
+       },
+       "candidates": [],
+       "evidence": {
+        "basis": "VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET",
+        "rirPrescribed": 2,
+        "rirObserved": 1,
+        "repsTarget": 10,
+        "repsExecuted": 10,
+        "load": 100,
+        "unit": "KG"
+       },
+       "activationBlockers": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "coachReview": [],
+       "reasonCodes": [
+        "NUMERIC_ACTIVATION_DISABLED",
+        "COACH_REVIEW_REQUIRED"
+       ],
+       "numericApplyAllowed": false,
+       "applied": false,
+       "structural": null,
+       "primaryRaw": null
+      }
+     },
+     {
+      "key": "v1_003ec02d37619ebd",
+      "revision": 1,
+      "state": "PENDING",
+      "reasonCode": "MAGNITUDE_POLICY_MISSING",
+      "exerciseNameSnapshot": "Remo T599R RULE-E",
+      "prescriptionExerciseId": "t599r-t12-2",
+      "action": "maintain",
+      "dimension": null,
+      "lifecycle": null,
+      "source": {
+       "week": 2,
+       "dayIndex": 0,
+       "calculatedAt": "2026-10-24T21:01:02.017Z"
+      },
+      "nextExposure": {
+       "week": 3,
+       "dayIndex": 0
+      },
+      "updatedAt": "2026-10-24T21:01:02.212Z",
+      "magnitude": {
+       "mode": "SHADOW",
+       "eligible": false,
+       "ruleId": "E",
+       "dimension": null,
+       "methodologyFamily": "EHRENSTEIN_APEKS_DERIVED",
+       "ruleAuthority": "VDSEN_HEURISTIC",
+       "evidenceLevel": "C",
+       "comparableExposureCount": 2,
+       "unresolved": null,
+       "direction": "DOWN",
+       "directionConsistency": "NOT_APPLICABLE",
+       "review": null,
+       "coachReviewRequired": {
+        "code": "COACH_REVIEW_REQUIRED",
+        "branch": "E",
+        "reason": "REPS_INCOMPLETE_WITHOUT_RIR_EVIDENCE",
+        "policy": "VDSEN_PRODUCT_POLICY_COACH_REVIEW_ONLY",
+        "observed": {
+         "repsExecuted": 7,
+         "rirObserved": null
+        },
+        "prescribed": {
+         "repsTarget": 10,
+         "rirTarget": 2
+        },
+        "sourceExposure": {
+         "week": 2,
+         "dayIndex": 0
+        },
+        "previousExposure": {
+         "week": 1,
+         "dayIndex": 0
+        }
+       },
+       "candidates": [],
+       "evidence": {
+        "basis": "VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET",
+        "rirPrescribed": 2,
+        "rirObserved": null,
+        "repsTarget": 10,
+        "repsExecuted": 7,
+        "load": 80,
+        "unit": "KG"
+       },
+       "activationBlockers": [
+        "NUMERIC_ACTIVATION_DISABLED"
+       ],
+       "coachReview": [],
+       "reasonCodes": [
+        "NUMERIC_ACTIVATION_DISABLED",
+        "COACH_REVIEW_REQUIRED"
+       ],
+       "numericApplyAllowed": false,
+       "applied": false,
+       "structural": null,
+       "primaryRaw": null
+      }
+     }
+    ]
+   },
+   "postsession": {
+    "eimd": 1,
+    "articularPain": {
+     "present": false,
+     "pattern": ""
+    },
+    "sleepHours": 8,
+    "rpeAverage": 7,
+    "ts": 1792875662015
+   },
+   "errors": []
+  }
+ ],
+ "checks": [
+  {
+   "name": "T1/Press T599R LOAD numeric OFF: PENDING only, no overlay, never APPLIED, athlete told it is pending",
+   "ok": true,
+   "detail": {
+    "q": [
+     "PENDING",
+     true
+    ],
+    "st": "PENDING"
+   }
+  },
+  {
+   "name": "T1/Curl T599R REPS numeric OFF: PENDING only, no overlay, never APPLIED, athlete told it is pending",
+   "ok": true,
+   "detail": {
+    "q": [
+     "PENDING",
+     true
+    ],
+    "st": "PENDING"
+   }
+  },
+  {
+   "name": "T1/Remo T599R SETS numeric OFF: PENDING only, no overlay, never APPLIED, athlete told it is pending",
+   "ok": true,
+   "detail": {
+    "q": [
+     "PENDING",
+     true
+    ],
+    "st": "PENDING"
+   }
+  },
+  {
+   "name": "T1/Ext T599R REST numeric OFF: PENDING only, no overlay, never APPLIED, athlete told it is pending",
+   "ok": true,
+   "detail": {
+    "q": [
+     "PENDING",
+     true
+    ],
+    "st": "PENDING"
+   }
+  },
+  {
+   "name": "T1/Ext T599R REST2 numeric OFF: PENDING only, no overlay, never APPLIED, athlete told it is pending",
+   "ok": true,
+   "detail": {
+    "q": [
+     "PENDING",
+     true
+    ],
+    "st": "PENDING"
+   }
+  },
+  {
+   "name": "T1 two browsers show the same effective prescription",
+   "ok": true,
+   "detail": {
+    "beforeConsume": {
+     "equal": true,
+     "A": [
+      {
+       "adj": null,
+       "note": null,
+       "chips": "",
+       "targets": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30",
+       "sheet": "3,10,2,1:30"
+      },
+      {
+       "adj": null,
+       "note": null,
+       "chips": "",
+       "targets": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 1 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 1 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 1 3 series Descanso 1:30",
+       "sheet": "3,10,1,1:30"
+      },
+      {
+       "adj": null,
+       "note": null,
+       "chips": "",
+       "targets": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30",
+       "sheet": "3,10,2,1:30"
+      },
+      {
+       "adj": null,
+       "note": null,
+       "chips": "",
+       "targets": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30",
+       "sheet": "3,10,2,1:30"
+      },
+      {
+       "adj": null,
+       "note": null,
+       "chips": "",
+       "targets": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30",
+       "sheet": "3,10,2,1:30"
+      }
+     ],
+     "B": [
+      {
+       "adj": null,
+       "note": null,
+       "chips": "",
+       "targets": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30",
+       "sheet": "3,10,2,1:30"
+      },
+      {
+       "adj": null,
+       "note": null,
+       "chips": "",
+       "targets": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 1 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 1 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 1 3 series Descanso 1:30",
+       "sheet": "3,10,1,1:30"
+      },
+      {
+       "adj": null,
+       "note": null,
+       "chips": "",
+       "targets": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30",
+       "sheet": "3,10,2,1:30"
+      },
+      {
+       "adj": null,
+       "note": null,
+       "chips": "",
+       "targets": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30",
+       "sheet": "3,10,2,1:30"
+      },
+      {
+       "adj": null,
+       "note": null,
+       "chips": "",
+       "targets": "OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30|OBJETIVO DE ESTA SERIE ESTRUCTURA COACH 10 reps RIR 2 3 series Descanso 1:30",
+       "sheet": "3,10,2,1:30"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "T1 no uncaught page errors",
+   "ok": true,
+   "detail": []
+  },
+  {
+   "name": "T2/Sentadilla T599R DELOAD numeric OFF: PENDING only, no overlay, never APPLIED, athlete told it is pending",
+   "ok": true,
+   "detail": {
+    "q": [
+     "PENDING",
+     true
+    ],
+    "st": "PENDING"
+   }
+  },
+  {
+   "name": "T2 no uncaught page errors",
+   "ok": true,
+   "detail": []
+  },
+  {
+   "name": "T3/Press T599R FZERO numeric OFF: PENDING only, no overlay, never APPLIED, athlete told it is pending",
+   "ok": true,
+   "detail": {
+    "q": [
+     "PENDING",
+     true
+    ],
+    "st": "PENDING"
+   }
+  },
+  {
+   "name": "T3/Remo T599R HARD2 numeric OFF: PENDING only, no overlay, never APPLIED, athlete told it is pending",
+   "ok": true,
+   "detail": {
+    "q": [
+     "PENDING",
+     true
+    ],
+    "st": "PENDING"
+   }
+  },
+  {
+   "name": "T3/Curl T599R FHARD numeric OFF: PENDING only, no overlay, never APPLIED, athlete told it is pending",
+   "ok": true,
+   "detail": {
+    "q": [
+     "PENDING",
+     true
+    ],
+    "st": "PENDING"
+   }
+  },
+  {
+   "name": "T3 no uncaught page errors",
+   "ok": true,
+   "detail": []
+  },
+  {
+   "name": "T4/Press T599R PAIN no authorized adjustment (SAFETY_CONFLICT): no overlay, never APPLIED/CONSUMED",
+   "ok": true,
+   "detail": {
+    "q": "PENDING",
+    "st": "BLOCKED"
+   }
+  },
+  {
+   "name": "T4 no uncaught page errors",
+   "ok": true,
+   "detail": []
+  },
+  {
+   "name": "T5/Press T599R FIRST no authorized adjustment (INSUFFICIENT_COMPARABLE_EXPOSURES): no overlay, never APPLIED/CONSUMED",
+   "ok": true,
+   "detail": {
+    "q": "PENDING",
+    "st": "BLOCKED"
+   }
+  },
+  {
+   "name": "T5 no uncaught page errors",
+   "ok": true,
+   "detail": []
+  },
+  {
+   "name": "T12/Press T599R RULE-D Coach review required (rule D) on a PENDING record; no overlay; athlete sees REVISIÓN REQUERIDA",
+   "ok": true,
+   "detail": {
+    "q": [
+     "PENDING",
+     "D"
+    ],
+    "st": "COACH_REVIEW"
+   }
+  },
+  {
+   "name": "T12/Remo T599R RULE-E Coach review required (rule E) on a PENDING record; no overlay; athlete sees REVISIÓN REQUERIDA",
+   "ok": true,
+   "detail": {
+    "q": [
+     "PENDING",
+     "E"
+    ],
+    "st": "COACH_REVIEW"
+   }
+  },
+  {
+   "name": "T12 no uncaught page errors",
+   "ok": true,
+   "detail": []
+  }
+ ]
+}

@@ -1,0 +1,1468 @@
+{
+  "env": {
+    "browser": "Chrome/155.0.8059.82",
+    "os": "win32 10.0.26200",
+    "cpu": "AMD Ryzen 7 7730U with Radeon Graphics         ",
+    "build": "vdsen-t601"
+  },
+  "root": "vdsen-t601",
+  "reps": 2,
+  "writeStartMode": [
+    "parallel"
+  ],
+  "summary": {
+    "normal": {
+      "n": 4,
+      "busyMs": {
+        "n": 4,
+        "median": 1,
+        "p95": 4,
+        "min": 1,
+        "max": 4,
+        "sd": 1
+      },
+      "okBadgeMs": {
+        "n": 4,
+        "median": 134,
+        "p95": 195,
+        "min": 101,
+        "max": 195,
+        "sd": 34
+      },
+      "localBadgeMs": null,
+      "panelRefreshedMs": {
+        "n": 4,
+        "median": 134,
+        "p95": 195,
+        "min": 101,
+        "max": 195,
+        "sd": 34
+      },
+      "errorMs": null,
+      "mesosStartMs": {
+        "n": 4,
+        "median": 1,
+        "p95": 3,
+        "min": 1,
+        "max": 3,
+        "sd": 1
+      },
+      "mesosResolveMs": {
+        "n": 4,
+        "median": 43,
+        "p95": 52,
+        "min": 39,
+        "max": 52,
+        "sd": 5
+      },
+      "rootStartMs": {
+        "n": 4,
+        "median": 1,
+        "p95": 4,
+        "min": 1,
+        "max": 4,
+        "sd": 1
+      },
+      "rootResolveMs": {
+        "n": 4,
+        "median": 119,
+        "p95": 181,
+        "min": 71,
+        "max": 181,
+        "sd": 39
+      },
+      "reconnectToPersistedMs": null
+    },
+    "latency600": {
+      "n": 4,
+      "busyMs": {
+        "n": 4,
+        "median": 1,
+        "p95": 2,
+        "min": 1,
+        "max": 2,
+        "sd": 0
+      },
+      "okBadgeMs": {
+        "n": 4,
+        "median": 694,
+        "p95": 763,
+        "min": 668,
+        "max": 763,
+        "sd": 35
+      },
+      "localBadgeMs": null,
+      "panelRefreshedMs": {
+        "n": 4,
+        "median": 694,
+        "p95": 763,
+        "min": 668,
+        "max": 763,
+        "sd": 35
+      },
+      "errorMs": null,
+      "mesosStartMs": {
+        "n": 4,
+        "median": 1,
+        "p95": 1,
+        "min": 1,
+        "max": 1,
+        "sd": 0
+      },
+      "mesosResolveMs": {
+        "n": 4,
+        "median": 647,
+        "p95": 697,
+        "min": 634,
+        "max": 697,
+        "sd": 27
+      },
+      "rootStartMs": {
+        "n": 4,
+        "median": 1,
+        "p95": 1,
+        "min": 1,
+        "max": 1,
+        "sd": 0
+      },
+      "rootResolveMs": {
+        "n": 4,
+        "median": 680,
+        "p95": 748,
+        "min": 655,
+        "max": 748,
+        "sd": 35
+      },
+      "reconnectToPersistedMs": null
+    },
+    "meso-slow": {
+      "n": 2,
+      "busyMs": {
+        "n": 2,
+        "median": 1,
+        "p95": 1,
+        "min": 1,
+        "max": 1,
+        "sd": 0
+      },
+      "okBadgeMs": {
+        "n": 2,
+        "median": 1551,
+        "p95": 1586,
+        "min": 1551,
+        "max": 1586,
+        "sd": 17
+      },
+      "localBadgeMs": null,
+      "panelRefreshedMs": {
+        "n": 2,
+        "median": 1551,
+        "p95": 1586,
+        "min": 1551,
+        "max": 1586,
+        "sd": 17
+      },
+      "errorMs": null,
+      "mesosStartMs": {
+        "n": 2,
+        "median": 1,
+        "p95": 1,
+        "min": 1,
+        "max": 1,
+        "sd": 0
+      },
+      "mesosResolveMs": {
+        "n": 2,
+        "median": 1538,
+        "p95": 1572,
+        "min": 1538,
+        "max": 1572,
+        "sd": 17
+      },
+      "rootStartMs": {
+        "n": 2,
+        "median": 1,
+        "p95": 1,
+        "min": 1,
+        "max": 1,
+        "sd": 0
+      },
+      "rootResolveMs": {
+        "n": 2,
+        "median": 196,
+        "p95": 271,
+        "min": 196,
+        "max": 271,
+        "sd": 37
+      },
+      "reconnectToPersistedMs": null
+    },
+    "root-slow": {
+      "n": 4,
+      "busyMs": {
+        "n": 4,
+        "median": 1,
+        "p95": 2,
+        "min": 1,
+        "max": 2,
+        "sd": 0
+      },
+      "okBadgeMs": {
+        "n": 4,
+        "median": 1588,
+        "p95": 1627,
+        "min": 1578,
+        "max": 1627,
+        "sd": 18
+      },
+      "localBadgeMs": null,
+      "panelRefreshedMs": {
+        "n": 4,
+        "median": 1588,
+        "p95": 1627,
+        "min": 1578,
+        "max": 1627,
+        "sd": 18
+      },
+      "errorMs": null,
+      "mesosStartMs": {
+        "n": 4,
+        "median": 1,
+        "p95": 1,
+        "min": 1,
+        "max": 1,
+        "sd": 0
+      },
+      "mesosResolveMs": {
+        "n": 4,
+        "median": 148,
+        "p95": 197,
+        "min": 144,
+        "max": 197,
+        "sd": 22
+      },
+      "rootStartMs": {
+        "n": 4,
+        "median": 1,
+        "p95": 1,
+        "min": 1,
+        "max": 1,
+        "sd": 0
+      },
+      "rootResolveMs": {
+        "n": 4,
+        "median": 1584,
+        "p95": 1613,
+        "min": 1565,
+        "max": 1613,
+        "sd": 18
+      },
+      "reconnectToPersistedMs": null
+    },
+    "doubletap": {
+      "n": 2,
+      "busyMs": {
+        "n": 2,
+        "median": 32,
+        "p95": 33,
+        "min": 32,
+        "max": 33,
+        "sd": 1
+      },
+      "okBadgeMs": {
+        "n": 2,
+        "median": 472,
+        "p95": 544,
+        "min": 472,
+        "max": 544,
+        "sd": 36
+      },
+      "localBadgeMs": null,
+      "panelRefreshedMs": {
+        "n": 2,
+        "median": 472,
+        "p95": 544,
+        "min": 472,
+        "max": 544,
+        "sd": 36
+      },
+      "errorMs": null,
+      "mesosStartMs": {
+        "n": 2,
+        "median": 1,
+        "p95": 1,
+        "min": 1,
+        "max": 1,
+        "sd": 0
+      },
+      "mesosResolveMs": {
+        "n": 2,
+        "median": 444,
+        "p95": 447,
+        "min": 444,
+        "max": 447,
+        "sd": 1
+      },
+      "rootStartMs": {
+        "n": 2,
+        "median": 1,
+        "p95": 1,
+        "min": 1,
+        "max": 1,
+        "sd": 0
+      },
+      "rootResolveMs": {
+        "n": 2,
+        "median": 467,
+        "p95": 531,
+        "min": 467,
+        "max": 531,
+        "sd": 32
+      },
+      "reconnectToPersistedMs": null
+    },
+    "fail-root": {
+      "n": 2,
+      "busyMs": {
+        "n": 2,
+        "median": 1,
+        "p95": 1,
+        "min": 1,
+        "max": 1,
+        "sd": 0
+      },
+      "okBadgeMs": null,
+      "localBadgeMs": null,
+      "panelRefreshedMs": null,
+      "errorMs": {
+        "n": 2,
+        "median": 215,
+        "p95": 216,
+        "min": 215,
+        "max": 216,
+        "sd": 0
+      },
+      "mesosStartMs": {
+        "n": 2,
+        "median": 1,
+        "p95": 1,
+        "min": 1,
+        "max": 1,
+        "sd": 0
+      },
+      "mesosResolveMs": {
+        "n": 2,
+        "median": 35,
+        "p95": 123,
+        "min": 35,
+        "max": 123,
+        "sd": 44
+      },
+      "rootStartMs": {
+        "n": 2,
+        "median": 1,
+        "p95": 1,
+        "min": 1,
+        "max": 1,
+        "sd": 0
+      },
+      "rootResolveMs": {
+        "n": 2,
+        "median": 203,
+        "p95": 205,
+        "min": 203,
+        "max": 205,
+        "sd": 1
+      },
+      "reconnectToPersistedMs": null
+    },
+    "validation": {
+      "n": 2,
+      "busyMs": null,
+      "okBadgeMs": null,
+      "localBadgeMs": null,
+      "panelRefreshedMs": null,
+      "errorMs": {
+        "n": 2,
+        "median": 0,
+        "p95": 0,
+        "min": 0,
+        "max": 0,
+        "sd": 0
+      },
+      "mesosStartMs": null,
+      "mesosResolveMs": null,
+      "rootStartMs": null,
+      "rootResolveMs": null,
+      "reconnectToPersistedMs": null
+    },
+    "fail-meso": {
+      "n": 2,
+      "busyMs": {
+        "n": 2,
+        "median": 4,
+        "p95": 4,
+        "min": 4,
+        "max": 4,
+        "sd": 0
+      },
+      "okBadgeMs": {
+        "n": 2,
+        "median": 235,
+        "p95": 236,
+        "min": 235,
+        "max": 236,
+        "sd": 1
+      },
+      "localBadgeMs": null,
+      "panelRefreshedMs": {
+        "n": 2,
+        "median": 235,
+        "p95": 236,
+        "min": 235,
+        "max": 236,
+        "sd": 1
+      },
+      "errorMs": null,
+      "mesosStartMs": {
+        "n": 2,
+        "median": 3,
+        "p95": 3,
+        "min": 3,
+        "max": 3,
+        "sd": 0
+      },
+      "mesosResolveMs": {
+        "n": 2,
+        "median": 204,
+        "p95": 204,
+        "min": 204,
+        "max": 204,
+        "sd": 0
+      },
+      "rootStartMs": {
+        "n": 2,
+        "median": 3,
+        "p95": 3,
+        "min": 3,
+        "max": 3,
+        "sd": 0
+      },
+      "rootResolveMs": {
+        "n": 2,
+        "median": 54,
+        "p95": 66,
+        "min": 54,
+        "max": 66,
+        "sd": 6
+      },
+      "reconnectToPersistedMs": null
+    },
+    "cdp-latency300": {
+      "n": 2,
+      "busyMs": {
+        "n": 2,
+        "median": 1,
+        "p95": 1,
+        "min": 1,
+        "max": 1,
+        "sd": 0
+      },
+      "okBadgeMs": {
+        "n": 2,
+        "median": 355,
+        "p95": 372,
+        "min": 355,
+        "max": 372,
+        "sd": 8
+      },
+      "localBadgeMs": null,
+      "panelRefreshedMs": {
+        "n": 2,
+        "median": 355,
+        "p95": 372,
+        "min": 355,
+        "max": 372,
+        "sd": 8
+      },
+      "errorMs": null,
+      "mesosStartMs": {
+        "n": 2,
+        "median": 1,
+        "p95": 1,
+        "min": 1,
+        "max": 1,
+        "sd": 0
+      },
+      "mesosResolveMs": {
+        "n": 2,
+        "median": 28,
+        "p95": 114,
+        "min": 28,
+        "max": 114,
+        "sd": 43
+      },
+      "rootStartMs": {
+        "n": 2,
+        "median": 1,
+        "p95": 1,
+        "min": 1,
+        "max": 1,
+        "sd": 0
+      },
+      "rootResolveMs": {
+        "n": 2,
+        "median": 351,
+        "p95": 369,
+        "min": 351,
+        "max": 369,
+        "sd": 9
+      },
+      "reconnectToPersistedMs": {
+        "n": 2,
+        "median": 510,
+        "p95": 515,
+        "min": 510,
+        "max": 515,
+        "sd": 3
+      }
+    },
+    "offline": {
+      "n": 2,
+      "busyMs": {
+        "n": 2,
+        "median": 1,
+        "p95": 1,
+        "min": 1,
+        "max": 1,
+        "sd": 0
+      },
+      "okBadgeMs": null,
+      "localBadgeMs": null,
+      "panelRefreshedMs": {
+        "n": 2,
+        "median": 8,
+        "p95": 8,
+        "min": 8,
+        "max": 8,
+        "sd": 0
+      },
+      "errorMs": null,
+      "mesosStartMs": {
+        "n": 2,
+        "median": 1,
+        "p95": 1,
+        "min": 1,
+        "max": 1,
+        "sd": 0
+      },
+      "mesosResolveMs": null,
+      "rootStartMs": {
+        "n": 2,
+        "median": 1,
+        "p95": 1,
+        "min": 1,
+        "max": 1,
+        "sd": 0
+      },
+      "rootResolveMs": null,
+      "reconnectToPersistedMs": {
+        "n": 2,
+        "median": 511,
+        "p95": 522,
+        "min": 511,
+        "max": 522,
+        "sd": 6
+      }
+    }
+  },
+  "rows": [
+    {
+      "scenario": "normal",
+      "boot": 1,
+      "set": "log_2_0_0_s0",
+      "tl": {
+        "key": "log_2_0_0_s0",
+        "busy": 3.699999988079071,
+        "okBadge": 148.69999998807907,
+        "panelRefreshed": 148.80000001192093,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 2.5,
+            "resolve": 43.6,
+            "ok": true
+          },
+          {
+            "kind": "root",
+            "start": 3.4,
+            "resolve": 119.4,
+            "ok": true
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "mesosHas": 1,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "latency600",
+      "boot": 1,
+      "set": "log_2_0_0_s1",
+      "tl": {
+        "key": "log_2_0_0_s1",
+        "busy": 1.600000023841858,
+        "okBadge": 693.6000000238419,
+        "panelRefreshed": 693.6000000238419,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 1,
+            "resolve": 647.2,
+            "ok": true
+          },
+          {
+            "kind": "root",
+            "start": 1.4,
+            "resolve": 680.2,
+            "ok": true
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "mesosHas": 1,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "meso-slow",
+      "boot": 1,
+      "set": "log_2_0_0_s2",
+      "tl": {
+        "key": "log_2_0_0_s2",
+        "busy": 1.199999988079071,
+        "okBadge": 1551,
+        "panelRefreshed": 1551.0999999642372,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 0.8,
+            "resolve": 1537.7,
+            "ok": true
+          },
+          {
+            "kind": "root",
+            "start": 1.1,
+            "resolve": 270.9,
+            "ok": true
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "mesosHas": 1,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "root-slow",
+      "boot": 1,
+      "set": "log_2_0_1_s0",
+      "tl": {
+        "key": "log_2_0_1_s0",
+        "busy": 1.800000011920929,
+        "okBadge": 1588.1000000238419,
+        "panelRefreshed": 1588.1000000238419,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 0.9,
+            "resolve": 144.4,
+            "ok": true
+          },
+          {
+            "kind": "root",
+            "start": 1.4,
+            "resolve": 1583.7,
+            "ok": true
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "mesosHas": 1,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "doubletap",
+      "boot": 1,
+      "set": "log_2_0_1_s1",
+      "tl": {
+        "key": "log_2_0_1_s1",
+        "secondTapSent": true,
+        "busy": 32.69999998807907,
+        "okBadge": 471.80000001192093,
+        "panelRefreshed": 471.80000001192093,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 0.7,
+            "resolve": 446.5,
+            "ok": true
+          },
+          {
+            "kind": "root",
+            "start": 1,
+            "resolve": 467.1,
+            "ok": true
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "mesosHas": 1,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "fail-root",
+      "boot": 1,
+      "set": "log_2_0_1_s2",
+      "tl": {
+        "key": "log_2_0_1_s2",
+        "busy": 0.8999999761581421,
+        "errorShown": 215.30000001192093,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 0.7,
+            "resolve": 34.6,
+            "ok": true
+          },
+          {
+            "kind": "root",
+            "start": 0.9,
+            "resolve": 202.8,
+            "ok": false
+          }
+        ],
+        "btnAfter": {
+          "disabled": false,
+          "text": "✓ GUARDAR SERIE 3"
+        }
+      },
+      "mesosHas": 1,
+      "rootHas": 0,
+      "errs": []
+    },
+    {
+      "scenario": "validation",
+      "boot": 1,
+      "set": "log_2_0_1_s2",
+      "tl": {
+        "key": "log_2_0_1_s2",
+        "errorShown": 0.2999999523162842,
+        "writes": [],
+        "btnAfter": {
+          "disabled": false,
+          "text": "✓ GUARDAR SERIE 3"
+        }
+      },
+      "mesosHas": 1,
+      "rootHas": 0,
+      "errs": []
+    },
+    {
+      "scenario": "fail-meso",
+      "boot": 2,
+      "set": "log_2_0_0_s0",
+      "tl": {
+        "key": "log_2_0_0_s0",
+        "busy": 3.600000023841858,
+        "okBadge": 236.10000002384186,
+        "panelRefreshed": 236.10000002384186,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 2.6,
+            "resolve": 204.1,
+            "ok": false
+          },
+          {
+            "kind": "root",
+            "start": 2.7,
+            "resolve": 53.8,
+            "ok": true
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "mesosHas": 0,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "normal",
+      "boot": 2,
+      "set": "log_2_0_0_s1",
+      "tl": {
+        "key": "log_2_0_0_s1",
+        "busy": 1.2000000476837158,
+        "okBadge": 133.60000002384186,
+        "panelRefreshed": 133.60000002384186,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 0.8,
+            "resolve": 38.5,
+            "ok": true
+          },
+          {
+            "kind": "root",
+            "start": 1,
+            "resolve": 119.6,
+            "ok": true
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "mesosHas": 1,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "latency600",
+      "boot": 2,
+      "set": "log_2_0_0_s2",
+      "tl": {
+        "key": "log_2_0_0_s2",
+        "busy": 1.199999988079071,
+        "okBadge": 667.9000000357628,
+        "panelRefreshed": 667.9000000357628,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 0.7,
+            "resolve": 634.2,
+            "ok": true
+          },
+          {
+            "kind": "root",
+            "start": 1,
+            "resolve": 654.6,
+            "ok": true
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "mesosHas": 1,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "root-slow",
+      "boot": 2,
+      "set": "log_2_0_1_s0",
+      "tl": {
+        "key": "log_2_0_1_s0",
+        "busy": 1.199999988079071,
+        "okBadge": 1578.199999988079,
+        "panelRefreshed": 1578.199999988079,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 0.8,
+            "resolve": 148.4,
+            "ok": true
+          },
+          {
+            "kind": "root",
+            "start": 1.1,
+            "resolve": 1564.9,
+            "ok": true
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "mesosHas": 1,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "cdp-latency300",
+      "boot": 2,
+      "set": "log_2_0_1_s1",
+      "tl": {
+        "key": "log_2_0_1_s1",
+        "busy": 1.100000023841858,
+        "okBadge": 355.30000001192093,
+        "panelRefreshed": 355.30000001192093,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 0.7,
+            "resolve": 28.2,
+            "ok": true
+          },
+          {
+            "kind": "root",
+            "start": 0.9,
+            "resolve": 351.4,
+            "ok": true
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "reconnectToPersistedMs": 515,
+      "mesosHas": 1,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "offline",
+      "boot": 2,
+      "set": "log_2_0_1_s2",
+      "tl": {
+        "key": "log_2_0_1_s2",
+        "busy": 0.8999999761581421,
+        "pendingBadge": 7.899999976158142,
+        "panelRefreshed": 7.899999976158142,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 0.6,
+            "resolve": null,
+            "ok": null
+          },
+          {
+            "kind": "root",
+            "start": 0.8,
+            "resolve": null,
+            "ok": null
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "reconnectToPersistedMs": 522,
+      "mesosHas": 1,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "normal",
+      "boot": 3,
+      "set": "log_2_0_0_s0",
+      "tl": {
+        "key": "log_2_0_0_s0",
+        "busy": 4.100000023841858,
+        "okBadge": 100.70000004768372,
+        "panelRefreshed": 100.70000004768372,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 2.9,
+            "resolve": 42.9,
+            "ok": true
+          },
+          {
+            "kind": "root",
+            "start": 3.8,
+            "resolve": 70.5,
+            "ok": true
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "mesosHas": 1,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "latency600",
+      "boot": 3,
+      "set": "log_2_0_0_s1",
+      "tl": {
+        "key": "log_2_0_0_s1",
+        "busy": 1.300000011920929,
+        "okBadge": 762.5,
+        "panelRefreshed": 762.5,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 0.8,
+            "resolve": 696.6,
+            "ok": true
+          },
+          {
+            "kind": "root",
+            "start": 1,
+            "resolve": 748,
+            "ok": true
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "mesosHas": 1,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "meso-slow",
+      "boot": 3,
+      "set": "log_2_0_0_s2",
+      "tl": {
+        "key": "log_2_0_0_s2",
+        "busy": 1.199999988079071,
+        "okBadge": 1585.5,
+        "panelRefreshed": 1585.5,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 0.8,
+            "resolve": 1571.8,
+            "ok": true
+          },
+          {
+            "kind": "root",
+            "start": 1.1,
+            "resolve": 196.4,
+            "ok": true
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "mesosHas": 1,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "root-slow",
+      "boot": 3,
+      "set": "log_2_0_1_s0",
+      "tl": {
+        "key": "log_2_0_1_s0",
+        "busy": 1.199999988079071,
+        "okBadge": 1626.6000000238419,
+        "panelRefreshed": 1626.6000000238419,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 0.8,
+            "resolve": 197.3,
+            "ok": true
+          },
+          {
+            "kind": "root",
+            "start": 1.1,
+            "resolve": 1612.9,
+            "ok": true
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "mesosHas": 1,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "doubletap",
+      "boot": 3,
+      "set": "log_2_0_1_s1",
+      "tl": {
+        "key": "log_2_0_1_s1",
+        "secondTapSent": true,
+        "busy": 31.5,
+        "okBadge": 543.5999999642372,
+        "panelRefreshed": 543.5999999642372,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 0.7,
+            "resolve": 443.9,
+            "ok": true
+          },
+          {
+            "kind": "root",
+            "start": 1,
+            "resolve": 531.1,
+            "ok": true
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "mesosHas": 1,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "fail-root",
+      "boot": 3,
+      "set": "log_2_0_1_s2",
+      "tl": {
+        "key": "log_2_0_1_s2",
+        "busy": 1.100000023841858,
+        "errorShown": 215.5,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 0.7,
+            "resolve": 122.8,
+            "ok": true
+          },
+          {
+            "kind": "root",
+            "start": 0.9,
+            "resolve": 205.1,
+            "ok": false
+          }
+        ],
+        "btnAfter": {
+          "disabled": false,
+          "text": "✓ GUARDAR SERIE 3"
+        }
+      },
+      "mesosHas": 1,
+      "rootHas": 0,
+      "errs": []
+    },
+    {
+      "scenario": "validation",
+      "boot": 3,
+      "set": "log_2_0_1_s2",
+      "tl": {
+        "key": "log_2_0_1_s2",
+        "errorShown": 0.3999999761581421,
+        "writes": [],
+        "btnAfter": {
+          "disabled": false,
+          "text": "✓ GUARDAR SERIE 3"
+        }
+      },
+      "mesosHas": 1,
+      "rootHas": 0,
+      "errs": []
+    },
+    {
+      "scenario": "fail-meso",
+      "boot": 4,
+      "set": "log_2_0_0_s0",
+      "tl": {
+        "key": "log_2_0_0_s0",
+        "busy": 4.400000035762787,
+        "okBadge": 235,
+        "panelRefreshed": 235,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 3.2,
+            "resolve": 204.4,
+            "ok": false
+          },
+          {
+            "kind": "root",
+            "start": 3.3,
+            "resolve": 66.1,
+            "ok": true
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "mesosHas": 0,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "normal",
+      "boot": 4,
+      "set": "log_2_0_0_s1",
+      "tl": {
+        "key": "log_2_0_0_s1",
+        "busy": 1.199999988079071,
+        "okBadge": 194.60000002384186,
+        "panelRefreshed": 194.60000002384186,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 0.7,
+            "resolve": 51.9,
+            "ok": true
+          },
+          {
+            "kind": "root",
+            "start": 0.9,
+            "resolve": 180.8,
+            "ok": true
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "mesosHas": 1,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "latency600",
+      "boot": 4,
+      "set": "log_2_0_0_s2",
+      "tl": {
+        "key": "log_2_0_0_s2",
+        "busy": 1.300000011920929,
+        "okBadge": 726.3000000119209,
+        "panelRefreshed": 726.3000000119209,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 0.7,
+            "resolve": 690.9,
+            "ok": true
+          },
+          {
+            "kind": "root",
+            "start": 1.1,
+            "resolve": 711.8,
+            "ok": true
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "mesosHas": 1,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "root-slow",
+      "boot": 4,
+      "set": "log_2_0_1_s0",
+      "tl": {
+        "key": "log_2_0_1_s0",
+        "busy": 1.2000000476837158,
+        "okBadge": 1604.800000011921,
+        "panelRefreshed": 1604.800000011921,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 0.7,
+            "resolve": 180.8,
+            "ok": true
+          },
+          {
+            "kind": "root",
+            "start": 1,
+            "resolve": 1600.6,
+            "ok": true
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "mesosHas": 1,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "cdp-latency300",
+      "boot": 4,
+      "set": "log_2_0_1_s1",
+      "tl": {
+        "key": "log_2_0_1_s1",
+        "busy": 1.2999999523162842,
+        "okBadge": 372,
+        "panelRefreshed": 372,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 0.8,
+            "resolve": 114.2,
+            "ok": true
+          },
+          {
+            "kind": "root",
+            "start": 1.1,
+            "resolve": 368.6,
+            "ok": true
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "reconnectToPersistedMs": 510,
+      "mesosHas": 1,
+      "rootHas": 1,
+      "errs": []
+    },
+    {
+      "scenario": "offline",
+      "boot": 4,
+      "set": "log_2_0_1_s2",
+      "tl": {
+        "key": "log_2_0_1_s2",
+        "busy": 1.4000000357627869,
+        "pendingBadge": 7.900000035762787,
+        "panelRefreshed": 7.900000035762787,
+        "writes": [
+          {
+            "kind": "mesos",
+            "start": 0.7,
+            "resolve": null,
+            "ok": null
+          },
+          {
+            "kind": "root",
+            "start": 1.1,
+            "resolve": null,
+            "ok": null
+          }
+        ],
+        "btnAfter": "detached"
+      },
+      "reconnectToPersistedMs": 511,
+      "mesosHas": 1,
+      "rootHas": 1,
+      "errs": []
+    }
+  ],
+  "checks": [
+    {
+      "name": "every set tapped gives an immediate visual response (button busy within 100 ms) in all online scenarios",
+      "ok": true,
+      "detail": []
+    },
+    {
+      "name": "normal / latency / slow-write scenarios persist the set once in BOTH documents and confirm only after both writes resolved",
+      "ok": true,
+      "detail": [
+        [],
+        [],
+        [],
+        []
+      ]
+    },
+    {
+      "name": "CDP 300 ms network latency: never confirmed before persisted; ends persisted once in both documents (state at the tap is reported in the summary, not asserted)",
+      "ok": true,
+      "detail": [
+        [
+          355.30000001192093,
+          null,
+          355.30000001192093,
+          1,
+          1
+        ],
+        [
+          372,
+          null,
+          372,
+          1,
+          1
+        ]
+      ]
+    },
+    {
+      "name": "double tap: exactly one mesos write and one root write, key persisted once",
+      "ok": true,
+      "detail": [
+        2,
+        2
+      ]
+    },
+    {
+      "name": "root write failure: NEVER confirmed (no \"✓ GUARDADO\"), error shown, button usable again, nothing persisted in the root document",
+      "ok": true,
+      "detail": [
+        [
+          null,
+          215.30000001192093,
+          {
+            "disabled": false,
+            "text": "✓ GUARDAR SERIE 3"
+          },
+          0
+        ],
+        [
+          null,
+          215.5,
+          {
+            "disabled": false,
+            "text": "✓ GUARDAR SERIE 3"
+          },
+          0
+        ]
+      ]
+    },
+    {
+      "name": "mesos-only failure stays non-fatal by design: the set is confirmed and the root document holds it",
+      "ok": true,
+      "detail": [
+        [
+          236.10000002384186,
+          1,
+          0
+        ],
+        [
+          235,
+          1,
+          0
+        ]
+      ]
+    },
+    {
+      "name": "offline: never claims a confirmed save (\"✓ GUARDADO\"), shows pending/local state, and after reconnection persists the set once in both documents",
+      "ok": true,
+      "detail": [
+        [
+          null,
+          7.899999976158142,
+          null,
+          1,
+          1,
+          522
+        ],
+        [
+          null,
+          7.900000035762787,
+          null,
+          1,
+          1,
+          511
+        ]
+      ]
+    },
+    {
+      "name": "invalid input (empty load) is rejected before any write and the button comes back usable with its original label",
+      "ok": true,
+      "detail": [
+        [
+          0,
+          {
+            "disabled": false,
+            "text": "✓ GUARDAR SERIE 3"
+          }
+        ],
+        [
+          0,
+          {
+            "disabled": false,
+            "text": "✓ GUARDAR SERIE 3"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "root write failure restores the original button label (not \"GUARDANDO…\")",
+      "ok": true,
+      "detail": [
+        {
+          "disabled": false,
+          "text": "✓ GUARDAR SERIE 3"
+        },
+        {
+          "disabled": false,
+          "text": "✓ GUARDAR SERIE 3"
+        }
+      ]
+    },
+    {
+      "name": "no uncaught page errors",
+      "ok": true,
+      "detail": []
+    }
+  ],
+  "notes": "Emulator + injected delay; not production or network latency."
+}

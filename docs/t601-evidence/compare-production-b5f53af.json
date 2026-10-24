@@ -1,0 +1,314 @@
+{
+ "label": "prod",
+ "root": "C:\\Users\\bonaf\\AppData\\Local\\Temp\\t601-prod-b5f53af",
+ "rows": [
+  {
+   "area": "Identidad",
+   "check": "build identificado",
+   "ok": true,
+   "detail": "issue-115-brave-rc-20261024-01"
+  },
+  {
+   "area": "Navegación",
+   "check": "Inicio renderiza contenido sin desbordar horizontalmente",
+   "ok": true,
+   "detail": {
+    "len": 1324,
+    "overflowX": false
+   }
+  },
+  {
+   "area": "Navegación",
+   "check": "Entrenamiento renderiza contenido sin desbordar horizontalmente",
+   "ok": true,
+   "detail": {
+    "len": 1123,
+    "overflowX": false
+   }
+  },
+  {
+   "area": "Navegación",
+   "check": "Nutrición renderiza contenido sin desbordar horizontalmente",
+   "ok": true,
+   "detail": {
+    "len": 198,
+    "overflowX": false
+   }
+  },
+  {
+   "area": "Navegación",
+   "check": "Check-in renderiza contenido sin desbordar horizontalmente",
+   "ok": true,
+   "detail": {
+    "len": 2525,
+    "overflowX": false
+   }
+  },
+  {
+   "area": "Navegación",
+   "check": "Perfil renderiza contenido sin desbordar horizontalmente",
+   "ok": true,
+   "detail": {
+    "len": 860,
+    "overflowX": false
+   }
+  },
+  {
+   "area": "Entrenamiento",
+   "check": "lista los 2 ejercicios del plan",
+   "ok": true,
+   "detail": [
+    "Press de pecho E2E",
+    "Curl predicador E2E",
+    "Curl predicador E2E"
+   ]
+  },
+  {
+   "area": "Entrenamiento",
+   "check": "serie actual con carga, reps, RIR 0-5, ICS, pump y botón GUARDAR",
+   "ok": true,
+   "detail": {
+    "carga": true,
+    "reps": true,
+    "rir": 5,
+    "ics": true,
+    "pump": 3,
+    "save": "✓ GUARDAR SERIE 1"
+   }
+  },
+  {
+   "area": "Entrenamiento",
+   "check": "contador de series de la sesión",
+   "ok": true,
+   "detail": [
+    0,
+    6
+   ]
+  },
+  {
+   "area": "Historial",
+   "check": "bloque «Última semana» con USAR CARGA/REPS",
+   "ok": true,
+   "detail": {
+    "prevWeek": true,
+    "use": true
+   }
+  },
+  {
+   "area": "Guardado",
+   "check": "la serie se persiste (documento del plan y raíz) con carga/reps/RIR/ICS/pump",
+   "ok": true,
+   "detail": {
+    "carga": "80",
+    "reps": "10",
+    "unit": "KG",
+    "done": true,
+    "rir": 2,
+    "rir_real": "2",
+    "ics": 8,
+    "pump": 1,
+    "ts": 1792876530970,
+    "prescriptionExerciseId": "pid-e2e-g-1",
+    "exerciseNameSnapshot": "Press de pecho E2E"
+   }
+  },
+  {
+   "area": "Progreso",
+   "check": "el contador avanza al guardar",
+   "ok": true,
+   "detail": [
+    1,
+    6
+   ]
+  },
+  {
+   "area": "Descanso",
+   "check": "se inicia el temporizador de descanso (90 s del plan)",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "area": "Corrección",
+   "check": "reabrir la serie la devuelve a edición (no cuenta como hecha)",
+   "ok": true,
+   "detail": [
+    0,
+    6
+   ]
+  },
+  {
+   "area": "Corrección",
+   "check": "la corrección reemplaza el valor sin duplicar (82.5 × 9)",
+   "ok": true,
+   "detail": {
+    "carga": "82.5",
+    "reps": "9",
+    "unit": "KG",
+    "done": true,
+    "rir": 2,
+    "rir_real": "1",
+    "ics": 7,
+    "pump": 2,
+    "ts": 1792876534904,
+    "prescriptionExerciseId": "pid-e2e-g-1",
+    "exerciseNameSnapshot": "Press de pecho E2E"
+   }
+  },
+  {
+   "area": "Reanudación",
+   "check": "una sesión nueva conserva las 2 series guardadas",
+   "ok": true,
+   "detail": [
+    2,
+    6
+   ]
+  },
+  {
+   "area": "Offline",
+   "check": "sin red no se anuncia «✓ GUARDADO» y se avisa que está pendiente / local",
+   "ok": true,
+   "detail": {
+    "badge": {
+     "ok": "",
+     "pending": true
+    },
+    "remote": false
+   }
+  },
+  {
+   "area": "Offline",
+   "check": "al reconectar la serie llega a ambos documentos",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "area": "Sincronización",
+   "check": "un segundo navegador ve las 3 series ya guardadas",
+   "ok": true,
+   "detail": [
+    3,
+    6
+   ]
+  },
+  {
+   "area": "Móvil 320x640",
+   "check": "entrenamiento sin desbordamiento horizontal, con serie actual y botón GUARDAR",
+   "ok": true,
+   "detail": {
+    "overflowX": false,
+    "save": "✓ GUARDAR SERIE 1"
+   }
+  },
+  {
+   "area": "Móvil 360x740",
+   "check": "entrenamiento sin desbordamiento horizontal, con serie actual y botón GUARDAR",
+   "ok": true,
+   "detail": {
+    "overflowX": false,
+    "save": "✓ GUARDAR SERIE 1"
+   }
+  },
+  {
+   "area": "Móvil 390x844",
+   "check": "entrenamiento sin desbordamiento horizontal, con serie actual y botón GUARDAR",
+   "ok": true,
+   "detail": {
+    "overflowX": false,
+    "save": "✓ GUARDAR SERIE 1"
+   }
+  },
+  {
+   "area": "Móvil 430x932",
+   "check": "entrenamiento sin desbordamiento horizontal, con serie actual y botón GUARDAR",
+   "ok": true,
+   "detail": {
+    "overflowX": false,
+    "save": "✓ GUARDAR SERIE 1"
+   }
+  },
+  {
+   "area": "Móvil 740x360",
+   "check": "entrenamiento sin desbordamiento horizontal, con serie actual y botón GUARDAR",
+   "ok": true,
+   "detail": {
+    "overflowX": false,
+    "save": "✓ GUARDAR SERIE 1"
+   }
+  },
+  {
+   "area": "Visibilidad 360x740",
+   "check": "GUARDAR SERIE queda visible sin desplazar al abrir el ejercicio (altura de tarjeta 785 px)",
+   "ok": false,
+   "detail": {
+    "top": 756,
+    "bottom": 810,
+    "navTop": 669,
+    "cardH": 785,
+    "parts": {
+     "target": 130,
+     "ref": 0,
+     "auth": 0,
+     "reuse": 44
+    }
+   }
+  },
+  {
+   "area": "Visibilidad 390x844",
+   "check": "GUARDAR SERIE queda visible sin desplazar al abrir el ejercicio (altura de tarjeta 756 px)",
+   "ok": false,
+   "detail": {
+    "top": 728,
+    "bottom": 782,
+    "navTop": 773,
+    "cardH": 756,
+    "parts": {
+     "target": 101,
+     "ref": 0,
+     "auth": 0,
+     "reuse": 44
+    }
+   }
+  },
+  {
+   "area": "Visibilidad 430x932",
+   "check": "GUARDAR SERIE queda visible sin desplazar al abrir el ejercicio (altura de tarjeta 756 px)",
+   "ok": true,
+   "detail": {
+    "top": 729,
+    "bottom": 783,
+    "navTop": 861,
+    "cardH": 756,
+    "parts": {
+     "target": 101,
+     "ref": 0,
+     "auth": 0,
+     "reuse": 44
+    }
+   }
+  },
+  {
+   "area": "Finalización",
+   "check": "tras completar las series aparece COMPLETAR",
+   "ok": true,
+   "detail": [
+    3,
+    6
+   ]
+  },
+  {
+   "area": "Finalización",
+   "check": "el post-sesión se persiste y la semana avanza",
+   "ok": true,
+   "detail": {
+    "week": 3,
+    "r": "{\"triggerCalls\":10,\"last\":{\"status\":200,\"body\":{\"status\":\"NO_CHANGE\",\"created\":["
+   }
+  },
+  {
+   "area": "Errores",
+   "check": "sin errores de página no capturados",
+   "ok": true,
+   "detail": []
+  }
+ ]
+}

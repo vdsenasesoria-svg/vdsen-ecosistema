@@ -1,0 +1,7 @@
+PASS previous release: its explicit worker and cache are active — {"active":["http://localhost:5199/sw.js?build=issue-115-brave-rc-20261024-01"],"waiting":[null],"caches":["vdsen-issue-115-brave-rc-20261024-01"],"controller":"http://localhost:5199/sw.js?build=issue-115-brave-rc-20261024-01"}
+PASS new release: the registration moved to the new build-versioned worker — {"active":["http://localhost:5199/sw.js?build=t599r-progression-authority-20261024-01"],"waiting":[null],"caches":["vdsen-t599r-progression-authority-20261024-01"],"controller":"http://localhost:5199/sw.js?build=t599r-progression-authority-20261024-01"}
+PASS the old build cache was dropped and the new cache remains — ["vdsen-t599r-progression-authority-20261024-01"]
+PASS the cutover keeps the athlete data: localStorage (offline log backup) and IndexedDB survive the worker/cache change — {"ls":"kept","backup":true,"idb":"kept"}
+PASS after the next open the page is controlled by the new worker and still loads — "http://localhost:5199/sw.js?build=t599r-progression-authority-20261024-01"
+
+5/5 checks passed

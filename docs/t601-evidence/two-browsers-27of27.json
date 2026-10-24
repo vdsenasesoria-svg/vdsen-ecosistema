@@ -1,0 +1,339 @@
+{
+  "root": "vdsen-t601",
+  "note": "Browser-to-browser sync through the Firestore Emulator; not two physical phones.",
+  "checks": [
+    {
+      "name": "S1 exercise with no history: SIN HISTORIAL before the editable fields; no invented load, no Coach number, empty load input",
+      "ok": true,
+      "detail": {
+        "set": "setrow_log_2_0_1_s0",
+        "kind": "none",
+        "text": "SIN HISTORIAL\nPrimera ejecución: registra la carga utilizada.",
+        "refTop": 14.21875,
+        "fieldsTop": 70.0625,
+        "target": "OBJETIVO DE ESTA SERIE\nESTRUCTURA COACH\n10 reps\nRIR 1\n3 series\nDescanso 1:30",
+        "hasPlanLoadText": false,
+        "input": {
+          "id": "carga_log_2_0_1_s0",
+          "value": "",
+          "disabled": false,
+          "readOnly": false,
+          "insideRef": false
+        }
+      }
+    },
+    {
+      "name": "S4a previous exposure (week 1, 15 KG) is the reference of the new exposure; the Coach target shows structure only",
+      "ok": true,
+      "detail": {
+        "set": "setrow_log_2_0_0_s0",
+        "kind": "logbook",
+        "text": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 15 KG.",
+        "refTop": 214.46875,
+        "fieldsTop": 322.3125,
+        "target": "OBJETIVO DE ESTA SERIE\nESTRUCTURA COACH\n10 reps\nRIR 2\n3 series\nDescanso 1:30",
+        "hasPlanLoadText": false,
+        "input": {
+          "id": "carga_log_2_0_0_s0",
+          "value": "",
+          "disabled": false,
+          "readOnly": false,
+          "insideRef": false
+        }
+      }
+    },
+    {
+      "name": "S2 first record 10 kg x 10 persisted once in the plan document and the root document",
+      "ok": true,
+      "detail": {
+        "meso": true,
+        "root": true
+      }
+    },
+    {
+      "name": "S3 next set: REFERENCIA DE BITÁCORA, last valid load 10 KG; the executed-load input is separate, editable and not prefilled with the reference",
+      "ok": true,
+      "detail": {
+        "set": "setrow_log_2_0_1_s1",
+        "kind": "logbook",
+        "text": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "refTop": 156.21875,
+        "fieldsTop": 212.0625,
+        "target": "OBJETIVO DE ESTA SERIE\nESTRUCTURA COACH\n10 reps\nRIR 1\n3 series\nDescanso 1:30",
+        "hasPlanLoadText": false,
+        "input": {
+          "id": "carga_log_2_0_1_s1",
+          "value": "",
+          "disabled": false,
+          "readOnly": false,
+          "insideRef": false
+        }
+      }
+    },
+    {
+      "name": "S4b a new session recovers the reference (10 KG) from the stored logbook",
+      "ok": true,
+      "detail": {
+        "set": "setrow_log_2_0_1_s1",
+        "kind": "logbook",
+        "text": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "refTop": 101.21875,
+        "fieldsTop": 157.0625,
+        "target": "OBJETIVO DE ESTA SERIE\nESTRUCTURA COACH\n10 reps\nRIR 1\n3 series\nDescanso 1:30",
+        "hasPlanLoadText": false,
+        "input": {
+          "id": "carga_log_2_0_1_s1",
+          "value": "",
+          "disabled": false,
+          "readOnly": false,
+          "insideRef": false
+        }
+      }
+    },
+    {
+      "name": "S5 personal best 15 KG stays separate from the last valid execution 10 KG (stored)",
+      "ok": true,
+      "detail": {
+        "load": "10",
+        "reps": "10",
+        "rir": "2",
+        "unit": "KG",
+        "updatedAt": 1792876176827,
+        "last": {
+          "load": "10",
+          "reps": "10",
+          "rir": "2",
+          "unit": "KG",
+          "updatedAt": 1792876176827
+        },
+        "personalBest": {
+          "load": "15",
+          "reps": "10",
+          "rir": 3,
+          "unit": "KG",
+          "updatedAt": 1790510400000
+        }
+      }
+    },
+    {
+      "name": "S5 operational reference shown is 10 KG, not the 15 KG record",
+      "ok": true,
+      "detail": {
+        "set": "setrow_log_2_0_0_s1",
+        "kind": "logbook",
+        "text": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "refTop": 214.46875,
+        "fieldsTop": 322.3125,
+        "target": "OBJETIVO DE ESTA SERIE\nESTRUCTURA COACH\n10 reps\nRIR 2\n3 series\nDescanso 1:30",
+        "hasPlanLoadText": false,
+        "input": {
+          "id": "carga_log_2_0_0_s1",
+          "value": "",
+          "disabled": false,
+          "readOnly": false,
+          "insideRef": false
+        }
+      }
+    },
+    {
+      "name": "S6a invalidating the last record recalculates the reference from the remaining valid ones (15 KG from week 1), in the UI and in the stored history",
+      "ok": true,
+      "detail": {
+        "ui": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 15 KG.",
+        "stored": {
+          "load": "15",
+          "reps": "10",
+          "rir": 3,
+          "unit": "KG",
+          "updatedAt": 1790510400002
+        }
+      }
+    },
+    {
+      "name": "S6b the corrected record (12 KG) becomes the reference; the record stays 15 KG",
+      "ok": true,
+      "detail": {
+        "ui": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 12 KG.",
+        "stored": {
+          "load": "12",
+          "reps": "10",
+          "rir": "2",
+          "unit": "KG",
+          "updatedAt": 1792876179793,
+          "last": {
+            "load": "12",
+            "reps": "10",
+            "rir": "2",
+            "unit": "KG",
+            "updatedAt": 1792876179793
+          },
+          "personalBest": {
+            "load": "15",
+            "reps": "10",
+            "rir": 3,
+            "unit": "KG",
+            "updatedAt": 1790510400000
+          }
+        }
+      }
+    },
+    {
+      "name": "S7 identity: history keys are exactly the two PIDs; the exercise with a similar name never inherits the other load",
+      "ok": true,
+      "detail": [
+        [
+          "__pid__pid-e2e-g-1",
+          "12",
+          "15"
+        ],
+        [
+          "__pid__pid-e2e-g-2",
+          "10",
+          "10"
+        ]
+      ]
+    },
+    {
+      "name": "S8a KG -> LB: reference converted (10 KG = 22.05 LB; shown with the app plate rounding, 22.5), one reference per PID",
+      "ok": true,
+      "detail": {
+        "text": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 22.5 LB.",
+        "keys": 2
+      }
+    },
+    {
+      "name": "S8b LB -> KG: back to 10 KG without relevant precision loss and without duplicated references",
+      "ok": true,
+      "detail": {
+        "text": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG.",
+        "keys": 2
+      }
+    },
+    {
+      "name": "P2-0 both browsers start from the same state (ex1 without history)",
+      "ok": true,
+      "detail": {
+        "set": "setrow_log_2_0_1_s0",
+        "kind": "none",
+        "text": "SIN HISTORIAL\nPrimera ejecución: registra la carga utilizada.",
+        "refTop": 14.21875,
+        "fieldsTop": 70.0625,
+        "target": "OBJETIVO DE ESTA SERIE\nESTRUCTURA COACH\n10 reps\nRIR 1\n3 series\nDescanso 1:30",
+        "hasPlanLoadText": false,
+        "input": {
+          "id": "carga_log_2_0_1_s0",
+          "value": "",
+          "disabled": false,
+          "readOnly": false,
+          "insideRef": false
+        }
+      }
+    },
+    {
+      "name": "P2-1 A: first serie confirmed in the remote documents",
+      "ok": true
+    },
+    {
+      "name": "P2-2 B recovers the reference created in A (10 KG) through the live listener, without any action",
+      "ok": true,
+      "detail": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG."
+    },
+    {
+      "name": "P2-3 B foreground resync keeps the same reference (10 KG)",
+      "ok": true,
+      "detail": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG."
+    },
+    {
+      "name": "P2-4 A: the modified load (12 KG) is persisted",
+      "ok": true
+    },
+    {
+      "name": "P2-5 B REPLACES the previous reference (10 -> 12 KG), live and after foreground resync",
+      "ok": true,
+      "detail": {
+        "live": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 12 KG.",
+        "resync": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 12 KG."
+      }
+    },
+    {
+      "name": "P2-6a simultaneous save of the SAME set from two browsers: one coherent winner (both documents agree)",
+      "ok": true,
+      "detail": "14"
+    },
+    {
+      "name": "P2-6b simultaneous saves of DIFFERENT sets: neither device erased the other or earlier entries (per-entry persistence)",
+      "ok": true,
+      "detail": [
+        [
+          "log_2_0_1_s0",
+          "12",
+          1792876209134
+        ],
+        [
+          "log_2_0_1_s1",
+          "14",
+          1792876213207
+        ],
+        [
+          "log_2_0_0_s0",
+          "11",
+          1792876217467
+        ],
+        [
+          "log_2_0_1_s2",
+          "15",
+          1792876217467
+        ]
+      ]
+    },
+    {
+      "name": "P2-7 timestamps decide: the stored reference of ex1 is its most recent execution, and after syncing both browsers show the same reference for ex0 (11 KG, B newest)",
+      "ok": true,
+      "detail": {
+        "newest": "log_2_0_1_s2",
+        "newestLoad": "15",
+        "stored": "15",
+        "A": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 11 KG.",
+        "B": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 11 KG."
+      }
+    },
+    {
+      "name": "P2-8 offline: the local entry is NOT announced as confirmed (\"✓ GUARDADO\") and is NOT in the remote documents",
+      "ok": true,
+      "detail": {
+        "badges": {
+          "ok": "",
+          "pending": true,
+          "err": false
+        },
+        "remote": false
+      }
+    },
+    {
+      "name": "P2-9 while B is offline, A does not see its pending entry (A ex0 reference is still its own last execution, 11 KG)",
+      "ok": true,
+      "detail": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 11 KG."
+    },
+    {
+      "name": "P2-10 reconnection: B's entry reaches both documents exactly once",
+      "ok": true
+    },
+    {
+      "name": "P2-11 after reconnection A recovers the reference created offline in B (ex0: 10 KG; record 15 KG stays separate)",
+      "ok": true,
+      "detail": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 10 KG."
+    },
+    {
+      "name": "P2-12 another synthetic athlete is never touched by any of these writes",
+      "ok": true
+    },
+    {
+      "name": "P2-13 no uncaught page errors in either browser",
+      "ok": true,
+      "detail": {
+        "A": [],
+        "B": []
+      }
+    }
+  ]
+}
