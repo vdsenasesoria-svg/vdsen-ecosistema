@@ -105,3 +105,19 @@ test('T597-K switching KG/LB converts BOTH the last reference and the separate p
   assert.equal(h.load, h.last.load); assert.equal(h.unit, 'LB');
   assert.equal(w.LOGS.log_1_0_0_s0.unit, 'LB', 'the logbook entry itself is converted by the same action');
 });
+
+test('T598 editSet invalidates the record AND recalculates the PID reference before saving (no stale reference until reload)', () => {
+  const body = fn('editSet');
+  const rebuildAt = body.indexOf("_rebuildExerciseHistoryFromLogs('', LOGS[key].prescriptionExerciseId)");
+  assert.ok(rebuildAt > body.indexOf('LOGS[key].done = false;') && rebuildAt < body.indexOf('saveLogs();'), 'rebuild sits between the invalidation and the save');
+  const w = world({ log_old: set(15, 10), log_today: set(10, 20) });
+  w._rebuildExerciseHistoryFromLogs('', 'pidA');
+  assert.equal(w._getExerciseHistoryEntry('', 'pidA').load, '10');
+  const calls = [];
+  const run = new (require('node:vm').Script)(`${body}\neditSet('log_today');`);
+  Object.assign(w, { saveLogs: () => calls.push('save'), _refreshExPanelOnly: () => calls.push('panel'), showToast: () => {} });
+  run.runInContext(w);
+  assert.equal(w.LOGS.log_today.done, false);
+  assert.equal(w._getExerciseHistoryEntry('', 'pidA').load, '15', 'reference falls back to the remaining valid record');
+  assert.deepEqual(calls, ['save', 'panel']);
+});
