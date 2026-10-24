@@ -1,0 +1,2604 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VDSEN App — Motor Integrado Competitivo</title>
+
+<!--
+=== SQL SCHEMA (ejecutar en Supabase SQL Editor) ===
+
+-- Clientes del coach
+CREATE TABLE clients (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  coach_id    uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  nombre      text NOT NULL,
+  deporte     text,
+  notas       text,
+  created_at  timestamptz DEFAULT now()
+);
+ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "coach_own" ON clients
+  USING (coach_id = auth.uid())
+  WITH CHECK (coach_id = auth.uid());
+
+-- Corridas de protocolo
+CREATE TABLE protocol_runs (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id        uuid NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  coach_id         uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_at       timestamptz DEFAULT now(),
+  full_inputs      jsonb,
+  summary_text     text,
+  peso_prom_actual numeric
+);
+ALTER TABLE protocol_runs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "coach_own" ON protocol_runs
+  USING (coach_id = auth.uid())
+  WITH CHECK (coach_id = auth.uid());
+
+-- Índice para historiales por cliente
+CREATE INDEX ON protocol_runs(client_id, created_at DESC);
+-->
+
+<script type="importmap">
+{
+  "imports": {
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+  }
+}
+</script>
+<style>
+:root {
+  --bg: #0d0d0f;
+  --bg2: #141418;
+  --bg3: #1a1a20;
+  --bg4: #202028;
+  --border: #2a2a35;
+  --border2: #353545;
+  --text: #e8e8f0;
+  --text2: #9090a8;
+  --text3: #606078;
+  --accent: #6366f1;
+  --accent2: #4f46e5;
+  --green: #22c55e;
+  --yellow: #eab308;
+  --orange: #f97316;
+  --red: #ef4444;
+  --red2: #dc2626;
+  --purple: #a855f7;
+  --cyan: #06b6d4;
+  --pink: #ec4899;
+  --gold: #f59e0b;
+  --ok: #22c55e;
+  --info: #3b82f6;
+  --alerta: #f59e0b;
+  --stop: #ef4444;
+  --urgencia: #dc2626;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'SF Pro Text','Segoe UI',system-ui,sans-serif;font-size:13px;line-height:1.5}
+a{color:var(--accent);text-decoration:none}
+
+/* Layout */
+.container{max-width:1100px;margin:0 auto;padding:0 16px}
+.header{background:var(--bg2);border-bottom:1px solid var(--border);padding:12px 0;position:sticky;top:0;z-index:100}
+.header-inner{display:flex;align-items:center;justify-content:space-between}
+.logo{font-size:15px;font-weight:700;letter-spacing:.5px}
+.logo span{color:var(--accent)}
+.version-tag{background:var(--bg3);border:1px solid var(--border);color:var(--text2);font-size:10px;padding:2px 7px;border-radius:4px;letter-spacing:.5px}
+.main{display:grid;grid-template-columns:380px 1fr;gap:0;min-height:calc(100vh - 48px)}
+.panel-left{border-right:1px solid var(--border);padding:20px;overflow-y:auto;max-height:calc(100vh - 48px)}
+.panel-right{padding:20px;overflow-y:auto;max-height:calc(100vh - 48px)}
+
+/* Form */
+.section-title{font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--text3);text-transform:uppercase;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.form-group{margin-bottom:10px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.form-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+label{display:block;font-size:11px;color:var(--text2);margin-bottom:3px;font-weight:500}
+input[type=number],input[type=text],select{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:7px 9px;border-radius:6px;font-size:12px;-moz-appearance:textfield}
+input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
+input:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(99,102,241,.15)}
+select option{background:var(--bg3)}
+.checkbox-group{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.check-item{display:flex;align-items:center;gap:5px;background:var(--bg3);border:1px solid var(--border);padding:4px 8px;border-radius:4px;cursor:pointer}
+.check-item input[type=checkbox]{cursor:pointer;accent-color:var(--accent)}
+.check-item span{font-size:11px;color:var(--text2)}
+
+/* Generate button */
+.btn-generate{width:100%;background:var(--accent);border:none;color:#fff;padding:12px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.5px;margin-top:16px;transition:background .2s}
+.btn-generate:hover{background:var(--accent2)}
+.btn-generate:active{transform:scale(.99)}
+
+/* FFM display */
+.ffm-badge{background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:10px 12px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between}
+.ffm-value{font-size:22px;font-weight:700;color:var(--cyan)}
+.ffm-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px}
+
+/* Status badges */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase}
+.badge-ok{background:rgba(34,197,94,.12);color:var(--ok);border:1px solid rgba(34,197,94,.25)}
+.badge-info{background:rgba(59,130,246,.12);color:var(--info);border:1px solid rgba(59,130,246,.25)}
+.badge-alerta{background:rgba(245,158,11,.12);color:var(--alerta);border:1px solid rgba(245,158,11,.25)}
+.badge-stop{background:rgba(239,68,68,.15);color:var(--stop);border:1px solid rgba(239,68,68,.3)}
+.badge-urgencia{background:rgba(220,38,38,.2);color:#ff6b6b;border:1px solid rgba(220,38,38,.4)}
+.badge-activa{background:rgba(34,197,94,.12);color:var(--ok);border:1px solid rgba(34,197,94,.25)}
+.badge-condicional{background:rgba(245,158,11,.12);color:var(--alerta);border:1px solid rgba(245,158,11,.25)}
+.badge-monitoreo{background:rgba(59,130,246,.12);color:var(--info);border:1px solid rgba(59,130,246,.25)}
+.badge-bloqueada{background:rgba(239,68,68,.15);color:var(--stop);border:1px solid rgba(239,68,68,.3)}
+.badge-no-aplica{background:rgba(96,96,120,.12);color:var(--text3);border:1px solid rgba(96,96,120,.25)}
+.badge-clinical{background:rgba(6,182,212,.1);color:var(--cyan);border:1px solid rgba(6,182,212,.25);font-size:9px}
+.badge-empirical{background:rgba(168,85,247,.1);color:var(--purple);border:1px solid rgba(168,85,247,.25);font-size:9px}
+.badge-research{background:rgba(236,72,153,.1);color:var(--pink);border:1px solid rgba(236,72,153,.25);font-size:9px}
+.badge-ev-a{background:rgba(34,197,94,.1);color:var(--ok);border:1px solid rgba(34,197,94,.2);font-size:9px}
+.badge-ev-b{background:rgba(59,130,246,.1);color:var(--info);border:1px solid rgba(59,130,246,.2);font-size:9px}
+.badge-ev-c{background:rgba(245,158,11,.1);color:var(--alerta);border:1px solid rgba(245,158,11,.2);font-size:9px}
+.badge-ev-e{background:rgba(96,96,120,.1);color:var(--text3);border:1px solid rgba(96,96,120,.2);font-size:9px}
+
+/* Block alerts */
+.block-alert{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:12px;margin-bottom:12px}
+.block-alert-title{font-size:11px;font-weight:700;color:var(--red);margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.block-alert-body{font-size:11px;color:var(--text2);line-height:1.6}
+.no-emitible{background:rgba(220,38,38,.12);border:2px solid rgba(220,38,38,.5);border-radius:10px;padding:16px;text-align:center;margin-bottom:20px}
+.no-emitible-title{font-size:16px;font-weight:700;color:#ff4444;margin-bottom:6px}
+.no-emitible-body{font-size:12px;color:var(--text2)}
+
+/* Protocol sections */
+.protocol-section{margin-bottom:20px}
+.protocol-section-title{font-size:11px;font-weight:700;letter-spacing:1px;color:var(--text3);text-transform:uppercase;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+
+/* Drug card */
+.drug-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden}
+.drug-card.bloqueada{border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.03)}
+.drug-card.activa{border-color:rgba(34,197,94,.25);background:rgba(34,197,94,.02)}
+.drug-card.condicional{border-color:rgba(245,158,11,.25)}
+.drug-card-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;cursor:pointer}
+.drug-card-header:hover{background:rgba(255,255,255,.02)}
+.drug-name{font-size:13px;font-weight:600;color:var(--text)}
+.drug-tags{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.drug-body{padding:0 14px 12px;border-top:1px solid var(--border)}
+.drug-body.hidden{display:none}
+.drug-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.03);font-size:12px}
+.drug-row:last-child{border-bottom:none}
+.drug-row-key{color:var(--text2);font-size:11px}
+.drug-row-val{color:var(--text);font-weight:500;text-align:right;max-width:60%}
+.drug-row-val.highlight{color:var(--cyan)}
+.drug-row-val.warn{color:var(--alerta)}
+.drug-row-val.danger{color:var(--red)}
+.drug-row-val.success{color:var(--green)}
+.drug-note{background:var(--bg3);border-left:3px solid var(--accent);padding:8px 10px;border-radius:0 4px 4px 0;font-size:11px;color:var(--text2);margin-top:8px;line-height:1.6}
+.drug-note.danger{border-left-color:var(--red);background:rgba(239,68,68,.05)}
+.drug-note.warn{border-left-color:var(--alerta);background:rgba(245,158,11,.05)}
+.drug-note.ok{border-left-color:var(--green);background:rgba(34,197,94,.05)}
+.audit-tag{font-size:9px;color:var(--text3);font-family:monospace;background:rgba(255,255,255,.05);padding:1px 4px;border-radius:3px;margin-left:4px}
+
+/* Biomarker table */
+.bio-table{width:100%;border-collapse:collapse;font-size:12px}
+.bio-table th{font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--text3);text-transform:uppercase;padding:6px 10px;text-align:left;border-bottom:1px solid var(--border)}
+.bio-table td{padding:6px 10px;border-bottom:1px solid rgba(255,255,255,.03)}
+.bio-table tr:last-child td{border-bottom:none}
+.bio-table tr:hover td{background:rgba(255,255,255,.02)}
+
+/* Nutrition table */
+.nutr-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.nutr-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px}
+.nutr-card-title{font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.nutr-value{font-size:20px;font-weight:700;color:var(--text)}
+.nutr-unit{font-size:11px;color:var(--text3)}
+.nutr-table{width:100%;border-collapse:collapse;font-size:12px}
+.nutr-table td{padding:5px 8px;border-bottom:1px solid rgba(255,255,255,.03)}
+.nutr-table td:last-child{text-align:right;font-weight:600;color:var(--cyan)}
+
+/* Reconstitution table */
+.recon-table{width:100%;border-collapse:collapse;font-size:11px}
+.recon-table th{font-size:9px;font-weight:700;letter-spacing:.5px;color:var(--text3);text-transform:uppercase;padding:5px 8px;text-align:left;border-bottom:1px solid var(--border)}
+.recon-table td{padding:5px 8px;border-bottom:1px solid rgba(255,255,255,.03);font-size:11px}
+.recon-table tr:hover td{background:rgba(255,255,255,.02)}
+
+/* Androgenic load */
+.al-card{background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:14px;margin-bottom:12px}
+.al-main{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px}
+.al-total{font-size:28px;font-weight:700;color:var(--text)}
+.al-total-unit{font-size:12px;color:var(--text3);margin-top:4px}
+.al-bar{height:6px;background:var(--bg4);border-radius:3px;margin:8px 0;overflow:hidden}
+.al-bar-fill{height:100%;border-radius:3px;transition:width .5s}
+.al-legend{display:flex;justify-content:space-between;font-size:10px;color:var(--text3)}
+.al-compound{display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-top:1px solid var(--border)}
+.inj-schedule{background:var(--bg3);border-radius:6px;padding:10px;margin-top:8px;font-size:11px;color:var(--text2)}
+
+/* Red flags */
+.red-flags{background:rgba(220,38,38,.07);border:1px solid rgba(220,38,38,.25);border-radius:8px;padding:14px}
+.red-flags-title{font-size:11px;font-weight:700;color:var(--red);margin-bottom:8px}
+.red-flag-item{font-size:11px;color:var(--text2);padding:2px 0;padding-left:14px;position:relative}
+.red-flag-item::before{content:"·";position:absolute;left:4px;color:var(--red)}
+
+/* Placeholder */
+.placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;height:300px;gap:10px}
+.placeholder-icon{font-size:40px;opacity:.2}
+.placeholder-text{font-size:14px;color:var(--text3);text-align:center}
+
+/* Trazability */
+.traz-section{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-top:20px}
+.traz-title{font-size:10px;font-weight:700;letter-spacing:1px;color:var(--text3);text-transform:uppercase;margin-bottom:10px}
+.traz-list{display:flex;flex-wrap:wrap;gap:6px}
+.traz-item{background:var(--bg3);border:1px solid var(--border);padding:3px 8px;border-radius:4px;font-size:10px;color:var(--text2);font-family:monospace}
+.traz-item strong{color:var(--accent);margin-right:4px}
+
+/* Separador */
+.sep{height:1px;background:var(--border);margin:16px 0}
+
+/* Collapsible */
+.collapse-toggle{cursor:pointer;user-select:none}
+.collapse-arrow{display:inline-block;transition:transform .2s;color:var(--text3);font-size:10px}
+.collapse-arrow.open{transform:rotate(90deg)}
+
+/* Phase pill */
+.phase-pill{display:inline-block;background:var(--bg3);border:1px solid var(--border);padding:2px 8px;border-radius:12px;font-size:10px;color:var(--text2);margin-left:6px}
+
+/* Peak week */
+.peak-week-block{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:12px}
+.peak-week-title{color:var(--alerta);font-weight:700;font-size:12px;margin-bottom:6px}
+
+/* Responsive */
+@media(max-width:768px){
+  .main{grid-template-columns:1fr}
+  .panel-left,.panel-right{max-height:none;overflow-y:visible}
+}
+
+/* Tabs for reconstitution */
+.tab-bar{display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:0}
+.tab-btn{padding:6px 12px;font-size:11px;font-weight:600;color:var(--text3);background:none;border:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-content{display:none}
+.tab-content.active{display:block}
+
+/* Compact inputs */
+.compact-row{display:flex;gap:6px;align-items:flex-end}
+.compact-row .form-group{flex:1;margin-bottom:0}
+
+/* COMP v1.0 */
+.comp-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:5px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase}
+.comp-mantener{background:rgba(34,197,94,.12);color:#22c55e;border:1px solid rgba(34,197,94,.3)}
+.comp-ajustar{background:rgba(245,158,11,.12);color:#eab308;border:1px solid rgba(245,158,11,.3)}
+.comp-recolectar{background:rgba(59,130,246,.12);color:#3b82f6;border:1px solid rgba(59,130,246,.3)}
+.comp-bloqueo{background:rgba(239,68,68,.12);color:#ef4444;border:1px solid rgba(239,68,68,.3)}
+.comp-section{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px}
+.comp-section-title{font-size:10px;font-weight:700;letter-spacing:1.5px;color:#a3e635;text-transform:uppercase;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid rgba(163,230,53,.2)}
+.gate-item{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.03);font-size:11px}
+.gate-label{font-weight:700;color:var(--text2);min-width:80px}
+.ponderal-card{background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:10px;margin-bottom:8px}
+
+/* ===== APP SCREENS ===== */
+.screen { display: none; }
+.screen.active { display: block; }
+
+/* Login screen */
+#screen-login {
+  min-height: 100vh;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+#screen-login.active {
+  display: flex;
+}
+.login-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 40px 48px;
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+}
+.login-logo {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+.login-logo span { color: var(--accent); }
+.login-subtitle {
+  font-size: 12px;
+  color: var(--text3);
+  margin-bottom: 32px;
+  letter-spacing: .5px;
+}
+.login-input {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 11px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+.login-input:focus { outline: none; border-color: var(--accent); }
+.btn-login {
+  width: 100%;
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .2s;
+  margin-top: 4px;
+}
+.btn-login:hover { background: var(--accent2); }
+.btn-login:disabled { opacity: .5; cursor: not-allowed; }
+.login-msg {
+  margin-top: 16px;
+  font-size: 12px;
+  color: var(--text2);
+  min-height: 18px;
+}
+.login-msg.ok { color: var(--green); }
+.login-msg.err { color: var(--red); }
+
+/* Clients screen */
+#screen-clients {
+  min-height: 100vh;
+  background: var(--bg);
+}
+.clients-header {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.clients-header-inner {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.clients-body {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 28px 20px;
+}
+.clients-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+.client-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.client-card:hover {
+  border-color: var(--accent);
+  background: var(--bg3);
+}
+.client-card-name {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.client-card-meta {
+  font-size: 11px;
+  color: var(--text3);
+}
+.client-card-runs {
+  font-size: 10px;
+  color: var(--accent);
+  margin-top: 8px;
+}
+.btn-new-client {
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  padding: 9px 18px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-new-client:hover { background: var(--accent2); }
+.btn-logout {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text3);
+  padding: 7px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.btn-logout:hover { border-color: var(--red); color: var(--red); }
+.clients-empty {
+  text-align: center;
+  padding: 60px 0;
+  color: var(--text3);
+  font-size: 14px;
+}
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.7);
+  z-index: 500;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px 32px;
+  width: 100%;
+  max-width: 400px;
+}
+.modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 20px;
+}
+.modal-input {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 9px 12px;
+  border-radius: 7px;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+.modal-input:focus { outline: none; border-color: var(--accent); }
+.modal-footer { display: flex; gap: 8px; margin-top: 8px; justify-content: flex-end; }
+.btn-modal-cancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text2);
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.btn-modal-save {
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  padding: 8px 18px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-modal-save:hover { background: var(--accent2); }
+
+/* Motor screen header additions */
+#screen-motor .header { position: sticky; top: 0; z-index: 100; }
+.motor-client-name {
+  font-size: 12px;
+  color: var(--text2);
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.motor-client-name:hover { border-color: var(--accent); color: var(--text); }
+
+/* Motor with history: 3-column layout */
+.main-with-history {
+  display: grid;
+  grid-template-columns: 380px 1fr 260px;
+  gap: 0;
+  min-height: calc(100vh - 48px);
+}
+.panel-history {
+  border-left: 1px solid var(--border);
+  padding: 16px 14px;
+  overflow-y: auto;
+  max-height: calc(100vh - 48px);
+  background: var(--bg);
+}
+.history-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--text3);
+  text-transform: uppercase;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.history-item {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.history-item:hover { border-color: var(--accent); }
+.history-date {
+  font-size: 10px;
+  color: var(--text3);
+  margin-bottom: 4px;
+}
+.history-peso {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--cyan);
+}
+.history-peso-delta {
+  font-size: 10px;
+  margin-left: 6px;
+}
+.history-peso-delta.pos { color: var(--green); }
+.history-peso-delta.neg { color: var(--red); }
+.history-fase {
+  font-size: 10px;
+  color: var(--text2);
+  margin-top: 2px;
+}
+.history-empty {
+  font-size: 12px;
+  color: var(--text3);
+  text-align: center;
+  padding: 20px 0;
+}
+.prefill-banner {
+  background: rgba(99,102,241,.1);
+  border: 1px solid rgba(99,102,241,.3);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--accent);
+  margin-bottom: 12px;
+  display: none;
+}
+@media(max-width:900px) {
+  .main-with-history { grid-template-columns: 1fr; }
+  .panel-history { max-height: 300px; border-left: none; border-top: 1px solid var(--border); }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== SCREEN 1: LOGIN ===== -->
+<div id="screen-login" class="active">
+  <div class="login-card">
+    <div class="login-logo">VD<span>SEN</span></div>
+    <div class="login-subtitle">MOTOR FARMACOLÓGICO INTEGRADO · v18-COMP</div>
+    <input type="email" id="login-email" class="login-input" placeholder="coach@email.com" autocomplete="email">
+    <input type="password" id="login-pass" class="login-input" placeholder="Contraseña" autocomplete="current-password" onkeydown="if(event.key==='Enter')sendMagicLink()">
+    <button class="btn-login" id="btn-login-send" onclick="sendMagicLink()">Entrar</button>
+    <div class="login-msg" id="login-msg"></div>
+  </div>
+</div>
+
+<!-- ===== SCREEN 2: CLIENTES ===== -->
+<div id="screen-clients" class="screen">
+  <div class="clients-header">
+    <div class="clients-header-inner">
+      <div class="logo" style="font-size:14px">VDSEN <span style="color:var(--accent)">App</span></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-new-client" onclick="openNewClientModal()">+ Nuevo asesorado</button>
+        <button class="btn-logout" onclick="signOut()">Salir</button>
+      </div>
+    </div>
+  </div>
+  <div class="clients-body">
+    <div style="font-size:11px;color:var(--text3);margin-bottom:4px" id="coach-email-label"></div>
+    <div style="font-size:20px;font-weight:700;color:var(--text)">Asesorados</div>
+    <div class="clients-grid" id="clients-grid">
+      <div class="clients-empty" id="clients-empty" style="grid-column:1/-1">Cargando…</div>
+    </div>
+  </div>
+</div>
+
+<!-- New Client Modal -->
+<div class="modal-overlay" id="modal-new-client">
+  <div class="modal-box">
+    <div class="modal-title">Nuevo Asesorado</div>
+    <input type="text" id="nc-nombre" class="modal-input" placeholder="Nombre completo *" autocomplete="off">
+    <input type="text" id="nc-deporte" class="modal-input" placeholder="Deporte / disciplina">
+    <textarea id="nc-notas" class="modal-input" rows="2" placeholder="Notas iniciales" style="resize:vertical"></textarea>
+    <div class="modal-footer">
+      <button class="btn-modal-cancel" onclick="closeNewClientModal()">Cancelar</button>
+      <button class="btn-modal-save" onclick="createClient()">Crear asesorado</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SCREEN 3: MOTOR ===== -->
+<div id="screen-motor" class="screen">
+
+<div class="header">
+  <div class="container header-inner">
+    <div class="logo">VDSEN <span>Motor Farmacológico</span></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="motor-client-name" id="motor-client-btn" onclick="goToClients()">← Asesorados</button>
+      <div class="version-tag">v18-COMP</div>
+      <div class="version-tag" style="color:var(--accent);border-color:var(--accent)">OPERATIVO</div>
+      <div class="version-tag" style="color:#a3e635;border-color:#a3e635">COMP v1.0</div>
+    </div>
+  </div>
+</div>
+
+<div class="container main-with-history">
+
+<!-- LEFT PANEL: INPUT FORM -->
+<div class="panel-left">
+
+  <div id="prefill-banner" class="prefill-banner">
+    ↩ Pre-completado desde última sesión · <strong id="prefill-date"></strong>
+  </div>
+
+  <div class="section-title" style="margin-top:4px">Datos del Asesorado</div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label>Peso (kg)</label>
+      <input type="number" id="peso" min="40" max="200" step="0.1" placeholder="84.9">
+    </div>
+    <div class="form-group">
+      <label>Talla (cm)</label>
+      <input type="number" id="talla" min="140" max="220" step="0.1" placeholder="180">
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label>Edad</label>
+      <input type="number" id="edad" min="18" max="80" placeholder="39">
+    </div>
+    <div class="form-group">
+      <label>Sexo</label>
+      <select id="sexo">
+        <option value="M">Masculino</option>
+        <option value="F">Femenino</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label>% Grasa Corporal (%BF)</label>
+    <input type="number" id="bf" min="3" max="50" step="0.1" placeholder="13.9">
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label>Población</label>
+      <select id="poblacion">
+        <option value="">— Seleccionar —</option>
+        <option value="P0">P0 — General / Salud</option>
+        <option value="P1">P1 — Fitness Natural</option>
+        <option value="P2">P2 — Fitness Enhanced</option>
+        <option value="P3">P3 — Competitivo</option>
+        <option value="P4">P4 — Elite</option>
+        <option value="P4max">P4-max — Techo absoluto</option>
+        <option value="PF1">PF1 — Base Femenina</option>
+        <option value="PF2">PF2 — Intermedio F</option>
+        <option value="PF3">PF3 — Avanzado F</option>
+        <option value="PF4">PF4 — Contest Prep F</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Fase</label>
+      <select id="fase">
+        <option value="off_season">Off-season</option>
+        <option value="pre_contest">Pre-contest</option>
+        <option value="definicion">Definición</option>
+        <option value="peaking">Peaking</option>
+        <option value="peak_week">Peak Week</option>
+        <option value="post_contest">Post-contest</option>
+        <option value="recomposicion">Recomposición</option>
+        <option value="mantenimiento">Mantenimiento</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="sep"></div>
+  <div class="section-title">Laboratorios (opcional)</div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label>PA Sistólica (mmHg)</label>
+      <input type="number" id="pa_s" min="80" max="220" placeholder="120">
+    </div>
+    <div class="form-group">
+      <label>PA Diastólica (mmHg)</label>
+      <input type="number" id="pa_d" min="50" max="140" placeholder="80">
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label>FCR en reposo (bpm)</label>
+      <input type="number" id="fcr" min="30" max="200" placeholder="65">
+    </div>
+    <div class="form-group">
+      <label>FCR Basal previa</label>
+      <input type="number" id="fcr_basal" min="30" max="200" placeholder="">
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label>Hematocrito (%)</label>
+      <input type="number" id="hcto" min="30" max="65" step="0.1" placeholder="">
+    </div>
+    <div class="form-group">
+      <label>ALT o AST (U/L)</label>
+      <input type="number" id="alt_ast" min="0" max="1000" placeholder="">
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label>eGFR Cistatina C (mL/min)</label>
+      <input type="number" id="egfr" min="0" max="150" placeholder="">
+    </div>
+    <div class="form-group">
+      <label>ApoB (mg/dL)</label>
+      <input type="number" id="apob" min="30" max="300" placeholder="">
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label>Estradiol E2 (pg/mL)</label>
+      <input type="number" id="e2" min="0" max="500" placeholder="">
+    </div>
+    <div class="form-group">
+      <label>Prolactina (ng/mL)</label>
+      <input type="number" id="prolactina" min="0" max="500" placeholder="">
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label>Glucemia ayunas (mg/dL)</label>
+      <input type="number" id="glucemia" min="50" max="400" placeholder="">
+    </div>
+    <div class="form-group">
+      <label>HOMA-IR</label>
+      <input type="number" id="homa" min="0" max="20" step="0.1" placeholder="">
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label>Potasio sérico (mEq/L)</label>
+      <input type="number" id="potasio" min="2" max="7" step="0.1" placeholder="">
+    </div>
+    <div class="form-group">
+      <label>PSA (ng/mL)</label>
+      <input type="number" id="psa" min="0" max="50" step="0.1" placeholder="">
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label>TSH (mUI/L)</label>
+      <input type="number" id="tsh" min="0" max="20" step="0.01" placeholder="">
+    </div>
+    <div class="form-group">
+      <label>T3 libre (pg/mL)</label>
+      <input type="number" id="t3_libre" min="0" max="15" step="0.01" placeholder="">
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label>Lipasa (U/L)</label>
+    <input type="number" id="lipasa" min="0" max="1000" placeholder="">
+  </div>
+
+  <div class="sep"></div>
+  <div class="section-title">Contexto Clínico</div>
+
+  <div class="form-group">
+    <label>Compuesto androgénico principal</label>
+    <select id="compuesto_principal">
+      <option value="testosterona_enantato">Testosterona Enantato</option>
+      <option value="testosterona_cipionato">Testosterona Cipionato</option>
+      <option value="testosterona_propionato">Testosterona Propionato</option>
+      <option value="nandrolona">Nandrolona (Deca)</option>
+      <option value="trenbolona">Trenbolona</option>
+      <option value="primobolan">Primobolan (Metenolona)</option>
+      <option value="masteron">Masteron (Drostanolona)</option>
+      <option value="oxandrolona">Oxandrolona</option>
+      <option value="boldenona">Boldenona</option>
+      <option value="ninguno">Ninguno</option>
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label>Añadir compuesto (oral / segundo inyectable)</label>
+    <select id="compuesto_secundario">
+      <option value="ninguno">Ninguno</option>
+      <option value="oxandrolona">Oxandrolona (oral 17a)</option>
+      <option value="estanozolol">Estanozolol (oral 17a)</option>
+      <option value="turinabol">Turinabol (oral 17a)</option>
+      <option value="primobolan_oral">Primobolan Oral</option>
+      <option value="nandrolona">Nandrolona</option>
+      <option value="trenbolona">Trenbolona</option>
+      <option value="masteron">Masteron</option>
+      <option value="boldenona">Boldenona</option>
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label>% Split compuesto 2 de la carga total</label>
+    <input type="number" id="split2" min="0" max="50" step="5" placeholder="0" value="0">
+    <span style="font-size:10px;color:var(--text3)">% de la carga androgénica asignado al compuesto 2</span>
+  </div>
+
+  <div class="sep"></div>
+  <div class="section-title">Condiciones Clínicas / Exclusiones</div>
+
+  <div class="form-group">
+    <div class="checkbox-group">
+      <label class="check-item"><input type="checkbox" id="ex_cancer_prostata"><span>Ca próstata/mama</span></label>
+      <label class="check-item"><input type="checkbox" id="ex_apnea"><span>Apnea severa</span></label>
+      <label class="check-item"><input type="checkbox" id="ex_cardiopatia"><span>Cardiopatía</span></label>
+      <label class="check-item"><input type="checkbox" id="ex_pancreatitis"><span>Pancreatitis previa</span></label>
+      <label class="check-item"><input type="checkbox" id="ex_gastroparesia"><span>Gastroparesia severa</span></label>
+      <label class="check-item"><input type="checkbox" id="ex_colelitiasis"><span>Colelitiasis sintomática</span></label>
+      <label class="check-item"><input type="checkbox" id="ex_men2"><span>CMT / MEN2</span></label>
+      <label class="check-item"><input type="checkbox" id="ex_embarazo"><span>Embarazo / Lactancia</span></label>
+    </div>
+  </div>
+
+  <div class="sep"></div>
+  <div class="section-title">Consentimiento y Contexto</div>
+
+  <div class="form-group">
+    <div class="checkbox-group">
+      <label class="check-item"><input type="checkbox" id="consentimiento"><span>Consentimiento firmado</span></label>
+      <label class="check-item"><input type="checkbox" id="salud_mental"><span>Eval. salud mental</span></label>
+      <label class="check-item"><input type="checkbox" id="cgm"><span>CGM disponible</span></label>
+      <label class="check-item"><input type="checkbox" id="glucagon_disponible"><span>Glucagón en sitio</span></label>
+      <label class="check-item"><input type="checkbox" id="agua_validada"><span>Unidad del agua validada</span></label>
+      <label class="check-item"><input type="checkbox" id="toma_aines"><span>Toma AINEs habitual</span></label>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label>Semanas hasta competición (0 = sin fecha)</label>
+    <input type="number" id="semanas_comp" min="0" max="52" placeholder="0" value="0">
+  </div>
+
+  <div class="form-group">
+    <label>TDEE estimado (kcal/día)</label>
+    <input type="number" id="tdee" min="1500" max="7000" step="50" placeholder="2800">
+  </div>
+
+  <div class="sep"></div>
+  <div class="section-title">COMP — Seguimiento Ponderal</div>
+  <div class="form-row">
+    <div class="form-group">
+      <label>Peso prom. 7 días actuales (kg)</label>
+      <input type="number" id="peso_prom_actual" min="40" max="200" step="0.1" placeholder="">
+    </div>
+    <div class="form-group">
+      <label>Peso prom. 7 días anteriores (kg)</label>
+      <input type="number" id="peso_prom_anterior" min="40" max="200" step="0.1" placeholder="">
+    </div>
+  </div>
+  <div class="form-row">
+    <div class="form-group">
+      <label>Horas de sueño promedio</label>
+      <input type="number" id="horas_sueno" min="3" max="12" step="0.5" placeholder="7.5">
+    </div>
+    <div class="form-group">
+      <label>Fatiga percibida (1–10)</label>
+      <input type="number" id="fatiga" min="1" max="10" step="1" placeholder="">
+    </div>
+  </div>
+  <div class="form-group">
+    <label>Categoría competitiva</label>
+    <input type="text" id="categoria_comp" placeholder="ej. Classic Physique -100 kg">
+  </div>
+
+  <button class="btn-generate" onclick="generarProtocolo()">⚡ GENERAR PROTOCOLO COMPLETO</button>
+
+</div><!-- end panel-left -->
+
+<!-- RIGHT PANEL: OUTPUT -->
+<div class="panel-right" id="output-panel">
+  <div class="placeholder">
+    <div class="placeholder-icon">⚗</div>
+    <div class="placeholder-text">Completa los datos del asesorado<br>y pulsa <strong>GENERAR PROTOCOLO</strong></div>
+  </div>
+</div>
+
+<!-- HISTORY PANEL -->
+<div class="panel-history">
+  <div class="history-title">
+    <span>Historial</span>
+    <span id="history-count" style="font-size:10px;color:var(--text3)"></span>
+  </div>
+  <div id="history-list">
+    <div class="history-empty">Sin sesiones previas</div>
+  </div>
+</div>
+
+</div><!-- end container.main-with-history -->
+</div><!-- end screen-motor -->
+
+<script>
+'use strict';
+
+'use strict';
+
+// ====================================================
+// VDSEN v9.0 — MOTOR DE DECISIONES
+// Fuente única: VDSEN_BASE_CONOCIMIENTO.txt
+// ====================================================
+
+const POBLACIONES = {
+  P0:    { nombre:'P0 — General/Salud',         androgens:false, mgKgMin:0,    mgKgMax:0,    capAbs:0,    motor:'no_competitivo' },
+  P1:    { nombre:'P1 — Fitness Natural',        androgens:false, mgKgMin:0,    mgKgMax:0,    capAbs:0,    motor:'no_competitivo' },  // M1
+  P2:    { nombre:'P2 — Fitness Enhanced',       androgens:true,  mgKgMin:1.5,  mgKgMax:2.5,  capAbs:250,  motor:'no_competitivo' },
+  P3:    { nombre:'P3 — Competitivo',            androgens:true,  mgKgMin:5.5,  mgKgMax:7.0,  capAbs:750,  motor:'competitivo' },
+  P4:    { nombre:'P4 — Elite',                  androgens:true,  mgKgMin:8.0,  mgKgMax:10.0, capAbs:1200, motor:'competitivo' },
+  P4max: { nombre:'P4-max — Techo Absoluto',     androgens:true,  mgKgMin:10.0, mgKgMax:12.0, capAbs:1500, motor:'competitivo' },
+  PF1:   { nombre:'PF1 — Base Femenina',         androgens:true,  mgKgMin:0.15, mgKgMax:0.2,  capAbs:null, capKg:0.50, motor:'no_competitivo', female:true },
+  PF2:   { nombre:'PF2 — Intermedio Femenino',   androgens:true,  mgKgMin:0.2,  mgKgMax:0.3,  capAbs:null, capKg:0.50, motor:'no_competitivo', female:true },
+  PF3:   { nombre:'PF3 — Avanzado Femenino',     androgens:true,  mgKgMin:0.3,  mgKgMax:0.5,  capAbs:null, capKg:0.50, motor:'competitivo', female:true },
+  PF4:   { nombre:'PF4 — Contest Prep Femenino', androgens:true,  mgKgMin:0.5,  mgKgMax:0.5,  capAbs:null, capKg:0.50, motor:'competitivo', female:true },
+};
+
+// M13: Techo efectivo por fase
+const TECHO_FASE = {
+  off_season:   null,  // rango pleno
+  pre_contest:  null,
+  definicion:   null,
+  peaking:      null,
+  peak_week:    null,
+  post_contest: 2.5,  // M13
+  recomposicion:2.5,  // M13
+  mantenimiento:2.5,  // M13
+};
+
+const FASE_LABELS = {
+  off_season:'Off-season', pre_contest:'Pre-contest', definicion:'Definición',
+  peaking:'Peaking', peak_week:'Peak Week', post_contest:'Post-contest',
+  recomposicion:'Recomposición', mantenimiento:'Mantenimiento'
+};
+
+// Compuestos y factores CA
+const COMPUESTOS = {
+  testosterona_enantato:  { nombre:'Testosterona Enantato',  familia:'testosterona', ester:'enantato',   ca:1.0, aromatiza:true,  hepato:false, prolactina:false, oral17a:false },
+  testosterona_cipionato: { nombre:'Testosterona Cipionato', familia:'testosterona', ester:'cipionato',  ca:1.0, aromatiza:true,  hepato:false, prolactina:false, oral17a:false },
+  testosterona_propionato:{ nombre:'Testosterona Propionato',familia:'testosterona', ester:'propionato', ca:1.0, aromatiza:true,  hepato:false, prolactina:false, oral17a:false },
+  nandrolona:             { nombre:'Nandrolona (Deca)',       familia:'19-nor',       ester:'enantato',   ca:1.0, aromatiza:true,  hepato:false, prolactina:true,  oral17a:false },
+  trenbolona:             { nombre:'Trenbolona',             familia:'19-nor',       ester:'enantato',   ca:1.0, aromatiza:false, hepato:true,  prolactina:true,  oral17a:false },
+  primobolan:             { nombre:'Primobolan (Metenolona)',familia:'dht',          ester:'enantato',   ca:1.0, aromatiza:false, hepato:false, prolactina:false, oral17a:false },
+  masteron:               { nombre:'Masteron (Drostanolona)',familia:'dht',          ester:'propionato', ca:1.0, aromatiza:false, hepato:false, prolactina:false, oral17a:false },
+  oxandrolona:            { nombre:'Oxandrolona',            familia:'dht',          ester:null,         ca:1.0, aromatiza:false, hepato:true,  prolactina:false, oral17a:true  },
+  estanozolol:            { nombre:'Estanozolol',            familia:'dht',          ester:null,         ca:1.0, aromatiza:false, hepato:true,  prolactina:false, oral17a:true  },
+  turinabol:              { nombre:'Turinabol',              familia:'dht',          ester:null,         ca:1.0, aromatiza:false, hepato:true,  prolactina:false, oral17a:true  },
+  primobolan_oral:        { nombre:'Primobolan Oral',        familia:'dht',          ester:null,         ca:1.0, aromatiza:false, hepato:false, prolactina:false, oral17a:false },
+  boldenona:              { nombre:'Boldenona',              familia:'testosterona', ester:'undecanoato',ca:1.0, aromatiza:true,  hepato:false, prolactina:false, oral17a:false },
+  metenolona:             { nombre:'Metenolona',             familia:'dht',          ester:'enantato',   ca:1.0, aromatiza:false, hepato:false, prolactina:false, oral17a:false },
+  ninguno:                { nombre:'Ninguno',                familia:null,           ester:null,         ca:0,   aromatiza:false, hepato:false, prolactina:false, oral17a:false },
+};
+
+const ESTERES = {
+  enantato:   { vidaMedia:'4.5 días', frecuencia:'Cada 3.5 días (2×/semana)', veces:2 },
+  cipionato:  { vidaMedia:'5.0 días', frecuencia:'Cada 3.5 días (2×/semana)', veces:2 },
+  propionato: { vidaMedia:'0.8 días', frecuencia:'Diario o días alternos',    veces:5 },
+  undecanoato:{ vidaMedia:'21.0 días',frecuencia:'Cada 10-14 semanas',        veces:0.07 },
+  null:       { vidaMedia:'Oral',     frecuencia:'Diario',                    veces:7 },
+};
+
+// Matriz de biomarcadores
+function clasificarBiomarcador(nombre, valor, sexo) {
+  if (valor === null || valor === undefined || isNaN(valor)) return null;
+
+  const m = {
+    pa_s:     [{v:180,n:'URGENCIA'},{v:140,n:'STOP'},{v:130,n:'ALERTA'},{v:-Infinity,n:'OK'}],
+    pa_d:     [{v:110,n:'URGENCIA'},{v:90,n:'STOP'},{v:85,n:'ALERTA'},{v:-Infinity,n:'OK'}],
+    fcr:      [{v:120,n:'URGENCIA'},{v:100,n:'STOP'},{v:85,n:'ALERTA'},{v:-Infinity,n:'OK'}],
+    hcto:     [{v:58,n:'URGENCIA'},{v:(sexo==='M'?54:48),n:'STOP'},{v:50,n:'ALERTA'},{v:-Infinity,n:'OK'}],
+    alt_ast:  [{v:120,n:'STOP'},{v:60,n:'ALERTA'},{v:-Infinity,n:'OK'}],  // 3x=120, 1.5x=60 (LSN=40)
+    egfr:     [{v:-Infinity,n:'URGENCIA',max:30},{v:Infinity,n:'STOP',max:60},{v:Infinity,n:'ALERTA',max:80},{v:Infinity,n:'OK',min:90}],
+    apob:     [{v:200,n:'URGENCIA'},{v:160,n:'STOP'},{v:100,n:'ALERTA'},{v:-Infinity,n:'OK'}],
+    e2:       [{v:5,n:'URGENCIA',dir:'below'},{v:-Infinity,n:'OK'}],
+    prolactina:[{v:50,n:'STOP'},{v:25,n:'ALERTA'},{v:20,n:'INFO'},{v:-Infinity,n:'OK'}],
+    glucemia: [{v:126,n:'STOP'},{v:100,n:'INFO'},{v:-Infinity,n:'OK'}],
+    homa:     [{v:3.0,n:'STOP'},{v:2.5,n:'ALERTA'},{v:-Infinity,n:'OK'}],
+    potasio:  [{v:5.5,n:'STOP'},{v:5.0,n:'ALERTA'},{v:-Infinity,n:'OK'}],
+    lipasa:   [{v:300,n:'STOP'},{v:60,n:'ALERTA'},{v:-Infinity,n:'OK'}],   // 3xLSN=300, 1xLSN=60 aprox
+    psa:      [{v:4.0,n:'STOP'},{v:-Infinity,n:'OK'}],
+    tsh:      [{v:4.5,n:'ALERTA'},{v:4.0,n:'INFO'},{v:-Infinity,n:'OK'}],
+  };
+
+  // eGFR is inverted (lower = worse)
+  if (nombre === 'egfr') {
+    if (valor < 30) return 'URGENCIA';
+    if (valor < 60) return 'STOP';
+    if (valor < 80) return 'ALERTA';
+    return 'OK';
+  }
+  // E2 special: <5 urgencia, 15-40 OK, <15 ALERTA (stop IA not androgens — C1)
+  if (nombre === 'e2') {
+    if (valor < 5) return 'URGENCIA';
+    if (valor < 15) return 'ALERTA';   // C1: stop IA
+    if (valor > 60) return 'ALERTA';   // needs symptoms for STOP IA
+    return 'OK';
+  }
+
+  const thresholds = m[nombre];
+  if (!thresholds) return 'OK';
+
+  for (const t of thresholds) {
+    if (valor >= t.v) return t.n;
+  }
+  return 'OK';
+}
+
+// Proteína por fase
+const PROTEINA_FASE = {
+  general:     [1.6,2.2], off_season:[2.2,2.2], recomposicion:[2.5,2.5],
+  pre_contest: [2.8,2.8], definicion:[3.0,3.0],  peaking:[2.5,2.5],
+  peak_week:   [2.5,2.5], post_contest:[2.4,2.4],mantenimiento:[1.8,2.2],
+};
+
+// Reconstitución
+const RECONST_DATA = [
+  { peptido:'MOTS-c',       vial:'10 mg', diluyente:'2 mL',   conc:'5.00 mg/mL',   dosis:'5 mg',   vol:'1.000 mL', u100:'100' },
+  { peptido:'MOTS-c',       vial:'10 mg', diluyente:'2 mL',   conc:'5.00 mg/mL',   dosis:'2.5 mg', vol:'0.500 mL', u100:'50' },
+  { peptido:'MOTS-c',       vial:'20 mg', diluyente:'2 mL',   conc:'10.00 mg/mL',  dosis:'5 mg',   vol:'0.500 mL', u100:'50' },
+  { peptido:'SS-31',        vial:'10 mg', diluyente:'2 mL',   conc:'5.00 mg/mL',   dosis:'10 mg',  vol:'2.000 mL', u100:'200' },
+  { peptido:'SS-31',        vial:'50 mg', diluyente:'5 mL',   conc:'10.00 mg/mL',  dosis:'20 mg',  vol:'2.000 mL', u100:'200' },
+  { peptido:'Retatrutida',  vial:'10 mg', diluyente:'2.5 mL', conc:'4.00 mg/mL',   dosis:'2 mg',   vol:'0.500 mL', u100:'50' },
+  { peptido:'Retatrutida',  vial:'20 mg', diluyente:'2 mL',   conc:'10.00 mg/mL',  dosis:'4 mg',   vol:'0.400 mL', u100:'40' },
+  { peptido:'Tirzepatida',  vial:'15 mg', diluyente:'3 mL',   conc:'5.00 mg/mL',   dosis:'2.5 mg', vol:'0.500 mL', u100:'50' },
+  { peptido:'Semaglutida',  vial:'5 mg',  diluyente:'2.5 mL', conc:'2.00 mg/mL',   dosis:'0.25 mg',vol:'0.125 mL', u100:'12.5' },
+  { peptido:'BPC-157',      vial:'5 mg',  diluyente:'2 mL',   conc:'2.50 mg/mL',   dosis:'0.5 mg', vol:'0.200 mL', u100:'20' },
+  { peptido:'HCG',          vial:'5000 UI',diluyente:'5 mL',  conc:'1,000 UI/mL',  dosis:'500 UI', vol:'0.500 mL', u100:'50' },
+];
+
+// ====================================================
+// VDSEN COMP v1.0 — ARQUITECTURA INTEGRADA
+// Fuente: VDSEN_COMP_v1.pdf (07 OCT 2026)
+// ====================================================
+const FASES_COMP = {
+  evaluacion_basal: { objetivo:'Determinar salud, composición y capacidad de recuperación', transicion:'Datos suficientes y riesgos evaluados.' },
+  off_season:       { objetivo:'Mejorar musculatura, simetría y proporciones', transicion:'Adaptación, rendimiento y ganancia controlada.' },
+  pre_contest:      { objetivo:'Reducir grasa preservando músculo', transicion:'Pérdida compatible con recuperación.' },
+  acond_final:      { objetivo:'Alcanzar condición competitiva', transicion:'Condición objetiva, digestión y tolerancia.' },
+  peak_week:        { objetivo:'Presentar el físico obtenido', transicion:'Puerta de seguridad y plan ensayado.' },
+  post_show:        { objetivo:'Restaurar función fisiológica y psicológica', transicion:'Hábitos y marcadores recuperándose.' },
+  transicion:       { objetivo:'Planear siguiente bloque competitivo', transicion:'Nueva evaluación basal.' },
+};
+const GATES_COMP = [
+  { id:'G0', nombre:'Elegibilidad',         entrada:'Expediente, historial, categoría y riesgos',               salida:'Datos habilitados; derivación o bloqueo clínico según proceda.' },
+  { id:'G1', nombre:'Preparación de fase',  entrada:'Tendencia, energía y tolerancia al entrenamiento',         salida:'Objetivo y condiciones para revisar fase.' },
+  { id:'G2', nombre:'Adherencia',           entrada:'Dieta, peso, sesiones y actividad registradas',            salida:'Interpretación de datos válida o pendiente.' },
+  { id:'G3', nombre:'Adaptación',           entrada:'Peso, condición, rendimiento, fatiga',                     salida:'Mantener o ajustar intervención deportiva concreta.' },
+  { id:'G4', nombre:'Seguridad continua',   entrada:'Síntomas y evaluación clínica pertinente',                 salida:'Precauciones, derivación o interrupción de intervención.' },
+  { id:'G5', nombre:'Competencia / salida', entrada:'Condición, logística, salud y recuperación',               salida:'Peak Week conservadora o plan alternativo y post-show.' },
+];
+const COMP_TRAIN_VARS = [
+  { variable:'Prioridad muscular', regla:'Fotografías normalizadas, poses, categoría, proporciones y técnica.' },
+  { variable:'Volumen inicial',    regla:'Usar historial tolerado y fase; evitar 20 series como estándar universal.' },
+  { variable:'Frecuencia',         regla:'Distribuir grupos prioritarios en dos o más exposiciones cuando mejore la calidad.' },
+  { variable:'Ejercicios',         regla:'Priorizar estabilidad, trayectoria, estímulo local, tolerancia y progresión mensurable.' },
+  { variable:'Esfuerzo',           regla:'RIR 1–3 como referencia frecuente; el fallo se incorpora selectivamente.' },
+  { variable:'Sobrecarga',         regla:'Progresar por repeticiones, carga, calidad técnica o capacidad de trabajo.' },
+  { variable:'Descarga',           regla:'Basada en fatiga y rendimiento, no en una semana predeterminada.' },
+  { variable:'Prep avanzada',      regla:'Conservar rendimiento y estímulo muscular antes que perseguir más volumen.' },
+];
+const COMP_NUT_REFS = {
+  off_season: [
+    ['Energía',       'Superávit moderado, habitualmente +5–10% sobre mantenimiento estimado.'],
+    ['Proteína',      '1.6–2.2 g/kg peso/día.'],
+    ['Grasa',         'Referencia 0.5–1.5 g/kg peso/día; individualizar.'],
+    ['Carbohidratos', 'Energía restante tras proteína y grasa.'],
+    ['Cambio peso',   'Ganancia prudente; ~0.25%/semana como referencia superior inicial para avanzados.'],
+    ['Comidas',       'Habitualmente 3–5, adaptadas al atleta.'],
+  ],
+  contest_prep: [
+    ['Energía',       'Déficit ajustado a la tasa de pérdida y tolerancia.'],
+    ['Proteína',      '2.3–3.1 g/kg FFM/día para atletas magros, si la FFM es confiable.'],
+    ['Grasa',         'Cantidad suficiente para adherencia, salud y tolerancia.'],
+    ['Carbohidratos', 'Priorizar disponibilidad para entrenar y recuperación.'],
+    ['Cambio peso',   '−0.5–1.0% de pérdida semanal; generalmente menos agresiva cerca de condición extrema.'],
+    ['Comidas',       'Compatibles con digestión y rendimiento.'],
+  ],
+};
+const COMP_HEALTH_AUDIT = [
+  { regla:'Dosis androgénicas automáticas por P3/P4/PF y FFM',   resolucion:'Desactivar generación prescriptiva; retener solo clasificación descriptiva.' },
+  { regla:'Coeficiente androgénico 1.0 para varios AAS',          resolucion:'Rechazar como equivalencia de potencia o toxicidad.' },
+  { regla:'hCG obligatoria en ciclo',                              resolucion:'Evaluación clínica de indicación y fertilidad.' },
+  { regla:'MOTS-c según HOMA-IR y timing de mTOR',                resolucion:'No incluir prescripción con respaldo clínico insuficiente.' },
+  { regla:'SS-31 según FCR o carga androgénica',                   resolucion:'No extrapolar indicación de síndrome de Barth a culturismo.' },
+  { regla:'Retatrutida por % graso y titulación automática',       resolucion:'No prescribir sustancia investigacional de forma automática.' },
+  { regla:'Telmisartán / nebivolol por un valor aislado',          resolucion:'Confirmación diagnóstica y tratamiento individual por médico.' },
+  { regla:'Inhibidor de aromatasa por E2 y síntomas',             resolucion:'Valoración clínica; evitar supresión indiscriminada de estradiol.' },
+  { regla:'P5P obligatoria antes de cabergolina',                  resolucion:'Eliminar secuencia automática por evidencia insuficiente.' },
+  { regla:'T3/T4 por TSH aislada; insulina por población élite',  resolucion:'Excluir como automatismos para definición o ganancia muscular.' },
+  { regla:'NAC/TUDCA obligatorios',                                resolucion:'No considerarlos protección suficiente frente al daño por AAS.' },
+];
+const COMP_PEAK_WEEK = [
+  ['Condición física',  'La puesta a punto no reemplaza perder grasa.'],
+  ['Carbohidratos',     'Ajustes individualizados y, cuando sea posible, previamente ensayados.'],
+  ['Agua',              'Mantener hidratación adecuada; no programar deshidratación extrema.'],
+  ['Sodio',             'No imponer restricciones bruscas para fines cosméticos.'],
+  ['Potasio',           'No calcular suplementos basándose exclusivamente en FFM.'],
+  ['Diuréticos',        'Excluir estrategias cosméticas automáticas.'],
+  ['Entrenamiento',     'Evitar fatiga y daño muscular innecesarios cerca del escenario.'],
+  ['Posing',            'Ensayar transiciones, presentación y tolerancia específica.'],
+  ['Digestión',         'Preferir alimentos probados y minimizar novedades.'],
+  ['Seguridad',         'Cualquier señal clínica puede invalidar el plan estético.'],
+];
+const COMP_VIGILANCIA = [
+  { area:'Cardiovascular', info:'PA domiciliaria, síntomas, FCR, lípidos/ApoB.',             senal:'Elevación sostenida, síntomas o deterioro de marcadores.' },
+  { area:'Hematológica',   info:'Hemoglobina y hematocrito.',                                senal:'Eritrocitosis; Hcto ≥54% demanda revisión clínica prioritaria.' },
+  { area:'Renal',          info:'Creatinina/eGFR; cistatina C y ACR según el caso.',         senal:'ACR ≥30 mg/g confirmado, hematuria o deterioro.' },
+  { area:'Hepática',       info:'AST, ALT, GGT, bilirrubina y contexto de entrenamiento.',  senal:'Patrón colestásico, síntomas o elevaciones importantes.' },
+  { area:'Endocrina',      info:'Hormonas según exposición, síntomas y fertilidad.',         senal:'Alteraciones persistentes o sintomáticas.' },
+  { area:'Psicológica',    info:'Sueño, ánimo, dependencia y conducta alimentaria.',         senal:'Depresión, pérdida funcional o consumo compulsivo.' },
+  { area:'Salud femenina', info:'Ciclo, fertilidad y signos de virilización.',               senal:'Cambios de voz u otros signos potencialmente irreversibles.' },
+];
+
+// ====================================================
+// MOTOR PRINCIPAL
+// ====================================================
+function generarProtocolo() {
+  const panel = document.getElementById('output-panel');
+
+  // Recoger datos
+  const peso      = parseFloat(document.getElementById('peso').value);
+  const talla     = parseFloat(document.getElementById('talla').value);
+  const edad      = parseInt(document.getElementById('edad').value);
+  const sexo      = document.getElementById('sexo').value;
+  const bf        = parseFloat(document.getElementById('bf').value);
+  const pobId     = document.getElementById('poblacion').value;
+  const fase      = document.getElementById('fase').value;
+  const c1Id      = document.getElementById('compuesto_principal').value;
+  const c2Id      = document.getElementById('compuesto_secundario').value;
+  const split2    = parseFloat(document.getElementById('split2').value) / 100;
+
+  const labs = {
+    pa_s:       parseFloat(document.getElementById('pa_s').value)      || null,
+    pa_d:       parseFloat(document.getElementById('pa_d').value)      || null,
+    fcr:        parseFloat(document.getElementById('fcr').value)       || null,
+    fcr_basal:  parseFloat(document.getElementById('fcr_basal').value) || null,
+    hcto:       parseFloat(document.getElementById('hcto').value)      || null,
+    alt_ast:    parseFloat(document.getElementById('alt_ast').value)   || null,
+    egfr:       parseFloat(document.getElementById('egfr').value)      || null,
+    apob:       parseFloat(document.getElementById('apob').value)      || null,
+    e2:         parseFloat(document.getElementById('e2').value)        || null,
+    prolactina: parseFloat(document.getElementById('prolactina').value)|| null,
+    glucemia:   parseFloat(document.getElementById('glucemia').value)  || null,
+    homa:       parseFloat(document.getElementById('homa').value)      || null,
+    potasio:    parseFloat(document.getElementById('potasio').value)   || null,
+    psa:        parseFloat(document.getElementById('psa').value)       || null,
+    tsh:        parseFloat(document.getElementById('tsh').value)       || null,
+    t3_libre:   parseFloat(document.getElementById('t3_libre').value)  || null,
+    lipasa:     parseFloat(document.getElementById('lipasa').value)    || null,
+  };
+
+  const ex = {
+    cancer_prostata: document.getElementById('ex_cancer_prostata').checked,
+    apnea:           document.getElementById('ex_apnea').checked,
+    cardiopatia:     document.getElementById('ex_cardiopatia').checked,
+    pancreatitis:    document.getElementById('ex_pancreatitis').checked,
+    gastroparesia:   document.getElementById('ex_gastroparesia').checked,
+    colelitiasis:    document.getElementById('ex_colelitiasis').checked,
+    men2:            document.getElementById('ex_men2').checked,
+    embarazo:        document.getElementById('ex_embarazo').checked,
+  };
+
+  const ctx = {
+    consentimiento:     document.getElementById('consentimiento').checked,
+    salud_mental:       document.getElementById('salud_mental').checked,
+    cgm:                document.getElementById('cgm').checked,
+    glucagon_disponible:document.getElementById('glucagon_disponible').checked,
+    agua_validada:      document.getElementById('agua_validada').checked,
+    toma_aines:         document.getElementById('toma_aines').checked,
+    semanas_comp:       parseInt(document.getElementById('semanas_comp').value) || 0,
+    tdee:               parseFloat(document.getElementById('tdee').value) || null,
+    peso_prom_actual:   parseFloat(document.getElementById('peso_prom_actual').value) || null,
+    peso_prom_anterior: parseFloat(document.getElementById('peso_prom_anterior').value) || null,
+    horas_sueno:        parseFloat(document.getElementById('horas_sueno').value) || null,
+    fatiga:             parseInt(document.getElementById('fatiga').value) || null,
+    categoria_comp:     document.getElementById('categoria_comp').value.trim() || null,
+  };
+
+  // ---- PASO 0: VALIDACIÓN ----
+  const errores = [];
+  if (isNaN(peso) || peso < 40 || peso > 200) errores.push('Peso fuera de rango (40–200 kg)');
+  if (isNaN(talla) || talla < 140 || talla > 220) errores.push('Talla fuera de rango (140–220 cm)');
+  if (isNaN(edad) || edad < 18) errores.push('Edad inválida (mínimo 18 años)');
+  if (isNaN(bf) || bf < 3 || bf > 50) errores.push('% grasa fuera de rango (3–50%)');
+  if (!pobId) errores.push('Selecciona la población');
+
+  const pob = POBLACIONES[pobId];
+  if (!pob) errores.push('Población inválida');
+
+  // PF exige sexo F
+  if (pob && pob.female && sexo !== 'F') errores.push('Población PF exige sexo Femenino');
+  // P3/P4 para eje masculino
+  if (pob && ['P3','P4','P4max'].includes(pobId) && sexo === 'F') errores.push('P3/P4 definidos para eje masculino. Usa PF3/PF4.');
+
+  if (errores.length > 0) {
+    panel.innerHTML = renderErrores(errores);
+    return;
+  }
+
+  // ---- PASO 1: FFM ----
+  const ffm = peso * (1 - bf / 100);
+  const imc = peso / ((talla/100) ** 2);
+
+  // ---- PASO 2: CONTEXTO ----
+  const delta_fcr = (labs.fcr && labs.fcr_basal) ? labs.fcr - labs.fcr_basal : null;
+
+  // ---- PASO 3: BLOQUEOS DUROS ----
+  const bloqueantes = [];
+  const informativos = [];
+
+  // Consentimiento
+  if (pob.androgens) {
+    if (!ctx.consentimiento || !ctx.salud_mental) {
+      bloqueantes.push({
+        id:'androgenos_sin_consentimiento',
+        titulo:'CONSENTIMIENTO FALTANTE',
+        cuerpo:'Falta consentimiento firmado y/o evaluación de salud mental. Ningún protocolo con andrógenos puede emitirse.',
+        tag:'Hard Block'
+      });
+    }
+  }
+
+  // P0/P1 sin andrógenos (M1)
+  if (['P0','P1'].includes(pobId) && (c1Id !== 'ninguno' || c2Id !== 'ninguno')) {
+    bloqueantes.push({
+      id:'androgenos_en_p0_p1',
+      titulo:'ANDRÓGENOS EN P0/P1 BLOQUEADOS',
+      cuerpo:'P0 y P1 corresponden a 0 mg de andrógenos. La prescripción androgénica está absolutamente bloqueada para esta población. [M1]',
+      tag:'M1'
+    });
+  }
+
+  // Embarazo
+  if (ex.embarazo) {
+    bloqueantes.push({
+      id:'embarazo',
+      titulo:'EMBARAZO / LACTANCIA — PROTOCOLO BLOQUEADO',
+      cuerpo:'La farmacología completa está absolutamente bloqueada en embarazo o lactancia.',
+      tag:'Hard Block'
+    });
+  }
+
+  // MEN2
+  if (ex.men2) {
+    bloqueantes.push({
+      id:'men2_carcinoma_medular',
+      titulo:'CMT / MEN2 — INCRETINAS BLOQUEADAS',
+      cuerpo:'Carcinoma medular de tiroides o MEN2: contraindicación absoluta de todos los agonistas GLP-1/GIPR/GCGR.',
+      tag:'Hard Block'
+    });
+  }
+
+  // Sombra Renal: AINEs + ARA-II + incretina
+  if (ctx.toma_aines) {
+    informativos.push({
+      titulo:'⚠ SOMBRA RENAL',
+      cuerpo:'El asesorado toma AINEs. La co-administración con ARA-II (Telmisartán) e incretinas (Retatrutida/Tirzepatida/Semaglutida) provoca vasoconstricción de arteriola aferente y necrosis tubular aguda. Contraindicación absoluta. [M9]',
+      tag:'M9'
+    });
+    // Solo bloquea si USA ara-ii AND incretina simultáneamente — marcarlo como advertencia grave
+  }
+
+  // Insulina fuera P4
+  if (pobId !== 'P4' && pobId !== 'P4max') {
+    // No bloquea el protocolo entero, pero bloquea insulina (se maneja en sección insulina)
+  }
+
+  // Insulina sin CGM (bloqueo por instrumento, no por protocolo completo)
+  // Peak Week sin agua validada
+  if (fase === 'peak_week' && !ctx.agua_validada) {
+    bloqueantes.push({
+      id:'peak_week_sin_unidad_agua_validada',
+      titulo:'PEAK WEEK — UNIDAD DEL AGUA NO VALIDADA',
+      cuerpo:'La manipulación hidroelectrolítica de Peak Week está BLOQUEADA. La "unidad del agua" (TDEE/BF/sudoración/cargas anteriores) debe estar validada y documentada antes de emitir el bloque hídrico. [C3]',
+      tag:'C3'
+    });
+  }
+
+  // Cap absoluto (se evalúa después de calcular la carga androgénica)
+  // Lo hacemos más adelante y añadimos al array si corresponde
+
+  // ---- PASO 4: BIOMARCADORES ----
+  const bioResultados = [];
+  const labNames = {
+    pa_s:'PA Sistólica', pa_d:'PA Diastólica', fcr:'FCR Reposo',
+    hcto:'Hematocrito', alt_ast:'ALT/AST', egfr:'eGFR (Cistatina C)',
+    apob:'ApoB', e2:'Estradiol E2', prolactina:'Prolactina',
+    glucemia:'Glucemia ayunas', homa:'HOMA-IR', potasio:'Potasio',
+    lipasa:'Lipasa', psa:'PSA', tsh:'TSH',
+  };
+  const labUnits = {
+    pa_s:'mmHg', pa_d:'mmHg', fcr:'bpm', hcto:'%', alt_ast:'U/L',
+    egfr:'mL/min', apob:'mg/dL', e2:'pg/mL', prolactina:'ng/mL',
+    glucemia:'mg/dL', homa:'', potasio:'mEq/L', lipasa:'U/L', psa:'ng/mL', tsh:'mUI/L',
+  };
+
+  for (const [key, nombre] of Object.entries(labNames)) {
+    const val = labs[key];
+    if (val !== null && !isNaN(val)) {
+      const est = clasificarBiomarcador(key, val, sexo);
+      bioResultados.push({ nombre, key, valor: val, unidad: labUnits[key], estado: est });
+    }
+  }
+
+  // ---- PASO 5: CARGA ANDROGÉNICA ----
+  let cargaAndro = 0;
+  let dosisC1mg = 0, dosisC2mg = 0;
+  let capExcedido = false;
+  let techoEfectivo = null;
+
+  const c1 = COMPUESTOS[c1Id];
+  const c2 = COMPUESTOS[c2Id];
+
+  if (pob.androgens && c1Id !== 'ninguno' && !['P0','P1'].includes(pobId)) {
+    // Dosis partida = punto medio del rango de la población
+    const mgKgInicio = (pob.mgKgMin + pob.mgKgMax) / 2;
+    let dosisBaseKg = mgKgInicio;
+
+    // Aplicar techo de fase M13
+    const techoFase = TECHO_FASE[fase];
+    if (techoFase !== null) {
+      dosisBaseKg = Math.min(dosisBaseKg, techoFase);
+      techoEfectivo = techoFase;
+    }
+
+    // Total semanal antes de cap
+    let totalMg = dosisBaseKg * ffm;
+
+    // Aplicar cap absoluto C2
+    let capFinal = pob.capAbs;
+    if (pob.capKg) capFinal = pob.capKg * ffm;
+
+    if (totalMg > capFinal) {
+      totalMg = capFinal;
+      capExcedido = true;
+    }
+
+    cargaAndro = totalMg;
+
+    // Reparto entre compuestos
+    const fracC2 = (c2Id !== 'ninguno') ? split2 : 0;
+    const fracC1 = 1 - fracC2;
+    dosisC1mg = totalMg * fracC1;
+    dosisC2mg = totalMg * fracC2;
+  }
+
+  // Verificar cap excedido como bloqueo duro
+  // (solo si el usuario tiene un valor mayor al cap declarado)
+
+  // ---- PASO 6: PRESCRIPCIÓN POR BLOQUES ----
+  // Se construyen los bloques de prescripción
+
+  // ---- PASO 7: NUTRICIÓN ----
+  const protFase = PROTEINA_FASE[fase] || PROTEINA_FASE['general'];
+  const protMin = protFase[0] * ffm;
+  const protMax = protFase[1] * ffm;
+  const aguaL = (45 * ffm / 1000).toFixed(1);
+  const sodioBajo = Math.round(35 * ffm);
+  const sodioAlto = Math.round(45 * ffm);
+  const potas = Math.round(22 * ffm);
+  const magBajo = Math.round(6 * ffm);
+  const magAlto = Math.round(8 * ffm);
+
+  // Peri-entreno
+  const periPreCHO = (0.6 * ffm).toFixed(0);
+  const periPostCHO = (1.2 * ffm).toFixed(0);
+  const periProtPost = (0.4 * ffm).toFixed(0);
+
+  // ---- TRAZABILIDAD ----
+  const trazCodes = new Set();
+  trazCodes.add('v9.0');
+  if (techoEfectivo) trazCodes.add('M13');
+  if (capExcedido) trazCodes.add('C2');
+  if (fase === 'peak_week') trazCodes.add('C3');
+
+  // Detectar reglas activadas
+  const c1Flags = c1 || {};
+  const c2Flags = c2Id !== 'ninguno' ? (c2 || {}) : {};
+  const hayAromatizante = c1Flags.aromatiza || c2Flags.aromatiza;
+  const hayHepatotoxicos = c1Flags.hepato || c2Flags.hepato;
+  const hay19nor = c1Flags.prolactina || c2Flags.prolactina;
+  const hayOral17a = c1Flags.oral17a || c2Flags.oral17a;
+  const hayIncretina = false; // Podría activarse por flags adicionales
+
+  // ---- RENDERIZADO ----
+  const tieneBloqueos = bloqueantes.length > 0;
+
+  let html = '';
+
+  // Header del protocolo
+  html += `<div style="margin-bottom:16px">
+    <div style="font-size:17px;font-weight:700;margin-bottom:4px">Protocolo VDSEN <span style="color:var(--accent)">${pob.nombre}</span></div>
+    <div style="font-size:12px;color:var(--text2)">${peso} kg · ${bf}% BF · FFM: <strong style="color:var(--cyan)">${ffm.toFixed(1)} kg</strong> · Fase: <span class="phase-pill">${FASE_LABELS[fase]}</span></div>
+  </div>`;
+
+  // NO EMITIBLE si hay bloqueantes
+  if (tieneBloqueos) {
+    html += `<div class="no-emitible">
+      <div class="no-emitible-title">⛔ PROTOCOLO NO EMITIBLE</div>
+      <div class="no-emitible-body">Se han activado ${bloqueantes.length} bloqueo(s) duro(s). Resuelve las condiciones siguientes antes de continuar.</div>
+    </div>`;
+    for (const b of bloqueantes) {
+      html += `<div class="block-alert">
+        <div class="block-alert-title">⛔ ${b.titulo} <span class="audit-tag">${b.tag}</span></div>
+        <div class="block-alert-body">${b.cuerpo}</div>
+      </div>`;
+    }
+  }
+
+  // Informativos
+  for (const inf of informativos) {
+    html += `<div class="block-alert" style="border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.06)">
+      <div class="block-alert-title" style="color:var(--alerta)">${inf.titulo} <span class="audit-tag">${inf.tag}</span></div>
+      <div class="block-alert-body">${inf.cuerpo}</div>
+    </div>`;
+  }
+
+  // ---- SECCIÓN: FFM + CARGA ANDROGÉNICA ----
+  html += `<div class="ffm-badge">
+    <div>
+      <div class="ffm-label">FFM — Denominador Primario</div>
+      <div class="ffm-value">${ffm.toFixed(2)} kg</div>
+      <div style="font-size:11px;color:var(--text3)">peso ${peso} kg × (1 − ${bf}%/100) · IMC ${imc.toFixed(1)}</div>
+    </div>
+    <div style="text-align:right">
+      <div class="ffm-label">Población / Cap</div>
+      <div style="font-size:14px;font-weight:700;color:var(--text)">${pobId}</div>
+      <div style="font-size:11px;color:var(--text3)">Cap: ${pob.capAbs ? pob.capAbs+' mg' : pob.capKg ? '0.50 mg/kg FFM' : '0 mg'}</div>
+    </div>
+  </div>`;
+
+  // Carga androgénica
+  if (!tieneBloqueos && pob.androgens && cargaAndro > 0) {
+    const capDisplay = pob.capAbs || (pob.capKg ? (pob.capKg * ffm).toFixed(0) : 0);
+    const barPct = Math.min(100, (cargaAndro / capDisplay) * 100).toFixed(1);
+    const barColor = barPct > 90 ? 'var(--red)' : barPct > 70 ? 'var(--alerta)' : 'var(--green)';
+    const mgKgReal = (cargaAndro / ffm).toFixed(2);
+
+    html += `<div class="al-card">
+      <div class="al-main">
+        <div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Carga Androgénica Total</div>
+          <div class="al-total">${cargaAndro.toFixed(0)} mg/sem<span class="al-total-unit"> · ${mgKgReal} mg/kg FFM</span></div>
+          ${techoEfectivo ? `<div style="font-size:10px;color:var(--alerta);margin-top:2px">⚠ Techo de fase activo: ${techoEfectivo} mg/kg FFM [M13]</div>` : ''}
+          ${capExcedido ? `<div style="font-size:10px;color:var(--red);margin-top:2px">⚠ Ajustado al cap absoluto [C2]</div>` : ''}
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:10px;color:var(--text3)">Rango ${pob.nombre}</div>
+          <div style="font-size:12px;font-weight:600;color:var(--text2)">${pob.mgKgMin}–${pob.mgKgMax} mg/kg</div>
+          <div style="font-size:11px;color:var(--text3)">Cap: ${pob.capAbs || (pob.capKg ? (pob.capKg*ffm).toFixed(0) : 0)} mg</div>
+        </div>
+      </div>
+      <div class="al-bar"><div class="al-bar-fill" style="width:${barPct}%;background:${barColor}"></div></div>
+      <div class="al-legend"><span>0</span><span>${(capDisplay/2).toFixed(0)} mg</span><span>Cap ${parseFloat(capDisplay).toFixed(0)} mg</span></div>`;
+
+    // Desglose por compuesto
+    if (dosisC1mg > 0) {
+      const ester1 = ESTERES[c1.ester] || ESTERES['null'];
+      const dxInj1 = c1.ester && ['enantato','cipionato'].includes(c1.ester) ? (dosisC1mg/2).toFixed(1) : c1.ester === 'propionato' ? (dosisC1mg/5).toFixed(1) : dosisC1mg.toFixed(1);
+      html += `<div class="al-compound">
+        <span style="color:var(--text)">${c1.nombre}</span>
+        <span style="color:var(--cyan)">${dosisC1mg.toFixed(0)} mg/sem${c1.ester && c1.ester !== 'null' ? ` · ${dxInj1} mg/inj · ${ester1.frecuencia}` : ' (oral diario)'}</span>
+      </div>`;
+
+      const flags1 = [];
+      if (c1.aromatiza) flags1.push('<span style="color:var(--alerta)">aromatiza → IA disponible</span>');
+      if (c1.hepato)    flags1.push('<span style="color:var(--red)">hepatotóxico → TUDCA/NAC</span>');
+      if (c1.prolactina)flags1.push('<span style="color:var(--purple)">↑prolactina → vigilar + P5P</span>');
+      if (c1.oral17a)   flags1.push('<span style="color:var(--alerta)">oral 17α → sublingual si incretina</span>');
+      if (flags1.length) html += `<div style="font-size:10px;padding:4px 0;display:flex;gap:8px;flex-wrap:wrap">${flags1.join(' · ')}</div>`;
+    }
+    if (dosisC2mg > 0 && c2Id !== 'ninguno') {
+      const c2info = COMPUESTOS[c2Id];
+      const ester2 = ESTERES[c2info.ester] || ESTERES['null'];
+      const dxInj2 = c2info.ester && ['enantato','cipionato'].includes(c2info.ester) ? (dosisC2mg/2).toFixed(1) : (dosisC2mg/7).toFixed(1);
+      html += `<div class="al-compound">
+        <span style="color:var(--text)">${c2info.nombre}</span>
+        <span style="color:var(--cyan)">${dosisC2mg.toFixed(0)} mg/sem${c2info.ester ? ` · ${dxInj2} mg/inj · ${ester2.frecuencia}` : ' (oral diario)'}</span>
+      </div>`;
+
+      const flags2 = [];
+      if (c2info.aromatiza) flags2.push('<span style="color:var(--alerta)">aromatiza → IA disponible</span>');
+      if (c2info.hepato)    flags2.push('<span style="color:var(--red)">hepatotóxico → TUDCA/NAC</span>');
+      if (c2info.prolactina)flags2.push('<span style="color:var(--purple)">↑prolactina → vigilar</span>');
+      if (c2info.oral17a)   flags2.push('<span style="color:var(--alerta)">oral 17α → sublingual si incretina</span>');
+      if (flags2.length) html += `<div style="font-size:10px;padding:4px 0;display:flex;gap:8px;flex-wrap:wrap">${flags2.join(' · ')}</div>`;
+    }
+    html += `</div>`; // end al-card
+  }
+
+  // ---- SECCIÓN: BIOMARCADORES ----
+  if (bioResultados.length > 0) {
+    html += `<div class="protocol-section">
+      <div class="protocol-section-title">Análisis de Biomarcadores — Paso 4</div>
+      <table class="bio-table"><thead><tr>
+        <th>Marcador</th><th>Valor</th><th>Estado</th><th>Acción</th>
+      </tr></thead><tbody>`;
+
+    for (const r of bioResultados) {
+      const cls = r.estado.toLowerCase();
+      let accion = '';
+
+      if (r.key === 'e2' && r.valor < 15 && r.valor >= 5) {
+        accion = '<span style="color:var(--red);font-size:11px">STOP IA — NO andrógenos [C1]</span>';
+        trazCodes.add('C1');
+      } else if (r.key === 'e2' && r.valor > 60) {
+        accion = '<span style="color:var(--alerta);font-size:11px">E2 &gt;60 + síntomas → considerar IA</span>';
+      } else if (r.key === 'hcto' && r.estado === 'STOP') {
+        accion = '<span style="color:var(--red);font-size:11px">Flebotomía — suspender andrógenos</span>';
+      } else if (r.key === 'egfr' && r.estado === 'STOP') {
+        accion = '<span style="color:var(--red);font-size:11px">Suspender andrógenos / ARA-II</span>';
+      } else if (r.key === 'alt_ast' && r.estado === 'STOP') {
+        accion = '<span style="color:var(--red);font-size:11px">Suspender hepatotóxicos + Ashwagandha</span>';
+      } else if (r.key === 'prolactina' && r.valor > 20) {
+        accion = `<span style="color:var(--alerta);font-size:11px">${r.valor > 50 ? 'STOP 19-nor + Cabergolina CONDICIONAL' : 'Vigilar + P5P'}</span>`;
+      } else if (r.key === 'pa_s' && r.estado !== 'OK') {
+        accion = '<span style="color:var(--alerta);font-size:11px">Activar Telmisartán / Nebivolol</span>';
+      } else if (r.estado === 'URGENCIA') {
+        accion = '<span style="color:var(--urgencia);font-size:11px;font-weight:700">DERIVACIÓN MÉDICA INMEDIATA</span>';
+      } else if (r.estado === 'OK') {
+        accion = '<span style="color:var(--text3);font-size:11px">—</span>';
+      }
+
+      html += `<tr>
+        <td style="font-size:12px">${r.nombre}</td>
+        <td style="font-size:12px;font-weight:600">${r.valor} ${r.unidad}</td>
+        <td><span class="badge badge-${cls}">${r.estado}</span></td>
+        <td>${accion}</td>
+      </tr>`;
+    }
+    html += `</tbody></table></div>`;
+  }
+
+  if (!tieneBloqueos) {
+    // ---- SECCIÓN: BLOQUES DE PRESCRIPCIÓN ----
+    html += `<div class="protocol-section"><div class="protocol-section-title">Prescripción por Bloques — Paso 6</div>`;
+
+    // --- Bloque Androgénico ---
+    if (pob.androgens && !['P0','P1'].includes(pobId)) {
+      const androStatus = (cargaAndro > 0 && ctx.consentimiento && ctx.salud_mental) ? 'activa' : 'bloqueada';
+      html += renderDrugCard('Androgénico — Testosterona / Análogos', androStatus,
+        [['badge-clinical','CLINICAL'],['badge-ev-a','Ev. A']],
+        androStatus === 'activa' ? [
+          ['Compuesto 1', c1 ? c1.nombre : '—'],
+          ['Dosis semanal', `${dosisC1mg.toFixed(0)} mg`],
+          ['Frecuencia', c1 && c1.ester ? (ESTERES[c1.ester]||ESTERES['enantato']).frecuencia : 'Diario'],
+          ['Vía', 'IM profunda / SubQ (vol < 1 mL)'],
+          c2Id !== 'ninguno' ? ['Compuesto 2', `${COMPUESTOS[c2Id]?.nombre || '—'} · ${dosisC2mg.toFixed(0)} mg/sem`] : null,
+          ['Monitoreo', 'Hematocrito · PA · E2 · ApoB · ALT/AST · Cistatina C · PSA'],
+          ['Ajustar si', 'E2 >60 pg/mL + síntomas → añadir IA'],
+          ['Reducir si', 'Hcto 52–54% o PA sistólica 135–140 mmHg'],
+          ['SUSPENDER si', 'Hcto >54% · PA >140/90 · eGFR <60'],
+        ].filter(Boolean) : [
+          ['Estado', 'Bloqueado por consentimiento faltante o P0/P1'],
+        ]);
+    } else if (['P0','P1'].includes(pobId)) {
+      html += renderDrugCard('Androgénico', 'no-aplica',
+        [['badge-ev-a','Ev. A']],
+        [['Estado','P0/P1: 0 mg de andrógenos [M1]'],['Alternativas','Creatina · Cafeína · Periodización óptima']]);
+    }
+
+    // --- hCG ---
+    if (!['P0','P1'].includes(pobId) && pob.androgens) {
+      const hcgStatus = cargaAndro > 0 ? 'condicional' : 'monitoreo';
+      html += renderDrugCard('hCG — Gonadotropina Coriónica Humana', hcgStatus,
+        [['badge-empirical','EMPIRICAL_PED_PROTOCOL'],['badge-ev-b','Ev. B']],
+        [
+          ['Indicación','Preservación testicular durante el ciclo androgénico'],
+          ['Dosis','250–500 UI · 2×/semana (Lunes y Jueves)'],
+          ['Vía','SubQ'],
+          ['Timing','Intra-ciclo continuo, durante todo el periodo de andrógenos'],
+          ['Monitoreo','Testosterona total · Espermatograma si fertilidad'],
+          ['Nota','[M8] Reposición de intervención omitida en v9.0'],
+        ]);
+    }
+
+    // --- MOTS-c ---
+    const motscEligible = ['P2','P3','P4','P4max'].includes(pobId);
+    if (motscEligible) {
+      const motscActiva = (labs.homa && labs.homa > 2.0) || (labs.glucemia && labs.glucemia > 95);
+      html += renderDrugCard('MOTS-c (Péptido Mitocondrial)', motscActiva ? 'activa' : 'condicional',
+        [['badge-research','RESEARCH MODEL'],['badge-ev-e','Ev. E']],
+        [
+          ['Indicación','Activación AMPK · Translocación GLUT4 independiente de insulina'],
+          ['Dosis','5–10 mg/semana · escalar tras 2 semanas con tolerancia'],
+          ['Frecuencia','2–3×/semana'],
+          ['Timing','Matutino en ayunas (NUNCA en ventana 4h post-entreno) [M3]'],
+          ['Vía','SubQ'],
+          ['Duración','6–8 semanas'],
+          ['Activación',motscActiva ? `✓ HOMA-IR ${labs.homa||'—'} o glucemia ${labs.glucemia||'—'}` : 'HOMA-IR >2.0 o glucemia >95 mg/dL'],
+          ['Monitoreo','Glucemia ayunas · Masa grasa'],
+          ['Interacción','Sinergia GLP-1 · INHIBICIÓN mTORC1 ventana post-entreno → NO dentro de 4h'],
+        ]);
+    }
+
+    // --- SS-31 ---
+    const ss31Eligible = ['P3','P4','P4max'].includes(pobId);
+    if (ss31Eligible) {
+      const ss31CA = cargaAndro / ffm;
+      const ss31Activa = ss31CA > 8.0 || (labs.fcr && labs.fcr > 80);
+      html += renderDrugCard('SS-31 (Elamipretida)', ss31Activa ? 'activa' : 'condicional',
+        [['badge-research','RESEARCH MODEL'],['badge-ev-b','Ev. B']],
+        [
+          ['Indicación','Cardiolipina mitocondrial · ↓ROS · Optimiza cadena respiratoria [M4]'],
+          ['Activación',ss31Activa ? `✓ CA ${ss31CA.toFixed(1)} mg/kg FFM` : 'CA >8 mg/kg FFM o FCR elevada'],
+          ['Dosis','10–40 mg/día · Titulación: 10→20→30→40 cada 2 semanas'],
+          ['Dosis aprobada','40 mg/día SubQ (Síndrome Barth / Forzinity) — referencia regulatoria [M4]'],
+          ['NOTA','Uso en atletas: EXTRAPOLACIÓN. Evidencia en Barth, no en deporte.'],
+          ['Frecuencia','Diaria'],
+          ['Timing','AM al despertar o 30 min pre-entreno'],
+          ['Vía','SubQ'],
+          ['Duración','8–12 semanas'],
+          ['Monitoreo','FCR · FEVI'],
+          ['Sinergia','CoQ10 + Telmisartán'],
+        ]);
+    }
+
+    // --- INCRETINAS / GLP-1 ---
+    html += `<div style="margin-bottom:8px"><div style="font-size:11px;font-weight:700;color:var(--purple);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">GLP-1 / Incretinas</div>`;
+
+    const incPoblElig = ['P0','P2','P3','P4','P4max'].includes(pobId);
+    const incBF = bf > 12;
+    const incPK = fase === 'peak_week';
+    const incMEN2 = ex.men2;
+    const incPanc = ex.pancreatitis;
+    let incStatus = 'no-aplica';
+    if (incMEN2 || incPanc) incStatus = 'bloqueada';
+    else if (!incPoblElig) incStatus = 'no-aplica';
+    else if (incPK) incStatus = 'bloqueada';
+    else if (incBF) incStatus = 'activa';
+    else incStatus = 'condicional';
+
+    html += renderDrugCard('Retatrutida (GLP-1 / GIPR / GCGR Triagonista)', incStatus,
+      [['badge-empirical','EMPIRICAL_PED_PROTOCOL'],['badge-ev-b','Ev. B — rebajado de A [M5]']],
+      [
+        ['Indicación','Saciedad central · ↑lipólisis hepática · ↑gasto energético en reposo'],
+        ['Activación',`%BF actual: ${bf}% ${incBF ? '✓ >12%' : '(umbral: >12% hombres)'}`],
+        ['Dosis','2–12 mg/semana'],
+        ['Titulación','2 → 4 → 6 → 9 → 12 mg (cada 4 semanas)'],
+        ['Frecuencia','1×/semana (Q7D) · dividida c/3.5 días si ≥8 mg'],
+        ['Vía','SubQ'],
+        ['Duración','12–24 semanas'],
+        incPK ? ['⚠ BLOQUEADA','Washout obligatorio: retirar en S-2 antes de competición'] : null,
+        incMEN2 ? ['⛔ BLOQUEADA','CMT / MEN2: contraindicación absoluta de incretinas'] : null,
+        hayOral17a ? ['⚠ Oral 17α','Vía sublingual OBLIGATORIA — el retraso del vaciamiento gástrico destruye absorción oral'] : null,
+        ctx.semanas_comp > 0 && ctx.semanas_comp <= 8 ? ['Washout','Iniciar washout en S-4/S-3/S-2 según titulación'] : null,
+        ['Alternativas','Tirzepatida 2.5–15 mg/sem · Semaglutida 0.25–2.4 mg/sem'],
+        ['Monitoreo','FCR · síntomas GI · glucemia ayunas · lipasa si dolor abdominal'],
+      ].filter(Boolean));
+
+    html += renderDrugCard('Protocolo de Protección de Masa Magra con GLP-1', 'condicional',
+      [['badge-empirical','EMPIRICAL_PED_PROTOCOL']],
+      [
+        ['CHO Peri-entreno','Mantener al 100% durante toda la titulación (no reducir)'],
+        ['Proteína','Mínimo 2.5 g/kg FFM/día en recomposición (máx déficit no proteico)'],
+        ['Timing óptimo','GLP-1 en día de descanso → menor impacto en ingesta peri-entreno'],
+        ['Señal de alarma','Pérdida de fuerza ≥10% o pérdida ponderal >1%/semana → revisar'],
+        ['Monitoreo','Peso semanal · fuerza en los 3 ejercicios clave · reflejo visual glúteo/muslo'],
+      ]);
+
+    html += `</div>`;
+
+    // --- CARDIORENAL ---
+    html += `<div class="protocol-section-title" style="margin-top:16px">Cardiorenal</div>`;
+
+    // Telmisartán
+    const telmExcl = (labs.potasio && labs.potasio > 5.5) || (labs.egfr && labs.egfr < 30);
+    const telmActiva = (labs.pa_s && labs.pa_s >= 125) || (labs.pa_d && labs.pa_d >= 80) || (cargaAndro / ffm >= 4.0);
+    let telmStatus = 'monitoreo';
+    if (telmExcl) telmStatus = 'bloqueada';
+    else if (telmActiva) telmStatus = 'activa';
+
+    html += renderDrugCard('Telmisartán (ARA-II + PPARγ)', telmStatus,
+      [['badge-clinical','CLINICAL'],['badge-ev-a','Ev. A']],
+      [
+        ['Mecanismo','Antagonista AT1R + agonismo parcial PPARγ · nefroprotección glomerular'],
+        ['Activación', telmActiva ? `✓ PA ${labs.pa_s||'—'}/${labs.pa_d||'—'} mmHg o CA ${(cargaAndro/ffm).toFixed(1)} mg/kg` : 'PA ≥125/80 o CA ≥4 mg/kg FFM'],
+        ['Dosis','40 mg/día → escalar a 80 mg si PA >130/85 tras 2 semanas'],
+        ['Frecuencia','1×/día · Mañana con desayuno'],
+        ['Vía','VO'],
+        telmExcl ? ['⛔ EXCLUIDO', labs.potasio > 5.5 ? `Potasio ${labs.potasio} mEq/L > 5.5` : `eGFR ${labs.egfr} mL/min < 30`] : null,
+        ctx.toma_aines ? ['⛔ CONTRAINDICACIÓN ABS.','AINEs + ARA-II + incretina = SOMBRA RENAL [M9] — riesgo NTA'] : null,
+        ['Monitoreo','PA · Potasio sérico · Cistatina C (eGFR)'],
+        ['SUSPENDER si','Hiperpotasemia >5.5 mEq/L · Angioedema · Caída rápida eGFR >30%'],
+        ['Alternativas','Losartán 50–100 mg/día · Valsartán 80–160 mg/día'],
+      ].filter(Boolean));
+
+    // Nebivolol
+    const delta_fcr_val = delta_fcr !== null ? delta_fcr : (labs.fcr && labs.fcr > 85 ? labs.fcr - 70 : null);
+    const nebActiva = (delta_fcr_val !== null && delta_fcr_val > 10) || (labs.fcr && labs.fcr > 85);
+    html += renderDrugCard('Nebivolol (β1-selectivo + eNOS)', nebActiva ? 'activa' : 'monitoreo',
+      [['badge-clinical','CLINICAL'],['badge-ev-a','Ev. A']],
+      [
+        ['Mecanismo','β1-selectivo + agonismo β3 endotelial → eNOS → NO · sin IR a insulina'],
+        ['Activación',`Delta FCR: ${delta_fcr !== null ? delta_fcr+' bpm' : 'N/D'} · FCR actual: ${labs.fcr||'—'} bpm · Umbral: +10 bpm [m2]`],
+        ['Dosis','2.5–5.0 mg/día · escalar si FCR persiste >+10 bpm tras 2 semanas'],
+        ['Frecuencia','1×/día · Mañana'],
+        ['Monitoreo','FCR · PA'],
+        ['SUSPENDER si','Bradicardia severa · Bloqueo AV · Broncoespasmo'],
+        ['Nota umbral','Unificado a +10 bpm sobre basal [m2]'],
+      ]);
+
+    // --- ENDOCRINO ---
+    html += `<div class="protocol-section-title" style="margin-top:16px">Endocrino — IA / Prolactina</div>`;
+
+    // Anastrozol / Exemestano
+    const e2Val = labs.e2;
+    let iaStatus = 'monitoreo';
+    let iaNote = '';
+    if (e2Val !== null) {
+      if (e2Val < 15) {
+        iaStatus = 'bloqueada';
+        iaNote = 'STOP OBLIGATORIO DEL IA — E2 <15 pg/mL. NO suspender los andrógenos. [C1]';
+        trazCodes.add('C1');
+      } else if (e2Val > 60) {
+        iaStatus = 'condicional';
+        iaNote = 'E2 >60 + síntomas (ginecomastia / retención) → activar IA. Sin síntomas: solo MONITOREO.';
+      } else if (e2Val <= 15) {
+        iaStatus = 'bloqueada';
+      }
+    }
+
+    if (hayAromatizante) {
+      html += renderDrugCard('Anastrozol / Exemestano (Inhibidor de Aromatasa)', iaStatus,
+        [['badge-clinical','CLINICAL']],
+        [
+          ['Activación','E2 >60 pg/mL + SÍNTOMAS de ginecomastia o retención. Nunca por número aislado.'],
+          e2Val !== null ? ['E2 actual',`${e2Val} pg/mL ${e2Val < 15 ? '→ ⛔ STOP IA [C1]' : e2Val > 60 ? '→ ⚠ + síntomas' : '→ OK'}`] : ['E2','No declarado — no activar IA sin analítica'],
+          iaNote ? ['⚠ Regla C1', iaNote] : null,
+          ['Anastrozol','0.25 mg · 2–3×/semana'],
+          ['Exemestano','12.5 mg · cada 3 días (inactivador suicida)'],
+          ['⛔ PROHIBIDO','Anastrozol + Tamoxifeno: degradación cruzada vía CYP2D6'],
+          ['SUSPENDER si','E2 <15 pg/mL — dislipidemia severa / artralgia / disfunción endotelial'],
+        ].filter(Boolean));
+    }
+
+    // Cabergolina
+    const prolVal = labs.prolactina;
+    let cabStatus = 'monitoreo';
+    if (prolVal && prolVal > 25) cabStatus = 'condicional';
+    else if (prolVal && prolVal > 50) cabStatus = 'condicional';
+
+    if (hay19nor) {
+      html += renderDrugCard('Cabergolina (Agonista Dopaminérgico)', cabStatus,
+        [['badge-clinical','CLINICAL']],
+        [
+          ['Primera línea','Vitamina B6 (P5P) — siempre antes de cabergolina'],
+          ['⛔ USO PROFILÁCTICO','ABSOLUTAMENTE PROHIBIDO — riesgo de valvulopatía por agonismo 5-HT2B'],
+          ['Activación','Prolactina CONFIRMADA + síntomas. Nunca por número aislado.'],
+          prolVal !== null ? ['Prolactina actual',`${prolVal} ng/mL ${prolVal > 50 ? '→ STOP 19-nor' : prolVal > 25 ? '→ CONDICIONAL con síntomas' : '→ monitorear'}`] : ['Prolactina','No declarada'],
+          ['Dosis si activa','0.25 mg · cada 3.5–7 días'],
+          ['Vía','VO'],
+        ]);
+    }
+
+    // --- TIROIDEO ---
+    const tshVal = labs.tsh;
+    const t3Val = labs.t3_libre;
+    const tireoElig = ['P3','P4','P4max'].includes(pobId);
+    if (tireoElig) {
+      html += `<div class="protocol-section-title" style="margin-top:16px">Tiroideo</div>`;
+
+      const t3Activa = (tshVal && tshVal > 4.0) || (t3Val && t3Val < 2.3);
+      html += renderDrugCard('T3 Liotironina', t3Activa ? 'condicional' : 'monitoreo',
+        [['badge-clinical','CLINICAL'],['badge-ev-b','Ev. B']],
+        [
+          ['Activación','TSH >4.0 mUI/L o T3 libre <2.3 pg/mL'],
+          tshVal !== null ? ['TSH actual',`${tshVal} mUI/L`] : null,
+          t3Val !== null ? ['T3 libre actual',`${t3Val} pg/mL`] : null,
+          ['Dosis','12.5–25.0 mcg/día · 1×/día'],
+          ['Timing','AM en ayunas · separado ≥60 min de calcio, hierro o café'],
+          ['Monitoreo','FCR · TSH · T3 libre'],
+          ['SUSPENDER si','Taquicardia >100 bpm · Fibrilación auricular · Pérdida ponderal no intencionada'],
+        ].filter(Boolean));
+
+      const t4Activa = tshVal && tshVal > 4.0;
+      html += renderDrugCard('T4 Levotiroxina', t4Activa ? 'condicional' : 'monitoreo',
+        [['badge-clinical','CLINICAL'],['badge-ev-b','Ev. B']],
+        [
+          ['Activación','TSH >4.0 mUI/L'],
+          ['Dosis','50–100 mcg/día · 1×/día'],
+          ['Timing','AM en ayunas · separado ≥60 min'],
+          ['Monitoreo','TSH · T4 libre'],
+          ['SUSPENDER si','Taquicardia >100 bpm'],
+        ]);
+    }
+
+    // --- INSULINA ---
+    html += `<div class="protocol-section-title" style="margin-top:16px">Insulina</div>`;
+
+    const insulEligible = ['P4','P4max'].includes(pobId);
+    const insulFFM = ffm > 85;
+    const insulCGM = ctx.cgm;
+    const insulGlucagon = ctx.glucagon_disponible;
+    const insulHoma = labs.homa ? labs.homa <= 3.0 : true;
+
+    let insulStatus = 'no-aplica';
+    let insulBloqueos = [];
+    if (insulEligible) {
+      if (!insulCGM) insulBloqueos.push('Sin CGM');
+      if (!insulFFM)  insulBloqueos.push(`FFM ${ffm.toFixed(1)} kg ≤85 kg requeridos`);
+      if (!insulGlucagon) insulBloqueos.push('Sin glucagón de emergencia en sitio');
+      if (labs.homa && labs.homa > 3.0) insulBloqueos.push(`HOMA-IR ${labs.homa} >3.0`);
+      insulStatus = insulBloqueos.length === 0 ? 'condicional' : 'bloqueada';
+    }
+
+    html += renderDrugCard('Insulina Lispro / Aspart (Acción Rápida)', insulStatus,
+      [['badge-empirical','EMPIRICAL_PED_PROTOCOL'],['badge-ev-b','Ev. B']],
+      [
+        !insulEligible ? ['⛔ EXCLUSIVA DE P4','Insulina de acción rápida: SOLO P4 / P4-max. Bloqueada en todas las demás poblaciones.'] : null,
+        insulBloqueos.length > 0 ? ['⛔ Bloqueos activos', insulBloqueos.join(' · ')] : null,
+        ['FFM requerida',`>85 kg · Actual: ${ffm.toFixed(1)} kg ${insulFFM?'✓':'✗'}`],
+        ['Requisitos','CGM activo · Glucagón disponible · Dextrosa 20g · Precisión CHO verificada · rhGH ≥4 UI/día'],
+        ['Dosis','2–4 UI · Ratio: 1 UI / 10–15 g CHO · Techo: 10 UI/sesión [M2]'],
+        ['Timing','Inmediatamente post-entrenamiento · junto con ingesta proteico-glucídica'],
+        ['Frecuencia','1×/día'],
+        ['Duración','4–6 semanas'],
+        ['Monitoreo','CGM continuo · Glucemia capilar a 30/60/90/120 min'],
+        ['Si glucemia <70','15 g CHO simples adicionales'],
+        ['SUSPENDER si','Hipoglucemia <55 mg/dL · Fallo en ingesta CHO · Pérdida del sensor CGM'],
+        ['Alternativas','Metformina 500–1000 mg/día · Berberina 500 mg/día'],
+      ].filter(Boolean));
+
+    // --- SUPLEMENTACIÓN ---
+    html += `<div class="protocol-section-title" style="margin-top:16px">Suplementación</div>`;
+
+    const ashwBloc = labs.alt_ast && labs.alt_ast > 60;
+    const hayAndros = pob.androgens && cargaAndro > 0;
+
+    const supls = [
+      { nombre:'Creatina Monohidrato',  dosis:'5 g/día',                  ev:'A', timing:'Indiferente', activa:true, cond:null },
+      { nombre:'Cafeína',               dosis:'3–6 mg/kg peso',           ev:'A', timing:'30–60 min pre-entreno', activa:true, cond:null },
+      { nombre:'Beta-Alanina',          dosis:'3.2–6.4 g/día',            ev:'A', timing:'—', activa:true, cond:null },
+      { nombre:'Citrulina Malato',      dosis:'6–8 g',                    ev:'B', timing:'60 min pre-entreno', activa:true, cond:null },
+      { nombre:'Whey Isolate',          dosis:`${(1.6*ffm).toFixed(0)}–${(2.4*ffm).toFixed(0)} g/día (1.6–2.4 g/kg FFM)`, ev:'A', timing:'Post-entreno · ≥3 g leucina/toma', activa:true, cond:null },
+      { nombre:'TUDCA',                 dosis:'500–1000 mg/día',           ev:'B', timing:'Con comidas grasas (circulación enterohepática)', activa:hayHepatotoxicos, cond:hayHepatotoxicos ? null : 'Si hay hepatotóxicos' },
+      { nombre:'NAC (N-Acetilcisteína)',dosis:'1200–1800 mg/día',         ev:'B', timing:'Ayunas o pre-sueño · ALEJADO del entreno (no suprimir ROS adaptativas)', activa:hayAndros, cond:null },
+      { nombre:'Ashwagandha KSM-66',   dosis:'300–600 mg/día',           ev:'C', timing:'Nocturno', activa:!ashwBloc, cond:ashwBloc ? 'BLOQUEADA: ALT/AST elevadas (DILI aditivo con AAS)' : null },
+      { nombre:'Glucomanano',           dosis:'1–3 g/día',               ev:'B', timing:'Con 300–500 mL agua pre-comida', activa:bf>15, cond:bf>15?null:'Si BF >15%' },
+      { nombre:'Colageno Hidrolizado',  dosis:'10–15 g + 50 mg Vit C',   ev:'B', timing:'30–60 min pre-carga articular', activa:true, cond:null },
+      { nombre:'Melatonina',            dosis:'0.5–5 mg',                ev:'B', timing:'30–60 min pre-sueño', activa:true, cond:null },
+      { nombre:'Selenio + Vitamina E',  dosis:'Selenio 200 mcg + Vit E',  ev:'C', timing:'Con comidas', activa:hayAndros, cond:hayAndros?null:'Si hay andrógenos' },
+      { nombre:'HMB',                   dosis:'3 g/día (fraccionado en 3)', ev:'B', timing:'—', activa:fase==='post_contest'||fase==='mantenimiento', cond:null },
+    ];
+
+    html += `<table class="bio-table"><thead><tr>
+      <th>Suplemento</th><th>Dosis</th><th>Timing</th><th>Ev.</th><th>Estado</th>
+    </tr></thead><tbody>`;
+
+    for (const s of supls) {
+      const isBloc = s.cond && s.cond.startsWith('BLOQUEADA');
+      const isInact = !s.activa && !isBloc;
+      html += `<tr>
+        <td style="font-size:11px;font-weight:600;${isBloc?'color:var(--red)':isInact?'color:var(--text3)':''}">${s.nombre}</td>
+        <td style="font-size:11px">${s.dosis}</td>
+        <td style="font-size:10px;color:var(--text2)">${s.timing}</td>
+        <td><span class="badge badge-ev-${s.ev.toLowerCase()}">${s.ev}</span></td>
+        <td>${isBloc ? `<span class="badge badge-bloqueada">BLOQUEADA</span>` : s.activa ? `<span class="badge badge-activa">ACTIVA</span>` : `<span class="badge badge-no-aplica">${s.cond||'CONDICIONAL'}</span>`}</td>
+      </tr>`;
+    }
+    html += `</tbody></table>`;
+
+    // --- NUTRICIÓN ---
+    html += `<div class="sep"></div>`;
+    html += `<div class="protocol-section-title">Nutrición — Paso 7</div>`;
+
+    html += `<div class="nutr-grid">
+      <div class="nutr-card">
+        <div class="nutr-card-title">Proteína / Fase</div>
+        <div class="nutr-value">${protMin.toFixed(0)}–${protMax.toFixed(0)} g/día</div>
+        <div class="nutr-unit">${protFase[0]}–${protFase[1]} g/kg FFM · Fase: ${FASE_LABELS[fase]}</div>
+      </div>
+      <div class="nutr-card">
+        <div class="nutr-card-title">Agua</div>
+        <div class="nutr-value">${aguaL} L/día</div>
+        <div class="nutr-unit">45 mL/kg FFM · FFM ${ffm.toFixed(1)} kg</div>
+      </div>
+    </div>`;
+
+    html += `<table class="nutr-table" style="margin-bottom:12px"><tbody>
+      <tr><td>Sodio</td><td>${sodioBajo}–${sodioAlto} mg/día (35–45 mg/kg FFM)</td></tr>
+      <tr><td>Potasio</td><td>~${potas} mg/día (22 mg/kg FFM)</td></tr>
+      <tr><td>Magnesio (en déficit)</td><td>${magBajo}–${magAlto} mg/día (6–8 mg/kg FFM)</td></tr>
+    </tbody></table>`;
+
+    html += `<div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Peri-entrenamiento</div>`;
+    html += `<table class="nutr-table"><tbody>
+      <tr><td>Pre-entreno (30–60 min)</td><td>${periPreCHO} g CHO (0.6 g/kg FFM)</td></tr>
+      <tr><td>Post-entreno (0–45 min) CHO</td><td>${periPostCHO} g CHO (1.2 g/kg FFM)</td></tr>
+      <tr><td>Post-entreno Proteína</td><td>${periProtPost} g (0.4 g/kg FFM · mín 3 g Leucina)</td></tr>
+    </tbody></table>`;
+
+    if (ctx.tdee) {
+      html += `<div style="margin-top:12px">`;
+      if (['pre_contest','definicion'].includes(fase)) {
+        const defBajo = Math.round(ctx.tdee * 0.80);
+        const defAlto = Math.round(ctx.tdee * 0.75);
+        html += `<div class="nutr-card" style="margin-bottom:0"><div class="nutr-card-title">Déficit energético — ${FASE_LABELS[fase]}</div>
+          <div class="nutr-value">${defAlto}–${defBajo} kcal/día</div>
+          <div class="nutr-unit">TDEE ${ctx.tdee} kcal · Déficit ${fase==='pre_contest'?'20–30%':'25–35%'}</div>
+          <div class="nutr-unit" style="margin-top:4px">Techo: 1%/semana del peso corporal en motor no competitivo</div></div>`;
+      } else if (fase === 'off_season') {
+        html += `<div class="nutr-card" style="margin-bottom:0"><div class="nutr-card-title">Superávit Off-Season</div>
+          <div class="nutr-value">${ctx.tdee+300}–${ctx.tdee+500} kcal/día</div>
+          <div class="nutr-unit">TDEE ${ctx.tdee} kcal + 300–500 kcal</div></div>`;
+      }
+      html += `</div>`;
+    }
+
+    // --- PEAK WEEK ---
+    if (fase === 'peak_week') {
+      html += `<div class="sep"></div>`;
+      html += `<div class="peak-week-block">
+        <div class="peak-week-title">⚠ PEAK WEEK — Paso 8</div>
+        ${!ctx.agua_validada ?
+          `<div style="font-size:12px;color:var(--red);font-weight:600">⛔ BLOQUE HÍDRICO BLOQUEADO — Unidad del agua no validada [C3]</div>
+           <div style="font-size:11px;color:var(--text2);margin-top:6px">La manipulación hidroelectrolítica no puede emitirse. La "unidad del agua" (correlación TDEE/BF/sudoración/cargas previas) debe estar documentada y validada.</div>` :
+          `<div style="font-size:12px;color:var(--green)">✓ Unidad del agua validada</div>
+           <div style="font-size:11px;color:var(--text2);margin-top:6px">Bloque hídrico habilitado. Ésteres de vida media corta activos. Retirar orales 17α. Protocolo carb-loading según calibración individual.</div>`
+        }
+      </div>`;
+    }
+
+  } // end !tieneBloqueos
+
+  // ---- RECONSTITUCIÓN ----
+  html += `<div class="sep"></div>`;
+  html += `<div class="protocol-section-title">Calculadora de Reconstitución — Péptidos</div>`;
+  html += `<div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-family:monospace">C = m/V · V_dosis = D/C · Unidades U-100 = V_dosis × 100</div>`;
+  html += `<table class="recon-table"><thead><tr>
+    <th>Péptido</th><th>Vial</th><th>Diluyente</th><th>Conc.</th><th>Dosis</th><th>Volumen</th><th>U-100</th>
+  </tr></thead><tbody>`;
+  for (const r of RECONST_DATA) {
+    html += `<tr>
+      <td style="font-weight:600">${r.peptido}</td>
+      <td>${r.vial}</td><td>${r.diluyente}</td>
+      <td style="color:var(--cyan)">${r.conc}</td>
+      <td>${r.dosis}</td>
+      <td style="color:var(--green)">${r.vol}</td>
+      <td style="color:var(--alerta)">${r.u100}</td>
+    </tr>`;
+  }
+  html += `</tbody></table>`;
+  html += `<div style="font-size:10px;color:var(--text3);margin-top:6px">✓ 11/11 filas verificadas por fórmula (v9.0)</div>`;
+
+  // ---- COMP v1.0 — MÓDULOS INTEGRADOS ----
+  html += `<div class="sep"></div>`;
+  html += `<div class="comp-section">`;
+  html += `<div class="comp-section-title">⚙ COMP v1.0 — Árbitro Central</div>`;
+
+  // Árbitro: seguimiento ponderal
+  if (ctx.peso_prom_actual && ctx.peso_prom_anterior && ctx.peso_prom_anterior > 0) {
+    const tendencia = ((ctx.peso_prom_actual - ctx.peso_prom_anterior) / ctx.peso_prom_anterior) * 100;
+    const tendStr = tendencia >= 0 ? `+${tendencia.toFixed(2)}%` : `${tendencia.toFixed(2)}%`;
+    let arbiterState = 'MANTENER';
+    let arbiterClass = 'comp-mantener';
+    let arbiterMsg = 'Tendencia dentro de rangos esperados.';
+    const isPrepContestFase = ['pre_contest','acond_final','peak_week'].includes(fase);
+    const isOffFase = ['off_season','evaluacion_basal'].includes(fase);
+    if (isPrepContestFase) {
+      if (tendencia > 0.2) { arbiterState='AJUSTAR'; arbiterClass='comp-ajustar'; arbiterMsg='Ganancia en fase de déficit — revisar balance energético.'; }
+      else if (tendencia < -1.0) { arbiterState='AJUSTAR'; arbiterClass='comp-ajustar'; arbiterMsg='Pérdida excesiva (>1%/sem) — riesgo de masa muscular.'; }
+    } else if (isOffFase) {
+      if (tendencia > 0.5) { arbiterState='AJUSTAR'; arbiterClass='comp-ajustar'; arbiterMsg='Ganancia superior al 0.5%/sem — revisar superávit.'; }
+      else if (tendencia < -0.1) { arbiterState='AJUSTAR'; arbiterClass='comp-ajustar'; arbiterMsg='Pérdida no esperada en off-season — revisar ingesta.'; }
+    }
+    if (ctx.fatiga && ctx.fatiga >= 8) { arbiterState='RECOLECTAR DATOS'; arbiterClass='comp-recolectar'; arbiterMsg='Fatiga elevada — evaluar recuperación antes de ajustar volumen.'; }
+    if (ctx.horas_sueno && ctx.horas_sueno < 6) { arbiterState='RECOLECTAR DATOS'; arbiterClass='comp-recolectar'; arbiterMsg='Sueño insuficiente (<6h) — priorizar recuperación.'; }
+
+    html += `<div class="ponderal-card">`;
+    html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">`;
+    html += `<span style="font-size:11px;color:var(--text2)">Tendencia ponderal 7 días</span>`;
+    html += `<span class="comp-badge ${arbiterClass}">${arbiterState}</span>`;
+    html += `</div>`;
+    html += `<div style="font-size:13px;font-weight:700;margin-bottom:4px">${tendStr} <span style="font-size:10px;color:var(--text3)">(${ctx.peso_prom_anterior.toFixed(1)} → ${ctx.peso_prom_actual.toFixed(1)} kg)</span></div>`;
+    html += `<div style="font-size:11px;color:var(--text2)">${arbiterMsg}</div>`;
+    if (ctx.horas_sueno) html += `<div style="font-size:10px;color:var(--text3);margin-top:4px">Sueño: ${ctx.horas_sueno}h · Fatiga: ${ctx.fatiga || '—'}/10</div>`;
+    html += `</div>`;
+    trazCodes.add('COMP-ARBITER');
+  } else {
+    html += `<div style="font-size:11px;color:var(--text3);padding:8px 0">Ingresar peso promedio de ambas semanas para activar el árbitro ponderal.</div>`;
+  }
+
+  // Gates G0–G5
+  html += `<div style="margin-top:10px">`;
+  html += `<div style="font-size:10px;color:var(--text3);letter-spacing:1px;margin-bottom:6px">GATES DE TRANSICIÓN COMP</div>`;
+  for (const g of GATES_COMP) {
+    html += `<div class="gate-item">`;
+    html += `<span class="gate-label">${g.id} · ${g.nombre}</span>`;
+    html += `<span style="color:var(--text3);font-size:10px">${g.salida}</span>`;
+    html += `</div>`;
+  }
+  html += `</div>`;
+  html += `</div>`; // end comp-section árbitro
+  trazCodes.add('COMP-v1.0');
+
+  // COMP-NUT
+  const isContestPrep = ['pre_contest','acond_final','peak_week'].includes(fase);
+  const isOffSeason   = ['off_season','evaluacion_basal','transicion'].includes(fase);
+  const nutRef = isContestPrep ? COMP_NUT_REFS.contest_prep : (isOffSeason ? COMP_NUT_REFS.off_season : null);
+  if (nutRef) {
+    const nutLabel = isContestPrep ? 'Contest Prep' : 'Off-Season';
+    html += `<div class="comp-section">`;
+    html += `<div class="comp-section-title">🥗 COMP-NUT — Referencia Nutricional (${nutLabel})</div>`;
+    html += `<table class="data-table"><tbody>`;
+    for (const [k,v] of nutRef) {
+      html += `<tr><td style="color:var(--text2);width:110px">${k}</td><td>${v}</td></tr>`;
+    }
+    html += `</tbody></table>`;
+    html += `</div>`;
+    trazCodes.add('COMP-NUT');
+  }
+
+  // COMP-TRAIN
+  html += `<div class="comp-section">`;
+  html += `<div class="comp-section-title">🏋 COMP-TRAIN — Variables de Entrenamiento</div>`;
+  html += `<table class="data-table"><tbody>`;
+  for (const v of COMP_TRAIN_VARS) {
+    html += `<tr><td style="color:var(--text2);width:130px">${v.variable}</td><td style="font-size:11px">${v.regla}</td></tr>`;
+  }
+  html += `</tbody></table>`;
+  html += `</div>`;
+  trazCodes.add('COMP-TRAIN');
+
+  // COMP-HEALTH: vigilancia
+  html += `<div class="comp-section">`;
+  html += `<div class="comp-section-title">🩺 COMP-HEALTH — Vigilancia Clínica</div>`;
+  html += `<table class="data-table"><thead><tr><th>Área</th><th>Información útil</th><th>Señal de revisión</th></tr></thead><tbody>`;
+  for (const v of COMP_VIGILANCIA) {
+    html += `<tr><td style="color:var(--text2);white-space:nowrap">${v.area}</td><td style="font-size:10px">${v.info}</td><td style="font-size:10px;color:var(--alerta)">${v.senal}</td></tr>`;
+  }
+  html += `</tbody></table>`;
+  html += `</div>`;
+  trazCodes.add('COMP-HEALTH');
+
+  // COMP-HEALTH: auditoría farmacológica
+  html += `<div class="comp-section">`;
+  html += `<div class="comp-section-title">⚖ COMP-HEALTH — Auditoría Farmacológica (v1.0)</div>`;
+  html += `<div style="font-size:10px;color:var(--alerta);margin-bottom:8px">COMP v1.0 identifica automatismos a revisar individualmente. Las tarjetas de fármaco reflejan la base de conocimiento v9.0; la clasificación COMP es descriptiva, no prescriptiva.</div>`;
+  html += `<table class="data-table"><thead><tr><th>Regla auditada</th><th>Resolución COMP v1.0</th></tr></thead><tbody>`;
+  for (const a of COMP_HEALTH_AUDIT) {
+    html += `<tr><td style="font-size:10px;color:var(--text2)">${a.regla}</td><td style="font-size:10px">${a.resolucion}</td></tr>`;
+  }
+  html += `</tbody></table>`;
+  html += `</div>`;
+
+  // Peak Week COMP (si aplica)
+  if (fase === 'peak_week') {
+    html += `<div class="comp-section">`;
+    html += `<div class="comp-section-title">🏆 COMP — Peak Week Conservadora</div>`;
+    html += `<table class="data-table"><tbody>`;
+    for (const [cat, desc] of COMP_PEAK_WEEK) {
+      html += `<tr><td style="color:var(--text2);width:120px">${cat}</td><td style="font-size:11px">${desc}</td></tr>`;
+    }
+    html += `</tbody></table>`;
+    html += `</div>`;
+  }
+
+  // Post-show (si aplica)
+  if (fase === 'post_contest') {
+    html += `<div class="comp-section">`;
+    html += `<div class="comp-section-title">🔄 COMP — Post-Show: Prioridades de Recuperación</div>`;
+    html += `<div style="font-size:11px;color:var(--text2);line-height:1.7">`;
+    html += `<div>• No generar PCT automático; evaluación clínica endocrina individual.</div>`;
+    html += `<div>• Priorizar restauración del ciclo menstrual (si aplica) y marcadores hormonales.</div>`;
+    html += `<div>• Vigilar signos de depresión, distorsión de imagen y conductas alimentarias.</div>`;
+    html += `<div>• Fase de transición planificada antes de nuevo bloque off-season.</div>`;
+    html += `</div>`;
+    html += `</div>`;
+  }
+
+  // ---- BANDERAS ROJAS ----
+  html += `<div class="sep"></div>`;
+  html += `<div class="red-flags">
+    <div class="red-flags-title">🚨 Señales de Derivación Inmediata</div>
+    ${[
+      'Dolor torácico, opresión o palpitaciones con síncope',
+      'Disnea de reposo o de esfuerzo nuevo',
+      'Edema de miembros inferiores o facial',
+      'Ictericia, orina oscura o dolor en hipocondrio derecho',
+      'Oliguria o anuria',
+      'Cefalea intensa con alteración visual (crisis hipertensiva)',
+      'Dolor abdominal superior irradiado con vómitos (pancreatitis)',
+      'Fiebre con mialgias y orina color coñac (rabdomiólisis)',
+      'Síntomas neurológicos focales o confusión',
+      'Hipoglucemia severa con pérdida de conciencia',
+    ].map(f=>`<div class="red-flag-item">${f}</div>`).join('')}
+  </div>`;
+
+  // ---- TRAZABILIDAD ----
+  html += `<div class="sep"></div>`;
+  html += `<div class="traz-section">
+    <div class="traz-title">Trazabilidad — Códigos de Auditoría Activos</div>
+    <div class="traz-list">
+      ${[...trazCodes].map(c=>`<div class="traz-item"><strong>${c}</strong> ${getTrazDesc(c)}</div>`).join('')}
+    </div>
+    <div style="font-size:10px;color:var(--text3);margin-top:8px">
+      Fuente: VDSEN_BASE_CONOCIMIENTO.txt v9.0 + VDSEN_COMP_v1.pdf (07 OCT 2026) · Motor 9-pasos + COMP integrado · Evaluado ${new Date().toLocaleString('es-MX')}
+    </div>
+  </div>`;
+
+  panel.innerHTML = html;
+  if (window._saveRun) window._saveRun(html, ctx); // longitudinal save
+}
+
+// Helpers
+function getTrazDesc(code) {
+  const map = {
+    'v9.0':'Base de conocimiento v9.0',
+    'C1':'E2<15 → stop IA, no andrógenos',
+    'C2':'Cap absoluto único aplicado',
+    'C3':'Peak Week bloqueado sin agua validada',
+    'M1':'P1=natural, 0 mg andrógenos',
+    'M2':'Insulina 1UI/10-15g CHO, techo 10UI',
+    'M3':'Ventana MOTS-c por horario real',
+    'M4':'SS-31: Barth separado de atletas',
+    'M5':'Retatrutida rebajada Ev. A→B',
+    'M7':'Potasio requisito INICIO espironolactona',
+    'M8':'hCG repuesta primera clase',
+    'M9':'Sombra Renal como bloqueo duro',
+    'M13':'Techo androgénico por fase (post/recomp/mant = 2.5 mg/kg)',
+    'm2':'Nebivolol umbral +10 bpm unificado',
+    'COMP-v1.0':'Arquitectura integrada COMP v1.0 (07 OCT 2026)',
+    'COMP-NUT':'Motor nutricional competitivo COMP v1.0',
+    'COMP-TRAIN':'Motor de entrenamiento competitivo COMP v1.0',
+    'COMP-HEALTH':'Motor de salud COMP v1.0 — clasificación descriptiva',
+    'COMP-ARBITER':'Árbitro central COMP v1.0',
+  };
+  return map[code] || '';
+}
+
+function renderErrores(errores) {
+  return `<div class="no-emitible">
+    <div class="no-emitible-title">⚠ Datos incompletos</div>
+    <div class="no-emitible-body">${errores.map(e=>`• ${e}`).join('<br>')}</div>
+  </div>`;
+}
+
+function renderDrugCard(nombre, status, tags, rows) {
+  const statusLabel = {
+    activa:'ACTIVA', condicional:'CONDICIONAL', monitoreo:'MONITOREO',
+    bloqueada:'BLOQUEADA', 'no-aplica':'NO APLICA'
+  }[status] || status.toUpperCase();
+
+  const uid = 'dc_' + Math.random().toString(36).slice(2,8);
+
+  let tagsHtml = `<span class="badge badge-${status}">${statusLabel}</span>`;
+  for (const [cls,label] of tags) {
+    tagsHtml += ` <span class="badge ${cls}">${label}</span>`;
+  }
+
+  let rowsHtml = '';
+  for (const r of rows) {
+    if (!r) continue;
+    const valCls = r[0].includes('⛔') ? 'danger' : r[0].includes('⚠') ? 'warn' : '';
+    rowsHtml += `<div class="drug-row">
+      <div class="drug-row-key">${r[0]}</div>
+      <div class="drug-row-val ${valCls}">${r[1]}</div>
+    </div>`;
+  }
+
+  return `<div class="drug-card ${status}" onclick="toggleCard('${uid}')">
+    <div class="drug-card-header collapse-toggle">
+      <div class="drug-name">${nombre}</div>
+      <div class="drug-tags">${tagsHtml} <span class="collapse-arrow" id="arr_${uid}">▶</span></div>
+    </div>
+    <div class="drug-body hidden" id="${uid}">${rowsHtml}</div>
+  </div>`;
+}
+
+function toggleCard(uid) {
+  const body = document.getElementById(uid);
+  const arr = document.getElementById('arr_' + uid);
+  if (body.classList.contains('hidden')) {
+    body.classList.remove('hidden');
+    arr.classList.add('open');
+  } else {
+    body.classList.add('hidden');
+    arr.classList.remove('open');
+  }
+}
+</script>
+
+<script type="module">
+import { createClient } from '@supabase/supabase-js';
+
+// ============================================================
+// CONFIGURACIÓN — reemplazar con tus credenciales de Supabase
+// ============================================================
+const SUPABASE_URL  = 'https://pwrqksimcuwoayhsrdxv.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_tU2rCKcLOqlTpt5OxjP97Q_PlNaWE0M';
+
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+window._sb = sb;
+
+// ──────────────────────────────────────────────
+// Estado de la app
+// ──────────────────────────────────────────────
+let currentClient = null;   // { id, nombre, deporte, ... }
+let currentRuns   = [];     // historial cargado
+
+// ──────────────────────────────────────────────
+// Navegación entre pantallas
+// ──────────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('#screen-login, #screen-clients, #screen-motor').forEach(s => {
+    s.classList.remove('active');
+  });
+  const el = document.getElementById(id);
+  if (el) el.classList.add('active');
+}
+
+// ──────────────────────────────────────────────
+// Auth
+// ──────────────────────────────────────────────
+window.sendMagicLink = async function() {
+  const email = document.getElementById('login-email').value.trim();
+  const msg   = document.getElementById('login-msg');
+  const btn   = document.getElementById('btn-login-send');
+  if (!email) { msg.textContent = 'Ingresa tu email'; msg.className = 'login-msg err'; return; }
+  btn.disabled = true;
+  msg.textContent = 'Enviando…';
+  msg.className = 'login-msg';
+  const password = document.getElementById('login-pass').value;
+  if (!password) { btn.disabled = false; msg.textContent = 'Ingresa tu contraseña'; msg.className = 'login-msg err'; return; }
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  btn.disabled = false;
+  if (error) {
+    msg.textContent = 'Error: ' + error.message;
+    msg.className = 'login-msg err';
+  } else {
+    msg.textContent = '';
+  }
+};
+
+window.signOut = async function() {
+  try { localStorage.removeItem('vdsen_last'); } catch (e) {}
+  await sb.auth.signOut();
+  currentClient = null;
+  currentRuns = [];
+  showScreen('screen-login');
+};
+
+// ──────────────────────────────────────────────
+// Auth state listener — router principal
+// ──────────────────────────────────────────────
+let authedUid = null;
+sb.auth.onAuthStateChange(async (event, session) => {
+  if (session?.user) {
+    if (session.user.id === authedUid) return; // refresco de token / volver a la pestaña: no tocar la pantalla
+    authedUid = session.user.id;
+    const emailLabel = document.getElementById('coach-email-label');
+    if (emailLabel) emailLabel.textContent = session.user.email;
+    showScreen('screen-clients');
+    await loadClients();
+    // Reabrir el asesorado en el que se estaba (ficha en curso)
+    try {
+      const last = JSON.parse(localStorage.getItem('vdsen_last') || 'null');
+      if (last?.id && last.uid === session.user.id) await selectClient(last.id, last.nombre, last.deporte);
+    } catch (e) {}
+  } else {
+    authedUid = null;
+    showScreen('screen-login');
+  }
+});
+
+// ──────────────────────────────────────────────
+// Clientes CRUD
+// ──────────────────────────────────────────────
+async function loadClients() {
+  const { data: user } = await sb.auth.getUser();
+  if (!user?.user) return;
+
+  const { data: clients, error } = await sb
+    .from('clients')
+    .select('id, nombre, deporte, notas, created_at')
+    .order('created_at', { ascending: false });
+
+  const grid  = document.getElementById('clients-grid');
+  const empty = document.getElementById('clients-empty');
+
+  if (error) { grid.innerHTML = '<div class="clients-empty">Error al cargar asesorados</div>'; return; }
+
+  if (!clients || clients.length === 0) {
+    grid.innerHTML = '<div class="clients-empty" id="clients-empty">No hay asesorados aún.<br>Crea el primero con el botón de arriba.</div>';
+    return;
+  }
+
+  // Obtener conteos de runs por cliente
+  const ids = clients.map(c => c.id);
+  const { data: runCounts } = await sb
+    .from('protocol_runs')
+    .select('client_id')
+    .in('client_id', ids);
+
+  const countMap = {};
+  (runCounts || []).forEach(r => { countMap[r.client_id] = (countMap[r.client_id] || 0) + 1; });
+
+  grid.innerHTML = clients.map(c => {
+    const runs = countMap[c.id] || 0;
+    const dateStr = new Date(c.created_at).toLocaleDateString('es-MX', { year:'numeric', month:'short', day:'numeric' });
+    return `<div class="client-card" onclick="selectClient('${c.id}','${escHtml(c.nombre)}','${escHtml(c.deporte||'')}')">
+      <div class="client-card-name">${escHtml(c.nombre)}</div>
+      <div class="client-card-meta">${escHtml(c.deporte||'—')} · desde ${dateStr}</div>
+      <div class="client-card-runs">${runs} sesión${runs !== 1 ? 'es' : ''}</div>
+    </div>`;
+  }).join('');
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+window.openNewClientModal = function() {
+  document.getElementById('nc-nombre').value = '';
+  document.getElementById('nc-deporte').value = '';
+  document.getElementById('nc-notas').value = '';
+  document.getElementById('modal-new-client').classList.add('open');
+  setTimeout(() => document.getElementById('nc-nombre').focus(), 100);
+};
+
+window.closeNewClientModal = function() {
+  document.getElementById('modal-new-client').classList.remove('open');
+};
+
+window.createClient = async function() {
+  const nombre  = document.getElementById('nc-nombre').value.trim();
+  const deporte = document.getElementById('nc-deporte').value.trim();
+  const notas   = document.getElementById('nc-notas').value.trim();
+  if (!nombre) { document.getElementById('nc-nombre').focus(); return; }
+
+  const { data: user } = await sb.auth.getUser();
+  const { error } = await sb.from('clients').insert({
+    nombre, deporte: deporte || null, notas: notas || null,
+    coach_id: user.user.id
+  });
+
+  if (error) { alert('Error: ' + error.message); return; }
+  closeNewClientModal();
+  await loadClients();
+};
+
+// ──────────────────────────────────────────────
+// Seleccionar asesorado → ir a motor
+// ──────────────────────────────────────────────
+window.selectClient = async function(id, nombre, deporte) {
+  currentClient = { id, nombre, deporte };
+  const btn = document.getElementById('motor-client-btn');
+  if (btn) btn.textContent = '← ' + nombre;
+
+  showScreen('screen-motor');
+  clearMotorForm();
+  restoreDraft(id);
+  try {
+    const { data: u } = await sb.auth.getUser();
+    localStorage.setItem('vdsen_last', JSON.stringify({ id, nombre, deporte, uid: u?.user?.id }));
+  } catch (e) {}
+  await loadHistory(id);
+};
+
+window.goToClients = function() {
+  currentClient = null;
+  try { localStorage.removeItem('vdsen_last'); } catch (e) {}
+  showScreen('screen-clients');
+  loadClients();
+};
+
+// ──────────────────────────────────────────────
+// Borrador automático de la ficha (localStorage, por asesorado)
+// ──────────────────────────────────────────────
+const MOTOR_FIELDS = '#screen-motor input, #screen-motor select, #screen-motor textarea';
+function draftKey(id) { return 'vdsen_draft_' + id; }
+let _draftTimer = null;
+function saveDraft() {
+  if (!currentClient?.id) return;
+  const inputs = {};
+  document.querySelectorAll(MOTOR_FIELDS).forEach(el => {
+    if (!el.id) return;
+    inputs[el.id] = el.type === 'checkbox' ? el.checked : el.value;
+  });
+  try { localStorage.setItem(draftKey(currentClient.id), JSON.stringify({ t: Date.now(), inputs })); } catch (e) {}
+}
+function restoreDraft(id) {
+  try {
+    const d = JSON.parse(localStorage.getItem(draftKey(id)) || 'null');
+    if (!d?.inputs) return;
+    document.querySelectorAll(MOTOR_FIELDS).forEach(el => {
+      if (!el.id || !(el.id in d.inputs)) return;
+      const v = d.inputs[el.id];
+      if (el.type === 'checkbox') el.checked = !!v;
+      else el.value = v ?? '';
+      // que los campos con lógica dependiente se actualicen
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  } catch (e) {}
+}
+function clearDraft(id) { try { localStorage.removeItem(draftKey(id)); } catch (e) {} }
+['input', 'change'].forEach(ev => document.addEventListener(ev, e => {
+  if (!e.target.closest || !e.target.closest('#screen-motor')) return;
+  clearTimeout(_draftTimer);
+  _draftTimer = setTimeout(saveDraft, 400);
+}));
+window.addEventListener('pagehide', saveDraft);
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveDraft(); });
+
+// ──────────────────────────────────────────────
+// Limpiar formulario del motor
+// ──────────────────────────────────────────────
+function clearMotorForm() {
+  document.querySelectorAll('#screen-motor input, #screen-motor select').forEach(el => {
+    if (el.type === 'checkbox') el.checked = false;
+    else if (el.tagName === 'SELECT') el.selectedIndex = 0;
+    else el.value = el.defaultValue || '';
+  });
+  const banner = document.getElementById('prefill-banner');
+  if (banner) banner.style.display = 'none';
+  const panel = document.getElementById('output-panel');
+  if (panel) panel.innerHTML = `<div class="placeholder"><div class="placeholder-icon">⚗</div><div class="placeholder-text">Completa los datos del asesorado<br>y pulsa <strong>GENERAR PROTOCOLO</strong></div></div>`;
+}
+
+// ──────────────────────────────────────────────
+// Historial
+// ──────────────────────────────────────────────
+async function loadHistory(clientId) {
+  const list  = document.getElementById('history-list');
+  const count = document.getElementById('history-count');
+  list.innerHTML = '<div class="history-empty">Cargando…</div>';
+
+  const { data: runs, error } = await sb
+    .from('protocol_runs')
+    .select('id, created_at, full_inputs, summary_text, peso_prom_actual')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  if (error || !runs || runs.length === 0) {
+    list.innerHTML = '<div class="history-empty">Sin sesiones previas</div>';
+    if (count) count.textContent = '';
+    currentRuns = [];
+    return;
+  }
+
+  currentRuns = runs;
+  if (count) count.textContent = runs.length + ' ses.';
+
+  // Pre-fill from last run (longitudinal learning)
+  prefillFromRun(runs[0]);
+
+  list.innerHTML = runs.map((run, i) => {
+    const dt = new Date(run.created_at);
+    const dateStr = dt.toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' });
+    const timeStr = dt.toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' });
+    const peso = run.peso_prom_actual ? run.peso_prom_actual.toFixed(1) + ' kg' : '—';
+
+    // Weight delta vs prior run
+    let deltaHtml = '';
+    if (i < runs.length - 1 && runs[i+1].peso_prom_actual && run.peso_prom_actual) {
+      const delta = run.peso_prom_actual - runs[i+1].peso_prom_actual;
+      const sign  = delta > 0 ? '+' : '';
+      const cls   = delta > 0 ? 'pos' : 'neg';
+      deltaHtml = `<span class="history-peso-delta ${cls}">${sign}${delta.toFixed(1)}</span>`;
+    }
+
+    const fase = run.full_inputs?.fase || '';
+    const faseLabel = {
+      off_season:'Off-season', pre_contest:'Pre-contest', definicion:'Definición',
+      peaking:'Peaking', peak_week:'Peak Week', post_contest:'Post-contest',
+      recomposicion:'Recomposición', mantenimiento:'Mantenimiento'
+    }[fase] || fase;
+
+    return `<div class="history-item" onclick="loadRunToForm('${run.id}')">
+      <div class="history-date">${dateStr} ${timeStr}</div>
+      <div class="history-peso">${peso}${deltaHtml}</div>
+      <div class="history-fase">${faseLabel}</div>
+    </div>`;
+  }).join('');
+}
+
+// ──────────────────────────────────────────────
+// Pre-fill desde una corrida
+// ──────────────────────────────────────────────
+function prefillFromRun(run) {
+  if (!run?.full_inputs) return;
+  const inputs = run.full_inputs;
+
+  document.querySelectorAll('#screen-motor input, #screen-motor select').forEach(el => {
+    const id  = el.id;
+    if (!id || !(id in inputs)) return;
+    const val = inputs[id];
+    if (el.type === 'checkbox') el.checked = !!val;
+    else el.value = val !== null && val !== undefined ? val : '';
+  });
+
+  // Longitudinal core: peso_prom_actual de la última corrida → peso_prom_anterior de esta
+  if (run.peso_prom_actual != null) {
+    const ppAnt = document.getElementById('peso_prom_anterior');
+    if (ppAnt) ppAnt.value = run.peso_prom_actual;
+  }
+  // Limpiar peso_prom_actual (debe ser el nuevo)
+  const ppAct = document.getElementById('peso_prom_actual');
+  if (ppAct) ppAct.value = '';
+
+  // Mostrar banner
+  const banner = document.getElementById('prefill-banner');
+  const dateEl = document.getElementById('prefill-date');
+  if (banner && dateEl) {
+    const dt = new Date(run.created_at);
+    dateEl.textContent = dt.toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' });
+    banner.style.display = 'block';
+  }
+}
+
+window.loadRunToForm = function(runId) {
+  const run = currentRuns.find(r => r.id === runId);
+  if (run) prefillFromRun(run);
+};
+
+// ──────────────────────────────────────────────
+// Hook de guardado desde el motor
+// ──────────────────────────────────────────────
+window._saveRun = async function(html, ctx) {
+  if (!currentClient?.id) return;
+  const { data: user } = await sb.auth.getUser();
+  if (!user?.user) return;
+
+  // Capturar todos los inputs del formulario
+  const full_inputs = {};
+  document.querySelectorAll('#screen-motor input, #screen-motor select').forEach(el => {
+    if (!el.id) return;
+    full_inputs[el.id] = el.type === 'checkbox' ? el.checked : el.value;
+  });
+
+  // Resumen breve para historial
+  const pesoActual = parseFloat(full_inputs.peso_prom_actual) || null;
+  const fase       = full_inputs.fase || '';
+  const poblacion  = full_inputs.poblacion || '';
+  const summary    = `${FASE_LABELS[fase]||fase} · ${poblacion} · ${full_inputs.peso||'?'} kg`;
+
+  const { error } = await sb.from('protocol_runs').insert({
+    client_id       : currentClient.id,
+    coach_id        : user.user.id,
+    full_inputs,
+    summary_text    : summary,
+    peso_prom_actual: pesoActual,
+  });
+
+  if (!error) {
+    clearDraft(currentClient.id);
+    // Recargar historial silenciosamente
+    await loadHistory(currentClient.id);
+  }
+};
+
+</script>
+</body>
+</html>

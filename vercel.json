@@ -4,6 +4,7 @@
     { "source": "/cliente", "destination": "/vdsen-cliente.html" },
     { "source": "/ficha", "destination": "/ficha-publica.html" }
   ],
+  "crons": [{ "path": "/api/autonomous-progression-trigger", "schedule": "0 9 * * *" }],
   "headers": [
     {
       "source": "/references/(.*)",

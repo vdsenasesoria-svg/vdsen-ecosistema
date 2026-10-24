@@ -1,0 +1,226 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "runtime_sha",
+    "production_deployment",
+    "rollback_deployment",
+    "rollback_runtime_sha",
+    "target_deployment",
+    "production_project",
+    "vercel_team",
+    "production_origin",
+    "firebase_project",
+    "numeric_apply_enabled",
+    "rules_transition",
+    "required_index",
+    "release_status",
+    "preconditions",
+    "observation_source",
+    "release_mode"
+  ],
+  "properties": {
+    "runtime_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "production_deployment": {
+      "type": "string"
+    },
+    "rollback_deployment": {
+      "type": "string"
+    },
+    "rollback_runtime_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "target_deployment": {
+      "type": "string"
+    },
+    "production_project": {
+      "const": "prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN"
+    },
+    "vercel_team": {
+      "const": "team_VZc5H7Q1DBIJ3g0mwrSBz1o8"
+    },
+    "production_origin": {
+      "const": "https://vdsen-ecosistema.vercel.app"
+    },
+    "firebase_project": {
+      "const": "vdsen-ecosistema"
+    },
+    "numeric_apply_enabled": {
+      "const": false
+    },
+    "rules_transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target_sha256",
+        "order",
+        "rollback_order",
+        "rollback_sha256",
+        "rollback_source_path"
+      ],
+      "properties": {
+        "target_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "order": {
+          "const": "verify_current_app_then_rules"
+        },
+        "rollback_order": {
+          "const": "rules_then_app"
+        },
+        "rollback_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "rollback_source_path": {
+          "type": "string",
+          "pattern": "^\\.release/rollback/firestore\\.rules\\.[0-9a-f]{64}\\.rules$"
+        }
+      }
+    },
+    "required_index": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "collectionGroup",
+        "queryScope",
+        "fields"
+      ],
+      "properties": {
+        "collectionGroup": {
+          "const": "plans_backup"
+        },
+        "queryScope": {
+          "const": "COLLECTION"
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "fieldPath",
+              "order"
+            ],
+            "properties": {
+              "fieldPath": {
+                "type": "string"
+              },
+              "order": {
+                "enum": [
+                  "ASCENDING",
+                  "DESCENDING"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "release_status": {
+      "enum": [
+        "PENDING_EXTERNAL_SETUP",
+        "READY"
+      ]
+    },
+    "preconditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entitlements_verified",
+        "legacy_data_reviewed",
+        "preview_production_env_verified",
+        "human_ux_approved"
+      ],
+      "properties": {
+        "entitlements_verified": {
+          "type": "boolean"
+        },
+        "legacy_data_reviewed": {
+          "type": "boolean"
+        },
+        "preview_production_env_verified": {
+          "type": "boolean"
+        },
+        "human_ux_approved": {
+          "type": "boolean"
+        }
+      }
+    },
+    "observation_source": {
+      "type": "string"
+    },
+    "release_mode": {
+      "enum": ["rules_only", "app_only"]
+    },
+    "app_release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime_sha",
+        "deployment",
+        "promotion_model",
+        "previous_deployment",
+        "previous_runtime_sha",
+        "verified_surfaces",
+        "source_release_run",
+        "completed_at"
+      ],
+      "properties": {
+        "runtime_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "deployment": {
+          "type": "string"
+        },
+        "promotion_model": {
+          "const": "staged_production"
+        },
+        "previous_deployment": {
+          "type": "string"
+        },
+        "previous_runtime_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "verified_surfaces": {
+          "type": "number",
+          "minimum": 1
+        },
+        "source_release_run": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "completed_at": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "if": {
+    "type": "object",
+    "properties": {
+      "release_mode": {
+        "const": "app_only"
+      }
+    },
+    "required": [
+      "release_mode"
+    ]
+  },
+  "then": {
+    "type": "object",
+    "required": [
+      "app_release"
+    ]
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VDSEN reviewed release intent, not live authority"
+}

@@ -1,11 +1,67 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // ── T537: canonical progression authority boundary ─────────────────────────────────────────────────────────────
+    // The athlete owns EXECUTION truth (entries, units, history, week, consumption receipts). The canonical progression state below
+    // (records, next-exposure overlays, Monitor summaries) is PRESCRIPTION authority: only the OWNER Coach (clients/{uid}.coachId)
+    // may create or change it. Rules cannot read the app's NUMERIC_APPLY_ENABLED flag: they are one layer of defense in depth
+    // next to the runtime flag, the canary scope, the activation guard and the transition matrix in the consumer.
+    function isCoachUser() {
+      return request.auth != null && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
+    }
+    function ownsClient(clientId) {
+      return isCoachUser()
+        && get(/databases/$(database)/documents/clients/$(clientId)).data.get('coachId', '') == request.auth.uid;
+    }
+    // T538 tenant helpers. Tenant authority of a client = clients/{clientId}.coachId. `isCoachUser()` alone (a document any signed-in
+    // user can create for itself) NEVER grants access to another coach's data.
+    function isSelfOrOwnerCoach(clientId) {
+      return request.auth != null && (request.auth.uid == clientId || ownsClient(clientId));
+    }
+    function canonicalKeys() {
+      return ['progressionApplications', 'nextExposureOverlays', 'progressionApplicationSummary'];
+    }
+    function createsCanonical() {
+      return request.resource.data.keys().hasAny(canonicalKeys());
+    }
+    function changesCanonical() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(canonicalKeys());
+    }
+    function holdsCanonical() {
+      return resource.data.keys().hasAny(canonicalKeys());
+    }
+    // Consumption acknowledgement: an append-only map keyed by record key. Existing receipts can never be changed or removed.
+    function receiptsAppendOnly() {
+      return !('consumptionReceipts' in resource.data)
+        || ('consumptionReceipts' in request.resource.data
+            && request.resource.data.consumptionReceipts.diff(resource.data.consumptionReceipts).changedKeys().size() == 0
+            && request.resource.data.consumptionReceipts.diff(resource.data.consumptionReceipts).removedKeys().size() == 0);
+    }
+    function receiptsBounded() {
+      return !('consumptionReceipts' in request.resource.data) || request.resource.data.consumptionReceipts.size() <= 200;
+    }
+    // T539: server-managed Coach authority fields. Only the Admin SDK / trusted server may create, change or remove them (Admin SDK bypasses
+    // these rules). `apiAccessEnabled` = entitlement to the paid / generative API endpoints (missing or false = no access).
+    function protectedCoachKeys() {
+      return ['apiAccessEnabled'];
+    }
     match /coaches/{coachId} {
-      allow read, write: if request.auth != null && request.auth.uid == coachId;
+      allow read: if request.auth != null && request.auth.uid == coachId;
+      // T538: an existing ATHLETE account (it has a clients/{uid} document) cannot promote itself. Registration of a brand-new coach account
+      // stays open (product design): it is a COACH APP account, NOT an API entitlement, and grants no access to other coaches' tenants.
+      allow create: if request.auth != null && request.auth.uid == coachId
+        && !exists(/databases/$(database)/documents/clients/$(coachId))
+        && !request.resource.data.keys().hasAny(protectedCoachKeys());
+      // Ordinary profile updates only: a coach can neither set, flip nor drop a server-managed field.
+      allow update: if request.auth != null && request.auth.uid == coachId
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(protectedCoachKeys());
+      // Deleting (then re-creating) the document must not be a way to shed or obtain an entitlement.
+      allow delete: if request.auth != null && request.auth.uid == coachId && !resource.data.keys().hasAny(protectedCoachKeys());
     }
     match /clients/{clientId} {
-      allow read: if request.auth != null && (request.auth.uid == clientId || exists(/databases/$(database)/documents/coaches/$(request.auth.uid)));
+      // T538: the athlete or its OWNER coach. Unclaimed (no coachId) clients are readable by nobody but the athlete; a coach can still CLAIM
+      // one by uid (update rule below) and reads it afterwards. (An OR branch on `coachId == ''` would let unconstrained list queries through.)
+      allow read: if request.auth != null && (request.auth.uid == clientId || resource.data.get('coachId', '') == request.auth.uid);
       // Coach: crear cliente con su propio coachId (no puede crear bajo otro coach)
       allow create: if request.auth != null
         && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
@@ -15,11 +71,8 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
         && resource.data.coachId == request.auth.uid
         && request.resource.data.coachId == resource.data.coachId;
-      // Coach: reclamar cliente LEGACY (coachId ausente o vacío) — solo puede asignarse a sí mismo
-      allow update: if request.auth != null
-        && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
-        && (resource.data.coachId == null || resource.data.get('coachId', '') == '')
-        && request.resource.data.coachId == request.auth.uid;
+      // T539: the legacy "claim an unowned client" branch was REMOVED. coachId is assigned only at creation and is immutable afterwards; recovering an
+      // unowned legacy client is an ADMIN (Admin SDK) operation until a signed invite / token flow exists.
       // Coach: eliminar solo clientes propios
       allow delete: if request.auth != null
         && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
@@ -32,7 +85,14 @@ service cloud.firestore {
     }
     match /exercises/{exerciseId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
+      // T537: a coach may only create exercises in its own namespace and change/delete its own (or claim a legacy one without coachId).
+      // Exercise fields such as loadIncrement feed the progression equipment resolver, so another coach can never edit them.
+      allow create: if isCoachUser() && request.resource.data.coachId == request.auth.uid;
+      allow update: if isCoachUser()
+        && (resource.data.get('coachId', '') == request.auth.uid
+            || (resource.data.get('coachId', '') == '' && request.resource.data.coachId == request.auth.uid))
+        && request.resource.data.get('coachId', '') == request.auth.uid;
+      allow delete: if isCoachUser() && resource.data.get('coachId', '') == request.auth.uid;
     }
     match /plans/{planId} {
       // Coach lee solo sus propios planes; cliente lee planes donde es el clientId.
@@ -40,26 +100,34 @@ service cloud.firestore {
         (exists(/databases/$(database)/documents/coaches/$(request.auth.uid)) && resource.data.coachId == request.auth.uid)
         || resource.data.clientId == request.auth.uid
       );
-      // Crear plan: coach autenticado, coachId del nuevo doc debe ser el uid del coach,
-      // y no puede incluir farmacologia ni pharmacoPlan.
+      // Crear plan: coach autenticado, coachId del nuevo doc debe ser el uid del coach, y (T552) clientId debe referenciar un cliente EXISTENTE
+      // de ese mismo coach (ownsClient): un doc de coach autocreado ya no puede entregar un plan a un cliente ajeno (el cliente lee los planes
+      // cuyo clientId == su uid). No puede incluir farmacologia ni pharmacoPlan.
       allow create: if request.auth != null
         && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
         && request.resource.data.coachId == request.auth.uid
+        && request.resource.data.get('clientId', null) is string
+        && request.resource.data.clientId != ''
+        && ownsClient(request.resource.data.clientId)
         && !('farmacologia'  in request.resource.data)
         && !('pharmacoPlan'  in request.resource.data);
-      // Actualizar plan: solo el coach dueño Y solo para planes no-aprobados (manual/legacy).
-      // Los planes draft_approved y active son inmutables — no se permiten updates de contenido.
-      // Si resource.data.status está ausente (plan legacy sin campo status), se permite.
+      // Actualizar plan (T547): SOLO el coach dueño puede revisar la prescripción de su plan, INCLUIDO el plan ACTIVO (el editor del Coach,
+      // quick-add, "actualizar plan" y extender semanas escriben todos sobre el plan activo; la regla T538 que lo hacía inmutable rompía esas rutas
+      // con PERMISSION_DENIED). Inmutables en esta ruta: coachId y clientId (propiedad / tenant). Un plan draft_approved que NO es el activo del
+      // cliente sigue siendo la fuente aprobada inmutable; un draft_approved que SÍ es el activo (clients/{clientId}.activePlanId == planId) es editable.
       allow update: if request.auth != null
         && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
         && resource.data.coachId == request.auth.uid
-        && resource.data.status != 'draft_approved'
-        && resource.data.status != 'active';
-      // Coach: reasignar clientId (migración de UID) — solo este campo, sin restricción de status
+        && request.resource.data.get('coachId', '') == resource.data.coachId
+        && request.resource.data.get('clientId', '') == resource.data.get('clientId', '')
+        && (resource.data.get('status', '') != 'draft_approved'
+            || get(/databases/$(database)/documents/clients/$(resource.data.clientId)).data.get('activePlanId', '') == planId);
+      // Coach: reasignar clientId (migración de UID) — solo este campo y SOLO hacia un cliente del MISMO coach (sin adopción cross-tenant)
       allow update: if request.auth != null
         && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
         && resource.data.coachId == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clientId']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clientId'])
+        && ownsClient(request.resource.data.clientId);
       // Eliminar plan: solo el coach dueño y solo si no está aprobado/activo.
       // El historial de planes aprobados se preserva; no se permite delete desde el flujo normal.
       allow delete: if request.auth != null
@@ -68,31 +136,40 @@ service cloud.firestore {
         && resource.data.status != 'active';
     }
     match /templates/{templateId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
+      // T538: templates are the private library of the coach that created them.
+      allow read, delete: if isCoachUser() && resource.data.get('coachId', '') == request.auth.uid;
+      allow create: if isCoachUser() && request.resource.data.coachId == request.auth.uid;
+      allow update: if isCoachUser() && resource.data.get('coachId', '') == request.auth.uid && request.resource.data.coachId == request.auth.uid;
     }
-    match /sessions/{sessionId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
-    }
+    // T538: `sessions` had no readers or writers in any app and was open to every signed-in user: closed (default deny).
     match /compendio/{docId} {
-      allow read, write: if request.auth != null;
+      // T538: the compendium is the private extraction of the coach whose uid is the document id.
+      allow read, write: if isCoachUser() && request.auth.uid == docId;
     }
     match /logs/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-      allow read, write: if request.auth != null && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
-      // Sub-colección de rotación por mesociclo (FASE 36 — T1 dual-write)
-      // Mismo aislamiento: solo el propio cliente o cualquier coach autenticado.
+      // T538: the athlete or its OWNER coach only (no other coach: execution evidence feeds canonical progression).
+      allow read: if isSelfOrOwnerCoach(userId);
+      // ATHLETE: execution fields only. Canonical progression fields can neither be created, changed, removed nor deleted with.
+      allow create: if request.auth != null && request.auth.uid == userId && !createsCanonical();
+      allow update: if request.auth != null && request.auth.uid == userId && !changesCanonical();
+      allow delete: if request.auth != null && request.auth.uid == userId && !holdsCanonical();
+      // OWNER COACH: every field (including canonical progression state); nobody else.
+      allow create, update, delete: if ownsClient(userId);
+      // Sub-colección de rotación por mesociclo: same boundary + the athlete's append-only consumption receipts.
       match /mesos/{planId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-        allow read, write: if request.auth != null && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
+        allow read: if isSelfOrOwnerCoach(userId);
+        allow create: if request.auth != null && request.auth.uid == userId && !createsCanonical() && receiptsBounded();
+        allow update: if request.auth != null && request.auth.uid == userId && !changesCanonical() && receiptsAppendOnly() && receiptsBounded();
+        allow delete: if request.auth != null && request.auth.uid == userId && !holdsCanonical();
+        allow create, update, delete: if ownsClient(userId);
       }
     }
+    // T538: onboarding / renewal forms are keyed by the athlete uid: only that athlete or its owner coach.
     match /fichas_onboarding/{docId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSelfOrOwnerCoach(docId);
     }
     match /fichas_renovacion/{docId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSelfOrOwnerCoach(docId);
     }
     // Índice público celular → email para permitir login por teléfono a
     // clientes cuya cuenta de Auth quedó registrada con correo real.
@@ -100,7 +177,12 @@ service cloud.firestore {
     // La escritura la hace el coach al migrar/crear un cliente.
     match /phone_index/{phoneDigits} {
       allow read: if true;
-      allow write: if request.auth != null && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
+      // T538: an entry may only be created / redirected / deleted by the owner coach of the client it points to (and of the client it
+      // pointed to before): no coach can hijack another coach's phone login.
+      allow create: if isCoachUser() && ownsClient(request.resource.data.uid);
+      allow update: if isCoachUser() && ownsClient(request.resource.data.uid)
+        && (resource.data.get('uid', '') == '' || ownsClient(resource.data.uid));
+      allow delete: if isCoachUser() && (resource.data.get('uid', '') == '' || ownsClient(resource.data.uid));
     }
     // Fichas públicas: un prospecto llena la ficha en blanco (sin cuenta)
     // desde /ficha?c=<coachId>. Cualquiera puede CREAR (debe traer coachId
@@ -113,13 +195,14 @@ service cloud.firestore {
       allow create: if request.resource.data.coachId is string
                     && request.resource.data.nombre is string
                     && request.resource.data.nombre.size() > 0;
-      allow read, update, delete: if request.auth != null
-                    && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
+      // T538: a prospect form is readable / manageable only by the coach it was sent to.
+      allow read, update, delete: if isCoachUser() && resource.data.get('coachId', '') == request.auth.uid;
     }
     // Backups de planes anteriores — acceso a cualquier coach autenticado
     match /plans_backup/{backupId} {
-      allow read, write: if request.auth != null
-        && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
+      // T538: backups carry the plan's coachId; a coach only sees and creates its own (queries must filter coachId == uid).
+      allow read, delete: if isCoachUser() && resource.data.get('coachId', '') == request.auth.uid;
+      allow create: if isCoachUser() && request.resource.data.coachId == request.auth.uid;
     }
   }
 }

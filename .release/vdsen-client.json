@@ -1,0 +1,56 @@
+{
+  "runtime_sha": "b5f53af5843f466528a4b95e5a3e52d6c8c77fb1",
+  "production_deployment": "dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw",
+  "rollback_deployment": "dpl_GfBVe46gHe3GSwkGx8yufoJLMLeB",
+  "rollback_runtime_sha": "c161fdbf291316bc960120f996a702e2e8696963",
+  "target_deployment": "dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw",
+  "production_project": "prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN",
+  "vercel_team": "team_VZc5H7Q1DBIJ3g0mwrSBz1o8",
+  "production_origin": "https://vdsen-ecosistema.vercel.app",
+  "firebase_project": "vdsen-ecosistema",
+  "numeric_apply_enabled": false,
+  "rules_transition": {
+    "target_sha256": "ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6",
+    "order": "verify_current_app_then_rules",
+    "rollback_order": "rules_then_app",
+    "rollback_sha256": "bb4402e9b99d2d78c1f2867fa09bd75b89f9a88046189edfb0302b0635635f0b",
+    "rollback_source_path": ".release/rollback/firestore.rules.bb4402e9b99d2d78c1f2867fa09bd75b89f9a88046189edfb0302b0635635f0b.rules"
+  },
+  "required_index": {
+    "collectionGroup": "plans_backup",
+    "queryScope": "COLLECTION",
+    "fields": [
+      {
+        "fieldPath": "coachId",
+        "order": "ASCENDING"
+      },
+      {
+        "fieldPath": "clientId",
+        "order": "ASCENDING"
+      },
+      {
+        "fieldPath": "backedUpAt",
+        "order": "DESCENDING"
+      }
+    ]
+  },
+  "release_status": "READY",
+  "preconditions": {
+    "entitlements_verified": true,
+    "legacy_data_reviewed": true,
+    "preview_production_env_verified": true,
+    "human_ux_approved": true
+  },
+  "observation_source": "T596-R Client app-only release, run 40055779147 attempt 2: SUCCESS/VERIFIED, staged_production, 25 verified surfaces; build issue-115-brave-rc-20261024-01 observed on production. CLIENT_APP_RELEASE_ENABLED restored to false. Physical Brave Android acceptance remains pending (#115); Numeric Apply remains OFF (#124).",
+  "release_mode": "app_only",
+  "app_release": {
+    "runtime_sha": "b5f53af5843f466528a4b95e5a3e52d6c8c77fb1",
+    "deployment": "dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw",
+    "promotion_model": "staged_production",
+    "previous_deployment": "dpl_GfBVe46gHe3GSwkGx8yufoJLMLeB",
+    "previous_runtime_sha": "c161fdbf291316bc960120f996a702e2e8696963",
+    "verified_surfaces": 25,
+    "source_release_run": "40055779147",
+    "completed_at": "2026-10-24T03:38:01Z"
+  }
+}

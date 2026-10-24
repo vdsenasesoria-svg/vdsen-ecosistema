@@ -1,0 +1,103 @@
+{
+ "project": "vdsen-ecosistema-staging",
+ "plan": "real cloned Ayrton plan (7 days / 32 exercises / 80 sets)",
+ "note": "read-only scan; executes nothing",
+ "widths": {
+  "dark-320": {
+   "totals": {
+    "d": 7,
+    "e": 32,
+    "s": 80,
+    "pids": 32
+   },
+   "homeHorizontalScroll": false,
+   "daysWithIssues": 0,
+   "smallTargets": [],
+   "pageErrors": 0
+  },
+  "dark-360": {
+   "totals": {
+    "d": 7,
+    "e": 32,
+    "s": 80,
+    "pids": 32
+   },
+   "homeHorizontalScroll": false,
+   "daysWithIssues": 0,
+   "smallTargets": [],
+   "pageErrors": 0
+  },
+  "dark-375": {
+   "totals": {
+    "d": 7,
+    "e": 32,
+    "s": 80,
+    "pids": 32
+   },
+   "homeHorizontalScroll": false,
+   "daysWithIssues": 0,
+   "smallTargets": [],
+   "pageErrors": 0
+  },
+  "dark-390": {
+   "totals": {
+    "d": 7,
+    "e": 32,
+    "s": 80,
+    "pids": 32
+   },
+   "homeHorizontalScroll": false,
+   "daysWithIssues": 0,
+   "smallTargets": [],
+   "pageErrors": 0
+  },
+  "dark-414": {
+   "totals": {
+    "d": 7,
+    "e": 32,
+    "s": 80,
+    "pids": 32
+   },
+   "homeHorizontalScroll": false,
+   "daysWithIssues": 0,
+   "smallTargets": [],
+   "pageErrors": 0
+  },
+  "dark-430": {
+   "totals": {
+    "d": 7,
+    "e": 32,
+    "s": 80,
+    "pids": 32
+   },
+   "homeHorizontalScroll": false,
+   "daysWithIssues": 0,
+   "smallTargets": [],
+   "pageErrors": 0
+  },
+  "light-320": {
+   "totals": {
+    "d": 7,
+    "e": 32,
+    "s": 80,
+    "pids": 32
+   },
+   "homeHorizontalScroll": false,
+   "daysWithIssues": 0,
+   "smallTargets": [],
+   "pageErrors": 0
+  },
+  "light-390": {
+   "totals": {
+    "d": 7,
+    "e": 32,
+    "s": 80,
+    "pids": 32
+   },
+   "homeHorizontalScroll": false,
+   "daysWithIssues": 0,
+   "smallTargets": [],
+   "pageErrors": 0
+  }
+ }
+}

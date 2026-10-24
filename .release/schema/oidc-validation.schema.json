@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "repository",
+    "ref",
+    "gcp_project",
+    "release_service_account",
+    "configuration",
+    "oidc_auth",
+    "project_metadata_read",
+    "project_metadata_endpoint",
+    "project_metadata_http_status",
+    "project_metadata_error",
+    "firestore_index_metadata_read",
+    "firestore_index_metadata_endpoint",
+    "firestore_index_metadata_http_status",
+    "firestore_index_metadata_error",
+    "firebase_rules_metadata_read",
+    "firebase_rules_metadata_endpoint",
+    "firebase_rules_metadata_http_status",
+    "firebase_rules_metadata_error",
+    "vercel_project_read",
+    "vercel_project_endpoint",
+    "vercel_project_http_status",
+    "vercel_project_error",
+    "firestore_index_api_error_code",
+    "firestore_index_api_error_status",
+    "firestore_index_api_error_reason",
+    "firestore_index_api_error_field",
+    "vercel_api_error_code",
+    "vercel_api_error_scope_type",
+    "vercel_api_error_team_match",
+    "production_release_enabled",
+    "kill_switch_configuration",
+    "mutations_performed",
+    "least_privilege_verification",
+    "least_privilege_note",
+    "validation_status",
+    "error",
+    "timestamp"
+  ],
+  "properties": {
+    "repository": {
+      "const": "vdsenasesoria-svg/vdsen-ecosistema"
+    },
+    "ref": {
+      "const": "refs/heads/codex/client-app-next"
+    },
+    "gcp_project": {
+      "const": "vdsen-ecosistema"
+    },
+    "release_service_account": {
+      "const": "vdsen-release-bot@vdsen-ecosistema.iam.gserviceaccount.com"
+    },
+    "configuration": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "GAP"
+      ]
+    },
+    "oidc_auth": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "GAP"
+      ]
+    },
+    "project_metadata_read": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "GAP"
+      ]
+    },
+    "project_metadata_endpoint": {
+      "const": "GCP_PROJECT_METADATA"
+    },
+    "project_metadata_http_status": {
+      "type": ["number", "null"]
+    },
+    "project_metadata_error": {
+      "enum": ["HTTP_400", "HTTP_401", "HTTP_403", "HTTP_404", "HTTP_422", "HTTP_5XX", "HTTP_OTHER", "ASSERTION_MISMATCH", "TIMEOUT", "NETWORK_ERROR", "NONE"]
+    },
+    "firestore_index_metadata_read": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "GAP"
+      ]
+    },
+    "firestore_index_metadata_endpoint": {
+      "const": "FIRESTORE_INDEX_METADATA"
+    },
+    "firestore_index_metadata_http_status": {
+      "type": ["number", "null"]
+    },
+    "firestore_index_metadata_error": {
+      "enum": ["HTTP_400", "HTTP_401", "HTTP_403", "HTTP_404", "HTTP_422", "HTTP_5XX", "HTTP_OTHER", "ASSERTION_MISMATCH", "TIMEOUT", "NETWORK_ERROR", "NONE"]
+    },
+    "firebase_rules_metadata_read": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "GAP"
+      ]
+    },
+    "firebase_rules_metadata_endpoint": {
+      "enum": ["FIREBASE_RULES_RELEASE_METADATA", "FIREBASE_RULESET_METADATA"]
+    },
+    "firebase_rules_metadata_http_status": {
+      "type": ["number", "null"]
+    },
+    "firebase_rules_metadata_error": {
+      "enum": ["HTTP_400", "HTTP_401", "HTTP_403", "HTTP_404", "HTTP_422", "HTTP_5XX", "HTTP_OTHER", "ASSERTION_MISMATCH", "TIMEOUT", "NETWORK_ERROR", "NONE"]
+    },
+    "vercel_project_read": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "GAP"
+      ]
+    },
+    "vercel_project_endpoint": {
+      "const": "VERCEL_PROJECT_METADATA"
+    },
+    "vercel_project_http_status": {
+      "type": ["number", "null"]
+    },
+    "vercel_project_error": {
+      "enum": ["HTTP_400", "HTTP_401", "HTTP_403", "HTTP_404", "HTTP_422", "HTTP_5XX", "HTTP_OTHER", "ASSERTION_MISMATCH", "TIMEOUT", "NETWORK_ERROR", "NONE"]
+    },
+    "firestore_index_api_error_code": { "type": ["number", "null"] },
+    "firestore_index_api_error_status": { "enum": ["INVALID_ARGUMENT", "PERMISSION_DENIED", "FAILED_PRECONDITION", "UNAUTHENTICATED", "NOT_FOUND", "RESOURCE_EXHAUSTED", "UNAVAILABLE", "INTERNAL", "OUT_OF_RANGE", "ABORTED", "ALREADY_EXISTS", "DEADLINE_EXCEEDED", "UNIMPLEMENTED", "CANCELLED", "UNKNOWN", "OTHER", "ABSENT"] },
+    "firestore_index_api_error_reason": { "type": "string", "pattern": "^(ABSENT|OTHER|FIELD_VIOLATION|[A-Z][A-Z0-9_]{0,63})$" },
+    "firestore_index_api_error_field": { "type": "string", "pattern": "^(ABSENT|OTHER|[A-Za-z][A-Za-z0-9_.]{0,63})$" },
+    "vercel_api_error_code": { "enum": ["forbidden", "unauthorized", "invalid_token", "scope_mismatch", "team_scope_mismatch", "project_access_denied", "unknown", "ABSENT"] },
+    "vercel_api_error_scope_type": { "enum": ["team", "other", "ABSENT"] },
+    "vercel_api_error_team_match": { "enum": ["MATCH", "MISMATCH", "ABSENT"] },
+    "production_release_enabled": {
+      "type": "boolean"
+    },
+    "kill_switch_configuration": {
+      "enum": [
+        "EXPECTED_FALSE",
+        "TRUE",
+        "UNSET",
+        "INVALID"
+      ]
+    },
+    "mutations_performed": {
+      "const": false
+    },
+    "least_privilege_verification": {
+      "const": "GAP"
+    },
+    "least_privilege_note": {
+      "type": "string"
+    },
+    "validation_status": {
+      "enum": [
+        "PASS",
+        "FAIL"
+      ]
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+    }
+  }
+}

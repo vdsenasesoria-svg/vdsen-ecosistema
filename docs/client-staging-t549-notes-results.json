@@ -1,0 +1,280 @@
+{
+  "summary": {
+    "project": "vdsen-ecosistema-staging",
+    "checks": 53,
+    "failed": [],
+    "synthetic": true,
+    "viewports": [
+      "390 dark",
+      "320 dark",
+      "390 light"
+    ]
+  },
+  "results": [
+    {
+      "id": "390D_NO_HISTORY_CHROME_WHEN_EMPTY",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_W1_NOTE_PERSISTED_WITH_PID_WEEK_DAY",
+      "pass": true,
+      "note": "{\"exerciseIndex\":0,\"day\":0,\"week\":1,\"planId\":\"plan-ui-2d62e1\",\"exerciseNameSnapshot\":\"Press banca con barra\",\"prescriptionExerciseId\":\"pid-h-1\",\"text\":\"Molestia leve al final del rango\",\"updatedAt\":1790884527785}"
+    },
+    {
+      "id": "390D_W1_COACH_COMPATIBLE_MIRROR",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_RELOAD_KEEPS_W1_NOTE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_W1_TO_W2_HISTORY_VISIBLE",
+      "pass": true,
+      "note": "[[\"SEM 1 · D1\",\"Molestia leve al final del rango\"]]"
+    },
+    {
+      "id": "390D_W2_CURRENT_INPUT_EMPTY_AND_EDITABLE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_W2_NOTE_PERSISTED_AND_W1_UNCHANGED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_RELOAD_KEEPS_W2_NOTE_AND_W1_HISTORY",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_W1_W2_TO_W3_BOTH_VISIBLE_NEWEST_FIRST",
+      "pass": true,
+      "note": "[[\"SEM 2 · D1\",\"Mejor control con 80 kg\"],[\"SEM 1 · D1\",\"Molestia leve al final del rango\"]]"
+    },
+    {
+      "id": "390D_HISTORY_LABELLED_ATHLETE_AUTHORED_NOT_COACH",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_HISTORY_READ_ONLY",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_W3_CURRENT_INPUT_EMPTY_AND_EDITABLE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_PID_ISOLATION_OTHER_EXERCISE_HAS_NO_HISTORY",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_FIRESTORE_W1_W2_NOTES_ORDER_PID_WEEK",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"sw\":390,\"W\":390}"
+    },
+    {
+      "id": "390D_HISTORY_COMPACT",
+      "pass": true,
+      "note": "historyHeight=79 setTop=978 viewportH=844"
+    },
+    {
+      "id": "MANY_NOTES_LATEST_3_PLUS_TOGGLE",
+      "pass": true,
+      "note": "{\"visible\":3,\"total\":5,\"btn\":\"Ver historial completo (5)\"}"
+    },
+    {
+      "id": "TOGGLE_SHOWS_FULL_HISTORY",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_NO_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_NO_HISTORY_CHROME_WHEN_EMPTY",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_W1_NOTE_PERSISTED_WITH_PID_WEEK_DAY",
+      "pass": true,
+      "note": "{\"updatedAt\":1790884578399,\"exerciseNameSnapshot\":\"Press banca con barra\",\"text\":\"Molestia leve al final del rango\",\"prescriptionExerciseId\":\"pid-h-1\",\"week\":1,\"planId\":\"plan-ui-ca9f6f\",\"exerciseIndex\":0,\"day\":0}"
+    },
+    {
+      "id": "320D_W1_COACH_COMPATIBLE_MIRROR",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_RELOAD_KEEPS_W1_NOTE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_W1_TO_W2_HISTORY_VISIBLE",
+      "pass": true,
+      "note": "[[\"SEM 1 · D1\",\"Molestia leve al final del rango\"]]"
+    },
+    {
+      "id": "320D_W2_CURRENT_INPUT_EMPTY_AND_EDITABLE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_W2_NOTE_PERSISTED_AND_W1_UNCHANGED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_RELOAD_KEEPS_W2_NOTE_AND_W1_HISTORY",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_W1_W2_TO_W3_BOTH_VISIBLE_NEWEST_FIRST",
+      "pass": true,
+      "note": "[[\"SEM 2 · D1\",\"Mejor control con 80 kg\"],[\"SEM 1 · D1\",\"Molestia leve al final del rango\"]]"
+    },
+    {
+      "id": "320D_HISTORY_LABELLED_ATHLETE_AUTHORED_NOT_COACH",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_HISTORY_READ_ONLY",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_W3_CURRENT_INPUT_EMPTY_AND_EDITABLE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_PID_ISOLATION_OTHER_EXERCISE_HAS_NO_HISTORY",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_FIRESTORE_W1_W2_NOTES_ORDER_PID_WEEK",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"sw\":320,\"W\":320}"
+    },
+    {
+      "id": "320D_HISTORY_COMPACT",
+      "pass": true,
+      "note": "historyHeight=79 setTop=964 viewportH=640"
+    },
+    {
+      "id": "320D_NO_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_NO_HISTORY_CHROME_WHEN_EMPTY",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_W1_NOTE_PERSISTED_WITH_PID_WEEK_DAY",
+      "pass": true,
+      "note": "{\"planId\":\"plan-ui-ba65a1\",\"exerciseNameSnapshot\":\"Press banca con barra\",\"day\":0,\"exerciseIndex\":0,\"text\":\"Molestia leve al final del rango\",\"week\":1,\"prescriptionExerciseId\":\"pid-h-1\",\"updatedAt\":1790884620830}"
+    },
+    {
+      "id": "390L_W1_COACH_COMPATIBLE_MIRROR",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_RELOAD_KEEPS_W1_NOTE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_W1_TO_W2_HISTORY_VISIBLE",
+      "pass": true,
+      "note": "[[\"SEM 1 · D1\",\"Molestia leve al final del rango\"]]"
+    },
+    {
+      "id": "390L_W2_CURRENT_INPUT_EMPTY_AND_EDITABLE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_W2_NOTE_PERSISTED_AND_W1_UNCHANGED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_RELOAD_KEEPS_W2_NOTE_AND_W1_HISTORY",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_W1_W2_TO_W3_BOTH_VISIBLE_NEWEST_FIRST",
+      "pass": true,
+      "note": "[[\"SEM 2 · D1\",\"Mejor control con 80 kg\"],[\"SEM 1 · D1\",\"Molestia leve al final del rango\"]]"
+    },
+    {
+      "id": "390L_HISTORY_LABELLED_ATHLETE_AUTHORED_NOT_COACH",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_HISTORY_READ_ONLY",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_W3_CURRENT_INPUT_EMPTY_AND_EDITABLE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_PID_ISOLATION_OTHER_EXERCISE_HAS_NO_HISTORY",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_FIRESTORE_W1_W2_NOTES_ORDER_PID_WEEK",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"sw\":390,\"W\":390}"
+    },
+    {
+      "id": "390L_HISTORY_COMPACT",
+      "pass": true,
+      "note": "historyHeight=79 setTop=978 viewportH=844"
+    },
+    {
+      "id": "390L_NO_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    }
+  ]
+}

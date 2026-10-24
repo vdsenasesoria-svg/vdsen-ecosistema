@@ -1,0 +1,115 @@
+{
+  "summary": {
+    "project": "vdsen-ecosistema-staging",
+    "checks": 21,
+    "failed": [],
+    "synthetic": true
+  },
+  "results": [
+    {
+      "id": "EXPRESS_MODE_IS_ON",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "SUGGESTION_IS_VISUAL_ONLY_HIDDEN_VALUE_EMPTY",
+      "pass": true,
+      "note": "{\"hidden\":\"\",\"sugg\":true,\"hint\":true}"
+    },
+    {
+      "id": "EARLY_EXPRESS_SETS_CREATE_NO_OBSERVATION",
+      "pass": true,
+      "note": "{\"rir\":\"\",\"logs\":0,\"series\":3}"
+    },
+    {
+      "id": "EXPLICIT_TAP_CONFIRMS_RIR",
+      "pass": true,
+      "note": "{\"v\":\"1\",\"pre\":false,\"hintHidden\":true}"
+    },
+    {
+      "id": "A_PRIOR_SETS_NOT_FABRICATED",
+      "pass": true,
+      "note": "[[null,null,null],[null,null,null],[null,null,null]]"
+    },
+    {
+      "id": "A_FINAL_SET_HAS_EXPLICIT_RIR_EXACTLY",
+      "pass": true,
+      "note": "[1,true,\"80\",\"6\"]"
+    },
+    {
+      "id": "A_ICS_PUMP_ABSENT_WHEN_UNTOUCHED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "A_PRESCRIBED_RIR_STAYS_IN_PRESCRIBED_SLOT",
+      "pass": true,
+      "note": "rir=2 observed=1"
+    },
+    {
+      "id": "A_PID_PRESERVED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "A_EXPRESS_RECORD",
+      "pass": true,
+      "note": "[1,null,null]"
+    },
+    {
+      "id": "B_NOTHING_TOUCHED_NO_OBSERVATION_ANYWHERE",
+      "pass": true,
+      "note": "[[null,null,null],[null,null,null],[null,null,null]]"
+    },
+    {
+      "id": "B_EXERCISE_STILL_REGISTERED_LOAD_REPS_KEPT",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "B_SUMMARY_SHOWS_MISSING_RIR_AS_DASH",
+      "pass": true,
+      "note": "3 series · RIR real — · ICS —"
+    },
+    {
+      "id": "C_EXPLICIT_RIR_ICS_PUMP_PERSIST_EXACTLY_ON_FINAL_SET",
+      "pass": true,
+      "note": "[1,9,2]"
+    },
+    {
+      "id": "C_EARLIER_SETS_CARRY_NONE_OF_THEM",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "RELOAD_EVIDENCE_UNCHANGED",
+      "pass": true,
+      "note": "[null,1,null,1]"
+    },
+    {
+      "id": "RELOGIN_NO_DUPLICATE_OR_CHANGED_EVIDENCE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "NO_CANONICAL_FIELDS_WRITTEN_BY_ATHLETE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "PLAN_AND_PIDS_UNCHANGED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "NUMERIC_APPLY_ENABLED_FALSE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "NO_UNCAUGHT_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    }
+  ]
+}
