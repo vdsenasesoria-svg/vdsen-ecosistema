@@ -25,7 +25,13 @@ const FS_SHIM = [
   "export const getDoc = (...a) => { c.getDoc++; const t0 = performance.now(), p = real.getDoc(...a); const path = a[0] && a[0].path; return p.then((r) => { c.timings.push(['getDoc', path, Math.round(t0), Math.round(performance.now() - t0)]); return r; }, (e) => { c.timings.push(['getDoc!', path, Math.round(t0), Math.round(performance.now() - t0)]); throw e; }); };",
   "export const getDocs = (...a) => real.getDocs(...a).then((r) => { c.getDocs++; c.docsFromGetDocs += (r && r.size) || 0; return r; });",
   "export const onSnapshot = (...a) => { c.onSnapshot++; c.activeListeners++; const u = real.onSnapshot(...a); let done = false; return () => { if (!done) { done = true; c.activeListeners--; } return u(); }; };",
-  "export const setDoc = (...a) => { c.writes++; return real.setDoc(...a); };",
+  // T595-B: per-write timeline (c.writeLog) and OPT-IN fault injection (window.__fsInject = { mesos|root: { delay: ms, fail: true } }). `delay` is added AFTER the real emulator ack
+  // (a stand-in for server round-trip time); `fail` rejects WITHOUT sending anything, so a failed write never reaches the emulator. Inert unless window.__fsInject is set.
+  "export const setDoc = (...a) => { c.writes++; const p = String((a[0] && a[0].path) || ''), kind = p.indexOf('/mesos/') >= 0 ? 'mesos' : (p.split('/').length === 2 ? 'root' : 'other');",
+  "  const cfg = ((window.__fsInject || {})[kind]) || {}, rec = { kind, t0: performance.now(), tResolve: null, ok: null }; (c.writeLog = c.writeLog || []).push(rec);",
+  "  const done = (ok) => { rec.tResolve = performance.now(); rec.ok = ok; };",
+  "  if (cfg.fail) return new Promise((_, rj) => setTimeout(() => { done(false); rj(Object.assign(new Error('injected write failure'), { code: 'unavailable' })); }, cfg.delay || 0));",
+  "  return real.setDoc(...a).then((v) => cfg.delay ? new Promise((res) => setTimeout(() => { done(true); res(v); }, cfg.delay)) : (done(true), v), (e) => { done(false); throw e; }); };",
   "export const updateDoc = (...a) => { c.writes++; return real.updateDoc(...a); };",
   "export const addDoc = (...a) => { c.writes++; return real.addDoc(...a); };",
   "export const runTransaction = (...a) => { c.tx++; return real.runTransaction(...a); };"

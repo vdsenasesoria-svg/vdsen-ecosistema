@@ -737,7 +737,7 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .setpanel{padding:16px;background:var(--plate);border:1px solid var(--rule);border-left:3px solid var(--accent-fill);border-radius:0}
 .sp-head{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
 .sp-head .kick{color:var(--tx)}
-.sp-target{display:flex;align-items:baseline;gap:12px;margin:14px 0 16px;padding:9px 12px;background:var(--plate-lo);border:1px dashed var(--rule-strong)}
+.sp-target{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin:14px 0 16px;padding:9px 12px;background:var(--plate-lo);border:1px dashed var(--rule-strong)}
 .sp-t-l{font-size:9.5px;letter-spacing:.16em;font-weight:800;color:var(--mt);white-space:nowrap}
 .sp-t-v{font-size:13px;color:var(--mt)}
 .sp-t-v b{font-family:var(--font-num);font-size:26px;font-weight:800;color:var(--tx);margin-right:4px;line-height:1}
@@ -10096,6 +10096,12 @@ async function completeSet(key, di, ei, si, unit) {
     _saveBtn = _row ? _row.querySelector('button[onclick*="completeSet"]') : null;
   } catch (_e) { _saveBtn = null; }
   if (_saveBtn && _saveBtn.disabled) return; // ya hay un guardado en vuelo para esta serie
+  // T595-B: every exit that does not re-render the panel must give the button back with its ORIGINAL label (a rejected input used to leave it disabled on "GUARDANDO…",
+  // and the failure path referenced a render-local variable that does not exist here, throwing after the rollback).
+  var _saveBtnLabel = _saveBtn ? _saveBtn.textContent : '';
+  var _restoreSaveBtn = function() {
+    if (_saveBtn && _saveBtn.isConnected) { _saveBtn.disabled = false; _saveBtn.removeAttribute('aria-busy'); _saveBtn.textContent = _saveBtnLabel; }
+  };
   if (_saveBtn) {
     _saveBtn.disabled = true;
     _saveBtn.setAttribute('aria-busy', 'true');
@@ -10110,7 +10116,7 @@ async function completeSet(key, di, ei, si, unit) {
   var icsEl = document.getElementById('ics_'+key);
   var ics = icsEl ? (parseInt(icsEl.value) || null) : null;
   var prev  = LOGS[key] || {};
-  if (prev.done) return; // correction uses editSet(); repeated save events are idempotent
+  if (prev.done) { _restoreSaveBtn(); return; } // correction uses editSet(); repeated save events are idempotent
   var _hadSetLog = Object.prototype.hasOwnProperty.call(LOGS, key);
   var _previousSetLog = _hadSetLog ? JSON.parse(JSON.stringify(LOGS[key])) : null;
   var _weekAtSetStart = CURRENT_WEEK;
@@ -10135,17 +10141,17 @@ async function completeSet(key, di, ei, si, unit) {
     var cargaNum = parseFloat(carga);
     var repsNum = parseInt(reps);
     if (!_isBW && (!carga || isNaN(cargaNum) || cargaNum <= 0)) {
-      showToast('Ingresa la carga (> 0)', true); return;
+      showToast('Ingresa la carga (> 0)', true); _restoreSaveBtn(); return;
     }
     if (!reps || isNaN(repsNum) || repsNum <= 0) {
-      showToast(_isIso ? 'Ingresa los segundos (> 0)' : 'Ingresa las repeticiones (> 0)', true); return;
+      showToast(_isIso ? 'Ingresa los segundos (> 0)' : 'Ingresa las repeticiones (> 0)', true); _restoreSaveBtn(); return;
     }
     if (ics !== null && (ics < 1 || ics > 10)) {
-      showToast('ICS debe ser entre 1 y 10', true); return;
+      showToast('ICS debe ser entre 1 y 10', true); _restoreSaveBtn(); return;
     }
     var rirNum = parseFloat(rirReal);
     if (rirReal !== '' && !isNaN(rirNum) && (rirNum < 0 || rirNum > 5)) {
-      showToast('RIR debe ser entre 0 y 5', true); return;
+      showToast('RIR debe ser entre 0 y 5', true); _restoreSaveBtn(); return;
     }
     // Para autocarga sin lastre, normalizamos carga a "0" para que se guarde como número
     if (_isBW && (!carga || isNaN(cargaNum))) carga = '0';
@@ -10204,11 +10210,7 @@ async function completeSet(key, di, ei, si, unit) {
     }
     // T568: en el fallo NO hay re-render que reconstruya el botón, así que hay que devolverlo a
     // su estado utilizable o el cliente no podría reintentar.
-    if (_saveBtn) {
-      _saveBtn.disabled = false;
-      _saveBtn.removeAttribute('aria-busy');
-      _saveBtn.textContent = '✓ GUARDAR ' + (_techLower === 'cluster' ? 'CLUSTER' : 'SERIE') + ' ' + (si + 1);
-    }
+    _restoreSaveBtn();
     return false;
   }
 

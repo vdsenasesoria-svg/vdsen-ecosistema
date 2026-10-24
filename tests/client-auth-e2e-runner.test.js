@@ -16,3 +16,8 @@ test('client Auth E2E installs its test-only dependencies and fixes the emulator
   assert.match(source, /pathname === '\/api\/autonomous-progression-trigger'/);
   assert.match(source, /authorized \? 202 : 401/);
 });
+
+test('T595-B: --out creates its destination directory (a fresh checkout has no release-output/)', () => {
+  const source = fs.readFileSync('scripts/client-auth-e2e.cjs', 'utf8');
+  assert.match(source, /fs\.mkdirSync\(path\.dirname\(path\.resolve\(outFile\)\), \{ recursive: true \}\);\s*fs\.writeFileSync\(outFile/);
+});

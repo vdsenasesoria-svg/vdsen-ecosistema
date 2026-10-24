@@ -292,7 +292,7 @@ async function main() {
   }
   const failed = results.filter(result => !result.pass);
   console.log(`# pass ${results.length - failed.length}`); console.log(`# fail ${failed.length}`);
-  if (outFile) fs.writeFileSync(outFile, JSON.stringify(results, null, 2));
+  if (outFile) { fs.mkdirSync(path.dirname(path.resolve(outFile)), { recursive: true }); fs.writeFileSync(outFile, JSON.stringify(results, null, 2)); }   // T595-B: --out into a directory that does not exist yet (e.g. release-output/) used to throw ENOENT after all checks passed
   return failed.length ? 1 : 0;
 }
 
