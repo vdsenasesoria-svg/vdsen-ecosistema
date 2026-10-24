@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="VDSEN">
 <meta name="theme-color" content="#0a0a0a">
-<meta name="vdsen-client-build" content="t598-logbook-reference-20261024-01">
+<meta name="vdsen-client-build" content="t599r-progression-authority-20261024-01">
 <title>VDSEN — Mi Plan v14</title>
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,7 +19,7 @@
 // Runtime identity for support and the service-worker URL.  It is deliberately
 // separate from the product version: a deployed Preview can report exactly
 // which app shell is executing without reading a guessed SHA from its URL.
-window.VDSEN_CLIENT_BUILD = 't598-logbook-reference-20261024-01';
+window.VDSEN_CLIENT_BUILD = 't599r-progression-authority-20261024-01';
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
     // A new script URL makes this cutover visible even to a browser that still
@@ -738,6 +738,12 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .sp-head{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
 .sp-head .kick{color:var(--tx)}
 .sp-target{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin:14px 0 16px;padding:9px 12px;background:var(--plate-lo);border:1px dashed var(--rule-strong)}
+.sp-history-reference{margin:8px 0;font-size:12px;line-height:1.45;overflow-wrap:anywhere}
+.sp-history-reference>span{display:block;font-size:9.5px;letter-spacing:.16em;font-weight:800;color:var(--mt)}
+.sp-history-reference>b{display:block;font-weight:700;color:var(--tx)}
+.sp-authority{margin:8px 0 14px;font-size:12px;line-height:1.5;overflow-wrap:anywhere;color:var(--mt)}
+.sp-authority>b{display:block;color:var(--tx)}
+.sp-authority p{margin:4px 0 0}
 .sp-t-l{font-size:9.5px;letter-spacing:.16em;font-weight:800;color:var(--mt);white-space:nowrap}
 .sp-t-v{font-size:13px;color:var(--mt)}
 .sp-t-v b{font-family:var(--font-num);font-size:26px;font-weight:800;color:var(--tx);margin-right:4px;line-height:1}
@@ -5801,6 +5807,7 @@ function getAdjustedRIR(baseRIR, week, exName) {
 
 // Coach-authored prescribed RIR of an exercise: ej.rir, else the given (effective) set, else the first set.
 function _coachRIR(ej, set) {
+  if (ej && ej._overlay && ej._overlay.components && ej._overlay.components.RIR !== undefined) return Number(ej._overlay.components.RIR);
   var v = parseInt(ej && ej.rir);
   if (!isFinite(v)) { var s = set || (ej && ej.sets && ej.sets[0]); v = s ? parseInt(s.rirTarget) : NaN; }
   return isFinite(v) ? v : 2;
@@ -5841,12 +5848,12 @@ function _setsRepsLabel(sets) {
 // writes a plan, changes an input, or turns a PENDING recommendation into an
 // applied prescription.  A zero/absent load means precisely "not prescribed",
 // never an invented machine increment.
-function _effectiveSetTargetHtml(setSpec, provenance, unit, isIsometric) {
+function _effectiveSetTargetHtml(setSpec, provenance, unit, isIsometric, detail) {
   if (!setSpec || typeof setSpec !== 'object') return '';
   var load = Number(setSpec.load);
   // T597: Coach owns structure, not a numerical working load. A load can be
   // rendered here only when it is the exact effective value of a canonical VDSEN overlay.
-  var hasLoad = provenance === 'AUTOAJUSTE VDSEN' && !isIsometric && Number.isFinite(load) && load > 0;
+  var hasLoad = provenance === 'AUTOAJUSTE VDSEN' && (!detail || detail.hasAppliedLoad) && !isIsometric && Number.isFinite(load) && load > 0;
   var reps = setSpec.repsTarget;
   var rir = setSpec.rirTarget;
   var source = provenance === 'AUTOAJUSTE VDSEN' ? 'AUTOAJUSTE VDSEN' : 'COACH';
@@ -5854,8 +5861,16 @@ function _effectiveSetTargetHtml(setSpec, provenance, unit, isIsometric) {
   if (hasLoad) rows.push('<span class="sp-t-v"><b>CARGA '+_escHTml(String(load))+' '+_escHTml(unit)+'</b></span>');
   if (reps !== undefined && reps !== null && reps !== '') rows.push('<span class="sp-t-v"><b>'+_escHTml(String(reps))+'</b> '+(isIsometric ? 'seg' : 'reps')+'</span>');
   if (rir !== undefined && rir !== null && rir !== '') rows.push('<span class="sp-t-r">RIR '+_escHTml(String(rir))+'</span>');
+  if (detail) {
+    rows.push('<span>'+detail.sets+' series</span>');
+    if (setSpec.restSeconds !== undefined && setSpec.restSeconds !== null) {
+      var rest = Number(setSpec.restSeconds);
+      if (Number.isFinite(rest) && rest >= 0) rows.push('<span>Descanso '+Math.floor(rest/60)+':'+('0'+rest%60).slice(-2)+'</span>');
+    }
+  }
   if (!rows.length) return '';
   return '<div class="sp-target" data-effective-target="1" data-target-source="'+source+'">'+
+    (detail ? '<strong style="flex-basis:100%">OBJETIVO DE ESTA SERIE</strong>' : '')+
     '<span class="sp-t-l">'+(source === 'COACH' ? 'ESTRUCTURA COACH' : 'OBJETIVO '+source)+'</span>'+rows.join('')+
   '</div>';
 }
@@ -6654,7 +6669,9 @@ function _prevWeekReuseHtml(key, unit) {
   var r = _prevWeekReuse(LOGS, _exNoteCtx(k.di, k.ei), k.si); if (!r) return '';
   var shown = r.load === null ? null : _convertCarga(r.load, r.unit, unit);
   var lbl = (shown === null ? '—' : _escHTml(String(shown)) + ' ' + String(unit).toLowerCase()) + ' × ' + (r.reps === null ? '—' : _escHTml(r.reps));
-  return '<button type="button" class="pw-use" onclick="_prevWeekUse(\'' + key + '\')" aria-label="Usar carga y repeticiones de la semana anterior, serie ' + r.n + ': ' + lbl + '"><span class="pw-use-a">USAR CARGA/REPS</span><span class="pw-use-v">SEM ' + (k.week - 1) + ' · S' + r.n + ' · ' + lbl + '</span></button>';
+  var ex = (_EJERCICIOS_DIA || [])[k.ei], target = ex && ex.sets && ex.sets[k.si];
+  var diff = target && r.reps !== null && String(target.repsTarget) !== String(r.reps) ? ' · Objetivo vigente: '+_escHTml(String(target.repsTarget))+' reps' : '';
+  return '<button type="button" class="pw-use" onclick="_prevWeekUse(\'' + key + '\')" aria-label="Copiar registro anterior como borrador, serie ' + r.n + ': ' + lbl + '"><span class="pw-use-a">USAR CARGA/REPS · COPIAR HISTORIAL</span><span class="pw-use-v">SEM ' + (k.week - 1) + ' · S' + r.n + ' · ' + lbl + diff + ' · No es una recomendación</span></button>';
 }
 // DRAFT ONLY: copies the prior set's executed load and reps into the empty-able inputs. No RIR, no ICS, no Pump, no save, no completion, no prescription.
 function _prevWeekUse(key) {
@@ -6871,8 +6888,9 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
               { lbl:'RIR',      val: String(baseRIR) },
               { lbl:'DESCANSO', val: _planRestFmt }
             ];
-            return '<div class="spec" role="group" aria-label="Prescripción del coach">'+
-              '<div class="spec-cap"><span>PRESCRIPCIÓN</span><span>COACH</span></div>'+
+            var _engineVals = !!(ej && ej._overlay);   // T599-R: values that come from the Motor are never labelled as Coach prescription
+            return '<div class="spec" role="group" aria-label="'+(_engineVals ? 'Estructura vigente con autoajuste' : 'Estructura del coach')+'">'+
+              '<div class="spec-cap"><span>ESTRUCTURA</span><span>'+(_engineVals ? 'VIGENTE · AUTOAJUSTE' : 'COACH')+'</span></div>'+
               '<div class="spec-grid">'+
               _cells.map(function(c){
                 return '<div class="spec-c"><span class="spec-l">'+c.lbl+'</span><span class="spec-v">'+c.val+'</span></div>';
@@ -7186,7 +7204,9 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     // PENDING stays out of this path and the base Coach set remains visible.
     var _psReps = setSpec ? setSpec.repsTarget : null;
     var _psRir  = (setSpec && setSpec.rirTarget !== undefined && setSpec.rirTarget !== null) ? setSpec.rirTarget : null;
-    var _setTargetHtml = _effectiveSetTargetHtml(setSpec, _ovEff ? 'AUTOAJUSTE VDSEN' : 'COACH', unit, isIsometric);
+    var _authority = _seriesAuthority(ej, di, ei, unit);
+    var _setTargetHtml = _effectiveSetTargetHtml(setSpec, _ovEff ? 'AUTOAJUSTE VDSEN' : 'COACH', unit, isIsometric,
+      { sets: numSeries, hasAppliedLoad: _authority && _authority.hasAppliedLoad });
     var _historyReferenceHtml = _logbookReferenceHtml(histEx, unit, isIsometric);
     // Instrucción específica del set (técnica + nota del coach)
     var _setInstrHtml = '';
@@ -7219,7 +7239,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     var setSpecBlock = (setNote || setSpecBadges || _setTargetHtml || _historyReferenceHtml || _setInstrHtml)
       ? '<div style="margin-bottom:8px;font-size:11px;color:var(--mt2);line-height:1.5">'+
           _setTargetHtml+
-          _historyReferenceHtml+
+          _historyReferenceHtml+_seriesAuthorityHtml(_authority, s)+
           _setInstrHtml+
           setSpecBadges+
           (setNote && SET_NOTE_LABELS[setNote] ? '<span style="color:var(--accent);font-weight:600">📌 '+getSetNoteBadge(setNote)+'</span>' : '')+
@@ -11889,7 +11909,9 @@ var _trustedProgressionPending = Object.create(null);
 function _scheduleTrustedProgression(uid, planId) {
   if (!uid || !planId || !USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId || !FB || typeof FB.waitForPendingWrites !== 'function') return;
   var key = uid + ':' + planId;
-  if (_trustedProgressionPending[key]) return;
+  // T599-R (D-08): a request that arrives while one is in flight is not dropped (the in-flight call may have read the evidence BEFORE a consumption receipt was written);
+  // it is remembered and one more call runs when the current one ends.
+  if (_trustedProgressionPending[key]) { _trustedProgressionPending[key] = 'again'; return; }
   _trustedProgressionPending[key] = true;
   FB.waitForPendingWrites(FB.db).then(function() {
     if (!USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId) return null;
@@ -11899,7 +11921,7 @@ function _scheduleTrustedProgression(uid, planId) {
   }).catch(function(err) {
     // Saving execution evidence never depends on this background service.
     console.warn('[progression executor] deferred:', err && err.message);
-  }).finally(function() { delete _trustedProgressionPending[key]; });
+  }).finally(function() { var again = _trustedProgressionPending[key] === 'again'; delete _trustedProgressionPending[key]; if (again) _scheduleTrustedProgression(uid, planId); });
 }
 
 // T570-R: the athlete app never creates canonical records. It may only notify
@@ -11934,6 +11956,62 @@ function _resolveOverlayForExercise(ej, di, unit) {
     plan: st.planDoc, entries: LOGS, baseSets: ej.sets || [], unit: unit, canonicalOverlayRead: true });
   // T586: an application that was CONSUMED keeps governing later exposures (CARRIED_OVERLAY): adjustments never silently fall back to the plan.
   return (r.provenance === 'CANONICAL_OVERLAY' || r.provenance === 'CARRIED_OVERLAY') ? r : null;
+}
+// T599: describe the SAME server-confirmed authority used by the operational consumer.
+function _seriesAuthority(ej, di, ei, unit) {
+  var st = LIFECYCLE_STATE, eff = window.VDSEN_EFFECTIVE_PRESCRIPTION;
+  if (!USER || !eff || !st || st.uid !== USER.uid || st.planId !== ACTIVE_PLAN_ID || !st.planDoc || !ej.prescriptionExerciseId) return null;
+  var day = (st.planDoc.days || []).filter(function(d) { return d.dayIndex === di; })[0];
+  var original = ((day && day.exercises) || []).filter(function(e) { return e.prescriptionExerciseId === ej.prescriptionExerciseId; })[0];
+  if (!original || isY3TExercise(ej) || LOGS['exsub_'+CURRENT_WEEK+'_'+di+'_'+ei]) return null;
+  var view = eff.describeProgression({ clientId: USER.uid, planId: ACTIVE_PLAN_ID, activePlanId: ACTIVE_PLAN_ID, pid: ej.prescriptionExerciseId,
+    week: CURRENT_WEEK, dayIndex: di, records: st.records, overlays: st.overlays, interventions: st.interventions, plan: st.planDoc,
+    entries: LOGS, baseSets: original.sets || [], unit: unit, canonicalOverlayRead: true });
+  view.baseSets = original.sets || []; view.unit = unit;
+  return view;
+}
+// T599-R: a plain-language reason for each canonical rule id (what the athlete can understand; the rule id stays as provenance).
+function _ruleReason(ruleId) {
+  var m = { A: 'rendiste con más reserva (RIR) de la prevista en las últimas sesiones', DP: 'llegaste al techo del rango de repeticiones con el esfuerzo previsto', C: 'repeticiones incompletas con el RIR previsto: más descanso',
+    'S-ADD': 'rendimiento sostenido y buena calidad de serie (ICS ≥ 8)', 'S-EIMD3': 'dolor muscular alto después de la sesión', 'S-DELOAD': 'señales de fatiga acumulada (2 o más)',
+    'S-ICS-LT6': 'calidad técnica muy baja (ICS < 6)', 'S-ICS-LT7': 'calidad técnica baja (ICS < 7)', 'S-HARD-TWICE': 'esfuerzo más duro de lo previsto en dos sesiones seguidas',
+    'S-FREEZE-ZERO': 'llegaste al fallo antes de lo previsto: se mantiene la carga', 'S-FREEZE-HARD': 'esfuerzo más duro de lo previsto: se mantiene la carga' };
+  return m[ruleId] || '';
+}
+function _seriesAuthorityHtml(view, si) {
+  var state = view ? view.state : 'NO_AUTHORIZED_ADJUSTMENT', r = view && view.result, applied = !!(view && view.applied);
+  // T599-R: one vocabulary, one label per real state (a legacy suggestion, a PENDING calculation and an APPLIED overlay never share wording).
+  var labels = { APPLIED: 'AUTOAJUSTE APLICADO', CONSUMED: 'AUTOAJUSTE CONSUMIDO · vigente', PENDING: 'PENDIENTE · calculado, aún no aplicado',
+    BLOCKED: 'BLOQUEADO · Sin autoajuste aplicado', COACH_REVIEW: 'REVISIÓN REQUERIDA · Sin autoajuste aplicado', NO_AUTHORIZED_ADJUSTMENT: 'Sin autoajuste aplicado' };
+  var reasons = view && view.reasons || [], why = '';
+  if (reasons.some(function(x) { return /SAFETY|PAIN/.test(x); })) why = 'La señal de seguridad requiere revisión.';
+  else if (reasons.some(function(x) { return /INSUFFICIENT|EVIDENCE_COUNT|DIRECTION_NOT_CONFIRMED/.test(x); })) why = 'Faltan exposiciones comparables o una dirección confirmada.';
+  else if (reasons.some(function(x) { return /RIR.*MISSING/.test(x); })) why = 'Falta RIR observado válido en la bitácora.';
+  else if (reasons.some(function(x) { return /COACH|PLAN_CHANGED|TARGET_INVALIDATED/.test(x); })) why = 'La decisión del Coach o la revisión del plan tiene prioridad.';
+  else if (state === 'PENDING') why = 'El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique.';
+  else if (state === 'BLOCKED') why = 'La evidencia o la autorización no permiten aplicar un ajuste.';
+  var lines = [];
+  if (applied) {
+    var base = view.baseSets[si] || view.baseSets[0] || {}, set = r.sets[si] && r.sets[si].effective || {};
+    var changed = r.dimension === 'DELOAD' ? Object.keys(r.components || {}) : (r.dimension ? [r.dimension] : Object.keys(r.carried || {}));
+    var names = { LOAD: 'Carga', REPS: 'Reps', SETS: 'Series', RIR: 'RIR', REST: 'Descanso', FREEZE: 'Carga congelada' };
+    var unit = view.unit, fmt = function(v, d) { if (v === undefined || v === null) return '—'; return d === 'REST' ? Math.floor(v/60)+':'+('0'+v%60).slice(-2) : String(v)+(d === 'LOAD' || d === 'FREEZE' ? ' '+unit : ''); };
+    ['LOAD','REPS','SETS','RIR','REST'].forEach(function(d) {
+      var isChange = changed.indexOf(d) >= 0 || (d === 'LOAD' && r.dimension === 'FREEZE');
+      if (!isChange) { lines.push(names[d]+': sin cambios'); return; }
+      var before = d === 'LOAD' ? null : d === 'SETS' ? view.baseSets.length : base[d === 'REPS' ? 'repsTarget' : d === 'RIR' ? 'rirTarget' : 'restSeconds'];
+      if (r.dimension === d || (d === 'LOAD' && r.dimension === 'FREEZE')) before = r.previousValue;
+      if (d === 'LOAD' && r.dimension === 'DELOAD') before = view.previousLoad;
+      var after = d === 'LOAD' ? set.load : d === 'SETS' ? r.sets.length : set[d === 'REPS' ? 'repsTarget' : d === 'RIR' ? 'rirTarget' : 'restSeconds'];
+      lines.push(names[d]+': '+(!r.dimension ? fmt(after,d)+' · vigente por aplicación anterior' : fmt(before,d)+' → '+fmt(after,d))+(r.dimension === 'FREEZE' ? ' · congelación autorizada' : ''));
+    });
+    why = (r.presentation ? r.presentation.text+'. ' : '')+(_ruleReason(view.ruleId) ? 'Motivo: '+_ruleReason(view.ruleId)+'. ' : '')+(view.ruleId ? 'Regla '+view.ruleId+'. ' : '')+'Origen: aplicación del servidor (no es una sugerencia).';
+    if (r.equipmentSnapshot && r.equipmentSnapshot.source === 'ADVISORY_GENERIC') why += ' Carga orientativa: incremento exacto del equipo no resuelto; adapta y registra lo ejecutado.';
+    if (r.dimension === 'DELOAD' && r.components && r.components.LOAD && !r.equipmentSnapshot) why += ' Carga de descarga calculada; disponibilidad exacta del equipo sin verificar.';
+  } else lines.push('Aún sin ajuste autorizado. La referencia histórica no es una progresión.');
+  return '<div class="sp-authority" data-progression-state="'+state+'"><b>'+_escHTml(labels[state] || labels.NO_AUTHORIZED_ADJUSTMENT)+'</b>'+
+    '<div>CAMBIO RESPECTO DE LA EXPOSICIÓN ANTERIOR</div><div>'+lines.map(function(x) { return _escHTml(x); }).join(' · ')+'</div>'+
+    (why ? '<p>'+_escHTml(why)+'</p>' : '')+'</div>';
 }
 // T586: ONE effective view of the plan. Sets count / load / reps / rest decided by the trusted server (and carried across exposures) reach EVERY consumer of getSesiones()
 // (navigation, set rows, progress, session totals, supersets, rest timers), never only the card. Strength exercises that are not substituted / Y3T only; anything else is untouched.
@@ -11974,8 +12052,9 @@ function _autoAdjustSummary(ej) {
   var list = (Array.isArray(o.sets) && o.sets.length ? o.sets.map(function(x) { return (x && x.effective) || x; }) : (ej && ej.sets) || []);
   var st = list.filter(function(x) { return x && !x.drop && !x.warmup; })[0] || list[0] || {};
   var parts = [], load = parseFloat(st.load), reps = st.repsTarget, rir = parseFloat(st.rirTarget);
-  var unit = String((o.loadUnit || o.unit || 'kg')).toUpperCase() === 'LB' ? 'lb' : 'kg';
-  if (load > 0) parts.push(String(Number(load)) + ' ' + unit);
+  var loadUnit = o.carried && o.carried.LOAD && ['LOAD','FREEZE','DELOAD'].indexOf(o.dimension) < 0 ? o.carried.LOAD.unit : (o.loadUnit || o.unit);
+  var unit = String(loadUnit || 'kg').toUpperCase() === 'LB' ? 'lb' : 'kg';
+  if (load > 0 && (['LOAD','FREEZE'].indexOf(o.dimension) >= 0 || (o.components && o.components.LOAD) || (o.carried && o.carried.LOAD))) parts.push(String(Number(load)) + ' ' + unit);
   if (reps !== undefined && reps !== null && String(reps) !== '' && /^[0-9]+([-–][0-9]+)?$/.test(String(reps))) parts.push(String(reps) + ' reps');
   if (!isNaN(rir) && rir >= 0) parts.push('RIR ' + String(Number(rir)));
   return parts.join(' · ');
@@ -11985,7 +12064,7 @@ function _autoAdjustHtml(ej) {
   if (!o || !o.presentation) return '';
   var main = _autoAdjustSummary(ej);
   return '<div data-autoadjust="1" class="autoadj">'+
-    (main ? '<div class="autoadj-main"><small>SUGERIDO PARA HOY</small>'+_escHTml(main)+'</div>' : '')+
+    (main ? '<div class="autoadj-main"><small>OBJETIVO APLICADO</small>'+_escHTml(main)+'</div>' : '')+
     '<span class="chip auto">'+String(o.presentation.label).toUpperCase()+'</span>'+
     '<span class="autoadj-t">'+o.presentation.text+'</span></div>';
 }
@@ -12013,6 +12092,8 @@ async function _maybeConsumeOverlays(uid) {
           { isCurrent: function() { return !!USER && USER.uid === uid && ACTIVE_PLAN_ID === st.planId; }, canonicalOverlayRead: true });
       });
       if (res && (res.written || res.idempotent) && LIFECYCLE_STATE === st) st.receipts[r.key] = res.receipt || { recordKey: r.key };
+      // T599-R (D-08): the receipt is written AFTER the save-time trigger fired; tell the trusted server again so APPLIED -> CONSUMED does not wait for an unrelated later save.
+      if (res && res.written) { try { _scheduleTrustedProgression(uid, st.planId); } catch (_se) { /* best effort: the scheduled sweep recovers */ } }
     } catch (e) { console.warn('[lifecycle] receipt:', e && e.code, e && e.message); }
     finally { delete st.consumeBusy[r.key]; }
   }

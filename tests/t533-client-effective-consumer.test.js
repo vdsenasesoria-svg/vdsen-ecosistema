@@ -186,14 +186,14 @@ test('T570-R.2 a cache-served meso snapshot is never authority: no overlay is ca
 
 test('T593 the suggestion reads as plain numbers: "x kg · x reps · RIR x" (first standard working set); missing parts are left out, never invented', () => {
   const e = env(), r = resolve(e), sum = (o) => { e.context.__x = o; return vm.runInContext('_autoAdjustSummary(__x)', e.context); };
-  const base = (st) => ({ _overlay: { sets: [{ effective: st }], unit: 'KG', presentation: { label: 'Autoajuste VDSEN', text: '100 → 102.5 kg' } } });
+  const base = (st) => ({ _overlay: { dimension: 'LOAD', sets: [{ effective: st }], unit: 'KG', presentation: { label: 'Autoajuste VDSEN', text: '100 → 102.5 kg' } } });
   assert.equal(sum(base({ load: 102.5, repsTarget: 8, rirTarget: 2 })), '102.5 kg · 8 reps · RIR 2');
   assert.equal(sum(base({ load: 0, repsTarget: '8-12', rirTarget: 1 })), '8-12 reps · RIR 1', 'no load in the plan: no kg is invented');
   assert.equal(sum(base({ load: 60, repsTarget: 'SST-PROTOCOL' })), '60 kg', 'protocol strings are not shown as reps');
-  assert.equal(sum({ _overlay: { sets: [{ effective: { load: 100, repsTarget: 5, rirTarget: 0 } }], unit: 'LB' } }), '100 lb · 5 reps · RIR 0');
+  assert.equal(sum({ _overlay: { dimension: 'LOAD', sets: [{ effective: { load: 100, repsTarget: 5, rirTarget: 0 } }], unit: 'LB' } }), '100 lb · 5 reps · RIR 0');
   e.context.__x = Object.assign(base({ load: 102.5, repsTarget: 8, rirTarget: 2 }), {}); e.context.__x._overlay.sets = [{ effective: { load: 5, drop: true, repsTarget: 20, rirTarget: 0 } }, { effective: { load: 102.5, repsTarget: 8, rirTarget: 2 } }];
   assert.equal(vm.runInContext('_autoAdjustSummary(__x)', e.context), '102.5 kg · 8 reps · RIR 2', 'drop sets are skipped');
   const html = vm.runInContext('_autoAdjustHtml(__x)', e.context);
-  assert.ok(html.includes('SUGERIDO PARA HOY') && html.includes('102.5 kg · 8 reps · RIR 2') && html.includes('100 → 102.5 kg'), 'main line + the change underneath');
+  assert.ok(html.includes('OBJETIVO APLICADO') && html.includes('102.5 kg · 8 reps · RIR 2') && html.includes('100 → 102.5 kg'), 'main line + the change underneath');
   assert.ok(r && true);
 });

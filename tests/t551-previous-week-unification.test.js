@@ -74,8 +74,19 @@ test('T551.12-14 only previous EXECUTED load/reps are copied: never observed RIR
   assert.equal(w.els['rir_log_2_1_0_s0'].value, '', 'observed RIR (3) NOT copied'); assert.equal(w.calls.rir, 0, 'setRirReal never called (prescribed rir 2 / observed 3)');
   assert.equal(w.els['ics_log_2_1_0_s0'].value, '', 'ICS not copied');
   const r = reuse(w, 0); assert.deepEqual(Object.keys(r).sort(), ['load', 'n', 'reps', 'unit'], 'the reusable payload has no RIR / ICS / Pump / note field');
-  const body = fnSrc('_prevWeekUse') + fnSrc('_prevWeekReuse') + fnSrc('_prevWeekReuseHtml');
+  const body = fnSrc('_prevWeekUse') + fnSrc('_prevWeekReuse');
   for (const bad of ['rir', 'ics', 'pump', 'setRirReal', 'rirTarget', 'repsTarget', 'coachNote', 'exnote_', 'exnotepid']) assert.ok(!new RegExp(bad, 'i').test(body.replace(/rir_real/g, '')) || bad === 'rir' && !/setRirReal|rir_real|\.rir\b|'rir_/.test(body), bad);
+});
+
+test('T599 history copy warns when executed reps differ from the effective objective without changing that objective', () => {
+  const w = world({ logs: W1() });
+  const before = JSON.stringify(w._EJERCICIOS_DIA), html = btn(w, 0);
+  assert.match(html, /COPIAR HISTORIAL/);
+  assert.match(html, /Objetivo vigente: 8 reps/);
+  assert.match(html, /No es una recomendación/);
+  w._prevWeekUse('log_2_1_0_s0');
+  assert.equal(w.els['reps_log_2_1_0_s0'].value, '10');
+  assert.equal(JSON.stringify(w._EJERCICIOS_DIA), before);
 });
 test('T551.15 athlete-explicit only: rendering the set card never fills the inputs; copy happens only inside the click handler', () => {
   const w = world({ logs: W1() }); btn(w, 0); w._buildSetReferenceHtml(null, null, 0, 'KG', 2, 2, undefined, 'log_2_1_0_s0');

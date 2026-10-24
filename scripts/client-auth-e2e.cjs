@@ -75,7 +75,12 @@ async function startEmulators() {
     cwd: runtime, env: { ...process.env, CI: 'true', FIREBASE_CLI_DISABLE_UPDATE_CHECK: 'true' },
     stdio: ['ignore', fs.openSync(path.join(runtime, 'auth.out'), 'w'), fs.openSync(path.join(runtime, 'auth.err'), 'w')]
   }));
-  await waitPort(ports.auth, 'Auth Emulator');
+  try { await waitPort(ports.auth, 'Auth Emulator'); }
+  catch (error) {
+    const diagnostics = ['auth.out', 'auth.err'].map(f => fs.readFileSync(path.join(runtime, f), 'utf8')).join('\n');
+    console.error('[Auth Emulator startup]', diagnostics.split(/\r?\n/).filter(l => /error|fatal|port|EADDRINUSE/i.test(l)).slice(-12).join('\n'));
+    throw error;
+  }
   return ports;
 }
 

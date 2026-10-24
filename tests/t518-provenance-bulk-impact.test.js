@@ -59,7 +59,10 @@ test('T518.4 the overlay SNAPSHOTS the increment it used; later config changes c
 
 test('T518.5 executed LOGS never reference equipment metadata (config changes cannot rewrite history)', () => {
   const client = fs.readFileSync(path.join(root, 'vdsen-cliente.html'), 'utf8');
-  assert.ok(!/equipmentIncrements|loadIncrement|equipmentSnapshot/.test(client));
+  assert.ok(!/equipmentIncrements|loadIncrement/.test(client));
+  // T599 displays the immutable overlay snapshot provenance; executed logs still never store or consult equipment metadata.
+  const logWrite = client.slice(client.indexOf('  LOGS[key] = { carga, reps, unit, done,'), client.indexOf('  _lbwTrack(key);'));
+  assert.ok(logWrite.length > 100 && !/equipmentSnapshot|equipmentId|equipmentIncrements|loadIncrement/.test(logWrite));
   assert.ok(!/equipmentIncrements|loadIncrement/.test(fs.readFileSync(path.join(root, 'assets/progression-auto-apply-shadow.js'), 'utf8')));
   assert.ok(!/equipmentIncrements|loadIncrement/.test(fs.readFileSync(path.join(root, 'assets/progression-magnitude-policy.js'), 'utf8')));
 });
