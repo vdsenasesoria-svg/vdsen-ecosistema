@@ -159,12 +159,27 @@
   function buildRecord(input, at) {
     var decision = assess(input), rec = input.recommendation || {};
     var key = idempotencyKey(input);
-    var magnitude = _magnitude(input, decision);
+    var magnitude = null;
+    // T599-R (D-01): the legacy Client recommendation is only the TRIGGER. A `maintain` with no numeric delta used to end here as REJECTED / NO_NUMERIC_DELTA, so the canonical
+    // policy never saw evidence that rules C (REST +30 s) and E (Coach review) are about. The policy now evaluates it; the record leaves REJECTED only when the policy itself
+    // produces an eligible candidate or a Coach-review requirement. With nothing to adjust the original rejection stands (no invented increment, no noise record).
+    if (decision.state === STATES.REJECTED && decision.reasonCode === REASONS.NO_NUMERIC_DELTA && rec.action === 'maintain') {
+      var next = resolveNextExposure(input.plan, rec.prescriptionExerciseId, input.week, input.dayIndex);
+      if (next) {
+        var deferred = { state: STATES.PENDING, reasonCode: REASONS.MAGNITUDE_POLICY_MISSING, nextExposure: next, dimension: null }, mag = _magnitude(input, deferred);
+        // Scope of the deferral (deliberately narrow): the two outcomes the policy defines FOR the "no change recommended" situation: rule C's REST +30 s and a Coach-review requirement
+        // (rules D / E ...). A numeric LOAD / REPS / SETS increase is still never created from a Client `maintain` (the Client keeps its veto over increases).
+        var restC = mag && mag.eligible === true && mag.dimension === 'REST' && mag.ruleId === 'C';
+        if (mag && (restC || mag.coachReviewRequired)) { decision = deferred; magnitude = mag; }
+      }
+    }
+    if (!magnitude) magnitude = _magnitude(input, decision);
     return Object.assign({
       key: key, clientId: input.clientId, planId: input.planId,
       prescriptionExerciseId: rec.prescriptionExerciseId || null,
       exerciseNameSnapshot: rec.exerciseName || '', action: rec.action || null,
-      dimension: decision.dimension || null,
+      // T599-R (D-07): `dimension` is the CANONICAL decision's dimension (what the overlay will change); the dimension implied by the legacy action is kept in `legacyDimension`.
+      dimension: (magnitude && magnitude.dimension) || decision.dimension || null, legacyDimension: decision.dimension || null,
       source: { week: input.week, dayIndex: input.dayIndex, calculatedAt: input.calculatedAt || null },
       nextExposure: decision.nextExposure, state: decision.state, reasonCode: decision.reasonCode,
       revision: 1, createdAt: at, updatedAt: at,

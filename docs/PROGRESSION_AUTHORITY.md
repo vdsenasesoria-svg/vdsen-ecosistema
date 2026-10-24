@@ -3,13 +3,36 @@
 Documento de continuidad. Describe qué es canónico, qué sigue siendo legado y qué decisiones de producto/ciencia
 siguen abiertas. Las pruebas T475–T495 fijan todo lo marcado como CANÓNICO.
 
-## Flujo canónico (hoy, en modo shadow)
+## Autoridad vigente desde T586/T599
+
+La arquitectura actual incluye el ejecutor autenticado del servidor y el ciclo `PENDING → APPLIED → CONSUMED`.
+Los flags numéricos del navegador siguen en `false`: leer un overlay confirmado mediante `canonicalOverlayRead` no autoriza a escribirlo.
+LOAD/REPS/SETS/REST pueden continuar desde una aplicación consumida; FREEZE y DELOAD rigen su exposición exacta.
+RIR solo cambia como componente autorizado de DELOAD desde `rirByWeek`. Historial y copia del registro no son aplicación.
+Los controles de servidor, allowlist, canario, PID, plan, seguridad y exposición siguen siendo obligatorios.
+Ver [T586](T586_AUTONOMOUS_AUTHORITY.md) y [auditoría T599](T599_REAL_PROGRESSION.md) para el estado y la evidencia actual.
+Las secciones T480–T535 siguientes describen estados históricos y no niegan las transiciones incorporadas posteriormente.
+
+## T599-R · Invariantes de autoridad (auditoría T600, D-01/D-02/D-07/D-08)
+
+- **Un overlay invalidado antes de iniciar su exposición no recupera autoridad.** `evaluateOverlay` compara el ORDEN de eventos persistidos: una revisión del plan o una decisión exacta del Coach
+  anterior (o simultánea) a la primera serie de trabajo del PID en esa exposición lo invalida (`TARGET_INVALIDATED` / `COACH_OVERRIDE`) aunque después se ejecute; una posterior no es retroactiva.
+  Sin marca de tiempo en las series iniciadas, o con empate, falla cerrado. `consumeOverlayTransaction` repite la evaluación dentro de su transacción (plan, cliente y bitácora re-leídos): un recibo,
+  incluso reintentado tarde, nunca convierte en CONSUMED un overlay invalidado. Límite conocido: el orden se infiere de relojes (plan/Coach vs. dispositivo del atleta).
+- **La recomendación `progrec` del Cliente es solo el disparador.** Una recomendación `maintain` sin delta ya no corta la evaluación: la política canónica decide (reglas C y E). El record sale de
+  REJECTED/NO_NUMERIC_DELTA solo si la política produce un candidato elegible o una revisión del Coach; sin nada que ajustar se conserva el rechazo (sin incrementos inventados).
+- **`record.dimension` es la dimensión de la decisión canónica** (lo que cambiará el overlay); la que insinúa la acción heredada queda en `record.legacyDimension`; la acción original sigue en `record.action`.
+- **El Cliente informa el estado real**: `AUTOAJUSTE APLICADO`, `AUTOAJUSTE CONSUMIDO`, `PENDIENTE`, `REVISIÓN REQUERIDA`, `BLOQUEADO`, `Sin autoajuste aplicado`; la hoja del ejercicio no se rotula «Coach» cuando los valores vienen del Motor; el motivo se expresa en lenguaje claro.
+- **El recibo llega al servidor**: tras escribir el recibo el Cliente vuelve a avisar al ejecutor (y una solicitud recibida con otra en vuelo se recuerda en lugar de descartarse).
+- Sin cambios: Numeric Apply OFF en el navegador y en producción; el Coach no prescribe kg/lb; no existe un segundo Motor.
+
+## Flujo histórico T480–T495 (shadow)
 
 LOGS (ejecución real) → evidencia comparable por PID → política canónica (`assets/progression-magnitude-policy.js`)
 → registro shadow en `logs/{uid}/mesos/{planId}.progressionApplications[*].magnitude`
 → (dry-run) consumidor de overlay (`assets/progression-application-consumer.js`) → auditoría en el Monitor del Coach.
 
-- `NUMERIC_APPLY_ENABLED=false` en los tres módulos; no existe estado APPLIED; nada modifica carga/reps/series/RIR/descanso.
+- En aquella fase: `NUMERIC_APPLY_ENABLED=false` en los tres módulos; no existía estado APPLIED; nada modificaba carga/reps/series/RIR/descanso.
 - `vdsen-plan-v2` es prescripción base inmutable. Una aplicación futura es un overlay aditivo de UNA exposición exacta.
 - Precedencia futura: SAFETY > override exacto del Coach > overlay canónico elegible > plan base.
 - Identidad = `prescriptionExerciseId`; nombre y posición nunca son identidad de mutación.

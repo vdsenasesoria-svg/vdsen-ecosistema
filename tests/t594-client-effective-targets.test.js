@@ -58,7 +58,7 @@ test('T594.3 absent load and incomplete metadata stay explicitly absent; no nume
 
 test('T594.4 the live per-set card invokes the target renderer for every set, not only heterogeneous programming', () => {
   const card = source.slice(source.indexOf('function _buildExCard('), source.indexOf('function _buildExCard(') + 60000);
-  const target = "var _setTargetHtml = _effectiveSetTargetHtml(setSpec, _ovEff ? 'AUTOAJUSTE VDSEN' : 'COACH', unit, isIsometric);";
+  const target = "var _setTargetHtml = _effectiveSetTargetHtml(setSpec, _ovEff ? 'AUTOAJUSTE VDSEN' : 'COACH', unit, isIsometric,";
   const targetAt = card.indexOf(target);
   assert.ok(targetAt >= 0, 'per-set target renderer is wired');
   assert.doesNotMatch(card, /if \(_isHeteroSets && _psReps/);

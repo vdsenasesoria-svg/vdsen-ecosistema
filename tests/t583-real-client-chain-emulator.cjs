@@ -89,9 +89,13 @@ test('T583-E3 ACTUAL load feedback: the athlete trains with 102.5 (not the sugge
   assert.equal(overlays(m).length, 4); assert.equal(records(m).length, 4, 'repeated and simultaneous requests add nothing');
 });
 
-test('T583-E4 MAINTAIN (reps below target at the prescribed effort): the Client says maintain, the server applies nothing', async () => {
+test('T583-E4 (T599-R D-01) MAINTAIN (reps below target at the prescribed effort = rule C): the Client says maintain, the canonical policy still decides REST +30 s and nothing else', async () => {
   const s = await seed('B'); const out = await run(s); const m = await meso(s);
-  assert.equal(overlays(m).length, 0, JSON.stringify(out)); assert.ok(records(m).every((r) => r.state === 'REJECTED' && r.reasonCode === 'NO_NUMERIC_DELTA'), JSON.stringify(records(m).map((r) => [r.state, r.reasonCode])));
+  // before T599-R this was "the server applies nothing": the legacy `maintain` ended the evaluation (REJECTED NO_NUMERIC_DELTA) before rule C could be read (T600 D-01).
+  assert.ok(overlays(m).length >= 1, JSON.stringify(out));
+  assert.ok(overlays(m).every((o) => o.dimension === 'REST' && o.appliedValue === o.previousValue + 30), JSON.stringify(overlays(m).map((o) => [o.dimension, o.previousValue, o.appliedValue])));
+  assert.ok(records(m).every((r) => (r.state === 'APPLIED' && r.dimension === 'REST') || (r.state === 'REJECTED' && r.reasonCode === 'NO_NUMERIC_DELTA') || (r.state === 'PENDING' && r.magnitude && r.magnitude.coachReviewRequired)), JSON.stringify(records(m).map((r) => [r.state, r.reasonCode, r.dimension, r.magnitude && r.magnitude.coachReviewRequired && r.magnitude.coachReviewRequired.branch])));   // C persisting at the next comparable exposure = C+E: Coach review
+  assert.ok(!overlays(m).some((o) => ['LOAD', 'REPS', 'SETS'].includes(o.dimension)), 'a Client maintain never becomes a LOAD / REPS / SETS increase');
 });
 
 test('T583-E5 INSUFFICIENT performance (6 reps to failure): no increase; (T586) effort outside the band freezes the load where a VDSEN rule exists, and a reps regression (no rule) still goes to Coach review', async () => {

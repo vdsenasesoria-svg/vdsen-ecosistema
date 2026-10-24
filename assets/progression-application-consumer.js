@@ -222,8 +222,10 @@
     if (c.dimension === 'SETS' || c.dimension === 'FREEZE' || c.dimension === 'DELOAD') {
       if (_num(c.finalCandidate) === null || (c.dimension !== 'FREEZE' && !(c.finalCandidate >= 1))) { blockers.push(BLOCKERS.NO_ACTIONABLE_CANDIDATE); return null; }
       var lu = ctx.loadUnit || null;
-      return { dimension: c.dimension, previousValue: _num(c.previousValue), requestedValue: _num(c.rawCandidate), appliedValue: _num(c.finalCandidate),
+      var structural = { dimension: c.dimension, previousValue: _num(c.previousValue), requestedValue: _num(c.rawCandidate), appliedValue: _num(c.finalCandidate),
         unit: c.dimension === 'FREEZE' ? lu : 'SETS', loadUnit: lu, equipmentId: null, roundingReason: null, components: c.components || null };
+      if (!_effective().validOverlayValues(structural)) { blockers.push(BLOCKERS.NO_ACTIONABLE_CANDIDATE); return null; }
+      return structural;
     }
     blockers.push(BLOCKERS.STRUCTURAL_DIMENSION_NOT_AUTHORIZED);
     return null;
@@ -495,7 +497,7 @@
     if (guards.isCurrent && !guards.isCurrent()) return { written: false, reason: BLOCKERS.STALE_CALLBACK };
     var shadow = _shadow(), eff = _effective();
     if (!shadow || !eff) return _fail('LIFECYCLE_UNAVAILABLE');
-    var st = await _loadLifecycle(tx, refs, input, { meso: true, root: true });
+    var st = await _loadLifecycle(tx, refs, input, { meso: true, root: true, client: true, plan: true });
     if (!st.meso) return { written: false, reason: BLOCKERS.NOT_CANONICAL_RECORD };
     var pair = _pair(st.meso, input.recordKey);
     if (!pair.record) return _fail(pair.reason);
@@ -510,6 +512,12 @@
     if (!rc) return _fail('NO_CONSUMPTION_RECEIPT');
     // the athlete's acknowledgement must describe exactly THIS overlay; it can never supply the prescription itself
     if (rc.provenance !== 'CANONICAL_OVERLAY' || rc.overlayKey !== ov.key || rc.recordKey !== r.key || rc.appliedValue !== ov.appliedValue || rc.dimension !== ov.dimension) return _fail('RECEIPT_MISMATCH');
+    // T599-R (D-02): the overlay must still have been AUTHORITATIVE when the exposure started. A plan revision / exact Coach decision persisted before the first working set invalidated it:
+    // a receipt (even a late retry) and a later execution never turn it into CONSUMED. Re-read inside this transaction from the canonical plan, client and log documents. (The plan is judged as the record's OWN plan: a started exposure of a replaced plan still consumes inside it, see T532 #7.)
+    var stillValid = eff.evaluateOverlay({ clientId: r.clientId, planId: r.planId, activePlanId: r.planId, pid: r.prescriptionExerciseId, week: tgt.week, dayIndex: tgt.dayIndex,
+      records: (function(o) { o[r.key] = r; return o; })({}), overlays: (function(o) { o[ov.key] = ov; return o; })({}), interventions: st.client && st.client.coachInterventions,
+      plan: st.plan || {}, entries: _entriesOf(st, r.planId), safetyConflict: false });
+    if (!stillValid.usable) return _fail(stillValid.reason);
     var at = _now(input, null);
     if (!at) return _fail('TIMESTAMP_MISSING');
     var shown = { provenance: rc.provenance, overlayKey: ov.key, dimension: ov.dimension, previousValue: ov.previousValue, appliedValue: ov.appliedValue, unit: ov.unit };

@@ -2,7 +2,8 @@
  *   effective = base plan + eligible canonical overlay
  *   precedence: SAFETY > exact Coach target-exposure override > eligible canonical overlay > base plan
  * Pure. Never mutates its inputs, never reads legacy progrec, never uses names as identity, never touches LOGS values (it only asks
- * whether the exact PID exposure has started). With NUMERIC_APPLY_ENABLED=false the base plan is ALWAYS the effective prescription. */
+ * whether the exact PID exposure has started). NUMERIC_APPLY_ENABLED stays false; canonicalOverlayRead reads existing trusted-server
+ * authority without granting application or write authority to the browser. */
 (function(root, factory) {
   var api = factory(typeof require === 'function' ? require : null, root);
   if (typeof module === 'object' && module.exports) module.exports = api;
@@ -36,6 +37,21 @@
     });
   }
 
+  // T599-R (D-02): WHEN the exposure started, from persisted evidence only: the earliest `ts` of the qualifying working sets (same definition as pidExposureStarted).
+  // at === null when any qualifying set carries no numeric timestamp (unknown order: callers fail closed).
+  function exposureStart(entries, pid, week, dayIndex) {
+    if (!pid || !entries) return { started: false, at: null };
+    var re = new RegExp('^log_' + week + '_' + dayIndex + '_\\d+_s\\d+$'), at = null, started = false, unknown = false;
+    Object.keys(entries).forEach(function(k) {
+      var e = entries[k];
+      if (!(re.test(k) && e && typeof e === 'object' && e.prescriptionExerciseId === pid && e.done === true && e.autoFilled !== true && e.express !== true && e.expressFinal !== true && !_kind(e))) return;
+      started = true;
+      var t = typeof e.ts === 'number' && Number.isFinite(e.ts) ? e.ts : null;
+      if (t === null) unknown = true; else if (at === null || t < at) at = t;
+    });
+    return { started: started, at: unknown ? null : at };
+  }
+
   // SAFETY signal readable at any time from LOGS: an articular-pain report in a session strictly AFTER the source exposure and strictly
   // BEFORE the target exposure (same definition of pain as the magnitude policy evidence: postsession articular 'si' / articularPain.present).
   function painReportedBetween(entries, source, target) {
@@ -51,6 +67,20 @@
   }
 
   function _values(map) { return map && typeof map === 'object' ? Object.keys(map).map(function(k) { return map[k]; }) : []; }
+  // Validate an entire received prescription before rendering any component. No partial deloads.
+  function validOverlayValues(o) {
+    if (!o || _num(o.appliedValue) === null) return false;
+    var d = o.dimension, v = o.appliedValue, c = o.components;
+    var loadUnit = String(o.loadUnit || o.unit || '').toUpperCase();
+    if (d === 'LOAD' || d === 'FREEZE') return v > 0 && /^(KG|LB)$/.test(loadUnit);
+    if (d === 'REPS' || d === 'SETS') return Number.isInteger(v) && v >= 1;
+    if (d === 'REST') return v >= 0 && o.unit === 'SECONDS';
+    if (d !== 'DELOAD' || !c || !Number.isInteger(c.SETS) || c.SETS < 1 || c.SETS !== v) return false;
+    if (Object.keys(c).some(function(k) { return ['SETS', 'LOAD', 'RIR'].indexOf(k) < 0; })) return false;
+    if ('LOAD' in c && (!(_num(c.LOAD) > 0) || !/^(KG|LB)$/.test(loadUnit))) return false;
+    if ('RIR' in c && (_num(c.RIR) === null || c.RIR < 0 || c.RIR > 5)) return false;
+    return true;
+  }
   function _daysWithPid(plan, pid) {
     return (Array.isArray(plan && plan.days) ? plan.days : []).filter(function(d) { return (d.exercises || []).some(function(e) { return e.prescriptionExerciseId === pid; }); })
       .map(function(d) { return d.dayIndex; }).filter(Number.isInteger).sort(function(a, b) { return a - b; });
@@ -80,23 +110,34 @@
         o.key !== 'ovl_' + r.key || !r.lifecycle || r.lifecycle.overlayKey !== o.key) return no('RECORD_OVERLAY_INCONSISTENT');
     if (r.state !== 'APPLIED' && r.state !== 'CONSUMED') return no('OVERLAY_' + r.state, PROVENANCE.BASE_PLAN, { state: r.state });
     if (o.status !== r.state) return no('RECORD_OVERLAY_INCONSISTENT');
+    if (!validOverlayValues(o)) return no('OVERLAY_VALUES_INVALID');
     if (input.planId !== input.activePlanId) return no('PLAN_MISMATCH');
     var ok = { usable: true, reason: null, provenance: PROVENANCE.CANONICAL_OVERLAY, overlay: o, record: r, state: r.state };
     if (input.safetyConflict === true || painReportedBetween(input.entries, r.source, o.target)) return no('SAFETY_CONFLICT', PROVENANCE.SAFETY_FALLBACK, { state: r.state });
-    // A started exposure keeps the prescription it started with: no retroactive override/stale.
-    if (r.state === 'CONSUMED' || pidExposureStarted(input.entries, pid, week, day)) return ok;
+    // CONSUMED: the trusted server only consumes an application that was still valid when the exposure started (consumeOverlayTransaction re-runs this evaluation), so it keeps
+    // governing the exposure it was consumed in.
+    if (r.state === 'CONSUMED') return ok;
+    // T599-R (D-02): a started exposure keeps the prescription it STARTED with — but an invalidation (Coach decision, plan revision) that happened BEFORE the first persisted
+    // working set already ended the overlay's authority, and executing the exposure afterwards must not revive it. Order of persisted events decides; a tie or an unknown
+    // order (no timestamp) fails closed. An invalidation AFTER the first set is not retroactive.
+    var start = exposureStart(input.entries, pid, week, day);
+    function beforeStart(at) { return !start.started || start.at === null || at === null || at <= start.at; }
     // Any exact Coach decision since the source calculation counts: the apply gate refused every decision it could SEE at commit, so a
     // decision visible now was necessarily written after the commit (independent of clock skew between devices).
-    var calcAt = _time(r.source && r.source.calculatedAt), from = calcAt;
-    var overridden = (Array.isArray(input.interventions) ? input.interventions : []).some(function(iv) {
-      return iv && iv.targetType === 'EXERCISE' && iv.targetId === pid && (!iv.planId || iv.planId === input.planId) && _time(iv.decidedAt) !== null &&
-        from !== null && _time(iv.decidedAt) >= from && iv.action !== 'NO_CHANGE';
+    var calcAt = _time(r.source && r.source.calculatedAt), from = calcAt, overrideAt = null, overridden = false;
+    (Array.isArray(input.interventions) ? input.interventions : []).forEach(function(iv) {
+      if (!(iv && iv.targetType === 'EXERCISE' && iv.targetId === pid && (!iv.planId || iv.planId === input.planId) && _time(iv.decidedAt) !== null &&
+        from !== null && _time(iv.decidedAt) >= from && iv.action !== 'NO_CHANGE')) return;
+      overridden = true; var t = _time(iv.decidedAt); if (overrideAt === null || t < overrideAt) overrideAt = t;
     });
-    if (overridden) return no('COACH_OVERRIDE', PROVENANCE.COACH_OVERRIDE, { state: r.state });
+    if (overridden && beforeStart(overrideAt)) return no('COACH_OVERRIDE', PROVENANCE.COACH_OVERRIDE, { state: r.state });
     var plan = input.plan || {}, planAt = _time(plan.updatedAt), t = _nextExposure(plan, pid, r.source && r.source.week, r.source && r.source.dayIndex);
     var targetDay = (Array.isArray(plan.days) ? plan.days : []).filter(function(d) { return d.dayIndex === day; })[0];
     var inTarget = ((targetDay && targetDay.exercises) || []).filter(function(e) { return e.prescriptionExerciseId === pid; });
-    if (planAt === null || calcAt === null || planAt > calcAt || inTarget.length !== 1 || !t || t.week !== week || t.dayIndex !== day) return no('TARGET_INVALIDATED', PROVENANCE.BASE_PLAN, { state: r.state });
+    if (planAt === null || calcAt === null || planAt > calcAt || inTarget.length !== 1 || !t || t.week !== week || t.dayIndex !== day) {
+      var revisedAfterCalc = planAt !== null && calcAt !== null && planAt > calcAt;
+      if (!(start.started && revisedAfterCalc && !beforeStart(planAt))) return no('TARGET_INVALIDATED', PROVENANCE.BASE_PLAN, { state: r.state });
+    }
     return ok;
   }
 
@@ -146,14 +187,14 @@
     if (carriedVals.SETS) eff = _withSetCount(eff, carriedVals.SETS.value);
     // 2) the overlay of THIS exposure
     if (o) {
-      if (o.dimension === 'LOAD' || o.dimension === 'REPS' || o.dimension === 'REST') eff = _applyValue(eff, o.dimension, o.appliedValue);
+      if (o.dimension === 'LOAD' || o.dimension === 'FREEZE' || o.dimension === 'REPS' || o.dimension === 'REST') eff = _applyValue(eff, o.dimension === 'FREEZE' ? 'LOAD' : o.dimension, o.appliedValue);
       else if (o.dimension === 'SETS') eff = _withSetCount(eff, o.appliedValue);
       else if (o.dimension === 'DELOAD' && o.components) {
         if (_num(o.components.LOAD) !== null) eff = _applyValue(eff, 'LOAD', o.components.LOAD);
         if (_num(o.components.SETS) !== null) eff = _withSetCount(eff, o.components.SETS);
         if (_num(o.components.RIR) !== null) eff = eff.map(function(x) { var y = _copy(x); if (_isStd(x)) y.rirTarget = o.components.RIR; return y; });
       }
-      // FREEZE: values stay as they are (the carried / base load): the overlay only withholds a progression and says so.
+      // FREEZE holds the executed load authorized by the server, never a legacy numerical Coach load.
     }
     return eff.map(function(e, i) { var b = base[i] || null; return { base: b ? _copy(b) : null, effective: e, adjusted: !b || JSON.stringify(b) !== JSON.stringify(e) }; });
   }
@@ -168,7 +209,7 @@
     if (!input.clientId || !input.planId || !pid || !Number.isInteger(here.week) || !Number.isInteger(here.dayIndex) || input.planId !== input.activePlanId) return out;
     var plan = input.plan || {}, planAt = _time(plan.updatedAt), best = {};
     _values(input.overlays).forEach(function(o) {
-      if (!o || o.schema !== OVERLAY_SCHEMA || o.clientId !== input.clientId || o.planId !== input.planId || o.prescriptionExerciseId !== pid || !o.target) return;
+      if (!o || o.schema !== OVERLAY_SCHEMA || o.clientId !== input.clientId || o.planId !== input.planId || o.prescriptionExerciseId !== pid || !o.target || !validOverlayValues(o)) return;
       if (CARRIED_DIMS.indexOf(o.dimension) < 0 || !_before(o.target, here) || o.status !== 'CONSUMED') return;
       var r = input.records && input.records[o.sourceRecordKey];
       if (!r || r.state !== 'CONSUMED' || r.key !== o.sourceRecordKey || r.clientId !== o.clientId || r.planId !== o.planId || r.prescriptionExerciseId !== pid || o.key !== 'ovl_' + r.key) return;
@@ -208,15 +249,44 @@
     var ev = evaluateOverlay(input);
     if (!ev.usable) {
       // a Coach override, a safety fallback or an invalidated target is a deliberate return to the plan: never carry past it
-      if (ev.reason === 'SAFETY_CONFLICT' || ev.reason === 'COACH_OVERRIDE' || ev.reason === 'TARGET_INVALIDATED') return base(ev.reason, ev.provenance);
+      if (ev.reason === 'SAFETY_CONFLICT' || ev.reason === 'COACH_OVERRIDE' || ev.reason === 'TARGET_INVALIDATED' || ev.reason === 'OVERLAY_VALUES_INVALID') return base(ev.reason, ev.provenance);
       return carriedOnly(ev.reason, ev.provenance);
     }
     var o = ev.overlay;
-    if (o.dimension === 'LOAD' && input.unit && String(input.unit).toUpperCase() !== String(o.unit).toUpperCase()) return base('UNIT_MISMATCH');
+    var changesLoad = o.dimension === 'LOAD' || o.dimension === 'FREEZE' || (o.dimension === 'DELOAD' && o.components && 'LOAD' in o.components);
+    if (changesLoad && input.unit && String(input.unit).toUpperCase() !== String(o.loadUnit || o.unit).toUpperCase()) return base('UNIT_MISMATCH');
     return { provenance: PROVENANCE.CANONICAL_OVERLAY, reason: null, overlayKey: o.key, state: ev.state, dimension: o.dimension, previousValue: o.previousValue, appliedValue: o.appliedValue,
-      unit: o.unit, components: o.components || null, carried: hasCarry ? carried : null, presentation: _presentation(o), sets: _effectiveSets(baseSets, o, carried) };
+      unit: o.unit, loadUnit: o.loadUnit || o.unit, components: o.components || null, provenanceDetail: o.provenance || null, equipmentSnapshot: o.equipmentSnapshot || null,
+      roundingReason: o.roundingReason || null, carried: hasCarry ? carried : null, presentation: _presentation(o), sets: _effectiveSets(baseSets, o, carried) };
+  }
+
+  // Presentation of existing authority only: never calculates a candidate, enables a gate or writes.
+  function describeProgression(input) {
+    input = input || {};
+    var result = resolveEffective(input), applied = result.provenance === PROVENANCE.CANONICAL_OVERLAY || result.provenance === PROVENANCE.CARRIED_OVERLAY;
+    var records = _values(input.records).filter(function(r) { var t = r && r.nextExposure;
+      return r && r.clientId === input.clientId && r.planId === input.planId && r.prescriptionExerciseId === input.pid && t && t.week === input.week && t.dayIndex === input.dayIndex;
+    }).sort(function(a, b) { return (_time(b.source && b.source.calculatedAt) || 0) - (_time(a.source && a.source.calculatedAt) || 0); });
+    var rec = records[0] || null, m = rec && rec.magnitude, state = applied ? (result.state || 'CONSUMED') : 'NO_AUTHORIZED_ADJUSTMENT';
+    var reasons = [];
+    if (!applied) {
+      if (result.reason && ['NO_OVERLAY', 'NUMERIC_APPLY_DISABLED'].indexOf(result.reason) < 0) { reasons.push(result.reason); state = result.reason === 'COACH_OVERRIDE' ? 'COACH_REVIEW' : 'BLOCKED'; }
+      else if (rec) {
+        reasons = (m && m.reasonCodes || []).slice();
+        if (m && m.coachReviewRequired) state = 'COACH_REVIEW';
+        else if (rec.state === 'PENDING' && m && m.eligible) state = 'PENDING';
+        else if (rec.state !== 'PENDING' || reasons.length) state = 'BLOCKED';
+        if (!reasons.length && rec.reasonCode) reasons.push(rec.reasonCode);
+      }
+    }
+    return { state: state, applied: applied, result: result, reasons: reasons, recordKey: rec && rec.key || null,
+      ruleId: applied && result.provenanceDetail ? result.provenanceDetail.ruleId : (m && m.ruleId || null),
+      previousLoad: rec && m && m.candidates && m.candidates[0] ? m.candidates[0].previousLoad : null,
+      target: { week: input.week, dayIndex: input.dayIndex },
+      hasAppliedLoad: applied && (['LOAD', 'FREEZE'].indexOf(result.dimension) >= 0 || !!(result.components && 'LOAD' in result.components) || !!(result.carried && result.carried.LOAD)) };
   }
 
   return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, OVERLAY_SCHEMA: OVERLAY_SCHEMA, PROVENANCE: PROVENANCE, LABEL: LABEL,
-    pidExposureStarted: pidExposureStarted, painReportedBetween: painReportedBetween, evaluateOverlay: evaluateOverlay, carriedBaseline: carriedBaseline, resolveEffective: resolveEffective };
+    pidExposureStarted: pidExposureStarted, exposureStart: exposureStart, painReportedBetween: painReportedBetween, evaluateOverlay: evaluateOverlay, carriedBaseline: carriedBaseline, resolveEffective: resolveEffective,
+    validOverlayValues: validOverlayValues, describeProgression: describeProgression };
 });
