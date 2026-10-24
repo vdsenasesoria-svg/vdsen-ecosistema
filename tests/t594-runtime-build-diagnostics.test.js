@@ -11,6 +11,7 @@ const id = /<meta name="vdsen-client-build" content="([^"]+)">/.exec(client);
 
 test('T594-1 the delivered shell exposes one non-empty build identity and registers that exact worker URL', () => {
   assert.ok(id && id[1], 'build meta is present');
+  assert.notEqual(id[1], 'issue-115-cache-cutover-20261022-01', 'the candidate must not reuse the production cutover identity');
   assert.ok(client.includes("window.VDSEN_CLIENT_BUILD = '" + id[1] + "'"));
   assert.match(client, /navigator\.serviceWorker\.register\('\/sw\.js\?build='\+encodeURIComponent\(window\.VDSEN_CLIENT_BUILD\), \{ updateViaCache: 'none' \}\)/);
 });

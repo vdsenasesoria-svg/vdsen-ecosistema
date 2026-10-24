@@ -4,6 +4,7 @@
 const { spawn } = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path');
 const root = path.resolve(__dirname, '..', '..');
+const BUILD = /<meta name="vdsen-client-build" content="([^"]+)">/.exec(fs.readFileSync(path.join(root, 'vdsen-cliente.html'), 'utf8'))[1];
 const chromePath = process.argv[2] || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const PORT = 5199, DEBUG = 9334, origin = 'http://localhost:' + PORT;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -50,7 +51,7 @@ async function session() {
     const old = await p.ev('window.__auditCta(0,0)'); check('negative sticky CSS reliably fails geometry audit', !!(old && !old.ok && old.steps.some((s) => s.hitsFields > 0)), old);
     await p.ev("document.getElementById('t594-old-sticky').remove()"); await sleep(300);
     const runtime = await p.ev('window.getVdsenRuntimeDiagnostics()');
-    check('runtime diagnostics identifies current build and versioned worker', !!(runtime && runtime.build && runtime.serviceWorker.registrations.some((r) => /sw\.js\?build=/.test(r.active || ''))), runtime && { build:runtime.build, controller:runtime.serviceWorker.controller, registrations:runtime.serviceWorker.registrations, caches:runtime.serviceWorker.caches, viewport:runtime.viewport });
+    check('runtime diagnostics identifies this HTML build, its worker controller and its cache', !!(runtime && runtime.build === BUILD && runtime.serviceWorker.controller && runtime.serviceWorker.controller.includes('build=' + encodeURIComponent(BUILD)) && runtime.serviceWorker.registrations.some((r) => (r.active || '').includes('build=' + encodeURIComponent(BUILD))) && runtime.serviceWorker.caches.includes('vdsen-' + BUILD)), runtime && { expectedBuild:BUILD, build:runtime.build, controller:runtime.serviceWorker.controller, registrations:runtime.serviceWorker.registrations, caches:runtime.serviceWorker.caches, viewport:runtime.viewport });
     await p.ev('window.goTab(1)'); await sleep(300);
     const keys = []; for (let set=0; set<3; set++) { keys.push(await p.ev("window.__logSet(0,0," + set + ",{carga:80,reps:10,rir:2,ics:8,pump:1})")); await sleep(900); }
     const creds = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'vdsen-client-e2e-creds.json'), 'utf8')).who.G;
