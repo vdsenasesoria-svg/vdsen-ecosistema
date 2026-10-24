@@ -1830,12 +1830,18 @@ function toggleExUnit(di, ei) {
 
   // ── 3. Convertir EXERCISE_HISTORY para este ejercicio ──
   if (ej) {
-    var _eName = (ej.nombre || ej.exerciseName || '')
-      .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-    var _hist = EXERCISE_HISTORY[_eName];
-    if (_hist && _hist.unit && _hist.unit.toUpperCase() === oldUnit && _hist.load) {
-      _hist.load = String(_roundUnit(parseFloat(_hist.load) * factor, newUnit));
-      _hist.unit = newUnit;
+    var _histKey = _historyPidKey(ej.prescriptionExerciseId);
+    var _hist = _histKey ? EXERCISE_HISTORY[_histKey] : null;
+    if (_hist) {
+      ['last', 'personalBest'].forEach(function(part) {
+        var value = _hist[part] || (part === 'last' ? _hist : null);
+        if (value && value.unit && value.unit.toUpperCase() === oldUnit && value.load) {
+          value.load = String(_roundUnit(parseFloat(value.load) * factor, newUnit));
+          value.unit = newUnit;
+        }
+      });
+      // The flat compatibility view is always the last execution.
+      if (_hist.last) { _hist.load = _hist.last.load; _hist.reps = _hist.last.reps; _hist.rir = _hist.last.rir; _hist.unit = _hist.last.unit; _hist.updatedAt = _hist.last.updatedAt; }
     }
   }
 
@@ -3316,6 +3322,7 @@ async function loadPlan(user) {
           CURRENT_WEEK = logData.currentWeek || 1;
           REAL_WEEK    = CURRENT_WEEK;
           _rebuildLogsByWeek();
+          _rebuildLoadedHistoryReferences();
         }
       }
     } catch(logErr) {
@@ -5674,7 +5681,7 @@ async function _refreshLogsFromFirestore(reason) {
       if (fsWeek > _remoteWeekSeen) _remoteWeekSeen = fsWeek;
       var _refConfirmed = !(snap.metadata && (snap.metadata.hasPendingWrites || snap.metadata.fromCache));
       _adoptRemoteLogs(fsEntries, data.exerciseUnits, data.exerciseHistory, _refConfirmed);   // T593-R: merged under this device pending changes
-      _logsAuthorityUpdatedAt = Number(data.updatedAt) || 0; _rebuildLogsByWeek();
+      _logsAuthorityUpdatedAt = Number(data.updatedAt) || 0; _rebuildLogsByWeek(); _rebuildLoadedHistoryReferences();
       if (_refConfirmed) _acceptSraPersisted(_sraRefreshUid, _sraRefreshPlan, fsEntries, Number(data.updatedAt) || 0);
     } else {
       if (data.exerciseUnits)   EXERCISE_UNITS   = data.exerciseUnits;
@@ -5829,7 +5836,7 @@ function _setsRepsLabel(sets) {
   return base + suffix;
 }
 
-// T594 / Issue #124: an executable set always declares its effective target
+// T594 / T597: an executable set always declares its effective target
 // before the athlete enters the result.  This is presentation only: it never
 // writes a plan, changes an input, or turns a PENDING recommendation into an
 // applied prescription.  A zero/absent load means precisely "not prescribed",
@@ -5837,17 +5844,19 @@ function _setsRepsLabel(sets) {
 function _effectiveSetTargetHtml(setSpec, provenance, unit, isIsometric) {
   if (!setSpec || typeof setSpec !== 'object') return '';
   var load = Number(setSpec.load);
-  var hasLoad = !isIsometric && Number.isFinite(load) && load > 0;
+  // T597: Coach owns structure, not a numerical working load. A load can be
+  // rendered here only when it is the exact effective value of a canonical VDSEN overlay.
+  var hasLoad = provenance === 'AUTOAJUSTE VDSEN' && !isIsometric && Number.isFinite(load) && load > 0;
   var reps = setSpec.repsTarget;
   var rir = setSpec.rirTarget;
   var source = provenance === 'AUTOAJUSTE VDSEN' ? 'AUTOAJUSTE VDSEN' : 'COACH';
   var rows = [];
-  if (!isIsometric) rows.push('<span class="sp-t-v"><b>CARGA '+(hasLoad ? _escHTml(String(load))+' '+_escHTml(unit) : 'no prescrita')+'</b></span>');
+  if (hasLoad) rows.push('<span class="sp-t-v"><b>CARGA '+_escHTml(String(load))+' '+_escHTml(unit)+'</b></span>');
   if (reps !== undefined && reps !== null && reps !== '') rows.push('<span class="sp-t-v"><b>'+_escHTml(String(reps))+'</b> '+(isIsometric ? 'seg' : 'reps')+'</span>');
   if (rir !== undefined && rir !== null && rir !== '') rows.push('<span class="sp-t-r">RIR '+_escHTml(String(rir))+'</span>');
   if (!rows.length) return '';
   return '<div class="sp-target" data-effective-target="1" data-target-source="'+source+'">'+
-    '<span class="sp-t-l">OBJETIVO '+source+'</span>'+rows.join('')+
+    '<span class="sp-t-l">'+(source === 'COACH' ? 'ESTRUCTURA COACH' : 'OBJETIVO '+source)+'</span>'+rows.join('')+
   '</div>';
 }
 
@@ -7178,6 +7187,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     var _psReps = setSpec ? setSpec.repsTarget : null;
     var _psRir  = (setSpec && setSpec.rirTarget !== undefined && setSpec.rirTarget !== null) ? setSpec.rirTarget : null;
     var _setTargetHtml = _effectiveSetTargetHtml(setSpec, _ovEff ? 'AUTOAJUSTE VDSEN' : 'COACH', unit, isIsometric);
+    var _historyReferenceHtml = _logbookReferenceHtml(histEx, unit, isIsometric);
     // Instrucción específica del set (técnica + nota del coach)
     var _setInstrHtml = '';
     var _techLowerS = (ej.technique || 'straight').toLowerCase();
@@ -7206,9 +7216,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         _instrLines.join('<br>')+
       '</div>';
     }
-    var setSpecBlock = (setNote || setSpecBadges || _setTargetHtml || _setInstrHtml)
+    var setSpecBlock = (setNote || setSpecBadges || _setTargetHtml || _historyReferenceHtml || _setInstrHtml)
       ? '<div style="margin-bottom:8px;font-size:11px;color:var(--mt2);line-height:1.5">'+
           _setTargetHtml+
+          _historyReferenceHtml+
           _setInstrHtml+
           setSpecBadges+
           (setNote && SET_NOTE_LABELS[setNote] ? '<span style="color:var(--accent);font-weight:600">📌 '+getSetNoteBadge(setNote)+'</span>' : '')+
@@ -9552,7 +9563,7 @@ function buildBoostcampExercise(ej, di, ei) {
   // FST7: techo fijo de 7 sets en warm-up también
   if ((ej.technique || '').toLowerCase() === 'fst7') numSeries = Math.min(numSeries, (ej.sets || []).length || 7);
 
-  // T485: warm-up base load = previous execution > history > Coach plan load (never a recommendation);
+  // T597: warm-up base load = previous execution > history (never a recommendation or Coach load);
   // without a base the warm-up is shown qualitatively.
   var wuHtml = '';
   if (_isFirstOfPattern) {
@@ -9868,27 +9879,45 @@ function copiarSerie(key, s, di, ei) {
   if (_copyFocus && typeof _copyFocus.focus === 'function') _copyFocus.focus();
 }
 
-// Actualiza EXERCISE_HISTORY con la misma regla que ya existía (solo sobreescribe si la
-// nueva carga es ≥ la guardada) y detecta si la serie registrada es un récord personal
-// (carga mayor a la histórica, o misma carga con más reps) para mostrar una celebración.
+// T597: EXERCISE_HISTORY is a denormalised PID-keyed view of real execution.
+// `last` is the operational reference; `personalBest` never replaces it.
 function _historyPidKey(prescriptionExerciseId) {
   return prescriptionExerciseId ? '__pid__' + String(prescriptionExerciseId) : '';
+}
+function _historySnapshot(entry) {
+  if (!entry || typeof entry !== 'object') return {};
+  return { load: entry.load === undefined || entry.load === null ? '' : String(entry.load),
+    reps: entry.reps === undefined || entry.reps === null ? '' : String(entry.reps),
+    rir: entry.rir === undefined || entry.rir === null ? '' : entry.rir,
+    unit: entry.unit ? String(entry.unit).toUpperCase() : '', updatedAt: Number(entry.updatedAt) || 0 };
+}
+function _historyLast(raw) { return _historySnapshot(raw && raw.last ? raw.last : raw); }
+function _historyPersonalBest(raw) { return _historySnapshot(raw && raw.personalBest ? raw.personalBest : raw); }
+function _historyEntry(last, personalBest) {
+  var current = _historySnapshot(last), best = _historySnapshot(personalBest || last);
+  // Flat fields preserve existing readers and persisted legacy compatibility.
+  return { load: current.load, reps: current.reps, rir: current.rir, unit: current.unit, updatedAt: current.updatedAt,
+    last: current, personalBest: best };
 }
 function _getExerciseHistoryEntry(exNameKey, prescriptionExerciseId) {
   // T553: the PID entry is the only authority; the name-keyed entry (legacy PID-less plans) is no longer read. No PID => no history reference (fail closed).
   var pidKey = _historyPidKey(prescriptionExerciseId);
-  return pidKey ? (EXERCISE_HISTORY[pidKey] || {}) : {};
+  if (!pidKey) return {};
+  var raw = EXERCISE_HISTORY[pidKey];
+  if (!raw) return {};
+  return _historyEntry(_historyLast(raw), _historyPersonalBest(raw));
 }
 function _recordExerciseHistoryAndPR(exNameKey, exDisplayName, carga, reps, rir, unit, showCelebration, prescriptionExerciseId) {
   if (!carga || parseFloat(carga) <= 0) return false;
-  var historyKey = _historyPidKey(prescriptionExerciseId) || exNameKey;
-  var prev = _getExerciseHistoryEntry(exNameKey, prescriptionExerciseId);
+  var historyKey = _historyPidKey(prescriptionExerciseId);
+  if (!historyKey) return false;
+  var raw = EXERCISE_HISTORY[historyKey] || {};
+  var prev = _historyPersonalBest(raw);
   var newLoad = parseFloat(carga) || 0;
   var prevLoadInUnit = prev.load ? (parseFloat(_convertCarga(prev.load, prev.unit, unit)) || 0) : 0;
   var isPR = !!prev.load && (newLoad > prevLoadInUnit || (newLoad === prevLoadInUnit && parseInt(reps) > (parseInt(prev.reps) || 0)));
-  if (!prev.load || newLoad >= prevLoadInUnit) {
-    EXERCISE_HISTORY[historyKey] = { load: carga, reps: String(reps), rir: rir, unit: unit, updatedAt: Date.now() };
-  }
+  var current = { load: carga, reps: String(reps), rir: rir, unit: unit, updatedAt: Date.now() };
+  EXERCISE_HISTORY[historyKey] = _historyEntry(current, (!prev.load || isPR) ? current : prev);
   if (isPR && showCelebration !== false) showPRCelebration(exDisplayName, carga, unit, reps);
   return isPR;
 }
@@ -9897,32 +9926,58 @@ window._recordExerciseHistoryAndPR = _recordExerciseHistoryAndPR;
 // LOGS is the execution source of truth. Rebuild this convenience reference
 // after a correction so an invalidated high-water mark cannot survive.
 function _rebuildExerciseHistoryFromLogs(exNameKey, prescriptionExerciseId) {
+  if (!_historyPidKey(prescriptionExerciseId)) return;
+  var latest = null, latestAt = -1, latestKey = '';
   var best = null, bestKg = -1;
   Object.keys(LOGS || {}).forEach(function(key) {
     if (key.indexOf('log_') !== 0) return;
     var entry = LOGS[key];
-    if (!entry || !entry.done || entry.autoFilled) return;
-    var sameExercise = prescriptionExerciseId
-      ? entry.prescriptionExerciseId === prescriptionExerciseId
-      : _normName(entry.exerciseNameSnapshot || '') === _normName(exNameKey || '');
+    if (!entry || !entry.done || entry.autoFilled || entry.warmup || entry.express || entry.expressFinal) return;
+    var sameExercise = entry.prescriptionExerciseId === prescriptionExerciseId;
     if (!sameExercise) return;
     var unit = (entry.unit || 'KG').toUpperCase();
     var loadKg = parseFloat(_convertCarga(String(entry.carga || 0), unit, 'KG')) || 0;
     if (loadKg <= 0) return;
+    var at = Number(entry.ts) || 0;
+    if (!latest || at > latestAt || (at === latestAt && key > latestKey)) {
+      latest = entry; latestAt = at; latestKey = key;
+    }
     if (!best || loadKg > bestKg || (loadKg === bestKg && (parseInt(entry.reps) || 0) > (parseInt(best.reps) || 0))) {
       best = entry; bestKg = loadKg;
     }
   });
-  if (best) {
-    EXERCISE_HISTORY[_historyPidKey(prescriptionExerciseId) || exNameKey] = {
-      load: String(best.carga), reps: String(best.reps), rir: best.rir_real,
-      unit: (best.unit || 'KG').toUpperCase(), updatedAt: best.ts || Date.now()
-    };
+  if (latest) {
+    var last = { load: String(latest.carga), reps: String(latest.reps), rir: latest.rir_real,
+      unit: (latest.unit || 'KG').toUpperCase(), updatedAt: latest.ts || Date.now() };
+    var personalBest = { load: String(best.carga), reps: String(best.reps), rir: best.rir_real,
+      unit: (best.unit || 'KG').toUpperCase(), updatedAt: best.ts || Date.now() };
+    EXERCISE_HISTORY[_historyPidKey(prescriptionExerciseId)] = _historyEntry(last, personalBest);
   } else {
-    delete EXERCISE_HISTORY[_historyPidKey(prescriptionExerciseId) || exNameKey];
+    delete EXERCISE_HISTORY[_historyPidKey(prescriptionExerciseId)];
   }
 }
 window._rebuildExerciseHistoryFromLogs = _rebuildExerciseHistoryFromLogs;
+
+// Reconcile old flat history when this plan's real logs are loaded. We only
+// touch PIDs present in the current logbook, so cross-plan references without
+// loaded evidence remain backward-compatible until their own evidence loads.
+function _rebuildLoadedHistoryReferences() {
+  var pids = {};
+  Object.keys(LOGS || {}).forEach(function(key) {
+    var entry = LOGS[key];
+    if (key.indexOf('log_') === 0 && entry && entry.prescriptionExerciseId) pids[String(entry.prescriptionExerciseId)] = true;
+  });
+  Object.keys(pids).forEach(function(pid) { _rebuildExerciseHistoryFromLogs('', pid); });
+}
+window._rebuildLoadedHistoryReferences = _rebuildLoadedHistoryReferences;
+
+function _logbookReferenceHtml(historyEntry, unit, isIsometric) {
+  if (isIsometric) return '';
+  var last = _historyLast(historyEntry);
+  var load = last.load ? parseFloat(_convertCarga(last.load, last.unit || unit, unit)) : 0;
+  if (!(load > 0)) return '<div class="sp-history-reference" data-load-reference="none"><span>SIN HISTORIAL</span><b>Primera ejecución: registra la carga utilizada.</b></div>';
+  return '<div class="sp-history-reference" data-load-reference="logbook"><span>REFERENCIA DE BITÁCORA</span><b>Última carga de trabajo válida: '+_escHTml(String(_roundUnit(load, unit)))+' '+_escHTml(unit)+'.</b></div>';
+}
 
 function showPRCelebration(exDisplayName, load, unit, reps) {
   var old = document.getElementById('prCeleb');
@@ -12070,6 +12125,7 @@ function loadBackupLogs() {
         CURRENT_WEEK = REAL_WEEK;
         if (data.exerciseUnits) EXERCISE_UNITS = data.exerciseUnits;
         if (data.exerciseHistory) EXERCISE_HISTORY = data.exerciseHistory;
+        _rebuildLoadedHistoryReferences();
         return true;
       }
     }
@@ -17196,16 +17252,13 @@ function _normName(s) {
   return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ').normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
-// T485: warm-up base load authority. The base may come only from legitimate operational evidence:
-// the athlete's own previous execution, their exercise history, or the Coach-authored plan load.
-// A progression recommendation (legacy newLoad) is never a source. No base -> no invented number.
+// T597: warm-up load comes only from the athlete's own valid execution. Coach
+// structure and legacy plan loads are deliberately not numerical load authority.
 function _warmupReferenceLoad(prevWeekData, historyEntry, planSet) {
   var prev = prevWeekData ? parseFloat(prevWeekData.avgLoad) : 0;
   if (prev > 0) return { load: prev, source: 'PREVIOUS_EXECUTION' };
   var hist = historyEntry ? parseFloat(historyEntry.load) : 0;
   if (hist > 0) return { load: hist, source: 'HISTORY' };
-  var plan = planSet ? parseFloat(planSet.load) : 0;
-  if (plan > 0) return { load: plan, source: 'COACH_PLAN' };
   return { load: 0, source: 'NONE' };
 }
 

@@ -1,0 +1,91 @@
+node:internal/assert/utils:77
+    throw err;
+    ^
+
+AssertionError [ERR_ASSERTION]: Firestore emulator is required
+    at Object.<anonymous> (C:\Users\bonaf\Documents\Codex\2026-10-24\t597-logbook-load\tests\t583-real-client-chain-emulator.cjs:8:8)
+    at Module._compile (node:internal/modules/cjs/loader:1929:14)
+    at Object..js (node:internal/modules/cjs/loader:2060:10)
+    at Module.load (node:internal/modules/cjs/loader:1651:32)
+    at Module._load (node:internal/modules/cjs/loader:1443:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: undefined,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.21.0
+✖ tests\t583-real-client-chain-emulator.cjs (119.3063ms)
+node:internal/assert/utils:77
+    throw err;
+    ^
+
+AssertionError [ERR_ASSERTION]: Firestore emulator is required
+    at Object.<anonymous> (C:\Users\bonaf\Documents\Codex\2026-10-24\t597-logbook-load\tests\t584-real-client-chain-emulator.cjs:8:8)
+    at Module._compile (node:internal/modules/cjs/loader:1929:14)
+    at Object..js (node:internal/modules/cjs/loader:2060:10)
+    at Module.load (node:internal/modules/cjs/loader:1651:32)
+    at Module._load (node:internal/modules/cjs/loader:1443:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: undefined,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.21.0
+✖ tests\t584-real-client-chain-emulator.cjs (108.9079ms)
+node:internal/assert/utils:77
+    throw err;
+    ^
+
+AssertionError [ERR_ASSERTION]: Firestore emulator is required
+    at Object.<anonymous> (C:\Users\bonaf\Documents\Codex\2026-10-24\t597-logbook-load\tests\t586-autonomous-authority-emulator.cjs:8:8)
+    at Module._compile (node:internal/modules/cjs/loader:1929:14)
+    at Object..js (node:internal/modules/cjs/loader:2060:10)
+    at Module.load (node:internal/modules/cjs/loader:1651:32)
+    at Module._load (node:internal/modules/cjs/loader:1443:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: undefined,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.21.0
+✖ tests\t586-autonomous-authority-emulator.cjs (114.584ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 0
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 165.7412
+
+✖ failing tests:
+
+test at tests\t583-real-client-chain-emulator.cjs:1:1
+✖ tests\t583-real-client-chain-emulator.cjs (119.3063ms)
+  'test failed'
+
+test at tests\t584-real-client-chain-emulator.cjs:1:1
+✖ tests\t584-real-client-chain-emulator.cjs (108.9079ms)
+  'test failed'
+
+test at tests\t586-autonomous-authority-emulator.cjs:1:1
+✖ tests\t586-autonomous-authority-emulator.cjs (114.584ms)
+  'test failed'

@@ -16,7 +16,7 @@ function env(EXERCISE_HISTORY, LOGS) {
     _avgArr: a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0,
     _normName: s => String(s || '').toLowerCase().trim() };
   vm.createContext(ctx);
-  vm.runInContext(['_exNotePidKey', '_exNoteCtx', '_exNoteValid', '_exNoteShadowed', '_prevWeekRef', '_prevWeekRefOf'].map(fn).join('\n') + fn('_historyPidKey') + fn('_getExerciseHistoryEntry') + fn('_getPrevWeekData') +
+  vm.runInContext(['_exNotePidKey', '_exNoteCtx', '_exNoteValid', '_exNoteShadowed', '_prevWeekRef', '_prevWeekRefOf'].map(fn).join('\n') + fn('_historyPidKey') + ['_historySnapshot', '_historyLast', '_historyPersonalBest', '_historyEntry'].map(fn).join(' ') + fn('_getExerciseHistoryEntry') + fn('_getPrevWeekData') +
     '\nthis._h=_getExerciseHistoryEntry; this._p=_getPrevWeekData;', ctx);
   return ctx;
 }

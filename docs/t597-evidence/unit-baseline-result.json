@@ -1,0 +1,35 @@
+{
+  "category": "unit",
+  "gate": "PASS",
+  "TEST_BASELINE_MATCH": "YES",
+  "NEW_REGRESSIONS": 0,
+  "KNOWN_FAILURES_REMAINING": 0,
+  "FIXED_BASELINE_FAILURES": 13,
+  "known_failure_ids": [],
+  "fixed_baseline_failure_ids": [
+    "unit:tests/t501-equipment-inventory.test.js::T501.5 docs/EQUIPMENT_INCREMENT_INVENTORY.md is generated and current",
+    "unit:tests/t510-equipment-readiness-queue.test.js::T510.5 the activation-readiness report is generated, ranked by usage and current",
+    "unit:tests/t514-shadow-replay.test.js::T514.4 the report document is generated and current; fixtures never touch the shipped catalog",
+    "unit:tests/t516-pre-activation-audit.test.js::T516.9 the activation guard has 19 checks and the pre-activation documents are current",
+    "unit:tests/t521-science-sources.test.js::T521.6 analysis only: nothing in the app or canonical modules references the simulator; the report is current",
+    "unit:tests/t522-activation-docs.test.js::T522.1 both documents are generated and current",
+    "unit:tests/t525-equipment-data-required.test.js::T525.1 generated files are current",
+    "unit:tests/t525-equipment-data-required.test.js::T525.3 template has BLANK value cells only (no invented numbers)",
+    "unit:tests/t527-lifecycle-final-audit.test.js::T527.5 lifecycle audit doc lists every missing transition; generated docs are current",
+    "unit:tests/t535-final-lifecycle-audit.test.js::T535.4 the blank bulk template imports (all-or-nothing) into a config the lifecycle accepts; only the configured equipment becomes eligible",
+    "unit:tests/t535-final-lifecycle-audit.test.js::T535.6 the generated readiness documents state the lifecycle readiness derived from live facts, and the flag/data blockers",
+    "unit:tests/t535-final-lifecycle-audit.test.js::T535.7 the minimal data request names exactly the fields for Mancuernas and Barra olímpica and prefills nothing",
+    "unit:tests/t537-write-boundary.test.js::T537.3 the athlete app has NO canonical writer: no record creation, no queue, no overlay/summary payload; only the receipt path writes into the lifecycle area"
+  ],
+  "new_regression_ids": [],
+  "critical_failure_ids": [],
+  "recommendation": "Remove fixed exact identities through a reviewed baseline commit",
+  "raw_results": {
+    "PASS": 1732,
+    "FAIL": 0,
+    "CANCELLED": 0,
+    "SKIP": 0
+  },
+  "package_sha": "83aee8a00e2ed37eca51c1c2834b1a9b2fcab7cc",
+  "github_run_id": null
+}
