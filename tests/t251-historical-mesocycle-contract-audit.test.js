@@ -90,8 +90,8 @@ ok(CLIENT.includes("FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart, 'mesos', ACTIVE
 // as authoritative per-PID history.
 // ─────────────────────────────────────────────────────────────────────────────
 
-ok(CLIENT.includes("EXERCISE_HISTORY[historyKey] = { load: carga, reps: String(reps), rir: rir, unit: unit, updatedAt: Date.now() };"),
-  'confirmed EXERCISE_HISTORY writes through the derived canonical history key, with legacy name fallback preserved');
+ok(CLIENT.includes("EXERCISE_HISTORY[historyKey] = _historyEntry(current, (!prev.load || isPR) ? current : prev);") && CLIENT.includes("var historyKey = _historyPidKey(prescriptionExerciseId);"),
+  'confirmed EXERCISE_HISTORY writes through the PID-derived history key only (T553/T597: no name fallback; `last` is the operational reference, `personalBest` separate)');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // plans/{planId} remains immutable and independently readable (T245) --

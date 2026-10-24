@@ -27,12 +27,12 @@ function render(setSpec, provenance, unit, isIsometric) {
   return context._effectiveSetTargetHtml(setSpec, provenance, unit, isIsometric);
 }
 
-test('T594.1 Coach base targets are explicit before an ordinary homogeneous set, including an authored load', () => {
+test('T594.1 Coach structure is explicit before an ordinary homogeneous set without claiming numerical load authority', () => {
   const html = render({ load: 100, repsTarget: 8, rirTarget: 2 }, 'COACH', 'KG', false);
   assert.match(html, /data-effective-target="1"/);
   assert.match(html, /data-target-source="COACH"/);
-  assert.match(html, /OBJETIVO COACH/);
-  assert.match(html, /CARGA 100 KG/);
+  assert.match(html, /ESTRUCTURA COACH/);
+  assert.doesNotMatch(html, /CARGA 100 KG/);
   assert.match(html, />8<\/b> reps/);
   assert.match(html, /RIR 2/);
 });
@@ -48,7 +48,8 @@ test('T594.2 canonical overlay targets identify VDSEN auto-adjustment without ch
 
 test('T594.3 absent load and incomplete metadata stay explicitly absent; no numeric range or load is invented', () => {
   const html = render({ load: 0, repsTarget: 8 }, 'COACH', 'LB', false);
-  assert.match(html, /CARGA no prescrita/);
+  assert.match(html, /ESTRUCTURA COACH/);
+  assert.doesNotMatch(html, /CARGA/);
   assert.match(html, />8<\/b> reps/);
   assert.doesNotMatch(html, /RIR/);
   assert.doesNotMatch(html, /\d+[-–]\d+/);

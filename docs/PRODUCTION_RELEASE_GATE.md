@@ -73,7 +73,7 @@ Estados factuales: PASS / FAIL / BLOCKED / HUMAN_PENDING / NON_BLOCKING_PENDING.
 | EQUIPMENT DATA | NON_BLOCKING_PENDING | sin cambio |
 | `buildBoostcampExercise` | NON_BLOCKING_PENDING | código muerto probado (una sola ocurrencia, nunca llamado) pero fijado por 8 pruebas que lo cuentan como constructor de calentamiento; se deja; su prefill posicional es inalcanzable. Retiro = ticket aparte con reescritura de esas pruebas |
 
-Decisiones de producto abiertas (no cambiadas en silencio): (1) las vistas del Coach que leen el log RAÍZ no verán ejecución nueva de un atleta cuya raíz siga sin `planId`; el documento meso es la fuente canónica del materializador; ese atleta reinicia en Semana 1 del meso del plan; (2) `EXERCISE_HISTORY` está indexado por PID y sobrevive al cambio de plan (por diseño); (3) la base `COACH_PLAN` del calentamiento se conserva.
+Decisiones de producto abiertas (no cambiadas en silencio): (1) las vistas del Coach que leen el log RAÍZ no verán ejecución nueva de un atleta cuya raíz siga sin `planId`; el documento meso es la fuente canónica del materializador; ese atleta reinicia en Semana 1 del meso del plan; (2) `EXERCISE_HISTORY` está indexado por PID y sobrevive al cambio de plan (por diseño); (3) el calentamiento usa solo ejecución previa o referencia de bitácora: la carga del Coach no es fallback numérico.
 
 Prueba de lectura de la cuenta de Ayrton en staging (solo GET): plan 6s / 7d / 32 ej / 80 series / 32 PID, activo; raíz y meso con `planId` propio (no unbound); `updateTime` de cliente, raíz, meso y plan anteriores a esta corrida y sin cambio entre lecturas: SIN TOCAR.
 

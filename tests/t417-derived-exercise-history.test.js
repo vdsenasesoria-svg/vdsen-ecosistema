@@ -25,7 +25,9 @@ test('T417: corrected 100 kg -> 90 kg replaces an unsupported history maximum', 
   const history = rebuild({
     log_1_0_0_s0: { done: true, carga: '90', reps: '10', rir_real: '1', unit: 'KG', prescriptionExerciseId: 'pid-press', ts: 2 }
   });
-  assert.deepEqual(history, { load: '90', reps: '10', rir: '1', unit: 'KG', updatedAt: 2 });
+  // T597: the flat fields stay (compatibility) and now mirror `last`; `personalBest` is a separate view.
+  const snap = { load: '90', reps: '10', rir: '1', unit: 'KG', updatedAt: 2 };
+  assert.deepEqual(history, Object.assign({}, snap, { last: snap, personalBest: snap }));
 });
 
 test('T420: another legitimate 100 kg set keeps the valid maximum after correction', () => {

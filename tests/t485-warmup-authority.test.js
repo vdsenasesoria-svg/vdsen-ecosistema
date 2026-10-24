@@ -1,5 +1,5 @@
-// T485: warm-up loads never derive from a progression recommendation. Base load = previous execution >
-// history > Coach-authored plan load; with no base the warm-up is qualitative.
+// T597: warm-up loads never derive from a recommendation or Coach-authored load.
+// Base load = previous execution > history; with no base the warm-up is qualitative.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -25,11 +25,11 @@ vm.createContext(ctx);
 ['_roundUnit', '_warmupReferenceLoad', '_warmupRowsHtml'].forEach(n => vm.runInContext(fnSource(n), ctx));
 const region = (a, b) => { const i = client.indexOf(a); assert.ok(i >= 0, a); const j = client.indexOf(b, i); assert.ok(j > i, b); return client.slice(i, j); };
 
-test('T485.1 base load order: previous execution > history > Coach plan load', () => {
+test('T485.1 base load order: previous execution > history; Coach plan load is not load authority', () => {
   const plan = { load: 100 }, hist = { load: 90 }, prev = { avgLoad: 80 };
   assert.deepEqual(JSON.parse(JSON.stringify(ctx._warmupReferenceLoad(prev, hist, plan))), { load: 80, source: 'PREVIOUS_EXECUTION' });
   assert.deepEqual(JSON.parse(JSON.stringify(ctx._warmupReferenceLoad(null, hist, plan))), { load: 90, source: 'HISTORY' });
-  assert.deepEqual(JSON.parse(JSON.stringify(ctx._warmupReferenceLoad(null, null, plan))), { load: 100, source: 'COACH_PLAN' });
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx._warmupReferenceLoad(null, null, plan))), { load: 0, source: 'NONE' });
 });
 
 test('T485.2 no legitimate base -> no invented number', () => {
@@ -45,7 +45,7 @@ test('T485.3 the helper cannot receive or read a recommendation', () => {
 
 test('T485.4 both warm-up builders no longer consult legacy newLoad/progrec', () => {
   const card = region('var _wuPatternKey = (catData && catData.motorPattern)', '// ── E. Series');
-  const boost = region('// T485: warm-up base load = previous execution', 'var repsTarget = ej.repsRange || (ej.sets && ej.sets[0]');
+  const boost = region('// T597: warm-up base load = previous execution', 'var repsTarget = ej.repsRange || (ej.sets && ej.sets[0]');
   for (const r of [card, boost]) {
     assert.ok(!/progrec|progRec|newLoad|progRecForWu/.test(r));
     assert.ok(/_warmupReferenceLoad\(/.test(r) && /_warmupRowsHtml\(/.test(r));

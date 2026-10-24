@@ -36,7 +36,7 @@ test('T516.2 NAME-BASED MUTATION AUTHORITY = 0: names are labels; identity is ex
     assert.ok(!/\b(toLowerCase|_normName|localeCompare)\b/.test(code(f).replace(/localeCompare/g, '')) || f === 'assets/equipment-context.js', f);
   assert.ok(!/toLowerCase|_normName/.test(code('assets/progression-application-consumer.js')));
   // client history: PID only (T553: no name fallback even for PID-less exercises)
-  assert.ok(client.includes('return pidKey ? (EXERCISE_HISTORY[pidKey] || {}) : {};'));
+  assert.ok(client.includes('if (!pidKey) return {};'+String.fromCharCode(10)+'  var raw = EXERCISE_HISTORY[pidKey];'));
   assert.ok(coach.includes('return pidCount === 1 ? foundByPid : null;'));
   // equipment refs are built from the exact exerciseId, never from an exercise name
   const eq = read('assets/equipment-context.js');

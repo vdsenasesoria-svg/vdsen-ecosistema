@@ -34,7 +34,7 @@ LOGS (ejecución real) → evidencia comparable por PID → política canónica 
 
 | Dimensión | Autoridad operativa | Evidencia / candidato canónico | Aplicación futura | Garantía (tests) |
 |---|---|---|---|---|
-| LOAD | Plan del Coach; el atleta registra la carga ejecutada | registro shadow canónico (Regla A) + resolvedor de equipo | overlay exacto de próxima exposición (inactivo) | t483, t485, t493, t503 |
+| LOAD | Bitácora individual del atleta; Coach prescribe estructura, no KG/LB | última ejecución válida por PID + registro shadow canónico (Regla A) + resolvedor de equipo | overlay exacto de próxima exposición (inactivo) | t483, t485, t493, t503, t597 |
 | REPS | Plan del Coach (rango) | Regla A (reps dentro del rango) | overlay (inactivo) | t483, t493 |
 | SETS | Plan del Coach (+ lo ya registrado hoy) | solo revisión del Coach (Regla B) | ninguna (estructural no autorizado) | t484, t488, t497, t499 |
 | RIR | RIR del Coach (`rirByWeek`/sets); RIR observado separado | señales legadas solo informativas | ninguna | t496 |
@@ -105,6 +105,10 @@ pasan Y la bandera está activa (`executable=false` mientras `NUMERIC_APPLY_ENAB
 6. **Ciencia sin resolver (T505)** — búsqueda en `docs/CONTEXTO_GENERADOR.md`, `docs/CONTEXTO_MAESTRO.md` y `references/*`: la "double progression" (reps primero, luego carga; §8) rige la progresión hacia ARRIBA (Regla A) y no elige entre reps y carga para D/E; nada define la precedencia C/E ni qué serie representa una exposición. Quedan explícitos y NO inventados (`SCIENCE_GAPS` en la política; `readiness.activationPrerequisites`): `RULE_D_E_ALTERNATIVE_NOT_DEFINED`, `RULE_C_E_PRECEDENCE_NOT_DEFINED`, `REPRESENTATIVE_SET_NOT_DEFINED`. Deben cerrarse por decisión del director antes de activar `NUMERIC_APPLY_ENABLED`.
 7. ~~`exmod_*`~~ — **CERRADA (T499)**: el atleta ya no puede redefinir series/reps objetivo/RIR prescritos (editor `showExModModal`/`saveExMod`/`clearExMod` eliminado; ningún lector de `exmod_*`). Los `exmod_*` ya guardados en `logs/{uid}` se conservan sin borrar pero no se leen. El atleta sigue registrando ejecución (carga/reps/RIR observado), notas (`exnote_`), omisiones (`exskip_`) y unidad.
 8. Validación del runner de emulador en Windows: pendiente.
+
+## T597 · Referencia individual de carga
+
+El Coach no prescribe cargas en KG/LB. La primera carga de trabajo la registra el atleta; desde ese guardado, Cliente muestra la **última ejecución válida** del mismo `prescriptionExerciseId` como referencia editable. `EXERCISE_HISTORY.last` es la referencia operativa y `EXERCISE_HISTORY.personalBest` se conserva por separado: una PR no puede sustituir una carga de trabajo posterior más baja. Al cargar logs del plan se reconcilia ese caché por PID, y una corrección o anulación lo reconstruye. Sin evidencia válida se muestra “SIN HISTORIAL”, nunca una cifra inventada ni una carga del Coach. El Motor sigue siendo la única fuente de recomendación/progresión; con `NUMERIC_APPLY_ENABLED=false` una decisión `PENDING` no se vuelve prescripción efectiva.
 
 ## T582 · El equipamiento es información OPCIONAL (decisión del propietario)
 

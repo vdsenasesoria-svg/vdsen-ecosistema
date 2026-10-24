@@ -13,7 +13,7 @@ function fnSrc(name) {
   for (let k = j; k < SRC.length; k++) { if (SRC[k] === '{') d++; else if (SRC[k] === '}' && --d === 0) return SRC.slice(i, k + 1); }
   throw new Error('unbalanced ' + name);
 }
-const FNS = ['_exNotePidKey', '_exNoteCtx', '_exNoteValid', '_exNoteShadowed', '_prevWeekRef', '_prevWeekRefOf', '_getPrevWeekData', '_avgArr', '_warmupReferenceLoad', '_getExerciseHistoryEntry', '_historyPidKey'];
+const FNS = ['_exNotePidKey', '_exNoteCtx', '_exNoteValid', '_exNoteShadowed', '_prevWeekRef', '_prevWeekRefOf', '_getPrevWeekData', '_avgArr', '_warmupReferenceLoad', '_getExerciseHistoryEntry', '_historyPidKey', '_historySnapshot', '_historyLast', '_historyPersonalBest', '_historyEntry'];
 function world(o) {
   o = o || {};
   const ctx = { console, Number, Math, JSON, Date, Object, Array, String, parseInt, parseFloat, isNaN, RegExp,
@@ -63,13 +63,14 @@ test('T553.10 the resolver never substitutes the Coach prescription as athlete h
   const body = fnSrc('_getPrevWeekData'); assert.ok(!/_normName|exerciseName|exerciseNameSnapshot|LOGS_BY_WEEK|'log_'\s*\+\s*prevWeek|legacySets/.test(body), 'no name guard, no positional loop in the previous-week helper');
   assert.ok(body.includes('_prevWeekRef') || body.includes('_prevWeekRefOf'), 'built on the canonical resolver (one identity model)');
 });
-test('T553.11 warm-up base: previous execution and exercise history are PID-only (no name-keyed history, COACH_PLAN is a labelled non-history source)', () => {
+test('T553.11 warm-up base: previous execution and exercise history are PID-only; Coach plan load is never a numerical fallback', () => {
   const h = { pidA_key: 1 }; const w = world({ history: { 'press banca': { load: '70', unit: 'KG' } } });
   assert.deepEqual(JSON.parse(JSON.stringify(w._getExerciseHistoryEntry('press banca', undefined))), {}, 'name-keyed history is no longer read');
   assert.deepEqual(JSON.parse(JSON.stringify(w._getExerciseHistoryEntry('press banca', ''))), {});
   const ph = SRC.includes('function _historyPidKey(') ? w._historyPidKey('pidA') : null; if (ph) { const w2 = world({ history: { [ph]: { load: '60', unit: 'KG' } } }); assert.equal(w2._getExerciseHistoryEntry('x', 'pidA').load, '60'); }
   const r = JSON.parse(JSON.stringify(w._warmupReferenceLoad(null, {}, null))); assert.equal(r.source, 'NONE', 'no PID evidence => no invented base');
   const r2 = JSON.parse(JSON.stringify(w._warmupReferenceLoad({ avgLoad: 80 }, {}, { load: 100 }))); assert.equal(r2.source, 'PREVIOUS_EXECUTION');
+  assert.equal(w._warmupReferenceLoad(null, {}, { load: 100 }).source, 'NONE');
 });
 test('T553.12 history-day autofill reads the previous unit from the same resolver (no positional log key) and fails closed without PID evidence', () => {
   const mk = SRC.slice(SRC.indexOf('async function markSessionDoneFromHistory('), SRC.indexOf('async function markWeekCompleteFromHistory(')); assert.ok(!/prevSetKey/.test(mk) && /prev\.unit/.test(mk), 'unit comes from _getPrevWeekData');

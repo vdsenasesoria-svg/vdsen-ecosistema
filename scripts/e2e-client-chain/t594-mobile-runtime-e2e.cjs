@@ -39,7 +39,10 @@ async function session() {
     await p.ev("(async()=>{const s=document.createElement('script');s.src='/__driver.js';document.head.appendChild(s);await new Promise(r=>s.onload=r);return window.__boot('G');})()").then((b) => console.log('INFO boot', JSON.stringify(b)));
     await p.ev("(async()=>{for(let i=0;i<150&&typeof window.selDia!=='function';i++)await new Promise(r=>setTimeout(r,200));const b=[...document.querySelectorAll('button')].find(x=>/Ahora no/i.test(x.textContent)&&x.offsetParent);if(b)b.click();window.selDia(0);await new Promise(r=>setTimeout(r,700));const s=document.createElement('script');s.src='/scripts/e2e-client-chain/mobile-audit.js';document.head.appendChild(s);await new Promise(r=>s.onload=r);})()");
     const targets = await p.ev("[...document.querySelectorAll('[data-effective-target=\\\"1\\\"]')].map(x=>({text:x.innerText,source:x.dataset.targetSource,top:x.getBoundingClientRect().top,fieldsTop:(f=>f?f.getBoundingClientRect().top:null)((x.closest('.workout-set')||{querySelector:()=>null}).querySelector('.sp-fields'))}))");
-    check('base effective target is visible before Client execution fields', targets.some((x) => x.source === 'COACH' && /CARGA (?:\\d|no prescrita)/.test(x.text) && /RIR/.test(x.text) && x.fieldsTop !== null && x.top < x.fieldsTop), targets);
+    check('base effective target is visible before Client execution fields', targets.some((x) => x.source === 'COACH' && /ESTRUCTURA COACH/.test(x.text) && !/CARGA/.test(x.text) && /RIR/.test(x.text) && x.fieldsTop !== null && x.top < x.fieldsTop), targets);
+    // T597: the Coach prescribes no kg/lb; the load shown is the athlete's own logbook reference (or SIN HISTORIAL), before the editable fields, never "CARGA no prescrita".
+    const ref0 = await p.ev("(()=>{const cur=document.querySelector('.workout-set-current');const r=cur&&cur.querySelector('.sp-history-reference');const f=cur&&cur.querySelector('.sp-fields');return r&&f?{kind:r.dataset.loadReference,text:r.innerText,refTop:r.getBoundingClientRect().top,fieldsTop:f.getBoundingClientRect().top,noPlanLoadText:!/no prescrita/i.test(cur.innerText)}:null})()");
+    check('logbook load reference (or SIN HISTORIAL) is shown before the editable fields and never as a Coach load', !!(ref0 && /^(logbook|none)$/.test(ref0.kind) && ref0.refTop < ref0.fieldsTop && ref0.noPlanLoadText), ref0);
     const sizes = [[320,640],[360,740],[360,780],[390,844],[430,932],[740,360],[360,320]];
     for (const [width, height] of sizes) { await p.size(width, height); await sleep(300); const audit = await p.ev('window.__auditCta(0,0)'); check('CTA flow ' + width + 'x' + height, !!(audit && audit.ok && audit.touchOk && !audit.docOverflow), audit); }
     const allScrollers = [];
@@ -53,7 +56,10 @@ async function session() {
     const runtime = await p.ev('window.getVdsenRuntimeDiagnostics()');
     check('runtime diagnostics identifies this HTML build, its worker controller and its cache', !!(runtime && runtime.build === BUILD && runtime.serviceWorker.controller && runtime.serviceWorker.controller.includes('build=' + encodeURIComponent(BUILD)) && runtime.serviceWorker.registrations.some((r) => (r.active || '').includes('build=' + encodeURIComponent(BUILD))) && runtime.serviceWorker.caches.includes('vdsen-' + BUILD)), runtime && { expectedBuild:BUILD, build:runtime.build, controller:runtime.serviceWorker.controller, registrations:runtime.serviceWorker.registrations, caches:runtime.serviceWorker.caches, viewport:runtime.viewport });
     await p.ev('window.goTab(1)'); await sleep(300);
-    const keys = []; for (let set=0; set<3; set++) { keys.push(await p.ev("window.__logSet(0,0," + set + ",{carga:80,reps:10,rir:2,ics:8,pump:1})")); await sleep(900); }
+    const keys = []; let refAfterFirst = null;
+    for (let set=0; set<3; set++) { keys.push(await p.ev("window.__logSet(0,0," + set + ",{carga:80,reps:10,rir:2,ics:8,pump:1})")); await sleep(900);
+      if (set === 0) refAfterFirst = await p.ev("(()=>{const r=document.querySelector('#setrow_log_2_0_0_s1 .sp-history-reference');return r?{kind:r.dataset.loadReference,text:r.innerText}:null})()"); }
+    check('after the first save the NEXT set shows the athlete own 80 KG as logbook reference', !!(refAfterFirst && refAfterFirst.kind === 'logbook' && /80 KG/.test(refAfterFirst.text)), refAfterFirst);
     const creds = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'vdsen-client-e2e-creds.json'), 'utf8')).who.G;
     const doc = await (await fetch('http://127.0.0.1:8085/v1/projects/demo-vdsen-client-e2e/databases/(default)/documents/logs/' + creds.uid + '/mesos/' + creds.planId, { headers:{ authorization:'Bearer owner' } })).json();
     const entries = (((doc.fields || {}).entries || {}).mapValue || {}).fields || {};
