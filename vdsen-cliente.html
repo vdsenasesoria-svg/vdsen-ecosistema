@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="VDSEN">
 <meta name="theme-color" content="#0a0a0a">
-<meta name="vdsen-client-build" content="issue-115-brave-rc-20261024-01">
+<meta name="vdsen-client-build" content="t598-logbook-reference-20261024-01">
 <title>VDSEN — Mi Plan v14</title>
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,7 +19,7 @@
 // Runtime identity for support and the service-worker URL.  It is deliberately
 // separate from the product version: a deployed Preview can report exactly
 // which app shell is executing without reading a guessed SHA from its URL.
-window.VDSEN_CLIENT_BUILD = 'issue-115-brave-rc-20261024-01';
+window.VDSEN_CLIENT_BUILD = 't598-logbook-reference-20261024-01';
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
     // A new script URL makes this cutover visible even to a browser that still
@@ -10375,6 +10375,9 @@ async function completeSet(key, di, ei, si, unit) {
 function editSet(key) {
   if (!LOGS[key]) return;
   LOGS[key].done = false;
+  // T598: reopening a record invalidates it as evidence, so the PID-bound logbook reference (EXERCISE_HISTORY.last / personalBest) is recalculated from the remaining valid records
+  // BEFORE the save, instead of keeping the invalidated value until the next save or reload.
+  if (LOGS[key].prescriptionExerciseId) _rebuildExerciseHistoryFromLogs('', LOGS[key].prescriptionExerciseId);
   saveLogs();
   _refreshExPanelOnly();
   showToast('✏ Edita los datos y vuelve a confirmar ✓');
