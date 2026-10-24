@@ -73,9 +73,12 @@ test('T568-4 a FAILED save restores the button so the client can retry', () => {
   // On failure there is no re-render to rebuild the button, so leaving it disabled would strand
   // the client with no way to retry.
   const failBranch = SRC.slice(SRC.indexOf('if (_setSaved === false)'), SRC.indexOf('return false;', SRC.indexOf('if (_setSaved === false)')));
-  assert.ok(/_saveBtn\.disabled = false/.test(failBranch), 'debe rehabilitar en el fallo');
-  assert.ok(/_saveBtn\.removeAttribute\('aria-busy'\)/.test(failBranch), 'debe limpiar aria-busy');
-  assert.ok(/GUARDAR /.test(failBranch), 'debe restaurar la etiqueta');
+  // T595-B: the restore lives in one helper (_restoreSaveBtn) shared by every exit; the failure branch calls it.
+  const helper = SRC.slice(SRC.indexOf('var _restoreSaveBtn = function'), SRC.indexOf('if (_saveBtn) {', SRC.indexOf('var _restoreSaveBtn = function')));
+  assert.ok(/_restoreSaveBtn\(\)/.test(failBranch), 'el fallo devuelve el botón');
+  assert.ok(/_saveBtn\.disabled = false/.test(helper), 'debe rehabilitar en el fallo');
+  assert.ok(/_saveBtn\.removeAttribute\('aria-busy'\)/.test(helper), 'debe limpiar aria-busy');
+  assert.ok(/_saveBtn\.textContent = _saveBtnLabel/.test(helper), 'debe restaurar la etiqueta original');
   assert.ok(/NO SE GUARDÓ/.test(failBranch), 'y sigue avisando del fallo');
 });
 
