@@ -14,6 +14,7 @@ run('t598-logbook-sync-e2e.cjs', ['--root', root, '--out', path.join(out, 't598-
 run('../e2e-t599r/chain.cjs', ['--numeric', '1', '--only', 'T1,T9,T12', '--out', path.join(out, 't599r-numeric-on.json')]);
 run('../e2e-t599r/chain.cjs', ['--numeric', '0', '--only', 'T1,T4', '--out', path.join(out, 't599r-numeric-off.json')]);
 run('seed.cjs', [root, 'G']);
-run('t594-mobile-runtime-e2e.cjs', [root]);
+// (no argv: the first argument of this script is the Chrome path; passing the repository root made it try to spawn a directory)
+run('t594-mobile-runtime-e2e.cjs');
 fs.copyFileSync(path.join(os.tmpdir(), 'vdsen-t594-mobile-runtime-result.json'), path.join(out, 'mobile.json'));
 console.log('T599 progression, T597/T598 sync, mobile runtime: all browser gates completed');
