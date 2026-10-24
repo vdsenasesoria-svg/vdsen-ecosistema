@@ -52,5 +52,5 @@ test('T599 presentation keeps the effective target separate from a historical co
   for(const name of names){const start=source.indexOf('function '+name+'('), next=source.indexOf('\nfunction ',start+1);vm.runInContext(source.slice(start,next<0?source.length:next).split('\n// ──')[0],ctx);}
   const html=ctx._effectiveSetTargetHtml({load:0,repsTarget:8,rirTarget:3,restSeconds:150},'COACH','KG',false,{sets:3,hasAppliedLoad:false});
   assert.match(html,/OBJETIVO DE ESTA SERIE/);assert.match(html,/>8<\/b> reps/);assert.match(html,/RIR 3/);assert.match(html,/3 series/);assert.match(html,/2:30/);
-  const status=ctx._seriesAuthorityHtml(null,0);assert.match(status,/Sin autoajuste aplicado/);assert.match(status,/referencia histórica no es una progresión/);
+  const status=ctx._seriesAuthorityHtml(null,0);assert.match(status,/Sin autoajuste aplicado/);assert.match(status,/la referencia no es una progresión/);
 });

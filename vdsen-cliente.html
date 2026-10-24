@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="VDSEN">
 <meta name="theme-color" content="#0a0a0a">
-<meta name="vdsen-client-build" content="t599r-progression-authority-20261024-01">
+<meta name="vdsen-client-build" content="t601-compact-card-20261024-01">
 <title>VDSEN — Mi Plan v14</title>
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,7 +19,7 @@
 // Runtime identity for support and the service-worker URL.  It is deliberately
 // separate from the product version: a deployed Preview can report exactly
 // which app shell is executing without reading a guessed SHA from its URL.
-window.VDSEN_CLIENT_BUILD = 't599r-progression-authority-20261024-01';
+window.VDSEN_CLIENT_BUILD = 't601-compact-card-20261024-01';
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
     // A new script URL makes this cutover visible even to a browser that still
@@ -738,11 +738,13 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .sp-head{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
 .sp-head .kick{color:var(--tx)}
 .sp-target{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin:14px 0 16px;padding:9px 12px;background:var(--plate-lo);border:1px dashed var(--rule-strong)}
-.sp-history-reference{margin:8px 0;font-size:12px;line-height:1.45;overflow-wrap:anywhere}
+.sp-history-reference{margin:6px 0 4px;font-size:12px;line-height:1.35;overflow-wrap:anywhere}
 .sp-history-reference>span{display:block;font-size:9.5px;letter-spacing:.16em;font-weight:800;color:var(--mt)}
 .sp-history-reference>b{display:block;font-weight:700;color:var(--tx)}
 .sp-authority{margin:8px 0 14px;font-size:12px;line-height:1.5;overflow-wrap:anywhere;color:var(--mt)}
 .sp-authority>b{display:block;color:var(--tx)}
+.sp-authority-min{margin:0 0 8px;font-size:11px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sp-authority-min>b{display:inline}
 .sp-authority p{margin:4px 0 0}
 .sp-t-l{font-size:9.5px;letter-spacing:.16em;font-weight:800;color:var(--mt);white-space:nowrap}
 .sp-t-v{font-size:13px;color:var(--mt)}
@@ -6671,7 +6673,7 @@ function _prevWeekReuseHtml(key, unit) {
   var lbl = (shown === null ? '—' : _escHTml(String(shown)) + ' ' + String(unit).toLowerCase()) + ' × ' + (r.reps === null ? '—' : _escHTml(r.reps));
   var ex = (_EJERCICIOS_DIA || [])[k.ei], target = ex && ex.sets && ex.sets[k.si];
   var diff = target && r.reps !== null && String(target.repsTarget) !== String(r.reps) ? ' · Objetivo vigente: '+_escHTml(String(target.repsTarget))+' reps' : '';
-  return '<button type="button" class="pw-use" onclick="_prevWeekUse(\'' + key + '\')" aria-label="Copiar registro anterior como borrador, serie ' + r.n + ': ' + lbl + '"><span class="pw-use-a">USAR CARGA/REPS · COPIAR HISTORIAL</span><span class="pw-use-v">SEM ' + (k.week - 1) + ' · S' + r.n + ' · ' + lbl + diff + ' · No es una recomendación</span></button>';
+  return '<button type="button" class="pw-use" onclick="_prevWeekUse(\'' + key + '\')" aria-label="Copiar registro anterior como borrador, serie ' + r.n + ': ' + lbl + '"><span class="pw-use-a">USAR CARGA/REPS' + (diff ? ' · COPIAR HISTORIAL' : '') + '</span><span class="pw-use-v">SEM ' + (k.week - 1) + ' · S' + r.n + ' · ' + lbl + diff + (diff ? ' · No es una recomendación' : '') + '</span></button>';
 }
 // DRAFT ONLY: copies the prior set's executed load and reps into the empty-able inputs. No RIR, no ICS, no Pump, no save, no completion, no prescription.
 function _prevWeekUse(key) {
@@ -12009,6 +12011,12 @@ function _seriesAuthorityHtml(view, si) {
     if (r.equipmentSnapshot && r.equipmentSnapshot.source === 'ADVISORY_GENERIC') why += ' Carga orientativa: incremento exacto del equipo no resuelto; adapta y registra lo ejecutado.';
     if (r.dimension === 'DELOAD' && r.components && r.components.LOAD && !r.equipmentSnapshot) why += ' Carga de descarga calculada; disponibilidad exacta del equipo sin verificar.';
   } else lines.push('Aún sin ajuste autorizado. La referencia histórica no es una progresión.');
+  // T601: with NOTHING applied the block is one short line (it used to add ~120 px and pushed GUARDAR SERIE out of the first screen on phones, which the approved production card did not).
+  if (!applied) {
+    var short = state === 'NO_AUTHORIZED_ADJUSTMENT';
+    return '<div class="sp-authority'+(short ? ' sp-authority-min' : '')+'" data-progression-state="'+state+'"><b>'+_escHTml(labels[state] || labels.NO_AUTHORIZED_ADJUSTMENT)+'</b>'+
+      (short ? ' · la referencia no es una progresión' : (why ? '<p>'+_escHTml(why)+'</p>' : ''))+'</div>';
+  }
   return '<div class="sp-authority" data-progression-state="'+state+'"><b>'+_escHTml(labels[state] || labels.NO_AUTHORIZED_ADJUSTMENT)+'</b>'+
     '<div>CAMBIO RESPECTO DE LA EXPOSICIÓN ANTERIOR</div><div>'+lines.map(function(x) { return _escHTml(x); }).join(' · ')+'</div>'+
     (why ? '<p>'+_escHTml(why)+'</p>' : '')+'</div>';
