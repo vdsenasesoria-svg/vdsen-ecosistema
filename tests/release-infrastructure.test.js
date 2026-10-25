@@ -12,6 +12,33 @@ const deployedProduct = require('../scripts/release/deployed-product.cjs');
 const state = json('.release/vdsen-client.json');
 const clone = x => JSON.parse(JSON.stringify(x));
 
+// check() and apply() deliberately read the reviewed package from disk and Git.
+// An isolated clone models the post-merge canonical ref, so this test exercises
+// those real entrypoints without touching this checkout, its refs or a remote.
+function withRulesOnlyPackage(mutate, run) {
+  const parent = fs.realpathSync(os.tmpdir());
+  const temp = fs.mkdtempSync(path.join(parent, 'vdsen-rules-only-'));
+  fs.rmdirSync(temp);
+  const add = spawnSync('git', ['clone', '--quiet', '--no-hardlinks', process.cwd(), temp], { encoding: 'utf8' });
+  assert.equal(add.status, 0, add.stderr);
+  try {
+    const head = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: temp, encoding: 'utf8' });
+    assert.equal(head.status, 0, head.stderr);
+    const packageSha = head.stdout.trim();
+    const canonical = spawnSync('git', ['update-ref', 'refs/remotes/origin/codex/client-app-next', packageSha], { cwd: temp, encoding: 'utf8' });
+    assert.equal(canonical.status, 0, canonical.stderr);
+    const reviewed = json(path.join(temp, '.release', 'vdsen-client.json'));
+    reviewed.release_mode = 'rules_only';
+    reviewed.rules_sha = packageSha;
+    delete reviewed.app_release;
+    mutate(reviewed);
+    fs.writeFileSync(path.join(temp, '.release', 'vdsen-client.json'), JSON.stringify(reviewed, null, 2) + '\n');
+    return run(temp, reviewed);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+}
+
 test('deployed product manifest is honest and the release check no longer forbids product work', () => {
   const manifest = json(deployedProduct.MANIFEST);
   // The manifest describes the DEPLOYED runtime, and the state agrees with it.
@@ -73,6 +100,46 @@ test('rules_only requires the current reviewed Rules package and never repoints 
   } finally {
     if (before === undefined) delete process.env.GITHUB_REF; else process.env.GITHUB_REF = before;
   }
+});
+test('rules_only check accepts a separately pinned Rules package and rejects its wrong target hash', () => {
+  withRulesOnlyPackage(() => {}, (temp, reviewed) => {
+    assert.notEqual(reviewed.rules_sha, reviewed.runtime_sha, 'fixture must separate Rules from served runtime');
+    const valid = spawnSync(process.execPath, ['scripts/release/check.cjs'], {
+      cwd: temp,
+      env: { ...process.env, GITHUB_REF: 'refs/heads/codex/client-app-next', GITHUB_EVENT_NAME: 'pull_request', RUNTIME_SHA: reviewed.runtime_sha },
+      encoding: 'utf8'
+    });
+    assert.equal(valid.status, 0, valid.stderr || valid.stdout);
+  });
+  withRulesOnlyPackage(reviewed => { reviewed.rules_transition.target_sha256 = '0'.repeat(64); }, (temp, reviewed) => {
+    const rejected = spawnSync(process.execPath, ['scripts/release/check.cjs'], {
+      cwd: temp,
+      env: { ...process.env, GITHUB_REF: 'refs/heads/codex/client-app-next', GITHUB_EVENT_NAME: 'pull_request', RUNTIME_SHA: reviewed.runtime_sha },
+      encoding: 'utf8'
+    });
+    assert.notEqual(rejected.status, 0);
+    assert.match(rejected.stderr + rejected.stdout, /Expected values to be strictly equal/);
+  });
+});
+test('rules_only apply rejects a wrong Rules hash before any network or recovery operation', () => {
+  withRulesOnlyPackage(reviewed => { reviewed.rules_transition.target_sha256 = '0'.repeat(64); }, (temp, reviewed) => {
+    const marker = path.join(temp, 'fetch-calls.txt');
+    const hook = path.join(temp, 'fetch-guard.cjs');
+    fs.writeFileSync(hook, "const fs = require('node:fs'); global.fetch = async () => { fs.appendFileSync(process.env.VDSEN_FETCH_MARKER, 'called\\n'); throw new Error('network must not run'); };\n");
+    const applied = spawnSync(process.execPath, [path.resolve(temp, 'scripts', 'release', 'live.cjs'), 'apply'], {
+      cwd: temp,
+      env: {
+        ...process.env,
+        GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/codex/client-app-next',
+        RUNTIME_SHA: reviewed.runtime_sha, PRODUCTION_RELEASE_ENABLED: 'true', GOOGLE_ACCESS_TOKEN: 'test-only', VERCEL_TOKEN: 'test-only',
+        VDSEN_FETCH_MARKER: marker, NODE_OPTIONS: '--require=' + hook
+      },
+      encoding: 'utf8'
+    });
+    assert.notEqual(applied.status, 0);
+    assert.match(applied.stderr + applied.stdout, /Expected values to be strictly equal/);
+    assert.equal(fs.existsSync(marker), false, 'hash rejection must precede every mutation or recovery request');
+  });
 });
 test('release state requires the decoupled RULES rollback provenance fields and rejects malformed values', () => {
   const schema = json('.release/schema/release-state.schema.json');
