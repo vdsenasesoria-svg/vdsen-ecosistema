@@ -19608,7 +19608,12 @@ El esfuerzo no es negociable.
     var keys = Object.keys(recs).filter(function(k) { return recs[k] && recs[k].state === 'APPLIED'; });
     for (var i = 0; i < keys.length; i++) {
       var res = await runTransaction(db, async function(tx) {
-        var refs = { meso: doc(db, 'logs', clientId, 'mesos', planId), root: doc(db, 'logs', clientId), plan: doc(db, 'plans', planId), client: doc(db, 'clients', clientId) };
+        // T604: consumption/reconciliation is a trusted temporal path.  It must
+        // supply the immutable server-stamped start and decision records so the
+        // consumer never falls back to device sts/decidedAt values.
+        var refs = { meso: doc(db, 'logs', clientId, 'mesos', planId), root: doc(db, 'logs', clientId), plan: doc(db, 'plans', planId), client: doc(db, 'clients', clientId),
+          start: function(markerPlanId, week, dayIndex, exerciseIndex) { return doc(db, 'logs', clientId, 'starts', markerPlanId + '_' + week + '_' + dayIndex + '_' + exerciseIndex); },
+          decision: function(id) { return doc(db, 'clients', clientId, 'decisions', String(id)); } };
         var input = { recordKey: keys[i], clientId: clientId, now: new Date().toISOString(), actorId: currentCoach && currentCoach.uid };
         // receipt-backed consumption first (only when the exposure started), then Coach override, then plan/target staleness
         var c1 = await cons.consumeOverlayTransaction(tx, refs, input, {});
