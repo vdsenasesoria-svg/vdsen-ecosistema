@@ -16,7 +16,7 @@ const effective = require('../assets/progression-effective-prescription.js');
 const FX = require('./fixtures/t583-real-client-capture.json');
 test.after(async () => { await app.delete(); });
 
-const clock = () => '2026-10-19T12:00:00.000Z';
+const clock = () => new Date().toISOString();   // T602: the emulator stamps plan.updateTime with the real clock, so the server-materialization instant must be real too
 let seq = 0;
 const J = (o) => JSON.parse(JSON.stringify(o));
 
@@ -121,7 +121,7 @@ test('T583-E7 LEGACY plan (PID + name + sets only): LOAD works without any new f
 test('T583-E8 the Coach decides: a Coach decision on ONE exercise after the application makes the Client show its base prescription; the other exercise keeps its adjustment', async () => {
   const s = await seed('F'); await run(s); const m = await meso(s), o0 = ovOf(m, s.pids[0]), o1 = ovOf(m, s.pids[1]);
   assert.equal((await eff(s, m, o0)).provenance, 'CANONICAL_OVERLAY');
-  const iv = [{ id: 'iv-1', targetType: 'EXERCISE', targetId: s.pids[0], action: 'REDUCE_SETS', decidedAt: '2026-10-20T00:00:00.000Z' }];
+  const iv = [{ id: 'iv-1', targetType: 'EXERCISE', targetId: s.pids[0], action: 'REDUCE_SETS', decidedAt: new Date(Date.now() + 3600000).toISOString() }];
   assert.notEqual((await eff(s, m, o0, iv)).provenance, 'CANONICAL_OVERLAY'); assert.equal((await eff(s, m, o1, iv)).provenance, 'CANONICAL_OVERLAY');
 });
 

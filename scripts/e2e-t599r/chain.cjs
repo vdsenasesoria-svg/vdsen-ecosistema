@@ -10,6 +10,8 @@ const fs = require('fs'), os = require('os'), path = require('path');
 const L = require('./lib.cjs');
 const arg = (n, d) => { const i = process.argv.indexOf('--' + n); return i > 0 ? process.argv[i + 1] : d; };
 const NUMERIC = arg('numeric', '1') === '1', ONLY = (arg('only', '') || '').split(',').filter(Boolean), OUT = arg('out', null), SHOTS = arg('shots', null);
+// T602: --skew <minutes> shifts the ATHLETE DEVICE clock (Date) in every browser session of the case; --root <worktree> serves another product build (e.g. the pre-fix commit) with this same harness.
+const SKEW = Number(arg('skew', '0')), SERVE_ROOT = path.resolve(arg('root', L.root));
 const CHROME = arg('chrome', 'C:/Program Files/Google/Chrome/Application/chrome.exe'), PORT = 5199, DBG = 9334, ORIGIN = 'http://localhost:' + PORT;
 const sleep = L.sleep;
 const results = [];
@@ -48,6 +50,10 @@ const CASES = {
     ex: [{ name: 'Sentadilla T599R RIRW', muscleGroup: 'cuadriceps', sets: L.S(3, 10, 2, 90), w1: { load: 100, reps: 10, rirReal: 2, ics: 8, rir: 2 }, w2: w2(100, 10, 2, 8), expect: { dimension: 'DELOAD', ruleId: 'S-DELOAD', previous: 3, candidate: 2, applied: 2, components: { SETS: 2, LOAD: 90, RIR: 4 } } }] },
   T9: { desc: 'safety: the Coach edits the plan AFTER the overlay was applied (target must fall back to the base plan)', post: { eimd: 1, articular: 'no', sleep: '8', rpe: 7 }, planEditAfterApply: true,
     ex: [{ name: 'Press T599R PLANEDIT', muscleGroup: 'pectoral', sets: L.S(3, 10, 2, 90), w1: { load: 100, reps: 10, rirReal: 3, ics: 7, rir: 2 }, w2: w2(100, 10, 4, 7), expect: { dimension: 'LOAD', ruleId: 'A', previous: 100, candidate: 105, applied: 105, uiAfterPlanEdit: 'BASE' } }] },
+  T15: { desc: 'T602: the Coach edits the plan AFTER the exposure started (a post-start edit is NOT retroactive: the athlete keeps the adjustment it started with)', post: { eimd: 1, articular: 'no', sleep: '8', rpe: 7 }, planEditAfterStart: true,
+    ex: [{ name: 'Press T602 POSTSTART', muscleGroup: 'pectoral', sets: L.S(3, 10, 2, 90), w1: { load: 100, reps: 10, rirReal: 3, ics: 7, rir: 2 }, w2: w2(100, 10, 4, 7), expect: { dimension: 'LOAD', ruleId: 'A', previous: 100, candidate: 105, applied: 105 } }] },
+  T16: { desc: 'T602: OFFLINE-LATE write: the first set is executed offline BEFORE the Coach revises the plan and reaches the server AFTER it (the server stamp decides: no authority; the set is kept)', post: { eimd: 1, articular: 'no', sleep: '8', rpe: 7 }, offlineLate: true,
+    ex: [{ name: 'Press T602 OFFLINE', muscleGroup: 'pectoral', sets: L.S(3, 10, 2, 90), w1: { load: 100, reps: 10, rirReal: 3, ics: 7, rir: 2 }, w2: w2(100, 10, 4, 7), expect: { dimension: 'LOAD', ruleId: 'A', previous: 100, candidate: 105, applied: 105 } }] },
   T10: { desc: 'soreness veto (EIMD 3) -> one set less', post: { eimd: 3, articular: 'no', sleep: '8', rpe: 7 },
     ex: [{ name: 'Press T599R EIMD3', muscleGroup: 'pectoral', sets: L.S(3, 10, 2, 90), w1: { load: 100, reps: 10, rirReal: 2, ics: 8, rir: 2 }, w2: w2(100, 10, 2, 8), expect: { dimension: 'SETS', ruleId: 'S-EIMD3', previous: 3, candidate: 2, applied: 2 } }] },
   T11: { desc: 'technique: average ICS < 6 -> load x0.85 ; ICS < 7 -> x0.90', post: { eimd: 1, articular: 'no', sleep: '8', rpe: 7 },
@@ -70,7 +76,8 @@ async function session(label, port) {
   ws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.id && pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id); } };
   const send = (method, params) => new Promise((res) => { const n = ++id; pending.set(n, res); ws.send(JSON.stringify({ id: n, method, params: params || {} })); });
   const ev = async (expression) => { const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }); if (r.result && r.result.exceptionDetails) throw new Error(label + ': ' + JSON.stringify(r.result.exceptionDetails.exception || r.result.exceptionDetails).slice(0, 300)); return r.result && r.result.result ? r.result.result.value : undefined; };
-  await send('Page.enable'); await send('Runtime.enable'); await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+  await send('Page.enable'); await send('Runtime.enable');
+  if (SKEW) await send('Page.addScriptToEvaluateOnNewDocument', { source: '(()=>{const R=Date,now=R.now.bind(R),off=' + (SKEW * 60000) + ';class D extends R{constructor(...a){if(a.length===0)super(now()+off);else super(...a);}static now(){return now()+off;}}D.parse=R.parse;D.UTC=R.UTC;window.Date=D;})();' }); await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true, screenWidth: 390, screenHeight: 844 });
   return { send, ev, ws, async nav(url) { await send('Page.navigate', { url }); for (let i = 0; i < 60; i++) { await sleep(250); if ((await ev('document.readyState')) === 'complete') return; } },
     async shot(file) { if (!SHOTS) return; fs.mkdirSync(SHOTS, { recursive: true }); const r = await send('Page.captureScreenshot', { format: 'jpeg', quality: 55 }); fs.writeFileSync(path.join(SHOTS, file), Buffer.from(r.result.data, 'base64')); } };
@@ -146,29 +153,42 @@ async function runCase(label, def) {
       rec.twoBrowsers = { beforeConsume: { equal: JSON.stringify(va) === JSON.stringify(vb), A: va, B: vb } };
     }
     // ── execute the first working set of each exercise in the target exposure with a load DIFFERENT from the suggestion, then check the receipt/consumption ──
+    if (NUMERIC && def.offlineLate) {   // T602: the athlete executes the first set OFFLINE, the Coach revises the plan meanwhile, the device reconnects later: the SERVER stamps the set at sync, after the revision
+      const ov0 = rec.exercises[0].overlays[0], net = (offline) => p.send('Network.emulateNetworkConditions', { offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+      await p.send('Network.enable'); await net(true);
+      p.send('Runtime.evaluate', { expression: "window.__logSet(0,0,0,{carga:" + (Number(ov0.appliedValue) - 2.5) + ",reps:10,rir:2,ics:7,pump:1})", awaitPromise: false });
+      await sleep(3000);
+      await L.db.doc('plans/' + a.planId).set({ updatedAt: new Date().toISOString(), coachNote: 'T602 plan edit while the athlete was offline' }, { merge: true });
+      rec.planUpdateTimeMs = (await L.db.doc('plans/' + a.planId).get()).updateTime.toMillis(); await sleep(1500);
+      await net(false); await sleep(9000); rec.offlineLate = true;
+    }
     if (NUMERIC) {
-      for (let ei = 0; ei < def.ex.length; ei++) {
+      if (!def.offlineLate) for (let ei = 0; ei < def.ex.length; ei++) {
         const ov = rec.exercises[ei].overlays[0]; if (!ov) continue;
         const exec = ov.dimension === 'LOAD' ? Number(ov.appliedValue) - 2.5 : Number(def.ex[ei].w1 ? def.ex[ei].w1.load : 50);
         try { await p.ev("window.__logSet(0," + ei + ",0,{carga:" + exec + ",reps:10,rir:2,ics:7,pump:1})"); } catch (err) { rec.exercises[ei].executeError = String(err.message).slice(0, 160); continue; }
         rec.exercises[ei].restTotalAfterFirstSet = await p.ev('window.__restTotal()'); rec.exercises[ei].executedLoad = exec;
         await sleep(1500); { const va = await p.ev('window.__view(' + ei + ')'); rec.exercises[ei].viewAfterFirstSet = { autoadjust: va.autoadjust, authorityState: va.authorityState, authority: va.authority, chips: va.chips, targets: va.targets.map((t) => t.text), sheet: ((/SERIES (\d+) REPS (\d+) RIR (\d+) DESCANSO ([\d:]+)/.exec(va.pageText || '') || []).slice(1)).join(',') }; await p.ev('window.__scrollTop()'); await p.shot(label + '-ex' + ei + '-after-first-set.jpg'); }
       }
+      if (def.planEditAfterStart) { await L.db.doc('plans/' + a.planId).set({ updatedAt: new Date().toISOString(), coachNote: 'T602 plan edit AFTER the exposure started' }, { merge: true }); rec.planEditedAfterStart = true; }
       await sleep(4500);
       const mC = await L.meso(a);
+      { const tgt = (L.ovFor(mC, a.pids[0])[0] || {}).target, k = tgt && ('log_' + tgt.week + '_' + tgt.dayIndex + '_0_s0'), en = k && mC.entries && mC.entries[k];   // T602: what the Client persisted for the first working set of the target exposure
+        const ms = (v) => v && typeof v.toMillis === 'function' ? v.toMillis() : (v && v._seconds !== undefined ? v._seconds * 1000 : null);
+        rec.firstSet = en ? { key: k, ts: en.ts, sts: ms(en.sts), stsPresent: ms(en.sts) !== null, skewMinutes: SKEW, deviceVsServerMs: ms(en.sts) !== null ? en.ts - ms(en.sts) : null } : null; }
       rec.exercises.forEach((x, ei) => { x.recordsAfterExecution = L.recFor(mC, a.pids[ei]).map((r) => ({ state: r.state, reasonCode: r.reasonCode })); x.overlaysAfterExecution = L.ovFor(mC, a.pids[ei]).map((o) => ({ status: o.status, appliedValue: o.appliedValue })); });
       rec.receipts = Object.keys(mC.consumptionReceipts || {}).length;
       if (pB) try { await pB.ev('window.__forceSync()'); await sleep(800); const vb2 = []; const va2 = []; for (let ei = 0; ei < def.ex.length; ei++) { vb2.push(norm(await pB.ev('window.__view(' + ei + ')'))); va2.push(norm(await p.ev('window.__view(' + ei + ')'))); }
         rec.twoBrowsers.afterConsume = { equalIgnoringProgressOfExecutedSet: JSON.stringify(vb2.map((x) => [x.adj, x.chips, x.targets])) === JSON.stringify(va2.map((x) => [x.adj, x.chips, x.targets])), A: va2, B: vb2 }; } catch (err) { rec.twoBrowsers.afterConsumeError = String(err.message).slice(0, 200); }
     }
-    rec.errors = await p.ev('window.__errs.slice()');
+    rec.errors = await p.ev('(window.__errs || []).slice()');
     p.ws.close();
   } finally { await stop(); }
   return rec;
 }
 
 (async () => {
-  const server = spawn(process.execPath, [path.join(L.root, 'scripts/e2e-client-chain/serve.cjs'), L.root, String(PORT)], { env: Object.assign({}, process.env, { E2E_NUMERIC: NUMERIC ? '1' : '0' }), stdio: 'ignore' });
+  const server = spawn(process.execPath, [path.join(SERVE_ROOT, 'scripts/e2e-client-chain/serve.cjs'), SERVE_ROOT, String(PORT)], { env: Object.assign({}, process.env, { E2E_NUMERIC: NUMERIC ? '1' : '0' }), stdio: 'ignore' });
   await sleep(2500);
   try {
     for (const label of Object.keys(CASES)) { if (ONLY.length && ONLY.indexOf(label) < 0) continue; console.log('CASE ' + label + ' — ' + CASES[label].desc + (NUMERIC ? ' [numeric sandbox ON]' : ' [numeric OFF]')); results.push(await runCase(label, CASES[label])); }
@@ -190,7 +210,7 @@ async function runCase(label, def) {
           if (def && def.planEditAfterApply) return;
           ck(tag + ' Client says AUTOAJUSTE APLICADO (not "sugerido") and Coach structure is not relabelled', st === 'APPLIED' && /AUTOAJUSTE APLICADO/.test(x.view.authority || '') && !/SUGERIDO/.test(x.view.pageText || '') && !/PRESCRIPCI.N\s*COACH/i.test(x.view.pageText || ''), { st, authority: x.view.authority });
           ck(tag + ' Client explains the change with a plain-language reason', /Motivo:/.test(x.view.authority || ''), x.view.authority);
-          if (x.recordsAfterExecution) ck(tag + ' CONSUMED after the real first working set', x.recordsAfterExecution[0] && x.recordsAfterExecution[0].state === 'CONSUMED', x.recordsAfterExecution);
+          if (x.recordsAfterExecution && !(def && def.offlineLate)) ck(tag + ' CONSUMED after the real first working set', x.recordsAfterExecution[0] && x.recordsAfterExecution[0].state === 'CONSUMED', x.recordsAfterExecution);
           if (e.rest) ck(tag + ' rest on the sheet and the operating timer are the same effective value', sheetRest(x.view) === e.rest && x.restTotalAfterFirstSet === e.rest, { sheet: sheetRest(x.view), timer: x.restTotalAfterFirstSet });
         } else {
           ck(tag + ' numeric OFF: PENDING only, no overlay, never APPLIED, athlete told it is pending', q && q.state === 'PENDING' && !x.overlays.length && (st === 'PENDING') && /PENDIENTE/.test(x.view.authority || ''), { q: q && [q.state, q.magnitude && q.magnitude.eligible], st });
@@ -205,6 +225,15 @@ async function runCase(label, def) {
       const x = r.exercises[0], av = x.viewAfterFirstSet || {};
       ck(r.case + ' D-02: an overlay invalidated by a plan edit shows the base plan before AND after the first set', st0(x) && av.authorityState !== 'APPLIED' && av.authorityState !== 'CONSUMED' && !/AUTOAJUSTE APLICADO/.test(av.authority || '') && !(av.autoadjust || ''), { before: x.view.authorityState, after: av });
       ck(r.case + ' D-02: no receipt and the record is NOT turned into CONSUMED', r.receipts === 0 && x.recordsAfterExecution && x.recordsAfterExecution[0].state === 'APPLIED' && x.overlaysAfterExecution[0].status === 'APPLIED', { receipts: r.receipts, rec: x.recordsAfterExecution });
+    }
+    if (NUMERIC && r.exercises && r.exercises[0] && r.exercises[0].overlays[0]) ck(r.case + ' T602: the Client persists the first working set with a SERVER timestamp (sts) accepted by the Firestore rules; the device clock (ts) is display only' + (SKEW ? ' [device clock ' + (SKEW > 0 ? '+' : '') + SKEW + ' min]' : ''), r.firstSet && r.firstSet.stsPresent && (!SKEW || Math.abs(r.firstSet.deviceVsServerMs - SKEW * 60000) < 120000), r.firstSet);
+    if (def && def.offlineLate && NUMERIC) {
+      const x = r.exercises[0];
+      ck(r.case + ' T602: offline-late write -> the set is KEPT (evidence), stamped by the server AFTER the plan revision, and the overlay gets NO authority (not consumed, no receipt consumed it)', r.firstSet && r.firstSet.stsPresent && r.planUpdateTimeMs && r.firstSet.sts > r.planUpdateTimeMs && x.recordsAfterExecution && x.recordsAfterExecution[0].state === 'APPLIED', { firstSet: r.firstSet, planUpdateTimeMs: r.planUpdateTimeMs, rec: x.recordsAfterExecution });
+    }
+    if (def && def.planEditAfterStart && NUMERIC) {
+      const x = r.exercises[0], av = x.viewAfterFirstSet || {};
+      ck(r.case + ' T602: a post-start edit is not retroactive (overlay stays APPLIED/CONSUMED, never dropped by the edit)', r.planEditedAfterStart && x.recordsAfterExecution && /APPLIED|CONSUMED/.test(x.recordsAfterExecution[0].state) && x.overlaysAfterExecution[0] && /APPLIED|CONSUMED/.test(x.overlaysAfterExecution[0].status), { rec: x.recordsAfterExecution, ov: x.overlaysAfterExecution, view: av.authorityState });
     }
     if (r.twoBrowsers) ck(r.case + ' two browsers show the same effective prescription' + (NUMERIC ? ' before and after consumption' : ''), r.twoBrowsers.beforeConsume.equal && (!NUMERIC || (r.twoBrowsers.afterConsume && r.twoBrowsers.afterConsume.equalIgnoringProgressOfExecutedSet)), r.twoBrowsers);
     ck(r.case + ' no uncaught page errors', !(r.errors && r.errors.length), r.errors);

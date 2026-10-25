@@ -37,8 +37,19 @@
     });
   }
 
-  // T599-R (D-02): WHEN the exposure started, from persisted evidence only: the earliest `ts` of the qualifying working sets (same definition as pidExposureStarted).
-  // at === null when any qualifying set carries no numeric timestamp (unknown order: callers fail closed).
+  // T602 (temporal authority): WHEN the exposure started, from persisted evidence the SERVER confirmed. The Client stamps every working-set write with a Firestore
+  // serverTimestamp (`sts`, assigned by the database when the write is committed: an offline write is stamped when it finally syncs, never with the athlete's clock). The device
+  // clock (`ts`) is display data only and is NEVER used to authorize anything. `at` = earliest `sts` of the qualifying working sets; null when any qualifying set carries no
+  // confirmed timestamp (historical data, pre-T602 Clients): unknown order -> callers fail CLOSED for authorization (the training record itself is untouched).
+  function _ms(v) {
+    if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+    if (v && typeof v.toMillis === 'function') { var m = v.toMillis(); return Number.isFinite(m) ? m : null; }
+    if (v && typeof v === 'object') {
+      var sec = v.seconds !== undefined ? v.seconds : v._seconds, ns = v.nanoseconds !== undefined ? v.nanoseconds : (v._nanoseconds !== undefined ? v._nanoseconds : 0);
+      if (typeof sec === 'number' && Number.isFinite(sec)) return sec * 1000 + Math.floor((Number(ns) || 0) / 1e6);
+    }
+    return null;
+  }
   function exposureStart(entries, pid, week, dayIndex) {
     if (!pid || !entries) return { started: false, at: null };
     var re = new RegExp('^log_' + week + '_' + dayIndex + '_\\d+_s\\d+$'), at = null, started = false, unknown = false;
@@ -46,7 +57,7 @@
       var e = entries[k];
       if (!(re.test(k) && e && typeof e === 'object' && e.prescriptionExerciseId === pid && e.done === true && e.autoFilled !== true && e.express !== true && e.expressFinal !== true && !_kind(e))) return;
       started = true;
-      var t = typeof e.ts === 'number' && Number.isFinite(e.ts) ? e.ts : null;
+      var t = _ms(e.sts);
       if (t === null) unknown = true; else if (at === null || t < at) at = t;
     });
     return { started: started, at: unknown ? null : at };
@@ -124,14 +135,19 @@
     function beforeStart(at) { return !start.started || start.at === null || at === null || at <= start.at; }
     // Any exact Coach decision since the source calculation counts: the apply gate refused every decision it could SEE at commit, so a
     // decision visible now was necessarily written after the commit (independent of clock skew between devices).
-    var calcAt = _time(r.source && r.source.calculatedAt), from = calcAt, overrideAt = null, overridden = false;
+    // T602: the reference instant is when the SERVER materialized the record (record.createdAt); `source.calculatedAt` comes from the athlete device and is only a fallback.
+    var calcAt = _time(r.createdAt); if (calcAt === null) calcAt = _time(r.source && r.source.calculatedAt);
+    var from = calcAt, overrideAt = null, overridden = false;
     (Array.isArray(input.interventions) ? input.interventions : []).forEach(function(iv) {
       if (!(iv && iv.targetType === 'EXERCISE' && iv.targetId === pid && (!iv.planId || iv.planId === input.planId) && _time(iv.decidedAt) !== null &&
         from !== null && _time(iv.decidedAt) >= from && iv.action !== 'NO_CHANGE')) return;
       overridden = true; var t = _time(iv.decidedAt); if (overrideAt === null || t < overrideAt) overrideAt = t;
     });
     if (overridden && beforeStart(overrideAt)) return no('COACH_OVERRIDE', PROVENANCE.COACH_OVERRIDE, { state: r.state });
-    var plan = input.plan || {}, planAt = _time(plan.updatedAt), t = _nextExposure(plan, pid, r.source && r.source.week, r.source && r.source.dayIndex);
+    // T602: a trusted caller (the server executor) supplies the plan document's own commit time (`serverPlanUpdatedAt`, Firestore updateTime): it is >= the real revision time whatever
+    // clock the Coach app had, so it can only make the decision stricter. Display callers (the Client) have no such metadata and use plan.updatedAt.
+    var plan = input.plan || {}, planAt = _ms(input.serverPlanUpdatedAt); if (planAt === null) planAt = _time(plan.updatedAt);
+    var t = _nextExposure(plan, pid, r.source && r.source.week, r.source && r.source.dayIndex);
     var targetDay = (Array.isArray(plan.days) ? plan.days : []).filter(function(d) { return d.dayIndex === day; })[0];
     var inTarget = ((targetDay && targetDay.exercises) || []).filter(function(e) { return e.prescriptionExerciseId === pid; });
     if (planAt === null || calcAt === null || planAt > calcAt || inTarget.length !== 1 || !t || t.week !== week || t.dayIndex !== day) {
@@ -287,6 +303,6 @@
   }
 
   return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, OVERLAY_SCHEMA: OVERLAY_SCHEMA, PROVENANCE: PROVENANCE, LABEL: LABEL,
-    pidExposureStarted: pidExposureStarted, exposureStart: exposureStart, painReportedBetween: painReportedBetween, evaluateOverlay: evaluateOverlay, carriedBaseline: carriedBaseline, resolveEffective: resolveEffective,
+    pidExposureStarted: pidExposureStarted, exposureStart: exposureStart, serverMillis: _ms, painReportedBetween: painReportedBetween, evaluateOverlay: evaluateOverlay, carriedBaseline: carriedBaseline, resolveEffective: resolveEffective,
     validOverlayValues: validOverlayValues, describeProgression: describeProgression };
 });

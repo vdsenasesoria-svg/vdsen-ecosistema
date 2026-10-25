@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="VDSEN">
 <meta name="theme-color" content="#0a0a0a">
-<meta name="vdsen-client-build" content="t601-compact-card-20261024-01">
+<meta name="vdsen-client-build" content="t602-temporal-authority-20261024-01">
 <title>VDSEN — Mi Plan v14</title>
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,7 +19,7 @@
 // Runtime identity for support and the service-worker URL.  It is deliberately
 // separate from the product version: a deployed Preview can report exactly
 // which app shell is executing without reading a guessed SHA from its URL.
-window.VDSEN_CLIENT_BUILD = 't601-compact-card-20261024-01';
+window.VDSEN_CLIENT_BUILD = 't602-temporal-authority-20261024-01';
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
     // A new script URL makes this cutover visible even to a browser that still
@@ -60,7 +60,7 @@ window.addEventListener('appinstalled', function() {
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, setPersistence, browserLocalPersistence }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { initializeFirestore, persistentLocalCache, doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc, orderBy, limit, onSnapshot, runTransaction, waitForPendingWrites, deleteField, FieldPath }
+import { initializeFirestore, persistentLocalCache, doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc, orderBy, limit, onSnapshot, runTransaction, waitForPendingWrites, deleteField, FieldPath, serverTimestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ══════════════════════════════════════════════════
@@ -84,7 +84,7 @@ setPersistence(auth, browserLocalPersistence).catch(() => {});
 window._fb = { auth, db, signInWithEmailAndPassword, signOut, onAuthStateChanged,
                sendPasswordResetEmail,
                doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs,
-               addDoc, orderBy, limit, onSnapshot, runTransaction, waitForPendingWrites, deleteField, FieldPath };
+               addDoc, orderBy, limit, onSnapshot, runTransaction, waitForPendingWrites, deleteField, FieldPath, serverTimestamp };
 window._fbReady = true;
 window.dispatchEvent(new Event('fbReady'));
 
@@ -11731,9 +11731,11 @@ function _deepEq(a, b) {
 }
 function _hasKey(o, k) { return !!o && Object.prototype.hasOwnProperty.call(o, k); }
 // full=true: every local key is "set" and nothing is deleted (first save of a session / unknown baseline).
+// T602: `sts` is the database's own commit stamp, added by the server to an entry the Client already holds; it is not athlete data, so it never makes an echo of our own write look like news.
+function _noSts(v) { if (!v || typeof v !== 'object' || !_hasKey(v, 'sts')) return v; var c = {}; Object.keys(v).forEach(function(k) { if (k !== 'sts') c[k] = v[k]; }); return c; }
 function _mapDiff(local, base, full) {
   var set = {}, del = [];
-  Object.keys(local || {}).forEach(function(k) { if (k === '') return; if (full || !base || !_hasKey(base, k) || !_deepEq(local[k], base[k])) set[k] = local[k]; });
+  Object.keys(local || {}).forEach(function(k) { if (k === '') return; if (full || !base || !_hasKey(base, k) || !_deepEq(_noSts(local[k]), _noSts(base[k]))) set[k] = local[k]; });
   if (base && !full) Object.keys(base).forEach(function(k) { if (k !== '' && !_hasKey(local, k)) del.push(k); });
   return { set: set, del: del };
 }
@@ -11803,7 +11805,13 @@ function _buildMergeWrite(scalars, parts) {
   Object.keys(scalars).forEach(function(k) { data[k] = scalars[k]; fields.push(k); });
   Object.keys(parts).forEach(function(top) {
     var d = parts[top];
-    Object.keys(d.set).forEach(function(k) { (data[top] = data[top] || {})[k] = d.set[k]; fields.push(new FB.FieldPath(top, k)); });
+    Object.keys(d.set).forEach(function(k) {
+      var v = d.set[k];
+      // T602: every persisted WORKING set carries the database's own commit time (`sts`). The athlete's device clock (`ts`) is display data and is never used to authorize a
+      // progression: an offline write is stamped when it syncs, so a late write can never claim to precede a plan revision or Coach decision made while it was queued.
+      if (top === 'entries' && /^log_\d+_\d+_\d+_s\d+$/.test(k) && v && typeof v === 'object' && v.done === true && typeof FB.serverTimestamp === 'function') { v = Object.assign({}, v, { sts: FB.serverTimestamp() }); }
+      (data[top] = data[top] || {})[k] = v; fields.push(new FB.FieldPath(top, k));
+    });
     d.del.forEach(function(k) { (data[top] = data[top] || {})[k] = FB.deleteField(); fields.push(new FB.FieldPath(top, k)); });
   });
   return { data: data, fields: fields };

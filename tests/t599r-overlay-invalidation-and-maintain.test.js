@@ -15,7 +15,7 @@ function setup(o = {}) {
   const target = a.overlay.target;
   if (o.planAt) input.plan = Object.assign({}, a.plan, { updatedAt: o.planAt });
   if (o.interventions) input.interventions = o.interventions;
-  if (o.startTs !== undefined) input.entries = Object.assign({}, a.entries, { ['log_' + target.week + '_' + target.dayIndex + '_0_s0']: Object.assign({ done: true, carga: '100', reps: '10', unit: 'KG', rir: 2, rir_real: 2, prescriptionExerciseId: sc.pid }, o.startTs === null ? {} : { ts: o.startTs }) });
+  if (o.startTs !== undefined) input.entries = Object.assign({}, a.entries, { ['log_' + target.week + '_' + target.dayIndex + '_0_s0']: Object.assign({ done: true, carga: '100', reps: '10', unit: 'KG', rir: 2, rir_real: 2, prescriptionExerciseId: sc.pid, ts: 5 /* device clock: ignored for authority (T602) */ }, o.startTs === null ? {} : { sts: o.startTs }) });
   return { a, sc, input, target };
 }
 const verdict = (input) => eff.evaluateOverlay(input);
@@ -30,7 +30,7 @@ test('D-02.2 plan edited AFTER the exposure started: the application in force at
   const { input } = setup({ planAt: EDIT, startTs: BEFORE });
   assert.equal(verdict(input).usable, true); assert.equal(eff.resolveEffective(input).provenance, 'CANONICAL_OVERLAY');
 });
-test('D-02.3 plan edit and first set at the same instant, or a first set without a timestamp: fail closed (invalidated)', () => {
+test('D-02.3 plan edit and first set at the same instant, or a first set without a SERVER-confirmed timestamp: fail closed (invalidated)', () => {
   assert.equal(verdict(setup({ planAt: EDIT, startTs: Date.parse(EDIT) }).input).usable, false);
   assert.equal(verdict(setup({ planAt: EDIT, startTs: null }).input).usable, false);
 });
@@ -74,7 +74,7 @@ async function appliedStore() {
 }
 function startAndAck(a, ts) {
   const m = a.s.docs.get(REFS.meso), o = m.nextExposureOverlays['ovl_' + a.key];
-  m.entries.log_2_0_0_s0 = { carga: '102.5', reps: '10', unit: 'KG', done: true, rir: 2, rir_real: 2, prescriptionExerciseId: 'pid-1', ts };
+  m.entries.log_2_0_0_s0 = { carga: '102.5', reps: '10', unit: 'KG', done: true, rir: 2, rir_real: 2, prescriptionExerciseId: 'pid-1', ts: 5, sts: ts };
   m.consumptionReceipts = { [a.key]: { recordKey: a.key, overlayKey: o.key, dimension: o.dimension, appliedValue: o.appliedValue, provenance: 'CANONICAL_OVERLAY', ackAt: '2026-09-28T10:01:00.000Z' } };
 }
 const consume = (a) => a.s.run((tx) => C.consumeOverlayTransaction(tx, REFS, { recordKey: a.key, clientId: 'c', now: '2026-09-28T11:00:00.000Z', actorId: 'k' }, { isCurrent: () => true }));

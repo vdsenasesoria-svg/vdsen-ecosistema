@@ -34,7 +34,7 @@ function makeDevice(server, name, o) {
     FB: { db: {}, doc: (_db, ...a) => a.join('/'), FieldPath, deleteField: () => DELETE,
       setDoc: (ref, data, opts) => new Promise((resolve) => { const run = () => { server.apply(ref, data, opts); resolve(); }; if (online) run(); else queue.push(run); }) } };
   vm.createContext(box);
-  const helpers = ['function _cloneJ(', 'function _deepEq(', 'function _hasKey(', 'function _logsMirrorDiverged(', 'function _mapDiff(', 'function _setBaselines(', 'function _resetLogsConcurrencyState(', 'function _applyDiffToBaseline(', 'function _commitSentToBaseline(',
+  const helpers = ['function _cloneJ(', 'function _deepEq(', 'function _hasKey(', 'function _logsMirrorDiverged(', 'function _noSts(', 'function _mapDiff(', 'function _setBaselines(', 'function _resetLogsConcurrencyState(', 'function _applyDiffToBaseline(', 'function _commitSentToBaseline(',
     'function _overlayDirty(', 'function _journalLogConflicts(', 'function _adoptRemoteLogs(', 'function _remoteHasNews(', 'function _buildMergeWrite(', 'function _acceptSraPersisted(', 'function _fbWriteOrQueue(', 'function _writeLocalBackup(', 'async function _doSaveLogs('];
   vm.runInContext('var _logsBaseline = null, _unitsBaseline = null, _histBaseline = null, _logsHeal = true, _remoteWeekSeen = 0;\n' + helpers.map((h) => extract(client, h)).join('\n'), box);
   return { name, box, calls, stored, server,

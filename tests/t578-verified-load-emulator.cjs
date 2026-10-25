@@ -17,7 +17,7 @@ const T0 = Date.parse('2026-09-27T12:00:00.000Z');
 const EXERCISE_ID = 'sf-sd-converging-lat-pulldown-plate-loaded';          // catalog entry with a canonical equipmentId (identity only)
 const EQUIPMENT_ID = 'sf-sd-converging-lat-pulldown-plate-loaded';
 const PID = 'pid-t578-load';
-const clock = () => '2026-10-01T00:00:00.000Z';
+const clock = () => new Date().toISOString();   // T602: the emulator stamps plan.updateTime with the real clock, so the server-materialization instant must be real too
 let seq = 0;
 
 // SYNTHETIC verified increment (Coach-configured, with provenance). Not real gym data.

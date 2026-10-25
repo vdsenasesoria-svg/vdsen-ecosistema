@@ -16,7 +16,7 @@ const effective = require('../assets/progression-effective-prescription.js');
 const { importLikeCoach } = require('./helpers/coach-plan-import.js');
 test.after(async () => { await app.delete(); });
 
-const T0 = Date.parse('2026-09-27T12:00:00.000Z'), clock = () => '2026-10-01T00:00:00.000Z';
+const T0 = Date.parse('2026-09-27T12:00:00.000Z'), clock = () => new Date().toISOString();
 let seq = 0;
 const RIR_BY_WEEK = { 1: 3, 2: 2, 3: 2, 4: 1, 5: 0, 6: 3, 7: 2, 8: 3 };
 
@@ -150,7 +150,7 @@ test('AUTH-06 SAFETY: articular pain suppresses every change (structural and pro
   const k = await client({ exercises: [{ name: 'Ejercicio A', muscle: 'pectoral' }] }); await open([k.uid]);
   await cycle(k, 1, { action: 'maintain' }); await cycle(k, 2, { action: 'add_sets' });
   assert.equal((await shown(k, 3, 0)).sets.length, 4);
-  await db.doc('clients/' + k.uid).update({ coachInterventions: [{ id: 'iv', targetType: 'EXERCISE', targetId: k.pids[0], action: 'REDUCE_SETS', decidedAt: '2026-10-02T00:00:00.000Z' }] });
+  await db.doc('clients/' + k.uid).update({ coachInterventions: [{ id: 'iv', targetType: 'EXERCISE', targetId: k.pids[0], action: 'REDUCE_SETS', decidedAt: new Date(Date.now() + 3600000).toISOString() }] });
   const after = await shown(k, 3, 0, { interventions: (await db.doc('clients/' + k.uid).get()).data().coachInterventions }); assert.equal(after.provenance, 'COACH_OVERRIDE', 'a Coach decision after the calculation wins: the plan values are shown'); assert.equal(after.sets.length, 3);
 });
 

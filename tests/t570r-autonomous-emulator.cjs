@@ -60,7 +60,7 @@ async function fixture(o) {
   return { athlete, coach, planId, logs };
 }
 const run = (f, o) => executor.processProgression(Object.assign({ db, clientId: f.athlete.uid, planId: f.planId, enabled: true, numericApplyEnabled: true,
-  clock: () => '2026-09-28T00:00:00.000Z' }, o || {}));
+  clock: () => new Date().toISOString() }, o || {}));
 const meso = async f => (await db.doc('logs/' + f.athlete.uid + '/mesos/' + f.planId).get()).data();
 const recs = async f => Object.values((await meso(f)).progressionApplications || {});
 const overlays = async f => Object.values((await meso(f)).nextExposureOverlays || {});
@@ -181,7 +181,7 @@ test('endpoint: bearer auth is mandatory, uid comes from the verified token, bod
 
 test('durable recovery: the cron sweep processes pending evidence when the browser never notified', { timeout: 180000 }, async () => {
   const f = await fixture(), g = await fixture({ canaryOther: true });
-  const out = await sweep.runSweep({ db, enabled: true, numericApplyEnabled: true, clock: () => '2026-09-28T00:00:00.000Z' });
+  const out = await sweep.runSweep({ db, enabled: true, numericApplyEnabled: true, clock: () => new Date().toISOString() });
   assert.ok(out.processed >= 1);
   assert.equal((await overlays(f)).length, 1, 'in-scope athlete processed without any browser call');
   assert.deepEqual(await overlays(g), [], 'out-of-scope athlete untouched');
@@ -336,7 +336,7 @@ test('CONCURRENCY: two simultaneous POSTs, and a cron sweep racing a POST, yield
   await Promise.all([run(f), run(f)]);
   assert.equal((await overlays(f)).length, 1);
   const g = await fixture();
-  await Promise.all([run(g), sweep.runSweep({ db, enabled: true, numericApplyEnabled: true, clock: () => '2026-09-28T00:00:00.000Z' })]);
+  await Promise.all([run(g), sweep.runSweep({ db, enabled: true, numericApplyEnabled: true, clock: () => new Date().toISOString() })]);
   const rs = await recs(g); assert.equal(rs.length, 1); assert.equal((await overlays(g)).length, 1);
   assert.equal(rs[0].events.filter(e => e.state === 'APPLIED').length, 1);
 });

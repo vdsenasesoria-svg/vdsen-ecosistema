@@ -47,7 +47,9 @@ function _refs(db, clientId, planId, coachId) {
 }
 
 function _webTx(tx) {
-  return { get: async function(ref) { var s = await tx.get(ref); return { exists: function() { return s.exists === true; }, data: function() { return s.data(); } }; },
+  return { get: async function(ref) { var s = await tx.get(ref); return { exists: function() { return s.exists === true; }, data: function() { return s.data(); },
+    // T602: the document's commit time on the SERVER clock (Admin snapshot updateTime), for temporal authority decisions.
+    updateTime: function() { var t = s.updateTime; return t && typeof t.toMillis === 'function' ? t.toMillis() : null; } }; },
     set: function(ref, data, opts) { return opts ? tx.set(ref, data, opts) : tx.set(ref, data); } };
 }
 
