@@ -65,7 +65,7 @@ test('T530.10 started exposure keeps its prescription: no retroactive override /
   const a = A(), iv = { targetType: 'EXERCISE', targetId: 'pid-1', planId: 'p', action: 'X', decidedAt: '2026-09-28T03:00:00.000Z' };
   const started = Object.assign({}, a.entries, { log_1_2_0_s0: undefined });   // placeholder replaced below
   void started;
-  const tgt = a.overlay.target, entries = Object.assign({}, a.entries, { ['log_' + tgt.week + '_' + tgt.dayIndex + '_0_s0']: { carga: '102.5', reps: '10', unit: 'KG', done: true, prescriptionExerciseId: 'pid-1', ts: 1 } });
+  const tgt = a.overlay.target, entries = Object.assign({}, a.entries, { ['log_' + tgt.week + '_' + tgt.dayIndex + '_0_s0']: { carga: '102.5', reps: '10', unit: 'KG', done: true, prescriptionExerciseId: 'pid-1', ts: 1, sts: Date.parse('2026-09-28T02:00:00.000Z') } });   // T602: server-confirmed start, BEFORE the 03:00 decision
   assert.equal(R(a, { entries, interventions: [iv] }).provenance, 'CANONICAL_OVERLAY');
   const c = A({ state: 'CONSUMED' }); assert.equal(R(c, { interventions: [iv] }).provenance, 'CANONICAL_OVERLAY');
 });

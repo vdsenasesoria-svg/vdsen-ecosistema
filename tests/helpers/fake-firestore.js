@@ -11,11 +11,11 @@ function makeStore(initial = {}) {
   const log = [];
   const denied = new Set();
   const store = {
-    docs, log, deny: ref => denied.add(ref),
+    docs, log, times: new Map(), deny: ref => denied.add(ref),
     get: ref => docs.has(ref) ? clone(docs.get(ref)) : undefined,
     async run(fn) {
       const writes = [];
-      const tx = { get: async ref => ({ exists: () => docs.has(ref), data: () => clone(docs.get(ref)) }),
+      const tx = { get: async ref => ({ exists: () => docs.has(ref), data: () => clone(docs.get(ref)), updateTime: () => store.times.has(ref) ? store.times.get(ref) : null }),
         set: (ref, value, opts) => { writes.push([ref, value, opts]); } };
       const result = await fn(tx);
       for (const [ref] of writes) if (denied.has(ref)) throw Object.assign(new Error('permission-denied ' + ref), { code: 'permission-denied' });

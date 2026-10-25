@@ -18,7 +18,7 @@ const { importLikeCoach } = require('./helpers/coach-plan-import.js');
 test.after(async () => { await app.delete(); });
 
 const T0 = Date.parse('2026-09-27T12:00:00.000Z');
-const clock = () => '2026-10-01T00:00:00.000Z';
+const clock = () => new Date().toISOString();   // T602: the emulator stamps plan.updateTime with the real clock, so the server-materialization instant must be real too
 const EXACT_NAME = 'Jalón Dorsal Convergente discos';                 // exact catalog name -> sf-sd-converging-lat-pulldown-plate-loaded
 const EXACT_ID = 'sf-sd-converging-lat-pulldown-plate-loaded';
 const UNKNOWN_NAME = 'Press Convergente Inclinado';                    // a real Motor name that is NOT in the catalog (stays unresolved)
@@ -138,12 +138,12 @@ test('INT-06 the Coach changed the prescription: a later Coach intervention or a
   await db.doc('clients/' + a.uid).update({ coachInterventions: [{ id: 'iv-1', targetType: 'EXERCISE', targetId: a.pids[0], action: 'REDUCE_SETS', decidedAt: '2026-09-27T14:00:00.000Z' }] });
   await run(a); let m = await meso(a);
   assert.equal(records(m)[0].state, 'STALE'); assert.equal(records(m)[0].reasonCode, 'COACH_OVERRIDE'); assert.equal(overlays(m).length, 0);
-  const b = await seed({ increments: inc, recs: loadRec, planUpdatedAt: '2026-09-28T00:00:00.000Z' });
+  const b = await seed({ increments: inc, recs: loadRec, planUpdatedAt: new Date(Date.now() + 3600000).toISOString() });
   await run(b); m = await meso(b);
   assert.equal(records(m)[0].state, 'STALE'); assert.equal(records(m)[0].reasonCode, 'PLAN_CHANGED'); assert.equal(overlays(m).length, 0);
   const c = await seed({ increments: inc, recs: loadRec }); await run(c); m = await meso(c); const ov = overlays(m)[0];
   assert.equal((await eff(c, 0, m, ov.target.week, ov.target.dayIndex)).provenance, 'CANONICAL_OVERLAY');
-  const after = await eff(c, 0, m, ov.target.week, ov.target.dayIndex, [{ id: 'iv-2', targetType: 'EXERCISE', targetId: c.pids[0], action: 'REDUCE_SETS', decidedAt: '2026-10-02T00:00:00.000Z' }]);
+  const after = await eff(c, 0, m, ov.target.week, ov.target.dayIndex, [{ id: 'iv-2', targetType: 'EXERCISE', targetId: c.pids[0], action: 'REDUCE_SETS', decidedAt: new Date(Date.now() + 3600000).toISOString() }]);
   assert.notEqual(after.provenance, 'CANONICAL_OVERLAY', 'a Coach decision after the application wins over the overlay');
 });
 

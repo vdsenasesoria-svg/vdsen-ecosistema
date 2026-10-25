@@ -25,7 +25,7 @@ const apply = (api, s, sc, o, refs = REFS) => s.run(tx => api.applyOverlayTransa
 const meso = s => s.get(REFS.meso);
 async function applied(sc = F.scenario()) { const s = storeFor(sc); const r = await apply(C, s, sc); assert.equal(r.written, true, JSON.stringify(r.reason)); return { s, sc, key: sc.rec.key }; }
 const target = sc => 'log_2_0_0_s0';
-const firstSet = { carga: '102.5', reps: '10', unit: 'KG', done: true, rir: 2, rir_real: 2, prescriptionExerciseId: 'pid-1', ts: 5 };
+const firstSet = { carga: '102.5', reps: '10', unit: 'KG', done: true, rir: 2, rir_real: 2, prescriptionExerciseId: 'pid-1', ts: 5, sts: Date.parse('2026-09-28T02:00:00.000Z') };   // T602: the SERVER-confirmed commit time of the first set (before the 03:00 Coach decision used by T531.10); ts is the device clock and decides nothing
 const shownFor = a => { const o = meso(a.s).nextExposureOverlays['ovl_' + a.key]; return { provenance: 'CANONICAL_OVERLAY', overlayKey: o.key, dimension: o.dimension, appliedValue: o.appliedValue }; };
 function writeReceipt(a, o = {}) { const sh = shownFor(a); a.s.docs.get(REFS.meso).consumptionReceipts = Object.assign({}, a.s.docs.get(REFS.meso).consumptionReceipts, { [a.key]: Object.assign({ recordKey: a.key, overlayKey: sh.overlayKey, dimension: sh.dimension, appliedValue: sh.appliedValue, provenance: sh.provenance, ackAt: '2026-09-30T08:59:00.000Z' }, o) }); }
 async function persistFirstSet(a) { a.s.docs.get(REFS.meso).entries[target()] = structuredClone(firstSet); }

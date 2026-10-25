@@ -372,7 +372,11 @@
     var st = { meso: null, plan: null, client: null, coach: null, root: null };
     if (which.meso) st.meso = _read(await tx.get(refs.meso));
     if (which.root && refs.root) st.root = _read(await tx.get(refs.root));
-    if (which.plan && refs.plan) st.plan = _read(await tx.get(refs.plan));
+    if (which.plan && refs.plan) {
+      var ps = await tx.get(refs.plan); st.plan = _read(ps);
+      // T602: the plan document's own commit time (server clock), when the transaction adapter exposes it. Never the Coach app's updatedAt string.
+      st.planUpdateMs = ps && typeof ps.updateTime === 'function' ? ps.updateTime() : null;
+    }
     if (which.client && refs.client) st.client = _read(await tx.get(refs.client));
     if (which.coach && refs.coach) st.coach = _read(await tx.get(refs.coach));
     return st;
@@ -516,7 +520,7 @@
     // a receipt (even a late retry) and a later execution never turn it into CONSUMED. Re-read inside this transaction from the canonical plan, client and log documents. (The plan is judged as the record's OWN plan: a started exposure of a replaced plan still consumes inside it, see T532 #7.)
     var stillValid = eff.evaluateOverlay({ clientId: r.clientId, planId: r.planId, activePlanId: r.planId, pid: r.prescriptionExerciseId, week: tgt.week, dayIndex: tgt.dayIndex,
       records: (function(o) { o[r.key] = r; return o; })({}), overlays: (function(o) { o[ov.key] = ov; return o; })({}), interventions: st.client && st.client.coachInterventions,
-      plan: st.plan || {}, entries: _entriesOf(st, r.planId), safetyConflict: false });
+      plan: st.plan || {}, serverPlanUpdatedAt: st.planUpdateMs, entries: _entriesOf(st, r.planId), safetyConflict: false });
     if (!stillValid.usable) return _fail(stillValid.reason);
     var at = _now(input, null);
     if (!at) return _fail('TIMESTAMP_MISSING');
