@@ -45,7 +45,8 @@ jobs:
       - name: Real Client applied lifecycle, continuity, two browsers, offline and mobile runtime
         shell: pwsh
         run: |
-          Copy-Item -LiteralPath firestore.rules -Destination (Join-Path $env:T599_QA 'firestore.rules')
+          # T603: the sandbox emulator runs the CANDIDATE rules (deployed rules + start markers / decision records); firestore.rules itself is untouched
+          Copy-Item -LiteralPath firestore.t603.rules -Destination (Join-Path $env:T599_QA 'firestore.rules')
           $cfg = Join-Path $env:T599_QA 'firebase.json'
           @{firestore=@{rules='firestore.rules'};emulators=@{auth=@{host='127.0.0.1';port=9099};firestore=@{host='127.0.0.1';port=8085};ui=@{enabled=$false};singleProjectMode=$true}} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $cfg
           node (Join-Path $env:T599_QA 'node_modules/firebase-tools/lib/bin/firebase.js') emulators:exec --only auth,firestore --project demo-vdsen-client-e2e --config $cfg 'node scripts/e2e-client-chain/t599-browser-gates.cjs'

@@ -38,7 +38,14 @@ test('T603.6 every Coach EXERCISE decision is written with its database-stamped 
   assert.match(COACH, /at: serverTimestamp\(\) \};/);
 });
 test('T603.7 firestore.rules: markers are create-only with at == request.time after a persisted set; decisions are create-only for the owner Coach; nothing else widened', () => {
-  const r = fs.readFileSync('firestore.rules', 'utf8'), s = r.slice(r.indexOf('match /starts/{startId}'), r.indexOf('match /mesos/{planId}')), d = r.slice(r.indexOf('match /decisions/{decisionId}'), r.indexOf('match /exercises/'));
+  const r = fs.readFileSync('firestore.t603.rules', 'utf8'), s = r.slice(r.indexOf('match /starts/{startId}'), r.indexOf('match /mesos/{planId}')), d = r.slice(r.indexOf('match /decisions/{decisionId}'), r.indexOf('match /exercises/'));
   assert.match(s, /request\.resource\.data\.at == request\.time/); assert.match(s, /get\(\/databases\/\$\(database\)\/documents\/logs\/\$\(userId\)\/mesos\//); assert.doesNotMatch(s, /allow (update|delete|write)/);
   assert.match(d, /request\.resource\.data\.at == request\.time/); assert.match(d, /ownsClient\(clientId\)/); assert.doesNotMatch(d, /allow (update|delete|write)/);
+});
+
+test('T603.8 the candidate rules are the DEPLOYED rules plus exactly the two additive blocks (firestore.rules is untouched; nothing else changes)', () => {
+  const base = fs.readFileSync('firestore.rules', 'utf8'), cand = fs.readFileSync('firestore.t603.rules', 'utf8');
+  const stripped = cand.replace(/      \/\/ T603: COACH DECISION RECORD[^]*?\n      \}\n/, '').replace(/      \/\/ T603: EXPOSURE START MARKER[^]*?\n      \}\n/, '');
+  assert.equal(stripped, base);
+  assert.ok(cand.length > base.length);
 });

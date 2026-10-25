@@ -131,7 +131,8 @@ async function startEmulator(jar) {
   const out = fs.openSync(path.join(runtime, 'firestore-stdout.log'), 'w');
   const err = fs.openSync(path.join(runtime, 'firestore-stderr.log'), 'w');
   emulator = spawn('java', [...JAVA_LOCALE_ARGS, '-jar', jar, '--host', '127.0.0.1', '--port', String(port),
-    '--project_id', PROJECT, '--rules', path.join(repo, 'firestore.rules'),
+    '--project_id', PROJECT, '--rules', path.join(repo, 'firestore.t603.rules'),   // T603: candidate = deployed rules + additive start-marker / decision-record blocks (see tests/t603-temporal-security.test.js)
+   
     '--single_project_mode'], { cwd: repo, stdio: ['ignore', out, err], windowsHide: true });
   let exited = false;
   emulator.once('exit', () => { exited = true; });

@@ -82,17 +82,6 @@ service cloud.firestore {
       allow update: if request.auth != null && request.auth.uid == clientId
         && request.resource.data.diff(resource.data).affectedKeys()
            .hasOnly(['phone', 'phoneConfirmedAt', 'phoneSkippedAt']);
-      // T603: COACH DECISION RECORD. The instant a Coach decision takes effect is the DATABASE's, not the Coach device clock: one immutable document per intervention id
-      // (create-only, owner Coach only, `at` must equal request.time, never updated or deleted). `coachInterventions[].decidedAt` stays as display text; trusted evaluation
-      // uses this record whenever it exists.
-      match /decisions/{decisionId} {
-        allow read: if request.auth != null && (request.auth.uid == clientId || ownsClient(clientId));
-        allow create: if ownsClient(clientId)
-          && request.resource.data.keys().hasOnly(['id', 'targetType', 'targetId', 'planId', 'action', 'decidedBy', 'at'])
-          && request.resource.data.keys().hasAll(['id', 'targetType', 'targetId', 'action', 'decidedBy', 'at'])
-          && request.resource.data.id == decisionId && request.resource.data.decidedBy == request.auth.uid
-          && request.resource.data.at == request.time;
-      }
     }
     match /exercises/{exerciseId} {
       allow read: if request.auth != null;
@@ -167,23 +156,6 @@ service cloud.firestore {
       // OWNER COACH: every field (including canonical progression state); nobody else.
       allow create, update, delete: if ownsClient(userId);
       // Sub-colección de rotación por mesociclo: same boundary + the athlete's append-only consumption receipts.
-      // T603: EXPOSURE START MARKER. Firestore Rules cannot iterate the free-form `entries` map, so an `entries.<key>.sts` written by the SDK can never be proven to be the
-      // database's time. The authority for "when did this exposure start" is therefore a separate, IMMUTABLE document whose `at` MUST equal request.time, that exists at most
-      // once per (plan, week, day, exercise index), that can only be created by the athlete AFTER the working set it points to is already persisted (get() sees the committed
-      // log), and that can never be updated or deleted (no rule). The athlete can neither advance (request.time is the database clock; the set must already exist) nor rewrite it.
-      match /starts/{startId} {
-        allow read: if isSelfOrOwnerCoach(userId);
-        allow create: if request.auth != null && request.auth.uid == userId
-          && request.resource.data.keys().hasOnly(['planId', 'week', 'dayIndex', 'exerciseIndex', 'setKey', 'at'])
-          && request.resource.data.keys().hasAll(['planId', 'week', 'dayIndex', 'exerciseIndex', 'setKey', 'at'])
-          && request.resource.data.at == request.time
-          && request.resource.data.planId is string && request.resource.data.planId != ''
-          && request.resource.data.week is int && request.resource.data.dayIndex is int && request.resource.data.exerciseIndex is int
-          && request.resource.data.setKey is string
-          && startId == request.resource.data.planId + '_' + string(request.resource.data.week) + '_' + string(request.resource.data.dayIndex) + '_' + string(request.resource.data.exerciseIndex)
-          && request.resource.data.setKey.matches('^log_' + string(request.resource.data.week) + '_' + string(request.resource.data.dayIndex) + '_' + string(request.resource.data.exerciseIndex) + '_s[0-9]+$')
-          && get(/databases/$(database)/documents/logs/$(userId)/mesos/$(request.resource.data.planId)).data.get('entries', {}).get(request.resource.data.setKey, {}).get('done', false) == true;
-      }
       match /mesos/{planId} {
         allow read: if isSelfOrOwnerCoach(userId);
         allow create: if request.auth != null && request.auth.uid == userId && !createsCanonical() && receiptsBounded();

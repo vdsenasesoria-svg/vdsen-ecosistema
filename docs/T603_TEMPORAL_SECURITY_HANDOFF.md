@@ -34,9 +34,9 @@ Patrón: **documentos inmutables, create-only, cuyo `at` las Rules obligan a ser
 - El servidor sustituye `decidedAt` por `decision.at` para toda intervención con registro válido (`withServerDecisionTimes`) antes de evaluar apply-gate, override, stale y consume. Un registro inconsistente (id distinto) se ignora.
 - No se amplía ningún permiso de escritura: el Coach ya escribía en `clients`; el atleta solo gana crear sus marcadores. Identidad Coach, propiedad del atleta, PID y plan siguen verificándose como antes.
 
-## 4. Reglas necesarias (preparadas en `firestore.rules`, NO desplegadas)
+## 4. Reglas necesarias (preparadas en `firestore.t603.rules`, NO desplegadas)
 
-`match /logs/{userId}/starts/{startId}` y `match /clients/{clientId}/decisions/{decisionId}` (ver archivo). Aditivas: no cambian ninguna regla existente.
+`firestore.rules` **no se modifica**: el gate de release (`scripts/release/check.cjs`) fija su hash al estado revisado (`rules_transition.target_sha256`), y cambiarlo es una transición de Rules que decide el propietario. Las reglas candidatas viven en `firestore.t603.rules` = reglas desplegadas + exactamente dos bloques aditivos (`match /logs/{userId}/starts/{startId}` y `match /clients/{clientId}/decisions/{decisionId}`); un test (T603.8) comprueba esa igualdad. Los emuladores de pruebas y el sandbox T599 corren contra la candidata. Activar = reemplazar `firestore.rules` por la candidata y actualizar el estado revisado por el proceso de release (autorización explícita).
 
 ## 5. Evidencia (emulador, reglas reales, atletas sintéticos)
 
@@ -64,7 +64,7 @@ Unitarios: baseline PASS (0 regresiones). Emulador (Rules reales, ahora con 2 su
 ## 9. Requisitos exactos de despliegue (requieren autorización explícita del propietario; NO ejecutados)
 
 **Orden obligatorio:**
-1. **Desplegar `firestore.rules`** (aditivas). Hasta entonces `starts/` y `decisions/` están denegadas por defecto.
+1. **Desplegar las reglas candidatas** (reemplazo de `firestore.rules` por `firestore.t603.rules` + transición de estado revisado; aditivas). Hasta entonces `starts/` y `decisions/` están denegadas por defecto.
 2. Desplegar API/Client/Coach (build `t603-temporal-security-20261025-01`). **Si el Coach se despliega antes que las Rules, sus decisiones fallan** (el batch incluye el registro denegado): por eso las Rules van primero. El Client antes de las Rules solo pierde marcadores (denegados en silencio; el servidor falla cerrado).
 3. Verificar en emulador/Preview: marcador y registro creados; sin regresiones.
 4. Solo después, y con autorización separada, evaluar Numeric Apply.
