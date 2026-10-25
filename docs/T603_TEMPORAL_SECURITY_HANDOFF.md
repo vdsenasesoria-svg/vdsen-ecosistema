@@ -72,6 +72,6 @@ Rollback: revertir el build; las Rules aditivas pueden quedarse.
 
 ## 10. PR y dictamen
 
-(se completa al fusionar)
+PR [#136](https://github.com/vdsenasesoria-svg/vdsen-ecosistema/pull/136) fusionado en `codex/client-app-next` (merge commit) como `c1421c07a45594d01aa72f27e8e99ef70dc1d279`. CI verde: `check` y `Real Client progression and sync (demo only)`. Reglas candidatas en `firestore.t603.rules`; `firestore.rules` byte-idéntico; nada desplegado.
 
 **Dictamen para el piloto:** el error de reloj y la falsificación de `sts` y de `decidedAt` quedan cerrados *en emulador*. GO condicionado a: desplegar las Rules en el orden de §9 con autorización del propietario, y aceptar los residuales §8.1–§8.2. Numeric Apply sigue OFF.
