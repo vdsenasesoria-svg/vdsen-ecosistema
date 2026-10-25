@@ -86,7 +86,7 @@ La primera versión del cambio hacía que el eco del propio write (con `sts` añ
 
 ## 11. PR y SHA
 
-(se completa al fusionar)
+PR [#134](https://github.com/vdsenasesoria-svg/vdsen-ecosistema/pull/134) fusionado en `codex/client-app-next` (merge commit) como `2756441d2c5a1ea7c01d0d24b03846554230694c`. CI verde: `check` y `Real Client progression and sync (demo only)` (T599 sandbox). Commits de la rama: `c2beed7` (cambio) y `1703100` (helper de test `_noSts` que el gate de emulador de CI detecto; el gate local previo se habia corrido antes del ultimo cambio del Client). No publicado en produccion; Numeric Apply, kill switch, Rules e IAM intactos.
 
 ## 12. Dictamen para un piloto futuro
 
