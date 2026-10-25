@@ -24,6 +24,10 @@
       "type": "string",
       "pattern": "^[0-9a-f]{40}$"
     },
+    "rules_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
     "production_deployment": {
       "type": "string"
     },
