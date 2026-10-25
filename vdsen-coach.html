@@ -1632,7 +1632,7 @@
   <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAuth, signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail, setPersistence, browserLocalPersistence, indexedDBLocalPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, orderBy, limit, updateDoc, addDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction, deleteField } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, orderBy, limit, updateDoc, addDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction, deleteField, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
   import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
   
   // ========== CONFIGURACIÓN FIREBASE (REEMPLAZAR CON DATOS REALES) ==========
@@ -2265,6 +2265,12 @@
     };
   }
   window._buildCoachIntervention = _buildCoachIntervention;
+  // T603: the instant a Coach decision takes effect is the DATABASE's. Every EXERCISE-scoped intervention also creates an immutable record clients/{clientId}/decisions/{id} whose `at`
+  // firestore.rules force to be request.time (create-only, owner Coach only). `decidedAt` (this device's clock) remains display text; trusted evaluation prefers the record.
+  function _decisionRecord(record) {
+    return { id: record.id, targetType: record.targetType, targetId: record.targetId, planId: record.planId || null, action: record.action, decidedBy: record.decidedBy, at: serverTimestamp() };
+  }
+  window._decisionRecord = _decisionRecord;
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  T235 — STALENESS / INVALIDATION RULES. A Coach intervention invalidates
@@ -2592,7 +2598,10 @@
       const snap = await getDoc(ref);
       const existing = (snap.exists() && Array.isArray(snap.data().coachInterventions)) ? snap.data().coachInterventions : [];
       existing.push(record);
-      await updateDoc(ref, { coachInterventions: existing }); // confirmed persistence -- no toast before this resolves
+      const _wb = writeBatch(db);   // T603: the array entry and its database-stamped decision record commit together
+      _wb.update(ref, { coachInterventions: existing });
+      _wb.set(doc(db, 'clients', _clientIdSnap, 'decisions', String(record.id)), _decisionRecord(record));
+      await _wb.commit(); // confirmed persistence -- no toast before this resolves
       if (_detailClientId !== _clientIdSnap) return; // stale client context guard: coach switched clients mid-write -- no cross-client UI leakage
       showToast('✅ Intervención registrada');
       _detailClientData = Object.assign({}, _detailClientData, { coachInterventions: existing });
@@ -19858,6 +19867,7 @@ El esfuerzo no es negociable.
         var interventions = Array.isArray(clientData.coachInterventions) ? clientData.coachInterventions.slice() : [];
         interventions.push(intervention);
         tx.update(clientRef, { coachInterventions: interventions });
+        tx.set(doc(db, 'clients', clientId, 'decisions', String(intervention.id)), _decisionRecord(intervention));   // T603: database-stamped instant
         tx.set(mesoRef, { progressionApplications: records, progressionApplicationSummary: summary }, { merge: true });
         tx.set(rootRef, { progressionApplicationSummary: summary }, { merge: true });
         return { ok: true, summary: summary, interventions: interventions };

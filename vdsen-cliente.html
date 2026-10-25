@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="VDSEN">
 <meta name="theme-color" content="#0a0a0a">
-<meta name="vdsen-client-build" content="t602-temporal-authority-20261024-01">
+<meta name="vdsen-client-build" content="t603-temporal-security-20261025-01">
 <title>VDSEN — Mi Plan v14</title>
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,7 +19,7 @@
 // Runtime identity for support and the service-worker URL.  It is deliberately
 // separate from the product version: a deployed Preview can report exactly
 // which app shell is executing without reading a guessed SHA from its URL.
-window.VDSEN_CLIENT_BUILD = 't602-temporal-authority-20261024-01';
+window.VDSEN_CLIENT_BUILD = 't603-temporal-security-20261025-01';
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
     // A new script URL makes this cutover visible even to a browser that still
@@ -11817,6 +11817,20 @@ function _buildMergeWrite(scalars, parts) {
   return { data: data, fields: fields };
 }
 
+// T603: the AUTHORITATIVE exposure start. Firestore Rules cannot validate the free-form entries map, so the first persisted working set of an exposure also creates ONE immutable marker
+// (logs/{uid}/starts/{plan_week_day_exercise}) whose `at` the Rules force to be the database's request.time, and only after that set is already committed (the rule reads it). It is issued
+// right after the log write so the SDK queues it behind it, also offline: it is stamped when the pair syncs. A rejection (marker already exists, e.g. another device) never affects the log.
+var _startMarked = {};
+function _writeStartMarkers(uid, planId, setMap) {
+  if (!uid || !planId || !setMap || typeof FB.serverTimestamp !== 'function') return;
+  Object.keys(setMap).forEach(function(k) {
+    var m = /^log_(\d+)_(\d+)_(\d+)_s\d+$/.exec(k), e = setMap[k];
+    if (!m || !e || typeof e !== 'object' || e.done !== true || Number(m[1]) !== REAL_WEEK) return;
+    var id = planId + '_' + m[1] + '_' + m[2] + '_' + m[3], mk = uid + '/' + id;
+    if (_startMarked[mk]) return; _startMarked[mk] = true;
+    try { FB.setDoc(FB.doc(FB.db, 'logs', uid, 'starts', id), { planId: planId, week: Number(m[1]), dayIndex: Number(m[2]), exerciseIndex: Number(m[3]), setKey: k, at: FB.serverTimestamp() }).catch(function() { /* exists already or not allowed: the log itself is unaffected */ }); } catch(_sm) { /* never blocks a save */ }
+  });
+}
 async function _doSaveLogs() {
   _effSesCache = { src: null, ov: null, rec: null, week: null, out: null };   // T586: the effective view depends on LOGS (started exposure / pain): rebuilt after every save
   if (!USER || !FB) return false;
@@ -11849,6 +11863,7 @@ async function _doSaveLogs() {
     if (ACTIVE_PLAN_ID) {
       _mesoP = _fbWriteOrQueue(FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart, 'mesos', ACTIVE_PLAN_ID), _mw.data, { mergeFields: _ownedFields }));
       _mesoP.catch(function() { /* settled and handled below; never an unhandled rejection */ });
+      if (typeof _writeStartMarkers === 'function') _writeStartMarkers(_uidAtStart, ACTIVE_PLAN_ID, _dE.set);
     }
     var _rootUnbound = (typeof _rootLogUnbound !== 'undefined' && _rootLogUnbound);
     // T441: the root write is only issued while the same athlete is still signed in (checked synchronously, no wait added).

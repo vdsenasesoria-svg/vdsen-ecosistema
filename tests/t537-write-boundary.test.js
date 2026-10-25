@@ -101,7 +101,7 @@ test('T537.7 SERVICE WORKER: cache identity follows the registered build and eve
 });
 
 test('T537.8 rules text: the athlete branch of logs never grants canonical writes; the Coach branch requires ownership; receipts are append-only', () => {
-  const logs = rules.slice(rules.indexOf('match /logs/{userId}'), rules.indexOf('match /fichas_onboarding'));
+  const logs = rules.slice(rules.indexOf('match /logs/{userId}'), rules.indexOf('match /fichas_onboarding')).split(/match \/starts\/\{startId\} \{[^]*?\n      \}\n/).join('');   // T603: the immutable start markers are validated by tests/t603-*
   for (const line of logs.split('\n').filter(l => /allow (create|update|delete)/.test(l) && /request\.auth\.uid == userId/.test(l)))
     assert.ok(/(createsCanonical|changesCanonical|holdsCanonical)\(\)/.test(line), 'athlete rule must exclude canonical fields: ' + line.trim());
   for (const line of logs.split('\n').filter(l => /allow (create|update|delete)/.test(l) && /isCoachUser\(\)/.test(l)))

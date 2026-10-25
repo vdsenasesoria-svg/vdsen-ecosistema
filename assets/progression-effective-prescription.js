@@ -50,7 +50,9 @@
     }
     return null;
   }
-  function exposureStart(entries, pid, week, dayIndex) {
+  // T603: `trust` = { markers: [{ at }] } is supplied by SERVER callers. Then ONLY the exposure start markers (immutable documents whose `at` the Firestore Rules force to be request.time)
+  // decide WHEN the exposure started; `entries.<key>.sts` is a free-form map value an athlete could write with the SDK and is ignored. No marker for a started exposure = unknown order.
+  function exposureStart(entries, pid, week, dayIndex, trust) {
     if (!pid || !entries) return { started: false, at: null };
     var re = new RegExp('^log_' + week + '_' + dayIndex + '_\\d+_s\\d+$'), at = null, started = false, unknown = false;
     Object.keys(entries).forEach(function(k) {
@@ -60,7 +62,15 @@
       var t = _ms(e.sts);
       if (t === null) unknown = true; else if (at === null || t < at) at = t;
     });
+    if (trust) { var mk = null; (Array.isArray(trust.markers) ? trust.markers : []).forEach(function(m) { var t = m ? _ms(m.at) : null; if (t !== null && (mk === null || t < mk)) mk = t; }); return { started: started, at: started ? mk : null }; }
     return { started: started, at: unknown ? null : at };
+  }
+  // T603: replaces the Coach-device decidedAt of every intervention that has a database-stamped decision record (clients/{id}/decisions/{interventionId}.at) with that instant.
+  function withServerDecisionTimes(interventions, times) {
+    return (Array.isArray(interventions) ? interventions : []).map(function(iv) {
+      var t = iv && times && iv.id !== undefined && iv.id !== null ? _ms(times[iv.id]) : null;
+      return t === null ? iv : Object.assign({}, iv, { decidedAt: new Date(t).toISOString(), decidedAtServerVerified: true });
+    });
   }
 
   // SAFETY signal readable at any time from LOGS: an articular-pain report in a session strictly AFTER the source exposure and strictly
@@ -131,7 +141,7 @@
     // T599-R (D-02): a started exposure keeps the prescription it STARTED with — but an invalidation (Coach decision, plan revision) that happened BEFORE the first persisted
     // working set already ended the overlay's authority, and executing the exposure afterwards must not revive it. Order of persisted events decides; a tie or an unknown
     // order (no timestamp) fails closed. An invalidation AFTER the first set is not retroactive.
-    var start = exposureStart(input.entries, pid, week, day);
+    var start = exposureStart(input.entries, pid, week, day, input.trustedStarts === true ? { markers: input.startMarkers } : null);
     function beforeStart(at) { return !start.started || start.at === null || at === null || at <= start.at; }
     // Any exact Coach decision since the source calculation counts: the apply gate refused every decision it could SEE at commit, so a
     // decision visible now was necessarily written after the commit (independent of clock skew between devices).
@@ -303,6 +313,6 @@
   }
 
   return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, OVERLAY_SCHEMA: OVERLAY_SCHEMA, PROVENANCE: PROVENANCE, LABEL: LABEL,
-    pidExposureStarted: pidExposureStarted, exposureStart: exposureStart, serverMillis: _ms, painReportedBetween: painReportedBetween, evaluateOverlay: evaluateOverlay, carriedBaseline: carriedBaseline, resolveEffective: resolveEffective,
+    pidExposureStarted: pidExposureStarted, exposureStart: exposureStart, serverMillis: _ms, withServerDecisionTimes: withServerDecisionTimes, painReportedBetween: painReportedBetween, evaluateOverlay: evaluateOverlay, carriedBaseline: carriedBaseline, resolveEffective: resolveEffective,
     validOverlayValues: validOverlayValues, describeProgression: describeProgression };
 });

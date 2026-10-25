@@ -377,7 +377,16 @@
       // T602: the plan document's own commit time (server clock), when the transaction adapter exposes it. Never the Coach app's updatedAt string.
       st.planUpdateMs = ps && typeof ps.updateTime === 'function' ? ps.updateTime() : null;
     }
-    if (which.client && refs.client) st.client = _read(await tx.get(refs.client));
+    if (which.client && refs.client) {
+      st.client = _read(await tx.get(refs.client));
+      // T603: the instant of a Coach decision is the database's (clients/{id}/decisions/{interventionId}.at, forced to request.time by the Rules), not the Coach device clock.
+      // Every downstream guard (apply gate, override, stale, consume) reads st.client.coachInterventions, so the verified instants are applied once, here.
+      if (st.client && typeof refs.decision === 'function' && Array.isArray(st.client.coachInterventions)) {
+        var eff0 = _effective(), times = {}, ivs = st.client.coachInterventions.filter(function(iv) { return iv && iv.id !== undefined && iv.id !== null && iv.targetType === 'EXERCISE'; }).slice(-200);
+        for (var i = 0; i < ivs.length; i++) { var ds = await tx.get(refs.decision(String(ivs[i].id))); var dd = _read(ds); if (dd && dd.at !== undefined && dd.id === ivs[i].id) times[ivs[i].id] = dd.at; }
+        if (eff0 && eff0.withServerDecisionTimes) st.client = Object.assign({}, st.client, { coachInterventions: eff0.withServerDecisionTimes(st.client.coachInterventions, times) });
+      }
+    }
     if (which.coach && refs.coach) st.coach = _read(await tx.get(refs.coach));
     return st;
   }
@@ -518,7 +527,14 @@
     if (rc.provenance !== 'CANONICAL_OVERLAY' || rc.overlayKey !== ov.key || rc.recordKey !== r.key || rc.appliedValue !== ov.appliedValue || rc.dimension !== ov.dimension) return _fail('RECEIPT_MISMATCH');
     // T599-R (D-02): the overlay must still have been AUTHORITATIVE when the exposure started. A plan revision / exact Coach decision persisted before the first working set invalidated it:
     // a receipt (even a late retry) and a later execution never turn it into CONSUMED. Re-read inside this transaction from the canonical plan, client and log documents. (The plan is judged as the record's OWN plan: a started exposure of a replaced plan still consumes inside it, see T532 #7.)
-    var stillValid = eff.evaluateOverlay({ clientId: r.clientId, planId: r.planId, activePlanId: r.planId, pid: r.prescriptionExerciseId, week: tgt.week, dayIndex: tgt.dayIndex,
+    // T603: the exposure start comes from the immutable start marker(s) the Rules stamp with request.time (never from entries.sts / ts).
+    var startMarkers = [];
+    if (typeof refs.start === 'function' && st.plan) {
+      var tday = (Array.isArray(st.plan.days) ? st.plan.days : []).filter(function(d) { return d.dayIndex === tgt.dayIndex; })[0];
+      var exIdx = ((tday && tday.exercises) || []).map(function(e) { return e.prescriptionExerciseId; }).indexOf(r.prescriptionExerciseId);
+      if (exIdx >= 0) { var mk = _read(await tx.get(refs.start(r.planId, tgt.week, tgt.dayIndex, exIdx))); if (mk && mk.planId === r.planId && mk.week === tgt.week && mk.dayIndex === tgt.dayIndex && mk.exerciseIndex === exIdx) startMarkers.push({ at: mk.at }); }
+    }
+    var stillValid = eff.evaluateOverlay({ trustedStarts: typeof refs.start === 'function', startMarkers: startMarkers, clientId: r.clientId, planId: r.planId, activePlanId: r.planId, pid: r.prescriptionExerciseId, week: tgt.week, dayIndex: tgt.dayIndex,
       records: (function(o) { o[r.key] = r; return o; })({}), overlays: (function(o) { o[ov.key] = ov; return o; })({}), interventions: st.client && st.client.coachInterventions,
       plan: st.plan || {}, serverPlanUpdatedAt: st.planUpdateMs, entries: _entriesOf(st, r.planId), safetyConflict: false });
     if (!stillValid.usable) return _fail(stillValid.reason);

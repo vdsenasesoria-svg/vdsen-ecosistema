@@ -35,7 +35,7 @@ ok((COACH.match(/_intvBtn229_\$\{b\.action\}/g) || []).length === 1, 'exactly on
 // clients/{uid}, no arrayUnion/new import, no new collection).
 // ─────────────────────────────────────────────────────────────────────────────
 
-ok(COACH.includes("const ref = doc(db, 'clients', _clientIdSnap);") && COACH.includes('const snap = await getDoc(ref);') && COACH.includes('existing.push(record);') && COACH.includes('await updateDoc(ref, { coachInterventions: existing });'),
+ok(COACH.includes("const ref = doc(db, 'clients', _clientIdSnap);") && COACH.includes('const snap = await getDoc(ref);') && COACH.includes('existing.push(record);') && COACH.includes('_wb.update(ref, { coachInterventions: existing });'),
   'persists via the SAME read-modify-write pattern already established for clients/{uid}.inbodyResults[] -- no arrayUnion import needed, no new collection');
 ok(!COACH.includes('import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, orderBy, limit, updateDoc, addDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction, deleteField, arrayUnion }'),
   'no new Firestore SDK import was needed (arrayUnion avoided) -- minimal footprint');
@@ -45,7 +45,7 @@ ok(!COACH.includes('import { getFirestore, doc, getDoc, setDoc, collection, getD
 // ─────────────────────────────────────────────────────────────────────────────
 
 const intervenFnSrc = COACH.slice(COACH.indexOf('async function _vdsenCoachIntervene'), COACH.indexOf('window._vdsenCoachIntervene = _vdsenCoachIntervene;'));
-const updateDocPos = intervenFnSrc.indexOf('await updateDoc(ref, { coachInterventions: existing });');
+const updateDocPos = intervenFnSrc.indexOf('await _wb.commit();');
 const toastPos = intervenFnSrc.indexOf("showToast('✅ Intervención registrada');");
 ok(updateDocPos !== -1 && toastPos !== -1 && updateDocPos < toastPos, 'the success toast is textually AFTER the awaited updateDoc call -- no false-success shown before persistence is confirmed');
 ok(intervenFnSrc.includes('} catch (e) {') && intervenFnSrc.includes("showToast('Error: ' + e.message, true);"), 'a failed write shows a real error toast, never a silent failure or a false success');
