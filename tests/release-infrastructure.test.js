@@ -7,6 +7,7 @@ const os = require('node:os');
 const { spawnSync } = require('node:child_process');
 const { validate, hash, json, git, indexMatches, verifyDeployment, noSecrets } = require('../scripts/release/lib.cjs');
 const { verifyIndex, restoreRules, recover, workflowGuard } = require('../scripts/release/live.cjs');
+const { resolveRulesSha } = require('../scripts/release/check.cjs');
 const deployedProduct = require('../scripts/release/deployed-product.cjs');
 const state = json('.release/vdsen-client.json');
 const clone = x => JSON.parse(JSON.stringify(x));
@@ -25,8 +26,10 @@ test('deployed product manifest is honest and the release check no longer forbid
   for (const must of ['vdsen-cliente.html', 'vdsen-coach.html', 'ficha-publica.html', 'sw.js', 'firestore.rules']) {
     assert.ok(deployedProduct.SERVED.includes(must), 'served surface must include ' + must);
   }
-  // The deployed rules are the reviewed target rules — independent cross-check.
-  assert.equal(manifest.files['firestore.rules'], state.rules_transition.target_sha256);
+  // The deployed Rules belong to the served runtime. A future rules_only
+  // package pins its candidate source separately, so this must never be tied
+  // to the candidate target hash.
+  assert.equal(manifest.files['firestore.rules'], hash(git('show', state.runtime_sha + ':firestore.rules')));
   // DECOUPLING: check() proves provenance from the manifest, never by demanding that HEAD
   // equal the deployed runtime. That equality is what made every product improvement
   // require a production deploy, and it is logically impossible for an undeployed candidate.
@@ -54,6 +57,22 @@ test('release state rejects numeric activation, missing gates and unknown projec
     const bad = clone(state); mutate(bad); assert.throws(() => validate(bad, schema));
   }
   assert.throws(() => validate({}, { unknownKeyword: true }));
+});
+test('rules_only requires the current reviewed Rules package and never repoints the served runtime', () => {
+  const before = process.env.GITHUB_REF;
+  try {
+    const rulesOnly = { ...clone(state), release_mode: 'rules_only', rules_sha: git('rev-parse', 'HEAD').trim() };
+    assert.equal(resolveRulesSha(rulesOnly, state.runtime_sha), rulesOnly.rules_sha);
+    delete rulesOnly.rules_sha;
+    assert.throws(() => resolveRulesSha(rulesOnly, state.runtime_sha), /rules_only requires a reviewed rules_sha/);
+    rulesOnly.rules_sha = state.runtime_sha;
+    assert.throws(() => resolveRulesSha(rulesOnly, state.runtime_sha), /current reviewed release package/);
+    const appOnly = { ...clone(state), rules_sha: state.runtime_sha };
+    assert.throws(() => resolveRulesSha(appOnly, state.runtime_sha), /only valid for rules_only/);
+    assert.equal(resolveRulesSha(state, state.runtime_sha), state.runtime_sha);
+  } finally {
+    if (before === undefined) delete process.env.GITHUB_REF; else process.env.GITHUB_REF = before;
+  }
 });
 test('release state requires the decoupled RULES rollback provenance fields and rejects malformed values', () => {
   const schema = json('.release/schema/release-state.schema.json');
@@ -253,7 +272,7 @@ test('release apply path is rules_only: pinned immutable provenance, no deploy/p
   const apply = src.slice(src.indexOf('async function apply()'), src.indexOf('async function rollback()'));
   assert.ok(!/switchApp|\/v13\/deployments'|\/promote|\/rollback\//.test(apply));
   assert.ok(apply.includes('restoreApp: false'));
-  assert.ok(apply.includes("git('show', s.runtime_sha + ':firestore.rules')") && apply.includes('s.rules_transition.target_sha256'));
+  assert.ok(apply.includes("git('show', s.rules_sha + ':firestore.rules')") && apply.includes('s.rules_transition.target_sha256'));
   assert.ok(!/main:firestore|origin\/main:|HEAD:firestore\.rules|\blatest\b/i.test(src));
   // The state now records an APP release, so the mode is app_only. The assertions above still prove
   // live.cjs (the RULES lane) cannot deploy, promote switch the app or read main, so this does not

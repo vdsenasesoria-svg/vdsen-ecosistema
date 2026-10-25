@@ -200,7 +200,9 @@ async function apply() {
     verifyDeployment(await deployment(s, s.production_deployment), s, s.runtime_sha, 'codex/client-app-next');
     assert.equal(mainSha(), snapshot.main_sha, 'main changed during preflight');
     r.production_deployment = s.production_deployment; // Current approved runtime; never promote an old preview.
-    const content = git('show', s.runtime_sha + ':firestore.rules');
+    // check() has already bound this exact Rules source to the current
+    // reviewed rules_only package, independently of the served Client runtime.
+    const content = git('show', s.rules_sha + ':firestore.rules');
     assert.equal(hash(content), s.rules_transition.target_sha256);
     mayHaveMutated = true; // Set before POST: response failure can follow a committed mutation.
     const target = await google('projects/' + s.firebase_project + '/rulesets', 'POST', { source: { files: [{ name: 'firestore.rules', content }] } });

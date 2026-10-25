@@ -87,6 +87,20 @@ function assertAppReleaseCoherence(state) {
     'app_release.completed_at must survive a round trip');
   return state;
 }
+// A rules-only package keeps the served Client runtime pinned to the production
+// artifact, while its reviewed Rules source is pinned separately.  The source
+// must be the package currently being reviewed: accepting an arbitrary older
+// commit would make a successful gate attest to a different file than apply().
+function resolveRulesSha(state, runtime) {
+  if (state.release_mode !== 'rules_only') {
+    assert.equal(state.rules_sha, undefined, 'rules_sha is only valid for rules_only');
+    return runtime;
+  }
+  assert.match(state.rules_sha || '', /^[0-9a-f]{40}$/, 'rules_only requires a reviewed rules_sha');
+  assert.equal(git('rev-parse', 'HEAD').trim(), state.rules_sha,
+    'rules_only rules_sha must identify the current reviewed release package');
+  return state.rules_sha;
+}
 function check(runtime = process.env.RUNTIME_SHA) {
   const state = validate(json('.release/vdsen-client.json'), json('.release/schema/release-state.schema.json'));
   assertAppReleaseCoherence(state);
@@ -107,9 +121,15 @@ function check(runtime = process.env.RUNTIME_SHA) {
   const deployed = json(deployedProduct.MANIFEST);
   assert.equal(deployed.runtime_sha, state.runtime_sha, 'Deployed product manifest does not describe state.runtime_sha');
   deployedProduct.verify(state.runtime_sha, deployedProduct.MANIFEST);
+  // The deployed-product manifest always proves the Rules bundled with the
+  // served Client runtime.  A rules_only package then supplies its separately
+  // reviewed Rules source through rules_sha; app_only retains the runtime pin.
+  assert.equal(hash(git('show', runtime + ':firestore.rules')), deployed.files['firestore.rules']);
+  const rulesSha = resolveRulesSha(state, runtime);
+  git('cat-file', '-e', rulesSha + '^{commit}');
+  git('merge-base', '--is-ancestor', rulesSha, 'origin/codex/client-app-next');
   // Check committed bytes to avoid Windows checkout line ending conversions.
-  assert.equal(hash(git('show', runtime + ':firestore.rules')), state.rules_transition.target_sha256);
-  assert.equal(hash(git('show', 'HEAD:firestore.rules')), state.rules_transition.target_sha256);
+  assert.equal(hash(git('show', rulesSha + ':firestore.rules')), state.rules_transition.target_sha256);
   const indexes = JSON.parse(git('show', runtime + ':firestore.indexes.json'));
   assert.deepEqual(indexes.indexes, [state.required_index]);
   assert.deepEqual(indexes.fieldOverrides, []);
@@ -133,4 +153,4 @@ function resolveRuntime(requested, state) {
   return runtime;
 }
 if (require.main === module) { try { check(); } catch (e) { console.error(e.message); process.exitCode = 1; } }
-module.exports = { check, workflowContract, resolveRuntime };
+module.exports = { check, workflowContract, resolveRuntime, resolveRulesSha };
