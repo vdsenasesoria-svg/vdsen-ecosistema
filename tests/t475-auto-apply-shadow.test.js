@@ -175,7 +175,7 @@ test('Coach keep/revert are atomic CAS decisions with intervention history and n
     _detailClientId: 'client-A', _detailClientData: { activePlanId: 'plan-A' },
     _detailPlanData: plan, _detailActiveTab: 'monitor', _shadowActionBusy: false,
     currentCoach: { uid: 'coach-A' }, window: { VDSEN_AUTO_APPLY_SHADOW: shadow },
-    _buildCoachIntervention: input => ({ ...input, id: 'int-' + input.action }),
+    _buildCoachIntervention: input => ({ ...input, id: 'int-' + input.action }), _decisionRecord: r => ({ id: r.id, at: 'SERVER_TS' }),
     showToast: () => {}, document: { getElementById: () => null },
     db: {}, doc: (_db, ...parts) => parts.join('/'),
     runTransaction: async (_db, fn) => fn(tx), console };

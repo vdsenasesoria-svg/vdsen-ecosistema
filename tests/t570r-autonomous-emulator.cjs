@@ -412,3 +412,71 @@ test('REST (Regla C) applies automatically', { timeout: 90000 }, async () => {
   console.log('REST scenario ->', JSON.stringify({ status: out.status, applied: out.applied, dims }));
   assert.deepEqual(dims, ['REST']);
 });
+
+// ─────────────── T603: temporal authority of the SERVER (start markers + Coach decision records), real rules ───────────────
+const { serverTimestamp: srvTs, Timestamp: FsTs } = require('firebase/firestore');
+const { Timestamp: AdminTs } = require('firebase-admin/firestore');
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+const editPlan = (f) => db.doc('plans/' + f.planId).update({ updatedAt: new Date().toISOString(), coachNote: 'T603 revision' });
+// the athlete executes the first working set (optionally with a FORGED sts / a wrong device clock), then creates the start marker exactly as the Client does
+async function athleteStarts(f, o) {
+  o = o || {};
+  const t = (await overlays(f))[0].target, key = 'log_' + t.week + '_' + t.dayIndex + '_0_s0';
+  const entry = { done: true, carga: '100', reps: '11', unit: 'KG', rir: 1, rir_real: 2, prescriptionExerciseId: PID, ts: o.ts === undefined ? T0 + 9e6 : o.ts };
+  if (o.forgedSts) entry.sts = FsTs.fromMillis(o.forgedSts);
+  await setDoc(doc(f.athlete.db, 'logs', f.athlete.uid, 'mesos', f.planId), { planId: f.planId, entries: { [key]: entry } }, { merge: true });
+  await setDoc(doc(f.athlete.db, 'logs', f.athlete.uid), { planId: f.planId, entries: { [key]: entry } }, { merge: true });
+  if (o.marker !== false) await setDoc(doc(f.athlete.db, 'logs', f.athlete.uid, 'starts', f.planId + '_' + t.week + '_' + t.dayIndex + '_0'),
+    { planId: f.planId, week: t.week, dayIndex: t.dayIndex, exerciseIndex: 0, setKey: key, at: srvTs() });
+}
+const state1 = async (f) => (await recs(f))[0].state;
+const consumeRun = async (f) => (await run(f)).consumed.map((x) => [x.written, x.reason]);
+
+test('T603.E1 FORGED sts (a day in the past) + plan revised BEFORE the first set, no marker -> the overlay keeps NO authority; the set is kept', { timeout: 120000 }, async () => {
+  const f = await fixture(); await run(f); await pause(60); await editPlan(f);
+  await athleteStarts(f, { forgedSts: Date.now() - 86400000, marker: false }); await ackReceipt(f);
+  const out = await consumeRun(f); assert.deepEqual(out, [[false, 'TARGET_INVALIDATED']], JSON.stringify(out)); assert.equal(await state1(f), 'APPLIED');
+  assert.equal(Object.values((await meso(f)).entries).filter((e) => e.reps === '11').length, 1, 'training record kept');
+});
+test('T603.E2 plan revised BEFORE the first set, valid marker created after it (the real order) -> invalid, whatever the device clock said', { timeout: 120000 }, async () => {
+  for (const ts of [1, Date.now() - 30 * 60000, Date.now() + 30 * 60000]) {   // device clock far behind / 30 min behind / 30 min ahead
+    const f = await fixture(); await run(f); await pause(60); await editPlan(f); await pause(60);
+    await athleteStarts(f, { ts, forgedSts: ts }); await ackReceipt(f);
+    assert.deepEqual(await consumeRun(f), [[false, 'TARGET_INVALIDATED']], 'ts ' + ts); assert.equal(await state1(f), 'APPLIED');
+  }
+});
+test('T603.E3 plan revised AFTER the exposure started (marker first) is NOT retroactive: the overlay is consumed', { timeout: 120000 }, async () => {
+  for (const ts of [1, Date.now() + 30 * 60000]) {
+    const f = await fixture(); await run(f); await pause(60); await athleteStarts(f, { ts }); await pause(60); await editPlan(f); await ackReceipt(f);
+    assert.deepEqual(await consumeRun(f), [[true, null]], 'ts ' + ts); assert.equal(await state1(f), 'CONSUMED');
+  }
+});
+test('T603.E4 historical data without any marker: authority is kept only while NO invalidation exists (fail closed otherwise)', { timeout: 120000 }, async () => {
+  const f = await fixture(); await run(f); await athleteStarts(f, { marker: false }); await ackReceipt(f);
+  assert.deepEqual(await consumeRun(f), [[true, null]], 'no revision, no decision: legacy evidence still consumes'); assert.equal(await state1(f), 'CONSUMED');
+});
+test('T603.E5 Coach override: the database-stamped decision record decides the order, not the Coach device clock (decidedAt text is wrong either way)', { timeout: 120000 }, async () => {
+  const iv = (id, decidedAt) => ({ id, targetType: 'EXERCISE', targetId: PID, planId: null, action: 'MODIFY', decidedAt, decidedBy: 'coach' });
+  // decided BEFORE the exposure started, Coach clock 2 days BEHIND (text says it predates the application): must still block
+  const a = await fixture(); await run(a); await pause(60);
+  await db.doc('clients/' + a.athlete.uid).update({ coachInterventions: [iv('iv-A', '2020-01-01T00:00:00.000Z')] });
+  await db.doc('clients/' + a.athlete.uid + '/decisions/iv-A').set({ id: 'iv-A', targetType: 'EXERCISE', targetId: PID, planId: a.planId, action: 'MODIFY', decidedBy: 'coach', at: AdminTs.now() });
+  await pause(60); await athleteStarts(a); await ackReceipt(a);
+  const ra = await consumeRun(a); assert.equal(ra[0][0], false, JSON.stringify(ra)); assert.equal(await state1(a), 'APPLIED');
+  // decided AFTER the exposure started, Coach clock 2 days AHEAD (text says it came first, i.e. would wrongly invalidate): the record says it is later -> not retroactive
+  const b = await fixture(); await run(b); await pause(60); await athleteStarts(b); await pause(60);
+  await db.doc('clients/' + b.athlete.uid).update({ coachInterventions: [iv('iv-B', new Date(Date.now() + 2 * 86400000).toISOString())] });
+  await db.doc('clients/' + b.athlete.uid + '/decisions/iv-B').set({ id: 'iv-B', targetType: 'EXERCISE', targetId: PID, planId: b.planId, action: 'MODIFY', decidedBy: 'coach', at: AdminTs.now() });
+  await ackReceipt(b); assert.deepEqual(await consumeRun(b), [[true, null]]); assert.equal(await state1(b), 'CONSUMED');
+});
+test('T603.E6 a decision whose record does not match the intervention (forged id / other fields) never overrides the server record', { timeout: 120000 }, async () => {
+  const f = await fixture(); await run(f); await pause(60);
+  await db.doc('clients/' + f.athlete.uid).update({ coachInterventions: [{ id: 'iv-X', targetType: 'EXERCISE', targetId: PID, action: 'MODIFY', decidedAt: '2020-01-01T00:00:00.000Z' }] });
+  await db.doc('clients/' + f.athlete.uid + '/decisions/iv-X').set({ id: 'someone-else', at: AdminTs.now() });
+  await athleteStarts(f); await ackReceipt(f);
+  assert.deepEqual(await consumeRun(f), [[true, null]], 'a mismatching record is ignored: the legacy text (older than the application) applies');
+});
+test('T603.E7 Numeric Apply OFF: zero new applications, whatever the temporal evidence', { timeout: 120000 }, async () => {
+  const f = await fixture(); const out = await run(f, { numericApplyEnabled: false });
+  assert.deepEqual(out.applied, []); assert.deepEqual(await overlays(f), []); assert.deepEqual((await recs(f)).filter((r) => r.state === 'APPLIED' || r.state === 'CONSUMED'), []);
+});

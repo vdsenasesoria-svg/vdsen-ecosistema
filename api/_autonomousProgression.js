@@ -11,7 +11,7 @@ var equipmentContext = require('../assets/equipment-context.js');
 var visualCatalog = require('../assets/exercise-visual-catalog.js');
 // The consumer loads this module through an injected require (_req), which Vercel's file tracer cannot follow: without this literal
 // require it is absent from the deployed function and applyPending throws MODULE_NOT_FOUND (hosted-only; see _functionBundleTrace.test.js).
-require('../assets/progression-effective-prescription.js');
+var effective = require('../assets/progression-effective-prescription.js');
 // T586: same reason for the structural / fatigue rules (loaded lazily by the magnitude policy through a literal require).
 require('../assets/progression-structural-policy.js');
 
@@ -42,7 +42,10 @@ function _refs(db, clientId, planId, coachId) {
     plan: db.collection('plans').doc(planId),
     meso: db.collection('logs').doc(clientId).collection('mesos').doc(planId),
     root: db.collection('logs').doc(clientId),
-    coach: coachId ? db.collection('coaches').doc(coachId) : null
+    coach: coachId ? db.collection('coaches').doc(coachId) : null,
+    // T603: database-stamped records (their `at` is forced to request.time by firestore.rules): exposure start markers and Coach decision records.
+    start: function(pid, week, dayIndex, exIdx) { return db.collection('logs').doc(clientId).collection('starts').doc(pid + '_' + week + '_' + dayIndex + '_' + exIdx); },
+    decision: function(id) { return db.collection('clients').doc(clientId).collection('decisions').doc(id); }
   };
 }
 
@@ -67,6 +70,11 @@ async function materialize(db, clientId, requestedPlanId, clock) {
     var coachData = refs.coach ? _data(await tx.get(refs.coach)) : null;
     var scope = consumer.normalizeCanaryScope(coachData && coachData.autoApplyCanary);
     if (!scope.enabled || scope.clientIds.indexOf(clientId) < 0) return { status: 'OUT_OF_CANARY' };
+    var decisionTimes = {};
+    for (var di = 0, ivs = (Array.isArray(client.coachInterventions) ? client.coachInterventions : []).filter(function(iv) { return iv && iv.id && iv.targetType === 'EXERCISE'; }).slice(-200); di < ivs.length; di++) {
+      var dd = _data(await tx.get(refs.decision(String(ivs[di].id)))); if (dd && dd.at && dd.id === ivs[di].id) decisionTimes[ivs[di].id] = dd.at;
+    }
+    var verifiedInterventions = effective.withServerDecisionTimes(client.coachInterventions, decisionTimes);
     var snaps = await Promise.all([tx.get(refs.plan), tx.get(refs.meso), tx.get(refs.root)]);
     var plan = _data(snaps[0]), meso = _data(snaps[1]), root = _data(snaps[2]);
     if (!plan || !root || (plan.clientId && plan.clientId !== clientId) || root.planId !== requestedPlanId || (meso && meso.planId !== requestedPlanId)) return { status: 'SOURCE_INVALID' };
@@ -74,7 +82,7 @@ async function materialize(db, clientId, requestedPlanId, clock) {
     if (!authority) return { status: 'SOURCE_INVALID' };
     var out = shadow.materializeRecords({
       clientId: clientId, planId: requestedPlanId, activePlanId: client.activePlanId,
-      plan: plan, interventions: client.coachInterventions, entries: authority.entries || {},
+      plan: plan, interventions: verifiedInterventions, entries: authority.entries || {},
       records: (meso && meso.progressionApplications) || {}, overlays: (meso && meso.nextExposureOverlays) || {}, structural: true, at: _now(clock), isStarted: consumer.targetStarted
     });
     // SRA is attached as a read-only provenance trace, not a second decision

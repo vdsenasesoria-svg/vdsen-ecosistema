@@ -93,7 +93,7 @@ function clientContext(f) {
       setDoc: (ref, value, opts) => setDoc(ref, cloneKeepingFieldValues(value), opts),   // T593-R: host-realm copy (the vm objects are cross-realm) that keeps the real FieldValue delete sentinel
       runTransaction: (db, fn) => runTransaction(db, tx => fn({
         get: ref => tx.get(ref),
-        set: (ref, value, opts) => tx.set(ref, structuredClone(value), opts),
+        set: (ref, value, opts) => tx.set(ref, /decisions/.test(ref.path) ? value : structuredClone(value), opts),   // T603: the decision record carries a serverTimestamp sentinel (not cloneable)
         update: (ref, value) => tx.update(ref, structuredClone(value))
       })) },
     LOGS: { progrec_1_0: f.parent }, REAL_WEEK: 1, EXERCISE_UNITS: {}, EXERCISE_HISTORY: {},
@@ -115,7 +115,7 @@ function materializerContext(f, coachDb) {
     currentCoach: { uid: f.coach.uid }, _detailClientId: f.client.uid, db, doc,
     runTransaction: (d, fn) => runTransaction(d, tx => fn({
       get: ref => tx.get(ref),
-      set: (ref, value, opts) => tx.set(ref, structuredClone(value), opts),
+      set: (ref, value, opts) => tx.set(ref, /decisions/.test(ref.path) ? value : structuredClone(value), opts),   // T603: the decision record carries a serverTimestamp sentinel (not cloneable)
       update: (ref, value) => tx.update(ref, structuredClone(value))
     })), console };
   vm.createContext(context);
@@ -130,11 +130,12 @@ function coachContext(f, item) {
     _detailPlanData: f.plan, _detailActiveTab: 'monitor', _shadowActionBusy: false,
     currentCoach: { uid: f.coach.uid },
     _buildCoachIntervention: input => ({ ...input, id: 't476-' + input.action }),
+    _decisionRecord: r => ({ id: r.id, targetType: r.targetType, targetId: r.targetId, planId: r.planId || null, action: r.action, decidedBy: r.decidedBy, at: require('firebase/firestore').serverTimestamp() }),   // T603: the real record written next to every Coach decision
     showToast: () => {}, document: { getElementById: () => null },
     db: f.coach.db, doc,
     runTransaction: (db, fn) => runTransaction(db, tx => fn({
       get: ref => tx.get(ref),
-      set: (ref, value, opts) => tx.set(ref, structuredClone(value), opts),
+      set: (ref, value, opts) => tx.set(ref, /decisions/.test(ref.path) ? value : structuredClone(value), opts),   // T603: the decision record carries a serverTimestamp sentinel (not cloneable)
       update: (ref, value) => tx.update(ref, structuredClone(value))
     })), console };
   vm.createContext(context);
