@@ -28,9 +28,10 @@ test('T603.4 evaluateOverlay (trusted): marker before the plan revision keeps th
 });
 const HTML = fs.readFileSync('vdsen-cliente.html', 'utf8'), COACH = fs.readFileSync('vdsen-coach.html', 'utf8');
 test('T603.5 the Client creates the start marker with serverTimestamp right after the log write, once per exposure, never blocking the save', () => {
-  assert.match(HTML, /FB\.doc\(FB\.db, 'logs', uid, 'starts', id\), \{ planId: planId, week: Number\(m\[1\]\), dayIndex: Number\(m\[2\]\), exerciseIndex: Number\(m\[3\]\), setKey: k, at: FB\.serverTimestamp\(\) \}/);
+  assert.match(HTML, /var ref = FB\.doc\(FB\.db, 'logs', uid, 'starts', id\);/);
+  assert.match(HTML, /FB\.setDoc\(ref, \{ planId: planId, week: Number\(m\[1\]\), dayIndex: Number\(m\[2\]\), exerciseIndex: Number\(m\[3\]\), setKey: k, at: FB\.serverTimestamp\(\) \}\)/);
   assert.ok(HTML.indexOf("_writeStartMarkers(_uidAtStart, ACTIVE_PLAN_ID, _dE.set)") > HTML.indexOf("_mesoP = _fbWriteOrQueue(FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart, 'mesos'"), 'issued behind the meso write');
-  assert.match(HTML, /\.catch\(function\(\) \{ \/\* exists already or not allowed: the log itself is unaffected \*\/ \}\)/);
+  assert.match(HTML, /_resolveStartMarkerFailure\(mk, ref, error\)/);
 });
 test('T603.6 every Coach EXERCISE decision is written with its database-stamped record in the SAME commit (batch / transaction)', () => {
   assert.match(COACH, /_wb\.set\(doc\(db, 'clients', _clientIdSnap, 'decisions', String\(record\.id\)\), _decisionRecord\(record\)\)/);
