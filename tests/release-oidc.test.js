@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { json, validate } = require('../scripts/release/lib.cjs');
-const { base, configuration, probe } = require('../scripts/release/oidc-validate.cjs');
+const { base, configuration, probe, persistable } = require('../scripts/release/oidc-validate.cjs');
 const { resolveRuntime } = require('../scripts/release/check.cjs');
 const state = json('.release/vdsen-client.json');
 function fixture() {
@@ -47,7 +47,7 @@ test('read-only metadata validation passes with kill switch false and sends only
     Object.assign(process.env, fixture());
     global.fetch = async (url, options) => { calls.push([url, options]); return new Response(JSON.stringify(response(url))); };
     const r = await probe(state, base(state));
-    validate(r, json('.release/schema/oidc-validation.schema.json'));
+    validate(persistable(r).result, json('.release/schema/oidc-validation.schema.json'));
     assert.equal(r.validation_status, 'PASS'); assert.equal(r.production_release_enabled, false);
     assert.equal(r.kill_switch_configuration, 'EXPECTED_FALSE'); assert.equal(r.mutations_performed, false);
     assert.equal(r.least_privilege_verification, 'GAP');
@@ -58,8 +58,8 @@ test('read-only metadata validation passes with kill switch false and sends only
     assert.equal(r.firestore_index_metadata_endpoint, 'FIRESTORE_INDEX_METADATA');
     assert.equal(r.firebase_rules_metadata_endpoint, 'FIREBASE_RULESET_METADATA');
     assert.equal(r.vercel_project_endpoint, 'VERCEL_PROJECT_METADATA');
-    assert.equal(calls.length, 5); assert.ok(calls.every(([, o]) => o.method === 'GET' && o.body === undefined));
-    assert.ok(calls.every(([u]) => !/\/documents\/|\/keys|iam\.googleapis/.test(u)));
+    assert.equal(calls.length, 9); assert.ok(calls.every(([, o]) => o.method === 'GET' && o.body === undefined));
+    assert.ok(calls.every(([u]) => !/\/documents\/|\/keys|iam\.googleapis|vdsen-ecosistema-staging/.test(u)));
     assert.ok(!JSON.stringify(r).includes('google-test-only') && !JSON.stringify(r).includes('vercel-test-only'));
   } finally { global.fetch = original; restore(before); }
 });
@@ -125,7 +125,7 @@ test('sanitized diagnostics classify HTTP, timeout and network failures without 
     r = await probe(state, base(state));
     assert.equal(r.project_metadata_http_status, null); assert.equal(r.project_metadata_error, 'NETWORK_ERROR');
     assert.ok(!JSON.stringify(r).includes('private-network-test-only'));
-    validate(r, json('.release/schema/oidc-validation.schema.json'));
+    validate(persistable(r).result, json('.release/schema/oidc-validation.schema.json'));
   } finally { global.fetch = original; restore(before); }
 });
 test('authentication failure still emits a schema-valid failure artifact through the CLI', () => {
@@ -138,7 +138,7 @@ test('authentication failure still emits a schema-valid failure artifact through
     const init = spawnSync(process.execPath, [script, 'init'], { cwd: temp, env, encoding: 'utf8' }); assert.equal(init.status, 0);
     const finish = spawnSync(process.execPath, [script, 'finalize'], { cwd: temp, env: { ...env, OIDC_AUTH_OUTCOME: 'failure', VALIDATION_OUTCOME: 'skipped' }, encoding: 'utf8' }); assert.equal(finish.status, 0);
     const r = json(path.join(temp, 'release-output/oidc-validation.json'));
-    validate(r, json('.release/schema/oidc-validation.schema.json'));
+    validate(persistable(r).result, json('.release/schema/oidc-validation.schema.json'));
     assert.equal(r.oidc_auth, 'FAIL'); assert.equal(r.validation_status, 'FAIL'); assert.equal(r.mutations_performed, false);
     assert.ok(!JSON.stringify(r).includes(env.GOOGLE_ACCESS_TOKEN));
   } finally { assert.equal(path.dirname(temp), parent); assert.ok(path.basename(temp).startsWith('vdsen-oidc-test-')); fs.rmSync(temp, { recursive: true, force: true }); }
@@ -172,7 +172,7 @@ test('HTTP 400 is HTTP_400, other statuses are never NETWORK_ERROR, and structur
       return url.includes('firestore.googleapis.com') ? new Response(JSON.stringify(body), { status: 400 }) : new Response(JSON.stringify(response(url)));
     };
     const r = await probe(state, base(state));
-    validate(r, schema());
+    validate(persistable(r).result, schema());
     assert.equal(r.firestore_index_metadata_http_status, 400); assert.equal(r.firestore_index_metadata_error, 'HTTP_400');
     assert.equal(r.firestore_index_api_error_code, 400); assert.equal(r.firestore_index_api_error_status, 'INVALID_ARGUMENT');
     assert.equal(r.firestore_index_api_error_reason, 'FIELD_VIOLATION'); assert.equal(r.firestore_index_api_error_field, 'pageSize');
@@ -188,9 +188,9 @@ test('HTTP 400 is HTTP_400, other statuses are never NETWORK_ERROR, and structur
     r2 = await probe(state, base(state));
     assert.equal(r2.firestore_index_metadata_error, 'HTTP_OTHER');
     global.fetch = async url => url.includes('firestore.googleapis.com') ? new Response(JSON.stringify({ error: { code: 403, status: 'x'.repeat(5000), details: [{ reason: 'private reason with spaces', fieldViolations: [{ field: 'a b/private-message-test-only' }] }] } }), { status: 403 }) : new Response(JSON.stringify(response(url)));
-    r2 = await probe(state, base(state)); validate(r2, schema());
+    r2 = await probe(state, base(state)); validate(persistable(r2).result, schema());
     assert.equal(r2.firestore_index_api_error_status, 'OTHER'); assert.equal(r2.firestore_index_api_error_reason, 'OTHER'); assert.equal(r2.firestore_index_api_error_field, 'OTHER');
-    assert.ok(JSON.stringify(r2).length < 4000);
+    assert.ok(JSON.stringify({ ...r2, provenance: undefined }).length < 4000);   // T618: the bound applies to the error-detail part; provenance is validated by its own schema and tests
   } finally { global.fetch = original; restore(before); }
 });
 test('NETWORK_ERROR is only emitted for transport failures', () => {
@@ -212,7 +212,7 @@ test('Vercel failures yield controlled codes and MATCH/MISMATCH/ABSENT team resu
     ];
     for (const [body, status, code, scopeType, teamMatch] of cases) {
       global.fetch = async url => url.includes('api.vercel.com') ? new Response(JSON.stringify(body), { status }) : new Response(JSON.stringify(response(url)));
-      const r = await probe(state, base(state)); validate(r, schema());
+      const r = await probe(state, base(state)); validate(persistable(r).result, schema());
       assert.equal(r.vercel_project_http_status, status); assert.equal(r.vercel_project_error, 'HTTP_' + status);
       assert.equal(r.vercel_api_error_code, code); assert.equal(r.vercel_api_error_scope_type, scopeType); assert.equal(r.vercel_api_error_team_match, teamMatch);
       for (const secret of [...SENTINELS, 'weird_private_code']) assert.ok(!JSON.stringify(r).includes(secret), secret);

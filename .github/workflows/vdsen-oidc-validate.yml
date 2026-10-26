@@ -54,6 +54,8 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: oidc-validation-${{ github.run_id }}
-          path: release-output/oidc-validation.json
+          path: |
+            release-output/oidc-validation.json
+            release-output/provenance.enc
           if-no-files-found: error
           retention-days: 30

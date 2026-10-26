@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const { json, validate, environmentContract } = require('./lib.cjs');
+const provenance = require('./provenance-diagnostic.cjs');
 const output = 'release-output/oidc-validation.json';
 const state = () => validate(json('.release/vdsen-client.json'), json('.release/schema/release-state.schema.json'));
 function base(s) {
@@ -72,10 +73,30 @@ function vercelDetail(body, expectedTeam) {
   else code = rawCode ? 'unknown' : 'ABSENT';
   return { code, scopeType: teams.length ? 'team' : scoped ? 'other' : 'ABSENT', teamMatch };
 }
+// T619 two-tier publication. PUBLIC tier has operational verdicts only. RESTRICTED tier has every identifier, date, hash, size and detailed correspondence; it is never written in clear text: it is encrypted to the owner's RSA PUBLIC key committed at .release/provenance-public-key.pub (the private key is never on a
+// runner) into a separate file, or withheld when no valid public key is present. Fail-closed: any problem with the key withholds the restricted tier.
+const publicKeyFile = '.release/provenance-public-key.pub', restrictedOutput = 'release-output/provenance.enc';
+function readPublicKey() { try { return fs.readFileSync(publicKeyFile, 'utf8'); } catch { return null; } }
+// Returns { result, envelope }: `result` is what goes into oidc-validation.json; `envelope` (or null) is what goes into provenance.enc. The input is never mutated.
+function persistable(r, pem = readPublicKey()) {
+  const out = Object.assign({}, r);
+  delete out.provenance_restricted_key_fingerprint;
+  if (!r.provenance) return { result: out, envelope: null };
+  const { publicTier, restricted } = provenance.splitTiers(r.provenance);
+  delete out.provenance;
+  const envelope = provenance.encryptRestricted(restricted, pem);
+  publicTier.restricted_evidence_availability = envelope ? 'ENCRYPTED' : 'WITHHELD_NO_VALID_KEY';
+  out.provenance_public = publicTier;
+  out.provenance_publication = envelope ? 'PUBLIC_TIER_PUBLISHED_RESTRICTED_ENCRYPTED' : 'PUBLIC_TIER_PUBLISHED_RESTRICTED_WITHHELD_NO_VALID_KEY';
+  out.provenance_restricted_key_fingerprint = envelope ? envelope.key_fingerprint : null;
+  return { result: out, envelope };
+}
 function save(r) {
-  validate(r, json('.release/schema/oidc-validation.schema.json'));
+  const { result, envelope } = r.provenance && r.provenance.firebase && r.provenance.firebase.production && 'ruleset_id' in r.provenance.firebase.production ? persistable(r) : { result: r, envelope: undefined };
+  validate(result, json('.release/schema/oidc-validation.schema.json'));
   fs.mkdirSync('release-output', { recursive: true });
-  fs.writeFileSync(output, JSON.stringify(r, null, 2) + '\n');
+  fs.writeFileSync(output, JSON.stringify(result, null, 2) + '\n');
+  if (envelope) fs.writeFileSync(restrictedOutput, JSON.stringify(envelope) + '\n'); else if (envelope === null) fs.rmSync(restrictedOutput, { force: true });
 }
 function configuration(s) {
   assert.equal(process.env.GITHUB_ACTIONS, 'true');
@@ -159,6 +180,8 @@ async function probe(s, r) {
       if (error instanceof MetadataError) applyDetail(r, prefix, error.detail);
     }
   }));
+  // T618: read-only provenance evidence (Firebase Rules active ruleset hash + served Vercel deployment). Never changes validation_status: an unverifiable provenance is recorded as NOT_VERIFIED, not as a failure of the metadata capability checks.
+  try { r.provenance = await provenance.collect({ state: s, googleToken: process.env.GOOGLE_ACCESS_TOKEN, vercelToken: process.env.VERCEL_TOKEN }); } catch { delete r.provenance; }
   r.validation_status = attempts.every(([key]) => r[key] === 'PASS') ? 'PASS' : 'FAIL';
   if (r.validation_status === 'FAIL') r.error = 'METADATA_CAPABILITY_VALIDATION_FAILED';
   return r;
@@ -186,4 +209,4 @@ if (require.main === module) {
   if (!command) { console.error('Expected init, run or finalize'); process.exitCode = 1; }
   else Promise.resolve().then(command).then(code => { process.exitCode = code || 0; }).catch(() => { console.error('OIDC validation failed; details withheld'); process.exitCode = 1; });
 }
-module.exports = { base, configuration, probe, init, run, finalize };
+module.exports = { base, configuration, probe, init, run, finalize, persistable };
