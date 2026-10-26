@@ -73,19 +73,29 @@ function vercelDetail(body, expectedTeam) {
   else code = rawCode ? 'unknown' : 'ABSENT';
   return { code, scopeType: teams.length ? 'team' : scoped ? 'other' : 'ABSENT', teamMatch };
 }
-// T618: provenance evidence (ruleset id + hash, deployment ids, commit) is only PERSISTED into the workflow artifact when the runner proves the repository is private
-// (workflow env ARTIFACT_PRIVACY_VERIFIED is derived from github.event.repository.private). Otherwise it is withheld; in-memory results are unaffected.
-function persistable(r) {
+// T619 two-tier publication. PUBLIC tier (verdicts, Rules digest/size, commit SHA, alias->deployment verdict) is always written into the result. RESTRICTED tier (ruleset id, release/ruleset
+// times, deployment ids and date) is never written in clear text: it is encrypted to the owner's RSA PUBLIC key committed at .release/provenance-public-key.pem (the private key is never on a
+// runner) into a separate file, or withheld when no valid public key is present. Fail-closed: any problem with the key withholds the restricted tier.
+const publicKeyFile = '.release/provenance-public-key.pem', restrictedOutput = 'release-output/provenance.enc';
+function readPublicKey() { try { return fs.readFileSync(publicKeyFile, 'utf8'); } catch { return null; } }
+// Returns { result, envelope }: `result` is what goes into oidc-validation.json; `envelope` (or null) is what goes into provenance.enc. The input is never mutated.
+function persistable(r, pem = readPublicKey()) {
   const out = Object.assign({}, r);
-  if (process.env.ARTIFACT_PRIVACY_VERIFIED === 'true') { if (out.provenance) out.provenance_publication = 'PUBLISHED_PRIVATE_REPOSITORY_VERIFIED'; }
-  else { delete out.provenance; out.provenance_publication = 'WITHHELD_PRIVACY_NOT_VERIFIED'; }
-  return out;
+  delete out.provenance_restricted_key_fingerprint;
+  if (!r.provenance) return { result: out, envelope: null };
+  const { publicTier, restricted } = provenance.splitTiers(r.provenance);
+  out.provenance = publicTier;
+  const envelope = provenance.encryptRestricted(restricted, pem);
+  out.provenance_publication = envelope ? 'PUBLIC_TIER_PUBLISHED_RESTRICTED_ENCRYPTED' : 'PUBLIC_TIER_PUBLISHED_RESTRICTED_WITHHELD_NO_VALID_KEY';
+  out.provenance_restricted_key_fingerprint = envelope ? envelope.key_fingerprint : null;
+  return { result: out, envelope };
 }
 function save(r) {
-  const out = persistable(r);
-  validate(out, json('.release/schema/oidc-validation.schema.json'));
+  const { result, envelope } = r.provenance && r.provenance.firebase && r.provenance.firebase.production && 'ruleset_id' in r.provenance.firebase.production ? persistable(r) : { result: r, envelope: undefined };
+  validate(result, json('.release/schema/oidc-validation.schema.json'));
   fs.mkdirSync('release-output', { recursive: true });
-  fs.writeFileSync(output, JSON.stringify(out, null, 2) + '\n');
+  fs.writeFileSync(output, JSON.stringify(result, null, 2) + '\n');
+  if (envelope) fs.writeFileSync(restrictedOutput, JSON.stringify(envelope) + '\n'); else if (envelope === null) fs.rmSync(restrictedOutput, { force: true });
 }
 function configuration(s) {
   assert.equal(process.env.GITHUB_ACTIONS, 'true');

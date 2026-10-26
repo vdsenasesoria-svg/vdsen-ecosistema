@@ -345,10 +345,6 @@
                 "error",
                 "http_status",
                 "release_name",
-                "release_update_time",
-                "release_create_time",
-                "ruleset_id",
-                "ruleset_create_time",
                 "hash_algorithm",
                 "source_file_count",
                 "source_file_names",
@@ -425,34 +421,6 @@
                     "null"
                   ],
                   "pattern": "^projects/vdsen-ecosistema(-staging)?/releases/cloud\\.firestore$"
-                },
-                "release_update_time": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
-                },
-                "release_create_time": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
-                },
-                "ruleset_id": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "pattern": "^[A-Za-z0-9_-]{1,128}$"
-                },
-                "ruleset_create_time": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
                 },
                 "hash_algorithm": {
                   "const": "vdsen-rules-source-v1"
@@ -551,10 +519,6 @@
                 "error",
                 "http_status",
                 "release_name",
-                "release_update_time",
-                "release_create_time",
-                "ruleset_id",
-                "ruleset_create_time",
                 "hash_algorithm",
                 "source_file_count",
                 "source_file_names",
@@ -631,34 +595,6 @@
                     "null"
                   ],
                   "pattern": "^projects/vdsen-ecosistema(-staging)?/releases/cloud\\.firestore$"
-                },
-                "release_update_time": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
-                },
-                "release_create_time": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
-                },
-                "ruleset_id": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "pattern": "^[A-Za-z0-9_-]{1,128}$"
-                },
-                "ruleset_create_time": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
                 },
                 "hash_algorithm": {
                   "const": "vdsen-rules-source-v1"
@@ -758,11 +694,8 @@
             "error",
             "http_status",
             "project_identity",
-            "alias_deployment_id",
-            "deployment_id",
             "deployment_state",
             "deployment_target",
-            "deployment_created_at",
             "deployment_commit_sha",
             "alias_to_deployment_correspondence",
             "correspondence_reason",
@@ -821,20 +754,6 @@
                 "NOT_VERIFIED"
               ]
             },
-            "alias_deployment_id": {
-              "type": [
-                "string",
-                "null"
-              ],
-              "pattern": "^dpl_[A-Za-z0-9]{8,64}$"
-            },
-            "deployment_id": {
-              "type": [
-                "string",
-                "null"
-              ],
-              "pattern": "^dpl_[A-Za-z0-9]{8,64}$"
-            },
             "deployment_state": {
               "type": [
                 "string",
@@ -848,13 +767,6 @@
                 "null"
               ],
               "pattern": "^[a-z_]{3,32}$"
-            },
-            "deployment_created_at": {
-              "type": [
-                "string",
-                "null"
-              ],
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
             },
             "deployment_commit_sha": {
               "type": "string",
@@ -909,9 +821,16 @@
     },
     "provenance_publication": {
       "enum": [
-        "PUBLISHED_PRIVATE_REPOSITORY_VERIFIED",
-        "WITHHELD_PRIVACY_NOT_VERIFIED"
+        "PUBLIC_TIER_PUBLISHED_RESTRICTED_ENCRYPTED",
+        "PUBLIC_TIER_PUBLISHED_RESTRICTED_WITHHELD_NO_VALID_KEY"
       ]
+    },
+    "provenance_restricted_key_fingerprint": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
     }
   }
 }

@@ -183,4 +183,53 @@ async function collect({ state, googleToken, vercelToken, fetchImpl, domainUrl }
   };
 }
 
-module.exports = { SCHEMA, HASH_ALGORITHM, KNOWN_RULES_SHA256, FIREBASE_TARGETS, ProvenanceError, getJson, canonicalRulesDigest, knownComparison, collectFirebase, collectVercel, collect };
+
+// ── Two-tier publication (T619) ───────────────────────────────────────────────────────────────────────────────
+// PUBLIC tier: verdicts, enums, the Rules digest/size (the file hash is already public in the repository state), the commit SHA and the alias->deployment verdict.
+// RESTRICTED tier: the infrastructure identifiers and dates (ruleset id, release/ruleset times, deployment ids, deployment date). It is NEVER written in clear text: it is encrypted
+// to the owner's RSA PUBLIC key (the private key never exists in the repository or the runner) or withheld when no valid public key is committed.
+const RESTRICTED_FIREBASE = ['ruleset_id', 'release_update_time', 'release_create_time', 'ruleset_create_time'];
+const RESTRICTED_VERCEL = ['alias_deployment_id', 'deployment_id', 'deployment_created_at'];
+function splitTiers(full) {
+  const pub = JSON.parse(JSON.stringify(full)), restricted = { schema: 'vdsen-provenance-restricted-v1', firebase: {}, vercel: {} };
+  for (const env of Object.keys(full.firebase)) {
+    restricted.firebase[env] = { canonical_sha256: full.firebase[env].canonical_sha256 };   // binds the restricted tier to the public tier it belongs to
+    for (const k of RESTRICTED_FIREBASE) { restricted.firebase[env][k] = full.firebase[env][k]; delete pub.firebase[env][k]; }
+  }
+  restricted.vercel.deployment_commit_sha = full.vercel.deployment_commit_sha;
+  for (const k of RESTRICTED_VERCEL) { restricted.vercel[k] = full.vercel[k]; delete pub.vercel[k]; }
+  return { publicTier: pub, restricted };
+}
+const ENVELOPE_SCHEMA = 'vdsen-provenance-envelope-v1', ENVELOPE_ALG = 'RSA-OAEP-SHA256+AES-256-GCM';
+// Only an RSA PUBLIC key of at least 3072 bits is accepted. A PEM that contains private material is rejected outright (createPublicKey would otherwise derive a public key from it).
+function loadPublicKey(pem) {
+  if (typeof pem !== 'string' || pem.length > 4096 || /PRIVATE KEY/.test(pem) || !/^-----BEGIN PUBLIC KEY-----\r?\n[A-Za-z0-9+/=\r\n]+-----END PUBLIC KEY-----\s*$/.test(pem)) return null;
+  try {
+    const key = crypto.createPublicKey(pem);
+    if (key.type !== 'public' || key.asymmetricKeyType !== 'rsa' || key.asymmetricKeyDetails.modulusLength < 3072) return null;
+    return { key, fingerprint: crypto.createHash('sha256').update(key.export({ type: 'spki', format: 'der' })).digest('hex') };
+  } catch { return null; }
+}
+function encryptRestricted(restricted, pem) {
+  const pub = loadPublicKey(pem);
+  if (!pub) return null;
+  const dek = crypto.randomBytes(32), iv = crypto.randomBytes(12);
+  const aad = Buffer.from(ENVELOPE_SCHEMA + ':' + ENVELOPE_ALG + ':' + pub.fingerprint, 'utf8');
+  const cipher = crypto.createCipheriv('aes-256-gcm', dek, iv); cipher.setAAD(aad);
+  const ciphertext = Buffer.concat([cipher.update(JSON.stringify(restricted), 'utf8'), cipher.final()]);
+  return {
+    schema: ENVELOPE_SCHEMA, alg: ENVELOPE_ALG, key_fingerprint: pub.fingerprint,
+    wrapped_key: crypto.publicEncrypt({ key: pub.key, oaepHash: 'sha256', padding: crypto.constants.RSA_PKCS1_OAEP_PADDING }, dek).toString('base64'),
+    iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), ciphertext: ciphertext.toString('base64')
+  };
+}
+// Local use by the owner only (needs the private key, which is never on a runner). Throws on any tampering.
+function decryptRestricted(envelope, privatePem) {
+  if (!envelope || envelope.schema !== ENVELOPE_SCHEMA || envelope.alg !== ENVELOPE_ALG || !SHA256.test(envelope.key_fingerprint)) throw new Error('INVALID_ENVELOPE');
+  const dek = crypto.privateDecrypt({ key: privatePem, oaepHash: 'sha256', padding: crypto.constants.RSA_PKCS1_OAEP_PADDING }, Buffer.from(envelope.wrapped_key, 'base64'));
+  const decipher = crypto.createDecipheriv('aes-256-gcm', dek, Buffer.from(envelope.iv, 'base64'));
+  decipher.setAAD(Buffer.from(ENVELOPE_SCHEMA + ':' + ENVELOPE_ALG + ':' + envelope.key_fingerprint, 'utf8')); decipher.setAuthTag(Buffer.from(envelope.tag, 'base64'));
+  return JSON.parse(Buffer.concat([decipher.update(Buffer.from(envelope.ciphertext, 'base64')), decipher.final()]).toString('utf8'));
+}
+
+module.exports = { splitTiers, loadPublicKey, encryptRestricted, decryptRestricted, ENVELOPE_SCHEMA, RESTRICTED_FIREBASE, RESTRICTED_VERCEL, SCHEMA, HASH_ALGORITHM, KNOWN_RULES_SHA256, FIREBASE_TARGETS, ProvenanceError, getJson, canonicalRulesDigest, knownComparison, collectFirebase, collectVercel, collect };
