@@ -58,7 +58,7 @@ test('read-only metadata validation passes with kill switch false and sends only
     assert.equal(r.firestore_index_metadata_endpoint, 'FIRESTORE_INDEX_METADATA');
     assert.equal(r.firebase_rules_metadata_endpoint, 'FIREBASE_RULESET_METADATA');
     assert.equal(r.vercel_project_endpoint, 'VERCEL_PROJECT_METADATA');
-    assert.equal(calls.length, 5); assert.ok(calls.every(([, o]) => o.method === 'GET' && o.body === undefined));
+    assert.equal(calls.length, 5 + 5); assert.ok(calls.every(([, o]) => o.method === 'GET' && o.body === undefined));
     assert.ok(calls.every(([u]) => !/\/documents\/|\/keys|iam\.googleapis/.test(u)));
     assert.ok(!JSON.stringify(r).includes('google-test-only') && !JSON.stringify(r).includes('vercel-test-only'));
   } finally { global.fetch = original; restore(before); }
@@ -190,7 +190,7 @@ test('HTTP 400 is HTTP_400, other statuses are never NETWORK_ERROR, and structur
     global.fetch = async url => url.includes('firestore.googleapis.com') ? new Response(JSON.stringify({ error: { code: 403, status: 'x'.repeat(5000), details: [{ reason: 'private reason with spaces', fieldViolations: [{ field: 'a b/private-message-test-only' }] }] } }), { status: 403 }) : new Response(JSON.stringify(response(url)));
     r2 = await probe(state, base(state)); validate(r2, schema());
     assert.equal(r2.firestore_index_api_error_status, 'OTHER'); assert.equal(r2.firestore_index_api_error_reason, 'OTHER'); assert.equal(r2.firestore_index_api_error_field, 'OTHER');
-    assert.ok(JSON.stringify(r2).length < 4000);
+    assert.ok(JSON.stringify({ ...r2, provenance: undefined }).length < 4000);   // T618: the bound applies to the error-detail part; provenance is validated by its own schema and tests
   } finally { global.fetch = original; restore(before); }
 });
 test('NETWORK_ERROR is only emitted for transport failures', () => {

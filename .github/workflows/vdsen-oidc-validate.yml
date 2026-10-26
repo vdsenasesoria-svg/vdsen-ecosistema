@@ -43,12 +43,14 @@ jobs:
           OIDC_AUTH_OUTCOME: ${{ steps.google.outcome }}
           GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          ARTIFACT_PRIVACY_VERIFIED: ${{ github.event.repository.private == true && 'true' || 'false' }}
       - name: Finalize result even after configuration or authentication failure
         if: always()
         run: node scripts/release/oidc-validate.cjs finalize
         env:
           OIDC_AUTH_OUTCOME: ${{ steps.google.outcome }}
           VALIDATION_OUTCOME: ${{ steps.metadata.outcome }}
+          ARTIFACT_PRIVACY_VERIFIED: ${{ github.event.repository.private == true && 'true' || 'false' }}
       - name: Read-only validation result
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

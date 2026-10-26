@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const { json, validate, environmentContract } = require('./lib.cjs');
+const provenance = require('./provenance-diagnostic.cjs');
 const output = 'release-output/oidc-validation.json';
 const state = () => validate(json('.release/vdsen-client.json'), json('.release/schema/release-state.schema.json'));
 function base(s) {
@@ -72,10 +73,19 @@ function vercelDetail(body, expectedTeam) {
   else code = rawCode ? 'unknown' : 'ABSENT';
   return { code, scopeType: teams.length ? 'team' : scoped ? 'other' : 'ABSENT', teamMatch };
 }
+// T618: provenance evidence (ruleset id + hash, deployment ids, commit) is only PERSISTED into the workflow artifact when the runner proves the repository is private
+// (workflow env ARTIFACT_PRIVACY_VERIFIED is derived from github.event.repository.private). Otherwise it is withheld; in-memory results are unaffected.
+function persistable(r) {
+  const out = Object.assign({}, r);
+  if (process.env.ARTIFACT_PRIVACY_VERIFIED === 'true') { if (out.provenance) out.provenance_publication = 'PUBLISHED_PRIVATE_REPOSITORY_VERIFIED'; }
+  else { delete out.provenance; out.provenance_publication = 'WITHHELD_PRIVACY_NOT_VERIFIED'; }
+  return out;
+}
 function save(r) {
-  validate(r, json('.release/schema/oidc-validation.schema.json'));
+  const out = persistable(r);
+  validate(out, json('.release/schema/oidc-validation.schema.json'));
   fs.mkdirSync('release-output', { recursive: true });
-  fs.writeFileSync(output, JSON.stringify(r, null, 2) + '\n');
+  fs.writeFileSync(output, JSON.stringify(out, null, 2) + '\n');
 }
 function configuration(s) {
   assert.equal(process.env.GITHUB_ACTIONS, 'true');
@@ -159,6 +169,8 @@ async function probe(s, r) {
       if (error instanceof MetadataError) applyDetail(r, prefix, error.detail);
     }
   }));
+  // T618: read-only provenance evidence (Firebase Rules active ruleset hash + served Vercel deployment). Never changes validation_status: an unverifiable provenance is recorded as NOT_VERIFIED, not as a failure of the metadata capability checks.
+  try { r.provenance = await provenance.collect({ state: s, googleToken: process.env.GOOGLE_ACCESS_TOKEN, vercelToken: process.env.VERCEL_TOKEN }); } catch { delete r.provenance; }
   r.validation_status = attempts.every(([key]) => r[key] === 'PASS') ? 'PASS' : 'FAIL';
   if (r.validation_status === 'FAIL') r.error = 'METADATA_CAPABILITY_VALIDATION_FAILED';
   return r;
@@ -186,4 +198,4 @@ if (require.main === module) {
   if (!command) { console.error('Expected init, run or finalize'); process.exitCode = 1; }
   else Promise.resolve().then(command).then(code => { process.exitCode = code || 0; }).catch(() => { console.error('OIDC validation failed; details withheld'); process.exitCode = 1; });
 }
-module.exports = { base, configuration, probe, init, run, finalize };
+module.exports = { base, configuration, probe, init, run, finalize, persistable };
