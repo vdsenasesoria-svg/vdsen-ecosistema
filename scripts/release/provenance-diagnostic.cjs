@@ -129,7 +129,7 @@ function emptyVercel(s, domain, status, error, httpStatus) {
   return {
     team_id: s.vercel_team, project_id: s.production_project, domain, status, error: error || 'NONE', http_status: httpStatus === undefined ? null : httpStatus,
     project_identity: 'NOT_VERIFIED', alias_deployment_id: null, deployment_id: null, deployment_state: null, deployment_target: null, deployment_created_at: null,
-    deployment_commit_sha: 'ABSENT', alias_to_deployment_correspondence: 'NOT_VERIFIED', correspondence_reason: 'NOT_EVALUATED',
+    deployment_commit_sha: 'ABSENT', alias_to_deployment_correspondence: 'NOT_VERIFIED', correspondence_reason: 'NOT_EVALUATED', alias_listed_on_deployment: 'UNKNOWN',
     ready_means_functional_acceptance: false, deletion_inferred_from_http_404: false,
     provenance: { project: 'GET vercel /v9/projects/{id}', alias: 'GET vercel /v4/aliases/{alias}', deployment: 'GET vercel /v13/deployments/{id}', commit: 'deployment.meta.githubCommitSha|gitSource.sha' }
   };
@@ -159,7 +159,10 @@ async function collectVercel(s, domainUrl, token, fetchImpl) {
     if (aliasProject !== s.production_project) reason = 'ALIAS_PROJECT_NOT_CONFIRMED';
     else if (depProject !== s.production_project) reason = 'DEPLOYMENT_PROJECT_NOT_CONFIRMED';
     else if (dd.target !== 'production') reason = 'DEPLOYMENT_TARGET_NOT_PRODUCTION';
-    else if (Array.isArray(dd.alias) && !dd.alias.includes(host)) reason = 'ALIAS_NOT_LISTED_ON_DEPLOYMENT';
+    // The ALIAS record (GET /v4/aliases/{alias}) is the authoritative alias -> deployment mapping and was already matched to dd.id above. `dd.alias` is only the list of aliases
+    // Vercel attached to the deployment; in production it does not always include every alias that points at it (observed: the team-scoped alias is listed, the project alias is not),
+    // so absence there is recorded as supporting metadata and never downgrades the verdict.
+    out.alias_listed_on_deployment = Array.isArray(dd.alias) ? dd.alias.includes(host) : 'UNKNOWN';
     out.correspondence_reason = reason;
     out.alias_to_deployment_correspondence = reason === 'OK' ? 'VERIFIED' : 'NOT_VERIFIED';
     out.status = out.alias_to_deployment_correspondence === 'VERIFIED' ? 'VERIFIED_READ_CONSISTENT' : 'NOT_VERIFIED';

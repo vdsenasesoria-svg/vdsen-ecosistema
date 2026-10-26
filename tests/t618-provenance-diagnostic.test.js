@@ -128,9 +128,13 @@ test('T618.8 Vercel: alias -> deployment correspondence is VERIFIED only with ma
   assert.equal((await collect(dep({ gitSource: { sha: 'a'.repeat(40) } }))).vercel.deployment_commit_sha, 'a'.repeat(40));
   assert.equal((await collect(dep({ meta: { githubCommitSha: 'not-a-sha' } }))).vercel.deployment_commit_sha, 'ABSENT');
   for (const [why, over, reason] of [['preview target', dep({ target: 'preview' }), 'DEPLOYMENT_TARGET_NOT_PRODUCTION'], ['other project', dep({ projectId: 'prj_other' }), 'DEPLOYMENT_PROJECT_NOT_CONFIRMED'],
-    ['alias not listed', dep({ alias: ['other.vercel.app'] }), 'ALIAS_NOT_LISTED_ON_DEPLOYMENT'], ['alias of another project', { '/v4/aliases/': () => ({ deploymentId: 'dpl_SyntheticDeploy01', projectId: 'prj_other' }) }, 'ALIAS_PROJECT_NOT_CONFIRMED']]) {
+    ['alias of another project', { '/v4/aliases/': () => ({ deploymentId: 'dpl_SyntheticDeploy01', projectId: 'prj_other' }) }, 'ALIAS_PROJECT_NOT_CONFIRMED']]) {
     const x = (await collect(over)).vercel; assert.equal(x.alias_to_deployment_correspondence, 'NOT_VERIFIED', why); assert.equal(x.correspondence_reason, reason, why); assert.equal(x.status, 'NOT_VERIFIED');
   }
+  // T626: observed in production - the deployment's own alias list omits the project alias although the alias record points at it. The alias record is authoritative; the list is metadata.
+  const unlisted = (await collect(dep({ alias: ['team-scoped.vercel.app'] }))).vercel;
+  assert.equal(unlisted.alias_to_deployment_correspondence, 'VERIFIED'); assert.equal(unlisted.correspondence_reason, 'OK'); assert.equal(unlisted.alias_listed_on_deployment, false); assert.equal(unlisted.status, 'VERIFIED_READ_CONSISTENT');
+  assert.equal((await collect(dep({ alias: undefined }))).vercel.alias_listed_on_deployment, 'UNKNOWN'); assert.equal(v.alias_listed_on_deployment, true);
   const mismatch = (await collect({ '/v13/deployments/': () => ({ id: 'dpl_Different0001', projectId: state.production_project }) })).vercel;
   assert.equal(mismatch.status, 'INCONSISTENT'); assert.equal(mismatch.alias_to_deployment_correspondence, 'NOT_VERIFIED');
   const foreign = (await collect({ '/v9/projects/': () => ({ id: state.production_project, accountId: 'team_other' }) })).vercel; assert.equal(foreign.status, 'INCONSISTENT'); assert.equal(foreign.project_identity, 'NOT_VERIFIED');
