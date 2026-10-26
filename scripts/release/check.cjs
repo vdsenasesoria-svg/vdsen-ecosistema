@@ -88,17 +88,21 @@ function assertAppReleaseCoherence(state) {
   return state;
 }
 // A rules-only package keeps the served Client runtime pinned to the production
-// artifact, while its reviewed Rules source is pinned separately.  The source
-// must be the package currently being reviewed: accepting an arbitrary older
-// commit would make a successful gate attest to a different file than apply().
+// artifact, while its reviewed Rules source is pinned separately. The Rules
+// source normally lands in the first commit of a reviewed package, while the
+// following commit records its immutable SHA in the release state. A package
+// merge adds another commit on top. Requiring self-reference to HEAD would
+// make that normal Git sequence impossible. Accept only an exact ancestor: no
+// branch, tag or unrelated SHA can substitute a Rules source, and the target
+// hash below still binds its bytes.
 function resolveRulesSha(state, runtime) {
   if (state.release_mode !== 'rules_only') {
     assert.equal(state.rules_sha, undefined, 'rules_sha is only valid for rules_only');
     return runtime;
   }
   assert.match(state.rules_sha || '', /^[0-9a-f]{40}$/, 'rules_only requires a reviewed rules_sha');
-  assert.equal(git('rev-parse', 'HEAD').trim(), state.rules_sha,
-    'rules_only rules_sha must identify the current reviewed release package');
+  try { git('merge-base', '--is-ancestor', state.rules_sha, 'HEAD'); }
+  catch { assert.fail('rules_only rules_sha must identify an immutable ancestor of the reviewed release package'); }
   return state.rules_sha;
 }
 function check(runtime = process.env.RUNTIME_SHA) {

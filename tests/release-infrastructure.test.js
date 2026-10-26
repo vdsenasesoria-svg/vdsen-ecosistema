@@ -85,20 +85,71 @@ test('release state rejects numeric activation, missing gates and unknown projec
   }
   assert.throws(() => validate({}, { unknownKeyword: true }));
 });
-test('rules_only requires the current reviewed Rules package and never repoints the served runtime', () => {
+test('rules_only requires an immutable reviewed Rules ancestor and never repoints the served runtime', () => {
   const before = process.env.GITHUB_REF;
   try {
     const rulesOnly = { ...clone(state), release_mode: 'rules_only', rules_sha: git('rev-parse', 'HEAD').trim() };
     assert.equal(resolveRulesSha(rulesOnly, state.runtime_sha), rulesOnly.rules_sha);
     delete rulesOnly.rules_sha;
     assert.throws(() => resolveRulesSha(rulesOnly, state.runtime_sha), /rules_only requires a reviewed rules_sha/);
-    rulesOnly.rules_sha = state.runtime_sha;
-    assert.throws(() => resolveRulesSha(rulesOnly, state.runtime_sha), /current reviewed release package/);
     const appOnly = { ...clone(state), rules_sha: state.runtime_sha };
     assert.throws(() => resolveRulesSha(appOnly, state.runtime_sha), /only valid for rules_only/);
     assert.equal(resolveRulesSha(state, state.runtime_sha), state.runtime_sha);
   } finally {
     if (before === undefined) delete process.env.GITHUB_REF; else process.env.GITHUB_REF = before;
+  }
+});
+test('a committed rules_only package can bind its prior committed Rules source without self-referential SHA', () => {
+  const parent = fs.realpathSync(os.tmpdir());
+  const temp = fs.mkdtempSync(path.join(parent, 'vdsen-rules-committed-'));
+  fs.rmdirSync(temp);
+  const cloned = spawnSync('git', ['clone', '--quiet', '--no-hardlinks', process.cwd(), temp], { encoding: 'utf8' });
+  assert.equal(cloned.status, 0, cloned.stderr);
+  try {
+    const run = args => spawnSync('git', args, { cwd: temp, encoding: 'utf8' });
+    // Execute the gate under test even when this suite is run from an
+    // uncommitted worktree; all reviewed package data still comes from Git.
+    fs.copyFileSync(path.join(process.cwd(), 'scripts', 'release', 'check.cjs'), path.join(temp, 'scripts', 'release', 'check.cjs'));
+    assert.equal(run(['config', 'user.email', 'rules-test@example.invalid']).status, 0);
+    assert.equal(run(['config', 'user.name', 'Rules Test']).status, 0);
+    // Commit the exact candidate source first. The state commit then names that
+    // immutable source, as a merge commit would preserve it as an ancestor.
+    fs.copyFileSync(path.join(temp, 'firestore.t603.rules'), path.join(temp, 'firestore.rules'));
+    assert.equal(run(['add', 'firestore.rules']).status, 0);
+    assert.equal(run(['commit', '--quiet', '-m', 'test: staged rules source']).status, 0);
+    const rulesSha = run(['rev-parse', 'HEAD']).stdout.trim();
+    const reviewed = json(path.join(temp, '.release', 'vdsen-client.json'));
+    reviewed.release_mode = 'rules_only'; reviewed.rules_sha = rulesSha;
+    reviewed.rules_transition.target_sha256 = hash(fs.readFileSync(path.join(temp, 'firestore.rules')));
+    fs.writeFileSync(path.join(temp, '.release', 'vdsen-client.json'), JSON.stringify(reviewed, null, 2) + '\n');
+    assert.equal(run(['add', '.release/vdsen-client.json']).status, 0);
+    assert.equal(run(['commit', '--quiet', '-m', 'test: bind rules package']).status, 0);
+    const packageSha = run(['rev-parse', 'HEAD']).stdout.trim();
+    assert.notEqual(rulesSha, packageSha, 'the state cannot self-reference its own commit SHA');
+    assert.equal(run(['update-ref', 'refs/remotes/origin/codex/client-app-next', packageSha]).status, 0);
+    const checked = spawnSync(process.execPath, ['scripts/release/check.cjs'], {
+      cwd: temp,
+      env: { ...process.env, GITHUB_REF: 'refs/heads/codex/client-app-next', GITHUB_EVENT_NAME: 'pull_request', RUNTIME_SHA: reviewed.runtime_sha },
+      encoding: 'utf8'
+    });
+    assert.equal(checked.status, 0, checked.stderr || checked.stdout);
+    // A syntactically valid but unrelated commit is still rejected before its
+    // contents can be used as a Rules source.
+    const unrelated = run(['commit-tree', packageSha + '^{tree}', '-m', 'test: unrelated rules source']).stdout.trim();
+    reviewed.rules_sha = unrelated;
+    fs.writeFileSync(path.join(temp, '.release', 'vdsen-client.json'), JSON.stringify(reviewed, null, 2) + '\n');
+    assert.equal(run(['add', '.release/vdsen-client.json']).status, 0);
+    assert.equal(run(['commit', '--quiet', '-m', 'test: reject unrelated rules source']).status, 0);
+    assert.equal(run(['update-ref', 'refs/remotes/origin/codex/client-app-next', run(['rev-parse', 'HEAD']).stdout.trim()]).status, 0);
+    const rejected = spawnSync(process.execPath, ['scripts/release/check.cjs'], {
+      cwd: temp,
+      env: { ...process.env, GITHUB_REF: 'refs/heads/codex/client-app-next', GITHUB_EVENT_NAME: 'pull_request', RUNTIME_SHA: reviewed.runtime_sha },
+      encoding: 'utf8'
+    });
+    assert.notEqual(rejected.status, 0);
+    assert.match(rejected.stderr + rejected.stdout, /immutable ancestor/);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
   }
 });
 test('rules_only check accepts a separately pinned Rules package and rejects its wrong target hash', () => {
