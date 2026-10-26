@@ -172,10 +172,13 @@ async function collectVercel(s, domainUrl, token, fetchImpl) {
   }
 }
 
-// Staging is best effort: the release identity is scoped to production, so a 403/404 there is an expected, recorded outcome and never fails the validation.
+// Staging is deliberately not queried by default. The production identity must
+// never be used against staging without a separately authorized implementation.
 async function collect({ state, googleToken, vercelToken, fetchImpl, domainUrl }) {
   const f = fetchImpl || fetch, url = domainUrl || 'https://vdsen-ecosistema.vercel.app';
-  const production = await collectFirebase('production', googleToken, f), staging = await collectFirebase('staging', googleToken, f), vercel = await collectVercel(state, url, vercelToken, f);
+  const production = await collectFirebase('production', googleToken, f);
+  const staging = emptyFirebase('staging', 'NOT_REQUESTED_BY_DEFAULT', 'NOT_REQUESTED_BY_DEFAULT');
+  const vercel = await collectVercel(state, url, vercelToken, f);
   return {
     schema: SCHEMA, read_only: true, methods: ['GET'], source_content_persisted: false, secrets_persisted: false,
     firebase: { production, staging }, vercel,
@@ -185,20 +188,25 @@ async function collect({ state, googleToken, vercelToken, fetchImpl, domainUrl }
 
 
 // ── Two-tier publication (T619) ───────────────────────────────────────────────────────────────────────────────
-// PUBLIC tier: verdicts, enums, the Rules digest/size (the file hash is already public in the repository state), the commit SHA and the alias->deployment verdict.
-// RESTRICTED tier: the infrastructure identifiers and dates (ruleset id, release/ruleset times, deployment ids, deployment date). It is NEVER written in clear text: it is encrypted
+// PUBLIC tier: only operational verdicts, consistency and restricted-evidence availability.
+// RESTRICTED tier: every identifier, date, hash, size and detailed correspondence. It is NEVER written in clear text: it is encrypted
 // to the owner's RSA PUBLIC key (the private key never exists in the repository or the runner) or withheld when no valid public key is committed.
-const RESTRICTED_FIREBASE = ['ruleset_id', 'release_update_time', 'release_create_time', 'ruleset_create_time'];
-const RESTRICTED_VERCEL = ['alias_deployment_id', 'deployment_id', 'deployment_created_at'];
+const RESTRICTED_FIREBASE = ['release_name', 'release_update_time', 'release_create_time', 'ruleset_id', 'ruleset_create_time', 'hash_algorithm', 'source_file_count', 'source_file_names', 'canonical_sha256', 'canonical_bytes', 'content_bytes_total', 'raw_single_file_sha256', 'known_hash_comparison', 'api_representation_byte_equivalence', 'rollback_provenance', 'provenance'];
+const RESTRICTED_VERCEL = ['team_id', 'project_id', 'domain', 'project_identity', 'alias_deployment_id', 'deployment_id', 'deployment_state', 'deployment_target', 'deployment_created_at', 'deployment_commit_sha', 'alias_to_deployment_correspondence', 'correspondence_reason', 'provenance'];
 function splitTiers(full) {
-  const pub = JSON.parse(JSON.stringify(full)), restricted = { schema: 'vdsen-provenance-restricted-v1', firebase: {}, vercel: {} };
-  for (const env of Object.keys(full.firebase)) {
-    restricted.firebase[env] = { canonical_sha256: full.firebase[env].canonical_sha256 };   // binds the restricted tier to the public tier it belongs to
-    for (const k of RESTRICTED_FIREBASE) { restricted.firebase[env][k] = full.firebase[env][k]; delete pub.firebase[env][k]; }
-  }
-  restricted.vercel.deployment_commit_sha = full.vercel.deployment_commit_sha;
-  for (const k of RESTRICTED_VERCEL) { restricted.vercel[k] = full.vercel[k]; delete pub.vercel[k]; }
-  return { publicTier: pub, restricted };
+  const consistent = value => value === 'VERIFIED_READ_CONSISTENT' ? 'CONSISTENT' : 'NOT_VERIFIED';
+  const publicTier = {
+    schema: SCHEMA, read_only: true, methods: ['GET'], source_content_persisted: false, secrets_persisted: false,
+    firebase: {
+      production: { status: full.firebase.production.status, error: full.firebase.production.error, consistency: consistent(full.firebase.production.status) },
+      staging: { status: 'NOT_REQUESTED_BY_DEFAULT', reason: 'SEPARATE_AUTHORIZATION_REQUIRED' }
+    },
+    vercel: { status: full.vercel.status, error: full.vercel.error, consistency: consistent(full.vercel.status) },
+    restricted_evidence_availability: 'WITHHELD_NO_VALID_KEY',
+    note: 'Public evidence contains operational verdicts only; detailed provenance is encrypted or withheld.'
+  };
+  const restricted = { schema: 'vdsen-provenance-restricted-v1', firebase: JSON.parse(JSON.stringify(full.firebase)), vercel: JSON.parse(JSON.stringify(full.vercel)) };
+  return { publicTier, restricted };
 }
 const ENVELOPE_SCHEMA = 'vdsen-provenance-envelope-v1', ENVELOPE_ALG = 'RSA-OAEP-SHA256+AES-256-GCM';
 // Only an RSA PUBLIC key of at least 3072 bits is accepted. A PEM that contains private material is rejected outright (createPublicKey would otherwise derive a public key from it).

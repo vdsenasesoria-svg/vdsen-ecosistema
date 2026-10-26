@@ -58,8 +58,8 @@ test('read-only metadata validation passes with kill switch false and sends only
     assert.equal(r.firestore_index_metadata_endpoint, 'FIRESTORE_INDEX_METADATA');
     assert.equal(r.firebase_rules_metadata_endpoint, 'FIREBASE_RULESET_METADATA');
     assert.equal(r.vercel_project_endpoint, 'VERCEL_PROJECT_METADATA');
-    assert.equal(calls.length, 5 + 5); assert.ok(calls.every(([, o]) => o.method === 'GET' && o.body === undefined));
-    assert.ok(calls.every(([u]) => !/\/documents\/|\/keys|iam\.googleapis/.test(u)));
+    assert.equal(calls.length, 9); assert.ok(calls.every(([, o]) => o.method === 'GET' && o.body === undefined));
+    assert.ok(calls.every(([u]) => !/\/documents\/|\/keys|iam\.googleapis|vdsen-ecosistema-staging/.test(u)));
     assert.ok(!JSON.stringify(r).includes('google-test-only') && !JSON.stringify(r).includes('vercel-test-only'));
   } finally { global.fetch = original; restore(before); }
 });

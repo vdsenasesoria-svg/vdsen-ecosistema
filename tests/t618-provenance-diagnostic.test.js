@@ -111,10 +111,11 @@ test('T618.6 HTTP 401 / 403 / 404 / 5xx / network / timeout: recorded as NOT_VER
   const noToken = await P.collect({ state, googleToken: '', vercelToken: '', fetchImpl: async () => { throw new Error('must not be called without a token'); } });
   assert.equal(noToken.firebase.production.error, 'HTTP_401'); assert.equal(noToken.vercel.error, 'HTTP_401');
 });
-test('T618.7 staging is best effort: a denied staging read never affects production and is recorded as such', async () => {
-  const r = await collect({ '/projects/vdsen-ecosistema-staging/': 403 });
-  assert.equal(r.firebase.production.status, 'VERIFIED_READ_CONSISTENT'); assert.equal(r.firebase.staging.status, 'NOT_VERIFIED'); assert.equal(r.firebase.staging.error, 'HTTP_403');
-  assert.equal(r.firebase.staging.project, 'vdsen-ecosistema-staging'); assert.equal(r.firebase.staging.project_number, '436059785391');
+test('T620.1 staging is not requested by default and no production identity request targets it', async () => {
+  const calls = [], r = await collect({}, calls);
+  assert.equal(r.firebase.production.status, 'VERIFIED_READ_CONSISTENT'); assert.equal(r.firebase.staging.status, 'NOT_REQUESTED_BY_DEFAULT');
+  assert.equal(r.firebase.staging.error, 'NOT_REQUESTED_BY_DEFAULT');
+  assert.ok(calls.every(([url]) => !url.includes('vdsen-ecosistema-staging')));
 });
 // ── Vercel ──
 test('T618.8 Vercel: alias -> deployment correspondence is VERIFIED only with matching project, deployment id, production target and listed alias; READY is not acceptance', async () => {
@@ -135,15 +136,18 @@ test('T618.8 Vercel: alias -> deployment correspondence is VERIFIED only with ma
   const foreign = (await collect({ '/v9/projects/': () => ({ id: state.production_project, accountId: 'team_other' }) })).vercel; assert.equal(foreign.status, 'INCONSISTENT'); assert.equal(foreign.project_identity, 'NOT_VERIFIED');
 });
 // ── whole artifact, schema, privacy ──
-test('T618.9 the PUBLIC tier validates against the artifact schema; forged extra fields / source / headers / bodies / ids / verified-rollback claims are rejected by the allowlist', async () => {
-  const full = await collect({}), sc = schema(), props = sc.properties.provenance, r = P.splitTiers(full).publicTier;
+test('T620.2 the PUBLIC tier permits only verdicts and rejects every restricted identifier, date, hash, size, commit and detailed correspondence', async () => {
+  const full = await collect({}), sc = schema(), props = sc.properties.provenance_public, r = P.splitTiers(full).publicTier;
   validate(r, props);
   for (const mutate of [(x) => { x.firebase.production.source = SECRET_SOURCE; }, (x) => { x.firebase.production.headers = { Authorization: 'Bearer x' }; }, (x) => { x.vercel.body = {}; }, (x) => { x.extra = 1; },
-    (x) => { x.firebase.production.canonical_sha256 = 'ABC'; }, (x) => { x.firebase.production.rollback_provenance = 'VERIFIED'; }, (x) => { x.firebase.production.api_representation_byte_equivalence = 'ASSERTED'; },
-    (x) => { x.vercel.ready_means_functional_acceptance = true; }, (x) => { x.vercel.deletion_inferred_from_http_404 = true; }, (x) => { x.source_content_persisted = true; }, (x) => { x.methods = ['POST']; },
-    (x) => { x.firebase.production.ruleset_id = 'rs-synthetic-001'; }, (x) => { x.firebase.staging.release_update_time = '2026-10-20T10:00:00Z'; }, (x) => { x.vercel.deployment_id = 'dpl_SyntheticDeploy01'; }, (x) => { x.vercel.alias_deployment_id = 'dpl_SyntheticDeploy01'; }, (x) => { x.vercel.deployment_created_at = '2026-10-21T12:00:00Z'; }]) {
+    (x) => { x.firebase.production.canonical_sha256 = 'a'.repeat(64); }, (x) => { x.firebase.production.canonical_bytes = 1; }, (x) => { x.firebase.production.content_bytes_total = 1; },
+    (x) => { x.firebase.production.ruleset_id = 'rs-synthetic-001'; }, (x) => { x.firebase.production.release_name = RS; }, (x) => { x.vercel.deployment_id = 'dpl_SyntheticDeploy01'; },
+    (x) => { x.vercel.deployment_commit_sha = 'f'.repeat(40); }, (x) => { x.vercel.deployment_created_at = '2026-10-21T12:00:00Z'; }, (x) => { x.vercel.correspondence_reason = 'OK'; },
+    (x) => { x.source_content_persisted = true; }, (x) => { x.methods = ['POST']; }]) {
     const copy = JSON.parse(JSON.stringify(r)); mutate(copy); assert.throws(() => validate(copy, props));
   }
+  const legacyPublic = OID.base(state); legacyPublic.provenance = { restricted_hash: 'a'.repeat(64) };
+  assert.throws(() => validate(legacyPublic, sc), 'the root artifact must reject a detailed legacy provenance block');
   assert.ok(JSON.stringify(r).length < 5000, 'minimum data');
 });
 test('T618.10 oidc-validate wiring: provenance is attached, GET-only, never changes validation_status, and an old artifact (without provenance) still validates', async () => {
@@ -187,13 +191,12 @@ const keypair = (bits) => crypto.generateKeyPairSync('rsa', { modulusLength: bit
 const pemOf = (k) => k.publicKey.export({ type: 'spki', format: 'pem' }), privOf = (k) => k.privateKey.export({ type: 'pkcs8', format: 'pem' });
 const OID = require('../scripts/release/oidc-validate.cjs');
 const IDS = ['rs-synthetic-001', 'dpl_SyntheticDeploy01', '2026-10-20T10:00:00.123456Z', '2026-10-20T09:59:00Z', '2026-01-01T00:00:00.000000Z', '2026-10-21T12:00:00.000Z'];
-test('T618.12 two tiers: the PUBLIC tier has no infrastructure identifiers or dates; they exist only in the RESTRICTED tier', async () => {
+test('T620.3 two tiers: hashes, sizes, commit and detailed correspondence are encrypted-only', async () => {
   const full = await collect({}), { publicTier, restricted } = P.splitTiers(full), pub = JSON.stringify(publicTier);
-  for (const id of IDS) assert.ok(!pub.includes(id), 'public tier must not contain ' + id);
-  assert.ok(pub.includes(full.firebase.production.canonical_sha256) && pub.includes('f'.repeat(40)) && pub.includes('READY'), 'digest, commit and deployment state stay public');
+  for (const id of [...IDS, full.firebase.production.canonical_sha256, String(full.firebase.production.canonical_bytes), String(full.firebase.production.content_bytes_total), 'f'.repeat(40), 'READY']) assert.ok(!pub.includes(id), 'public tier must not contain ' + id);
+  assert.equal(publicTier.firebase.production.status, 'VERIFIED_READ_CONSISTENT'); assert.equal(publicTier.vercel.consistency, 'CONSISTENT');
   const res = JSON.stringify(restricted);
-  for (const id of ['rs-synthetic-001', 'dpl_SyntheticDeploy01', '2026-10-20T10:00:00.123456Z', '2026-10-21T12:00:00.000Z']) assert.ok(res.includes(id));
-  assert.equal(restricted.firebase.production.canonical_sha256, full.firebase.production.canonical_sha256, 'restricted tier is bound to the public digest');
+  for (const id of ['rs-synthetic-001', 'dpl_SyntheticDeploy01', '2026-10-20T10:00:00.123456Z', '2026-10-21T12:00:00.000Z', full.firebase.production.canonical_sha256, 'f'.repeat(40)]) assert.ok(res.includes(id));
   assert.ok(!res.includes('rules_version') && !res.includes('SYNTHETIC-RULES-SOURCE-MARKER'));
   assert.ok(full.firebase.production.ruleset_id, 'the input object is not mutated');
 });
@@ -225,11 +228,11 @@ test('T618.15 persistable: the public tier is ALWAYS published; the restricted t
   for (const pem of [null, '', 'garbage', privOf(k), pemOf(keypair(2048))]) {
     const { result, envelope } = OID.persistable(r, pem);
     assert.equal(envelope, null); assert.equal(result.provenance_publication, 'PUBLIC_TIER_PUBLISHED_RESTRICTED_WITHHELD_NO_VALID_KEY'); assert.equal(result.provenance_restricted_key_fingerprint, null);
-    validate(result, schema()); for (const id of IDS) assert.ok(!JSON.stringify(result).includes(id));
+    validate(result, schema()); for (const id of [...IDS, r.provenance.firebase.production.canonical_sha256, 'f'.repeat(40)]) assert.ok(!JSON.stringify(result).includes(id));
   }
   const { result, envelope } = OID.persistable(r, pemOf(k));
   assert.ok(envelope); assert.equal(result.provenance_publication, 'PUBLIC_TIER_PUBLISHED_RESTRICTED_ENCRYPTED'); assert.equal(result.provenance_restricted_key_fingerprint, envelope.key_fingerprint);
-  validate(result, schema()); for (const id of IDS) assert.ok(!JSON.stringify(result).includes(id) && !JSON.stringify(envelope).includes(id));
+  validate(result, schema()); for (const id of [...IDS, r.provenance.firebase.production.canonical_sha256, 'f'.repeat(40)]) assert.ok(!JSON.stringify(result).includes(id) && !JSON.stringify(envelope).includes(id));
   assert.equal(P.decryptRestricted(envelope, privOf(k)).firebase.production.ruleset_id, 'rs-synthetic-001');
   assert.ok(r.provenance.firebase.production.ruleset_id, 'the in-memory result is never mutated');
   assert.equal(OID.persistable(OID.base(state), pemOf(k)).envelope, null, 'no provenance, no envelope');
@@ -254,7 +257,7 @@ test('T618.16 end to end through init/run/finalize: files written to disk, with 
       await OID.init(); await OID.run(); OID.finalize();
       const text = fs.readFileSync('release-output/oidc-validation.json', 'utf8'), parsed = JSON.parse(text);
       validate(parsed, schema()); for (const id of IDS) assert.ok(!text.includes(id), 'clear result must not contain ' + id); assert.ok(!text.includes('rules_version') && !text.includes('SYNTHETIC-RULES-SOURCE-MARKER'));
-      assert.equal(parsed.validation_status, 'PASS'); assert.equal(parsed.provenance.firebase.production.status, 'VERIFIED_READ_CONSISTENT');
+      assert.equal(parsed.validation_status, 'PASS'); assert.equal(parsed.provenance_public.firebase.production.status, 'VERIFIED_READ_CONSISTENT');
       if (withKey) {
         const enc = fs.readFileSync('release-output/provenance.enc', 'utf8'); for (const id of IDS) assert.ok(!enc.includes(id)); assert.ok(!enc.includes('rules_version'));
         assert.equal(parsed.provenance_publication, 'PUBLIC_TIER_PUBLISHED_RESTRICTED_ENCRYPTED'); assert.equal(parsed.provenance_restricted_key_fingerprint, JSON.parse(enc).key_fingerprint);

@@ -73,8 +73,7 @@ function vercelDetail(body, expectedTeam) {
   else code = rawCode ? 'unknown' : 'ABSENT';
   return { code, scopeType: teams.length ? 'team' : scoped ? 'other' : 'ABSENT', teamMatch };
 }
-// T619 two-tier publication. PUBLIC tier (verdicts, Rules digest/size, commit SHA, alias->deployment verdict) is always written into the result. RESTRICTED tier (ruleset id, release/ruleset
-// times, deployment ids and date) is never written in clear text: it is encrypted to the owner's RSA PUBLIC key committed at .release/provenance-public-key.pem (the private key is never on a
+// T619 two-tier publication. PUBLIC tier has operational verdicts only. RESTRICTED tier has every identifier, date, hash, size and detailed correspondence; it is never written in clear text: it is encrypted to the owner's RSA PUBLIC key committed at .release/provenance-public-key.pem (the private key is never on a
 // runner) into a separate file, or withheld when no valid public key is present. Fail-closed: any problem with the key withholds the restricted tier.
 const publicKeyFile = '.release/provenance-public-key.pem', restrictedOutput = 'release-output/provenance.enc';
 function readPublicKey() { try { return fs.readFileSync(publicKeyFile, 'utf8'); } catch { return null; } }
@@ -84,8 +83,10 @@ function persistable(r, pem = readPublicKey()) {
   delete out.provenance_restricted_key_fingerprint;
   if (!r.provenance) return { result: out, envelope: null };
   const { publicTier, restricted } = provenance.splitTiers(r.provenance);
-  out.provenance = publicTier;
+  delete out.provenance;
   const envelope = provenance.encryptRestricted(restricted, pem);
+  publicTier.restricted_evidence_availability = envelope ? 'ENCRYPTED' : 'WITHHELD_NO_VALID_KEY';
+  out.provenance_public = publicTier;
   out.provenance_publication = envelope ? 'PUBLIC_TIER_PUBLISHED_RESTRICTED_ENCRYPTED' : 'PUBLIC_TIER_PUBLISHED_RESTRICTED_WITHHELD_NO_VALID_KEY';
   out.provenance_restricted_key_fingerprint = envelope ? envelope.key_fingerprint : null;
   return { result: out, envelope };

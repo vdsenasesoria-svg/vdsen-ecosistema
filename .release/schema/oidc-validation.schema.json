@@ -2,6 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
+  "if": { "required": ["provenance"] },
+  "then": { "properties": { "provenance": { "type": "object", "additionalProperties": false } } },
   "required": [
     "repository",
     "ref",
@@ -817,6 +819,48 @@
         "note": {
           "type": "string"
         }
+      }
+    },
+    "provenance_public": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "read_only", "methods", "source_content_persisted", "secrets_persisted", "firebase", "vercel", "restricted_evidence_availability", "note"],
+      "properties": {
+        "schema": { "const": "vdsen-provenance-diagnostic-v1" },
+        "read_only": { "const": true },
+        "methods": { "type": "array", "items": { "const": "GET" }, "minItems": 1 },
+        "source_content_persisted": { "const": false },
+        "secrets_persisted": { "const": false },
+        "firebase": {
+          "type": "object", "additionalProperties": false, "required": ["production", "staging"],
+          "properties": {
+            "production": {
+              "type": "object", "additionalProperties": false, "required": ["status", "error", "consistency"],
+              "properties": {
+                "status": { "enum": ["VERIFIED_READ_CONSISTENT", "NOT_VERIFIED", "INCONSISTENT"] },
+                "error": { "type": "string", "pattern": "^[A-Z0-9_]{1,64}$" },
+                "consistency": { "enum": ["CONSISTENT", "NOT_VERIFIED"] }
+              }
+            },
+            "staging": {
+              "type": "object", "additionalProperties": false, "required": ["status", "reason"],
+              "properties": {
+                "status": { "const": "NOT_REQUESTED_BY_DEFAULT" },
+                "reason": { "const": "SEPARATE_AUTHORIZATION_REQUIRED" }
+              }
+            }
+          }
+        },
+        "vercel": {
+          "type": "object", "additionalProperties": false, "required": ["status", "error", "consistency"],
+          "properties": {
+            "status": { "enum": ["VERIFIED_READ_CONSISTENT", "NOT_VERIFIED", "INCONSISTENT"] },
+            "error": { "type": "string", "pattern": "^[A-Z0-9_]{1,64}$" },
+            "consistency": { "enum": ["CONSISTENT", "NOT_VERIFIED"] }
+          }
+        },
+        "restricted_evidence_availability": { "enum": ["ENCRYPTED", "WITHHELD_NO_VALID_KEY"] },
+        "note": { "type": "string" }
       }
     },
     "provenance_publication": {
