@@ -241,7 +241,7 @@ test('T618.16 end to end through init/run/finalize: files written to disk, with 
   // isolated working directory: never touches the repository's .release/ or release-output/ (other test files run in parallel processes)
   const os = require('node:os'), path = require('node:path'), origCwd = process.cwd(), tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vdsen-t618-'));
   fs.cpSync(path.join(origCwd, '.release'), path.join(tmp, '.release'), { recursive: true }); process.chdir(tmp);
-  const keyFile = '.release/provenance-public-key.pem';
+  const keyFile = '.release/provenance-public-key.pub';
   const k = keypair(), before = { ...process.env }, original = global.fetch, methods = new Set(); let console_ = '';
   const wo = process.stdout.write.bind(process.stdout), we = process.stderr.write.bind(process.stderr);
   try {
@@ -273,6 +273,6 @@ test('T618.16 end to end through init/run/finalize: files written to disk, with 
 });
 test('T618.17 the committed state carries no key material: no private key anywhere in the repository files touched by T618', () => {
   for (const file of ['scripts/release/provenance-diagnostic.cjs', 'scripts/release/decrypt-provenance.cjs', 'scripts/release/oidc-validate.cjs', '.github/workflows/vdsen-oidc-validate.yml', '.release/schema/oidc-validation.schema.json']) assert.ok(!/BEGIN (?:RSA |EC )?PRIVATE KEY/.test(fs.readFileSync(file, 'utf8')), file);
-  const pubFile = '.release/provenance-public-key.pem';
+  const pubFile = '.release/provenance-public-key.pub';
   if (fs.existsSync(pubFile)) assert.ok(P.loadPublicKey(fs.readFileSync(pubFile, 'utf8')), 'a committed key file must be a valid RSA PUBLIC key >= 3072 bits');
 });
