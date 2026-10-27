@@ -26,6 +26,21 @@ const STATE = JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
 
 const clone = (over = {}) => JSON.parse(JSON.stringify({ ...STATE, ...over }));
 const schemaValidates = (value) => { validate(value, SCHEMA); return true; };
+const appOnly = () => {
+  const s = clone({ release_mode: 'app_only' });
+  s.app_release = {
+    runtime_sha: s.runtime_sha,
+    deployment: s.production_deployment,
+    promotion_model: 'staged_production',
+    previous_deployment: s.rollback_deployment,
+    previous_runtime_sha: s.rollback_runtime_sha,
+    source_release_run: '40055779147',
+    verified_surfaces: 4,
+    completed_at: '2026-10-07T21:18:05Z',
+  };
+  delete s.rules_sha;
+  return s;
+};
 
 // The cross-field rules live in check.cjs because JSON Schema cannot express equality between
 // siblings. Re-implemented here as the same logic so the test exercises the CONTRACT: if you change
@@ -48,7 +63,7 @@ function crossFieldCoherence(state) {
 // ── 1. app_only without app_release -> FAIL ───────────────────────────────────────────────────
 
 test('T572-1 release_mode app_only without app_release is rejected by the schema', () => {
-  const s = clone();
+  const s = appOnly();
   delete s.app_release;
   assert.throws(() => schemaValidates(s), /missing app_release/);
 });
@@ -58,31 +73,32 @@ test('T572-1b a rules_only state may omit app_release, and may also keep it', ()
   const withoutBlock = clone({ release_mode: 'rules_only' });
   delete withoutBlock.app_release;
   assert.ok(schemaValidates(withoutBlock), 'rules_only sin app_release es valido');
-  assert.ok(schemaValidates(clone({ release_mode: 'rules_only' })), 'rules_only con app_release historico tambien');
+  const historical = appOnly(); historical.release_mode = 'rules_only';
+  assert.ok(schemaValidates(historical), 'rules_only con app_release historico tambien');
 });
 
 // ── 2-5. the four equalities ──────────────────────────────────────────────────────────────────
 
 test('T572-2 app_release.runtime_sha mismatch -> FAIL', () => {
-  const s = clone();
+  const s = appOnly();
   s.app_release.runtime_sha = 'a'.repeat(40);
   assert.throws(() => crossFieldCoherence(s), /runtime_sha/);
 });
 
 test('T572-3 app_release.deployment mismatch -> FAIL', () => {
-  const s = clone();
+  const s = appOnly();
   s.app_release.deployment = 'dpl_other';
   assert.throws(() => crossFieldCoherence(s), /production_deployment/);
 });
 
 test('T572-4 previous deployment mismatch -> FAIL', () => {
-  const s = clone();
+  const s = appOnly();
   s.app_release.previous_deployment = 'dpl_other';
   assert.throws(() => crossFieldCoherence(s), /rollback_deployment/);
 });
 
 test('T572-5 previous runtime mismatch -> FAIL', () => {
-  const s = clone();
+  const s = appOnly();
   s.app_release.previous_runtime_sha = 'b'.repeat(40);
   assert.throws(() => crossFieldCoherence(s), /rollback_runtime_sha/);
 });
@@ -91,7 +107,7 @@ test('T572-5 previous runtime mismatch -> FAIL', () => {
 
 test('T572-6 invalid source_release_run -> FAIL', () => {
   for (const bad of ['run-123', '123abc', '', ' ', '12.3']) {
-    const s = clone();
+    const s = appOnly();
     s.app_release.source_release_run = bad;
     assert.throws(() => schemaValidates(s), /source_release_run|pattern/i, 'rechaza ' + JSON.stringify(bad));
   }
@@ -99,20 +115,20 @@ test('T572-6 invalid source_release_run -> FAIL', () => {
 
 test('T572-7 verified_surfaces <= 0 -> FAIL', () => {
   for (const bad of [0, -1]) {
-    const s = clone();
+    const s = appOnly();
     s.app_release.verified_surfaces = bad;
     // asserted on the message the validator actually produces for `minimum`
     assert.throws(() => schemaValidates(s), /minimum|expected|actual|Input/i, 'rechaza ' + bad);
   }
   // and a non-integer is rejected by the coherence check
-  const frac = clone();
+  const frac = appOnly();
   frac.app_release.verified_surfaces = 2.5;
   assert.throws(() => crossFieldCoherence(frac), /positive integer/);
 });
 
 test('T572-8 malformed completed_at -> FAIL', () => {
   for (const bad of ['2026-13-45T99:99:99Z', 'not a date', '2026-10-07', '2026-10-07 21:18:05', '']) {
-    const s = clone();
+    const s = appOnly();
     s.app_release.completed_at = bad;
     assert.throws(() => crossFieldCoherence(s), /ISO-8601|real instant|Input/i, 'rechaza ' + JSON.stringify(bad));
   }
@@ -120,7 +136,7 @@ test('T572-8 malformed completed_at -> FAIL', () => {
 
 test('T572-8b a real ISO instant passes, with and without milliseconds', () => {
   for (const ok of ['2026-10-07T21:18:05Z', '2026-10-07T21:18:05.441Z']) {
-    const s = clone();
+    const s = appOnly();
     s.app_release.completed_at = ok;
     assert.ok(crossFieldCoherence(s), 'acepta ' + ok);
   }
@@ -131,12 +147,14 @@ test('T572-8b a real ISO instant passes, with and without milliseconds', () => {
 test('T572-9 the reviewed state passes the whole hardened contract', () => {
   assert.ok(schemaValidates(STATE));
   assert.ok(crossFieldCoherence(STATE));
-  assert.equal(STATE.release_mode, 'app_only');
-  assert.ok(STATE.app_release, 'el estado debe traer el bloque app_release');
-  // and it describes the release that actually happened
-  assert.equal(STATE.app_release.runtime_sha, 'b5f53af5843f466528a4b95e5a3e52d6c8c77fb1');
-  assert.equal(STATE.app_release.deployment, 'dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw');
-  assert.equal(STATE.app_release.source_release_run, '40055779147');
+  assert.equal(STATE.release_mode, 'rules_only');
+  assert.match(STATE.rules_sha, /^[0-9a-f]{40}$/);
+  const historical = appOnly();
+  assert.ok(schemaValidates(historical));
+  assert.ok(crossFieldCoherence(historical));
+  assert.equal(historical.app_release.runtime_sha, 'b5f53af5843f466528a4b95e5a3e52d6c8c77fb1');
+  assert.equal(historical.app_release.deployment, 'dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw');
+  assert.equal(historical.app_release.source_release_run, '40055779147');
 });
 
 // ── 10-11. the mode gates ─────────────────────────────────────────────────────────────────────
@@ -191,20 +209,18 @@ test('T572-12 the app lane remains unable to mutate Firestore rules', () => {
 // ── 13. rules_transition historical semantics ────────────────────────────────────────────────
 
 test('T572-13 under app_only, rules_transition rollback fields are HISTORICAL and must not be rewritten', () => {
-  // The rules release captured bb4402e9... as ITS rollback baseline. An app release never touches
-  // rules, so silently moving these to the live hash would destroy the evidence of what that release
-  // would have restored. The live target hash is a property of the deployed baseline, so it IS
-  // re-verified.
-  assert.equal(STATE.release_mode, 'app_only');
-  assert.equal(STATE.rules_transition.rollback_sha256, 'bb4402e9b99d2d78c1f2867fa09bd75b89f9a88046189edfb0302b0635635f0b');
-  assert.notEqual(STATE.rules_transition.rollback_sha256, STATE.rules_transition.target_sha256,
-    'el rollback historico no debe confundirse con el target vivo');
-  assert.equal(STATE.rules_transition.target_sha256, 'ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6');
-  // the captured artifact must still exist and hash to that historical value
-  const p = path.join(__dirname, '..', STATE.rules_transition.rollback_source_path);
+  const historical = appOnly();
+  assert.equal(historical.release_mode, 'app_only');
+  assert.equal(historical.rules_transition.rollback_sha256, 'ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6');
+  assert.notEqual(historical.rules_transition.rollback_sha256, historical.rules_transition.target_sha256,
+    'el rollback no debe confundirse con el target candidato');
+  assert.equal(historical.rules_transition.target_sha256, 'fe1517306bebd4bd529adfc51a406c5e97cac6b2dfd7fcae61c87318dd2e21e0');
+  const p = path.join(__dirname, '..', historical.rules_transition.rollback_source_path);
   assert.ok(fs.existsSync(p), 'el artefacto de rollback historico debe seguir existiendo');
   const crypto = require('node:crypto');
-  assert.equal(crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex'), STATE.rules_transition.rollback_sha256);
+  assert.equal(crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex'), historical.rules_transition.rollback_sha256);
+  assert.equal(STATE.release_mode, 'rules_only');
+  assert.match(STATE.rules_sha, /^[0-9a-f]{40}$/);
 });
 
 test('T572-13b the architecture doc records the mode contract and the historical semantics', () => {

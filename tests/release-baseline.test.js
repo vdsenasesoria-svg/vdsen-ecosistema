@@ -92,10 +92,9 @@ test('environment identifiers must match pinned projects, identity provider and 
 test('current production is distinct from rollback and advance never promotes a preview', () => {
   assert.equal(state.production_deployment, 'dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw');
   assert.notEqual(state.production_deployment, state.rollback_deployment);
-  // After the first app release the state describes an APP release, so the mode is app_only. This
-  // does NOT relax the rules lane: the assertions below still prove live.cjs cannot deploy,
-  // promote or switch the app, and that rules provenance still fails closed.
-  assert.equal(state.release_mode, 'app_only');
+  // This reviewed package is rules_only. It still cannot deploy, promote or
+  // switch the app, and rules provenance remains fail-closed.
+  assert.equal(state.release_mode, 'rules_only');
   const source = fs.readFileSync('scripts/release/live.cjs', 'utf8');
   const body = source.slice(source.indexOf('async function apply()'), source.indexOf('async function rollback()'));
   assert.ok(!body.includes('switchApp('));
@@ -112,8 +111,9 @@ test('rollback rules provenance is decoupled from the app rollback runtime and f
   const snap = (over = {}, pkg = PACKAGE_SHA) => ({ package_sha: pkg, state, old_rules: { sha256: hash(content), source: { files: [{ content }] } }, ...over });
   // 1. correct rollback reference at snapshot.package_sha -> PASS
   rollbackRulesProvenance(snap());
-  // 2. the live rollback rules are NOT the app rollback runtime's committed rules (the original defect)
-  assert.notEqual(rules.rollback_sha256, hash(git('show', state.rollback_runtime_sha + ':firestore.rules')));
+  // 2. The content-addressed rollback source is independent of the app runtime.
+  // Equality is allowed when the served runtime happens to carry those same Rules.
+  assert.notEqual(rules.rollback_sha256, rules.target_sha256);
   // 3. the app rollback pair stays pinned and independently verifiable. It is now the deployment
   // that was serving production before the first app release, which is what a recovery would
   // actually restore.
@@ -121,7 +121,7 @@ test('rollback rules provenance is decoupled from the app rollback runtime and f
   assert.equal(state.rollback_runtime_sha, 'c161fdbf291316bc960120f996a702e2e8696963');
   // 4. tampered captured live source -> FAIL
   assert.throws(() => rollbackRulesProvenance({ package_sha: PACKAGE_SHA, state, old_rules: { sha256: hash(content), source: { files: [{ content: content + '\n// tampered' }] } } }), /own hash/);
-  const other = git('show', state.runtime_sha + ':firestore.rules');
+  const other = git('show', state.rules_sha + ':firestore.rules');
   assert.throws(() => rollbackRulesProvenance({ package_sha: PACKAGE_SHA, state, old_rules: { sha256: hash(other), source: { files: [{ content: other }] } } }), /reviewed rollback rules reference/);
   // 5. wrong rollback_sha256 -> FAIL
   const wrongHash = clone(state); wrongHash.rules_transition.rollback_sha256 = '0'.repeat(64);

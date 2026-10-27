@@ -85,20 +85,87 @@ test('release state rejects numeric activation, missing gates and unknown projec
   }
   assert.throws(() => validate({}, { unknownKeyword: true }));
 });
-test('rules_only requires the current reviewed Rules package and never repoints the served runtime', () => {
+test('rules_only requires an immutable reviewed Rules ancestor and never repoints the served runtime', () => {
   const before = process.env.GITHUB_REF;
   try {
     const rulesOnly = { ...clone(state), release_mode: 'rules_only', rules_sha: git('rev-parse', 'HEAD').trim() };
     assert.equal(resolveRulesSha(rulesOnly, state.runtime_sha), rulesOnly.rules_sha);
     delete rulesOnly.rules_sha;
     assert.throws(() => resolveRulesSha(rulesOnly, state.runtime_sha), /rules_only requires a reviewed rules_sha/);
-    rulesOnly.rules_sha = state.runtime_sha;
-    assert.throws(() => resolveRulesSha(rulesOnly, state.runtime_sha), /current reviewed release package/);
-    const appOnly = { ...clone(state), rules_sha: state.runtime_sha };
+    const appOnly = { ...clone(state), release_mode: 'app_only', rules_sha: state.runtime_sha };
     assert.throws(() => resolveRulesSha(appOnly, state.runtime_sha), /only valid for rules_only/);
-    assert.equal(resolveRulesSha(state, state.runtime_sha), state.runtime_sha);
+    const validAppOnly = { ...clone(state), release_mode: 'app_only' };
+    delete validAppOnly.rules_sha;
+    assert.equal(resolveRulesSha(validAppOnly, state.runtime_sha), state.runtime_sha);
   } finally {
     if (before === undefined) delete process.env.GITHUB_REF; else process.env.GITHUB_REF = before;
+  }
+});
+test('a committed rules_only package can bind its prior committed Rules source without self-referential SHA', () => {
+  const parent = fs.realpathSync(os.tmpdir());
+  const temp = fs.mkdtempSync(path.join(parent, 'vdsen-rules-committed-'));
+  fs.rmdirSync(temp);
+  const cloned = spawnSync('git', ['clone', '--quiet', '--no-hardlinks', process.cwd(), temp], { encoding: 'utf8' });
+  assert.equal(cloned.status, 0, cloned.stderr);
+  try {
+    const run = args => spawnSync('git', args, { cwd: temp, encoding: 'utf8' });
+    // Execute the gate under test even when this suite is run from an
+    // uncommitted worktree; all reviewed package data still comes from Git.
+    fs.copyFileSync(path.join(process.cwd(), 'scripts', 'release', 'check.cjs'), path.join(temp, 'scripts', 'release', 'check.cjs'));
+    assert.equal(run(['config', 'user.email', 'rules-test@example.invalid']).status, 0);
+    assert.equal(run(['config', 'user.name', 'Rules Test']).status, 0);
+    const canonicalBase = run(['rev-parse', 'HEAD']).stdout.trim();
+    assert.equal(run(['update-ref', 'refs/remotes/origin/codex/client-app-next', canonicalBase]).status, 0);
+    // Reset the cloned candidate to the served runtime Rules, then commit the
+    // exact candidate source first. This remains a two-commit package even
+    // when the suite itself is run from a rules_only worktree.
+    const servedState = json(path.join(temp, '.release', 'vdsen-client.json'));
+    const servedRules = run(['show', servedState.runtime_sha + ':firestore.rules']);
+    assert.equal(servedRules.status, 0, servedRules.stderr);
+    fs.writeFileSync(path.join(temp, 'firestore.rules'), servedRules.stdout);
+    const candidateRules = fs.readFileSync(path.join(temp, 'firestore.t603.rules'));
+    const sourceRules = Buffer.concat([candidateRules, Buffer.from('\n// rules_only fixture source\n')]);
+    fs.writeFileSync(path.join(temp, 'firestore.rules'), sourceRules);
+    // The state commit then names that immutable source, as a merge commit
+    // would preserve it as an ancestor.
+    const stagedSource = run(['add', 'firestore.rules']);
+    assert.equal(stagedSource.status, 0, stagedSource.stderr);
+    const committedSource = run(['commit', '--quiet', '-m', 'test: staged rules source']);
+    assert.equal(committedSource.status, 0, committedSource.stderr || committedSource.stdout);
+    const rulesSha = run(['rev-parse', 'HEAD']).stdout.trim();
+    const reviewed = json(path.join(temp, '.release', 'vdsen-client.json'));
+    reviewed.release_mode = 'rules_only'; reviewed.rules_sha = rulesSha;
+    reviewed.rules_transition.target_sha256 = hash(fs.readFileSync(path.join(temp, 'firestore.rules')));
+    fs.writeFileSync(path.join(temp, '.release', 'vdsen-client.json'), JSON.stringify(reviewed, null, 2) + '\n');
+    assert.equal(run(['add', '.release/vdsen-client.json']).status, 0);
+    assert.equal(run(['commit', '--quiet', '-m', 'test: bind rules package']).status, 0);
+    const packageSha = run(['rev-parse', 'HEAD']).stdout.trim();
+    assert.notEqual(rulesSha, packageSha, 'the state cannot self-reference its own commit SHA');
+    const canonical = run(['rev-parse', 'refs/remotes/origin/codex/client-app-next']).stdout.trim();
+    assert.notEqual(run(['merge-base', '--is-ancestor', rulesSha, canonical]).status, 0,
+      'fixture must model a PR source not yet merged into the canonical ref');
+    const checked = spawnSync(process.execPath, ['scripts/release/check.cjs'], {
+      cwd: temp,
+      env: { ...process.env, GITHUB_REF: 'refs/heads/codex/client-app-next', GITHUB_EVENT_NAME: 'pull_request', RUNTIME_SHA: reviewed.runtime_sha },
+      encoding: 'utf8'
+    });
+    assert.equal(checked.status, 0, checked.stderr || checked.stdout);
+    // A syntactically valid but unrelated commit is still rejected before its
+    // contents can be used as a Rules source.
+    const unrelated = run(['commit-tree', packageSha + '^{tree}', '-m', 'test: unrelated rules source']).stdout.trim();
+    reviewed.rules_sha = unrelated;
+    fs.writeFileSync(path.join(temp, '.release', 'vdsen-client.json'), JSON.stringify(reviewed, null, 2) + '\n');
+    assert.equal(run(['add', '.release/vdsen-client.json']).status, 0);
+    assert.equal(run(['commit', '--quiet', '-m', 'test: reject unrelated rules source']).status, 0);
+    const rejected = spawnSync(process.execPath, ['scripts/release/check.cjs'], {
+      cwd: temp,
+      env: { ...process.env, GITHUB_REF: 'refs/heads/codex/client-app-next', GITHUB_EVENT_NAME: 'pull_request', RUNTIME_SHA: reviewed.runtime_sha },
+      encoding: 'utf8'
+    });
+    assert.notEqual(rejected.status, 0);
+    assert.match(rejected.stderr + rejected.stdout, /immutable ancestor/);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
   }
 });
 test('rules_only check accepts a separately pinned Rules package and rejects its wrong target hash', () => {
@@ -157,7 +224,7 @@ test('release state requires the decoupled RULES rollback provenance fields and 
     assert.throws(() => validate(bad, schema), undefined, 'malformed rollback_source_path must be rejected: ' + value);
   }
   assert.equal(state.rules_transition.rollback_source_path, '.release/rollback/firestore.rules.' + state.rules_transition.rollback_sha256 + '.rules');
-  assert.notEqual(state.rules_transition.rollback_sha256, hash(git('show', state.rollback_runtime_sha + ':firestore.rules')));
+  assert.notEqual(state.rules_transition.rollback_sha256, state.rules_transition.target_sha256);
 });
 test('index identity is ordered, scope-specific and independent of JSON key order', () => {
   const live = clone(state.required_index);
@@ -341,10 +408,9 @@ test('release apply path is rules_only: pinned immutable provenance, no deploy/p
   assert.ok(apply.includes('restoreApp: false'));
   assert.ok(apply.includes("git('show', s.rules_sha + ':firestore.rules')") && apply.includes('s.rules_transition.target_sha256'));
   assert.ok(!/main:firestore|origin\/main:|HEAD:firestore\.rules|\blatest\b/i.test(src));
-  // The state now records an APP release, so the mode is app_only. The assertions above still prove
-  // live.cjs (the RULES lane) cannot deploy, promote switch the app or read main, so this does not
-  // relax anything: it only stops the test from pinning a stale snapshot.
-  assert.equal(state.release_mode, 'app_only'); assert.equal(state.numeric_apply_enabled, false);
+  // The reviewed package is explicitly rules_only; the assertions above prove
+  // its lane cannot deploy or promote the app, or read Rules from main.
+  assert.equal(state.release_mode, 'rules_only'); assert.equal(state.numeric_apply_enabled, false);
   // Rollback order and pinned identities.
   const rec = src.slice(src.indexOf('async function recover'), src.indexOf('async function apply()'));
   assert.ok(rec.indexOf('restoreRules(') < rec.indexOf('switchApp('));

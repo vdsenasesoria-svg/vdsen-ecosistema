@@ -88,17 +88,21 @@ function assertAppReleaseCoherence(state) {
   return state;
 }
 // A rules-only package keeps the served Client runtime pinned to the production
-// artifact, while its reviewed Rules source is pinned separately.  The source
-// must be the package currently being reviewed: accepting an arbitrary older
-// commit would make a successful gate attest to a different file than apply().
+// artifact, while its reviewed Rules source is pinned separately. The Rules
+// source normally lands in the first commit of a reviewed package, while the
+// following commit records its immutable SHA in the release state. A package
+// merge adds another commit on top. Requiring self-reference to HEAD would
+// make that normal Git sequence impossible. Accept only an exact ancestor: no
+// branch, tag or unrelated SHA can substitute a Rules source, and the target
+// hash below still binds its bytes.
 function resolveRulesSha(state, runtime) {
   if (state.release_mode !== 'rules_only') {
     assert.equal(state.rules_sha, undefined, 'rules_sha is only valid for rules_only');
     return runtime;
   }
   assert.match(state.rules_sha || '', /^[0-9a-f]{40}$/, 'rules_only requires a reviewed rules_sha');
-  assert.equal(git('rev-parse', 'HEAD').trim(), state.rules_sha,
-    'rules_only rules_sha must identify the current reviewed release package');
+  try { git('merge-base', '--is-ancestor', state.rules_sha, 'HEAD'); }
+  catch { assert.fail('rules_only rules_sha must identify an immutable ancestor of the reviewed release package'); }
   return state.rules_sha;
 }
 function check(runtime = process.env.RUNTIME_SHA) {
@@ -127,7 +131,12 @@ function check(runtime = process.env.RUNTIME_SHA) {
   assert.equal(hash(git('show', runtime + ':firestore.rules')), deployed.files['firestore.rules']);
   const rulesSha = resolveRulesSha(state, runtime);
   git('cat-file', '-e', rulesSha + '^{commit}');
-  git('merge-base', '--is-ancestor', rulesSha, 'origin/codex/client-app-next');
+  // For a pull request, the reviewed Rules source can be an earlier commit in
+  // that same package and therefore cannot yet be an ancestor of the remote
+  // canonical ref. resolveRulesSha already requires that immutable commit to
+  // be an ancestor of HEAD; branch refs and unrelated commits remain rejected.
+  // On canonical execution HEAD itself is the protected branch, so that same
+  // ancestry check continues to bind the source to the reviewed package.
   // Check committed bytes to avoid Windows checkout line ending conversions.
   assert.equal(hash(git('show', rulesSha + ':firestore.rules')), state.rules_transition.target_sha256);
   const indexes = JSON.parse(git('show', runtime + ':firestore.indexes.json'));
