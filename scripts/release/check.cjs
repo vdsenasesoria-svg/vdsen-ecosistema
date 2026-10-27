@@ -87,6 +87,23 @@ function assertAppReleaseCoherence(state) {
     'app_release.completed_at must survive a round trip');
   return state;
 }
+// T641: the Rules EFFECTIVELY PUBLISHED are a different fact from the Rules bundled with the pinned runtime. In app_only mode `rules_transition.target_sha256` must equal the hash
+// of firestore.rules AT the pinned runtime (that is what the deployed-product manifest proves), so after a Rules release the state could not say "FE151 is live" without making
+// the bundled-runtime hash look like the live one. `published_rules` states it separately, bound to the Rules release run that proved it and to the reviewed commit whose
+// bytes it hashes. It is never inferred: absent means no Rules release run is recorded. A rules_only package is by definition NOT published yet, so it cannot carry the record.
+function assertPublishedRulesCoherence(state) {
+  const p = state.published_rules;
+  if (p === undefined) return state;
+  assert.equal(state.release_mode, 'app_only', 'published_rules is only valid for app_only (a rules_only package is not published yet)');
+  assert.match(p.completed_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/, 'published_rules.completed_at must be an ISO-8601 UTC timestamp');
+  assert.ok(!Number.isNaN(Date.parse(p.completed_at)) && new Date(p.completed_at).toISOString().replace(/\.\d+Z$/, 'Z') === p.completed_at.replace(/\.\d+Z$/, 'Z'), 'published_rules.completed_at must be a real instant');
+  git('cat-file', '-e', p.rules_sha + '^{commit}');
+  try { git('merge-base', '--is-ancestor', p.rules_sha, 'HEAD'); }
+  catch { assert.fail('published_rules.rules_sha must identify an immutable ancestor of the reviewed package'); }
+  // Check committed bytes to avoid Windows checkout line ending conversions.
+  assert.equal(hash(git('show', p.rules_sha + ':firestore.rules')), p.sha256, 'published_rules.sha256 must be the hash of firestore.rules at published_rules.rules_sha');
+  return state;
+}
 // A rules-only package keeps the served Client runtime pinned to the production
 // artifact, while its reviewed Rules source is pinned separately. The Rules
 // source normally lands in the first commit of a reviewed package, while the
@@ -108,6 +125,7 @@ function resolveRulesSha(state, runtime) {
 function check(runtime = process.env.RUNTIME_SHA) {
   const state = validate(json('.release/vdsen-client.json'), json('.release/schema/release-state.schema.json'));
   assertAppReleaseCoherence(state);
+  assertPublishedRulesCoherence(state);
   validateBaseline(json('.release/known-baseline-failures.json'));
   workflowContract();
   runtime = resolveRuntime(runtime, state);
@@ -162,4 +180,4 @@ function resolveRuntime(requested, state) {
   return runtime;
 }
 if (require.main === module) { try { check(); } catch (e) { console.error(e.message); process.exitCode = 1; } }
-module.exports = { check, workflowContract, resolveRuntime, resolveRulesSha };
+module.exports = { check, workflowContract, resolveRuntime, resolveRulesSha, assertAppReleaseCoherence, assertPublishedRulesCoherence };

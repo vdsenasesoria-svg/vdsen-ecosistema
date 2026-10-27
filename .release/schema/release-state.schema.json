@@ -161,7 +161,10 @@
       "type": "string"
     },
     "release_mode": {
-      "enum": ["rules_only", "app_only"]
+      "enum": [
+        "rules_only",
+        "app_only"
+      ]
     },
     "app_release": {
       "type": "object",
@@ -197,6 +200,34 @@
         "verified_surfaces": {
           "type": "number",
           "minimum": 1
+        },
+        "source_release_run": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "completed_at": {
+          "type": "string"
+        }
+      }
+    },
+    "published_rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Firestore Rules EFFECTIVELY PUBLISHED to production by a recorded Rules release run. Distinct from rules_transition.target_sha256, which in app_only mode is the hash of the Rules bundled with the pinned runtime. Absent = no Rules release run is recorded.",
+      "required": [
+        "sha256",
+        "rules_sha",
+        "source_release_run",
+        "completed_at"
+      ],
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "rules_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
         },
         "source_release_run": {
           "type": "string",
