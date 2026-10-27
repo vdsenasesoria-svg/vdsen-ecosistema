@@ -60,10 +60,12 @@ function assertReleaseMode(state, required, lane) {
 // Deployments created by the Vercel CLI (staged production releases) carry no Git metadata: Vercel reports only githubCommitSha. Such a deployment is accepted ONLY by exact
 // identity - its own id equals the id the reviewed state pins for that SHA, same project, READY, same SHA. Any Git metadata present (even partial) forces the full Git validation below.
 function expectedDeploymentId(state, sha) {
-  const ids = new Set();
-  if (sha === state.runtime_sha) ids.add(state.production_deployment);
-  if (sha === state.rollback_runtime_sha) ids.add(state.rollback_deployment);
-  return ids.size === 1 ? [...ids][0] : undefined;
+  // Exactly ONE reviewed role (production xor rollback) may own the SHA, and the two roles must be pinned to different deployments; otherwise there is no unambiguous identity.
+  const roles = [];
+  if (sha === state.runtime_sha) roles.push(state.production_deployment);
+  if (sha === state.rollback_runtime_sha) roles.push(state.rollback_deployment);
+  if (roles.length !== 1 || state.production_deployment === state.rollback_deployment) return undefined;
+  return roles[0];
 }
 function verifyDeployment(d, state, sha, ref) {
   assert.equal(d.projectId, state.production_project);
