@@ -19,6 +19,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 
 const app = require('../scripts/release/app-live.cjs');
+const NG = require('../scripts/release/numeric-guard.cjs');
+// T641: apply() takes a fresh Numeric-Apply-OFF proof right before promoting; these tests drive the recovery logic, so the proof is a valid, fresh, unchanged one.
+const proof = () => NG.evaluateProductionEnv([], { project: 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN', team: 'team_VZc5H7Q1DBIJ3g0mwrSBz1o8', runtimeSha: '8365410cf7f09427c79ead77aa4f769c16e9a803' });
 
 const PREVIOUS = 'dpl_FngrtpodSKHZ9aPk75aA5SS7JGnB';
 const CANDIDATE = 'dpl_9rCu3FswEnseDvcgpf6FbrjzuJJS';
@@ -124,13 +127,14 @@ async function runApply(t, { promoteThrows, aliasSequence }) {
 
   fs.writeFileSync(path.join(out, 'app-preflight.json'), JSON.stringify({
     runtime_sha: RUNTIME, candidate: CANDIDATE, production_deployment: PREVIOUS,
-    rollback_artifact: 'app-rollback-test.json',
+    rollback_artifact: 'app-rollback-test.json', numeric_guard: proof(),
   }));
   fs.writeFileSync(path.join(out, 'app-rollback-test.json'), JSON.stringify(artifact()));
 
   let call = 0;
   const steps = {
     promote: async () => { if (promoteThrows) throw new Error(promoteThrows); },
+    numericGuard: async () => proof(),
     currentApp: async () => aliasSequence[Math.min(call++, aliasSequence.length - 1)],
     deployment: async (s, id) => ({ id, uid: id, readyState: 'READY', target: null, projectId: 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN', meta: { githubCommitSha: RUNTIME } }),
     verifyPublicBytes: async () => [{ path: 'vdsen-cliente.html', ok: true }],
@@ -171,7 +175,7 @@ test('T570-11 apply(): promotion succeeds but verification fails => rollback req
   app.setOut(out);
   t.after(() => { app.setOut(prevOut); fs.rmSync(out, { recursive: true, force: true }); });
   fs.writeFileSync(path.join(out, 'app-preflight.json'), JSON.stringify({
-    runtime_sha: RUNTIME, candidate: CANDIDATE, production_deployment: PREVIOUS, rollback_artifact: 'app-rollback-test.json',
+    runtime_sha: RUNTIME, candidate: CANDIDATE, production_deployment: PREVIOUS, rollback_artifact: 'app-rollback-test.json', numeric_guard: proof(),
   }));
   fs.writeFileSync(path.join(out, 'app-rollback-test.json'), JSON.stringify(artifact()));
   const prevSha = process.env.APP_RUNTIME_SHA;
@@ -179,6 +183,7 @@ test('T570-11 apply(): promotion succeeds but verification fails => rollback req
   t.after(() => { if (prevSha === undefined) delete process.env.APP_RUNTIME_SHA; else process.env.APP_RUNTIME_SHA = prevSha; });
 
   await assert.rejects(() => app.apply({
+    numericGuard: async () => proof(),
     promote: async () => {},
     currentApp: async () => CANDIDATE,
     deployment: async (s, id) => ({ id, uid: id, readyState: 'READY', target: null, projectId: 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN', meta: { githubCommitSha: RUNTIME } }),
