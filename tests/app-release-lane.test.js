@@ -9,6 +9,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const app = require('../scripts/release/app-live.cjs');
+const NG = require('../scripts/release/numeric-guard.cjs');
 
 const RUNTIME = 'c3e78380d3a076e643a1957203c093260851210e';
 const PROD_DEPLOYMENT = 'dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw';
@@ -146,7 +147,7 @@ test('A12-12 failed post-promotion verification triggers APP rollback', async ()
   try {
     app.setOut(tmp);
     process.env.APP_RUNTIME_SHA = RUNTIME;
-    fs.writeFileSync(path.join(tmp, 'app-preflight.json'), JSON.stringify({ runtime_sha: RUNTIME, rollback_artifact: 'app-rollback-test.json' }));
+    fs.writeFileSync(path.join(tmp, 'app-preflight.json'), JSON.stringify({ runtime_sha: RUNTIME, rollback_artifact: 'app-rollback-test.json', numeric_guard: NG.evaluateProductionEnv([], { project: PROJECT, team: TEAM, runtimeSha: RUNTIME }) }));   // T641: apply() requires the numeric-off proof
     fs.writeFileSync(path.join(tmp, 'app-rollback-test.json'), JSON.stringify({
       candidate_sha: RUNTIME, candidate_deployment: 'dpl_candidate000000000000000001',
       production_deployment: PROD_DEPLOYMENT, production_runtime_sha: PROD_RUNTIME,
@@ -154,6 +155,7 @@ test('A12-12 failed post-promotion verification triggers APP rollback', async ()
     }));
     const steps = {
       promote: async () => 'ok',
+      numericGuard: async () => NG.evaluateProductionEnv([], { project: PROJECT, team: TEAM, runtimeSha: RUNTIME }),   // fresh proof taken right before promotion
       currentApp: async () => 'dpl_new0000000000000000000001',
       deployment: async () => ({ readyState: 'READY', projectId: PROJECT, teamId: TEAM, meta: { githubCommitSha: RUNTIME } }),
       servedSurface: () => ['vdsen-cliente.html'],

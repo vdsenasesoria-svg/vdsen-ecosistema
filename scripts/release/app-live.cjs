@@ -28,6 +28,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const assert = require('node:assert/strict');
 const { hash, json, git, gitBinary, assertReleaseMode } = require('./lib.cjs');
 const deployedProduct = require('./deployed-product.cjs');
+const numericGuard = require('./numeric-guard.cjs');
 
 const STATE = '.release/vdsen-client.json';
 // Configurable so tests can exercise the full flow against a temp directory.
@@ -126,6 +127,12 @@ const vercel = (s, p, method, body, acceptStatus) => {
   if (process.env.APP_TRACE_READS === 'true') console.log('VERCEL READ ' + redactUrl(url));
   return api(url, process.env.VERCEL_TOKEN, method, body, acceptStatus);
 };
+
+// T641: proof that Numeric Apply is OFF in the Vercel PRODUCTION environment the deployment is built from (see numeric-guard.cjs). GET only; fail closed; no override.
+// `vercelGet` goes through the same wrapper as every other read of this lane (same credential, same retry policy, never a response body in an error).
+function numericGuardEvidence(s, runtime) {
+  return numericGuard.collectEvidence(s, runtime, { git, vercelGet: (p) => vercel(s, p) });
+}
 
 // ── contract checks (pure: every one takes its data as an argument, so tests need no network)
 
@@ -478,6 +485,13 @@ async function stageProduction() {
   const outDir = path.resolve(process.env.APP_STAGE_DIR || path.join(os.tmpdir(), 'vdsen-staged-' + runtime.slice(0, 12)));
   const surface = servedSurface();
 
+  // 0. T641 gate BEFORE anything is exported, built or created: Numeric Apply must be provably OFF in the production environment, and the evidence must be the one the
+  //    preflight captured (a change in between is a concurrent modification). A staged production deployment is built with the production variables, so refusing here
+  //    also avoids creating a deployment that could run with a numeric switch ON.
+  const pf = json(path.join(OUT, 'app-preflight.json'));
+  const evidenceBefore = await numericGuardEvidence(s, runtime);
+  numericGuard.assertPromotionAllowed({ preflight: pf.numeric_guard, fresh: evidenceBefore, expect: { project: s.production_project, team: s.vercel_team, runtimeSha: runtime } });
+
   // 1. exact tree
   exportCandidateTree(runtime, outDir);
   const verifiedPaths = verifyExportedTree(runtime, outDir, surface);
@@ -522,6 +536,9 @@ async function stageProduction() {
   const d0 = await vercel(s, '/v13/deployments/' + encodeURIComponent(stagedId));
   normalizeDeployment(d0);
   assertStaged(d0, { project: s.production_project, team: s.vercel_team, current: currentBefore });
+  // T641: bracket the staging: the variables must be unchanged AFTER the deployment was built, and the variable names Vercel reports for it must be explained by the evidence.
+  const evidenceAfter = numericGuard.attachDeploymentEnv(await numericGuardEvidence(s, runtime), d0);
+  numericGuard.assertPromotionAllowed({ preflight: pf.numeric_guard, staged: evidenceAfter, fresh: evidenceAfter, expect: { project: s.production_project, team: s.vercel_team, runtimeSha: runtime } });
 
   // 5. the public alias must NOT have moved
   const currentAfter = await currentApp(s);
@@ -541,6 +558,7 @@ async function stageProduction() {
     exported_tree: outDir,
     cli_version: VERCEL_CLI_VERSION,
     staged_at: new Date().toISOString(),
+    numeric_guard: evidenceAfter,
   };
   assert.ok(!/Bearer |VERCEL_TOKEN|private_key|BEGIN [A-Z ]*PRIVATE KEY/.test(JSON.stringify(report)), 'staged report must not contain secrets');
   save('app-staged.json', report);
@@ -696,16 +714,17 @@ async function readOnlyPreflight() {
   const envs = await productionEnv(s);
   const env = assertEnvironment(envs);
   const fb = assertFirebaseProject(envs, s.firebase_project);
+  const numeric = await numericGuardEvidence(s, runtime);   // T641: Numeric Apply must be PROVEN off before anything is built or promoted
 
   const current = await deployment(s, aliasDeploymentId);
   assert.equal(current.meta?.githubCommitSha, s.runtime_sha, 'Current production runtime does not match the recorded baseline');
 
-  return { s, runtime, candidate, aliasDeploymentId, mainSha, env, fb, current };
+  return { s, runtime, candidate, aliasDeploymentId, mainSha, env, fb, current, numeric };
 }
 
 async function preflight() {
   assertKillSwitch();
-  const { s, runtime, candidate, aliasDeploymentId, mainSha, env, fb, current } = await readOnlyPreflight();
+  const { s, runtime, candidate, aliasDeploymentId, mainSha, env, fb, current, numeric } = await readOnlyPreflight();
 
   const artifact = assertRollbackArtifact(save('app-rollback-' + (process.env.GITHUB_RUN_ID || 'local') + '.json', {
     release_id: process.env.GITHUB_RUN_ID || 'local',
@@ -725,7 +744,7 @@ async function preflight() {
   const report = {
     runtime_sha: runtime, candidate: candidate.id, production_deployment: aliasDeploymentId,
     production_runtime_sha: current.meta.githubCommitSha, main_sha: mainSha,
-    env, firebase_project: fb, rollback_artifact: 'app-rollback-' + (process.env.GITHUB_RUN_ID || 'local') + '.json',
+    env, firebase_project: fb, numeric_guard: numeric, rollback_artifact: 'app-rollback-' + (process.env.GITHUB_RUN_ID || 'local') + '.json',
     app_only: 'NO_FIRESTORE_MUTATION_PATH',
   };
   save('app-preflight.json', report);
@@ -803,6 +822,11 @@ async function apply(steps = {}) {
   let staged = null;
   try { staged = json(path.join(OUT, 'app-staged.json')); } catch (e) { staged = null; }
   const targetDeployment = staged && staged.staged_deployment ? staged.staged_deployment : artifact.candidate_deployment;
+  // T641: last gate. Fresh evidence taken NOW must be DISARMED and identical to the evidence captured before and after staging, and none of it may be stale. There is no
+  // override: without a successful proof the promotion is not attempted (nothing is mutated, no result claims otherwise).
+  const guardFn = steps.numericGuard || numericGuardEvidence;
+  numericGuard.assertPromotionAllowed({ preflight: pre.numeric_guard, staged: staged ? staged.numeric_guard : null, fresh: await guardFn(s, runtime),
+    expect: { project: s.production_project, team: s.vercel_team, runtimeSha: runtime } });
   const result = { release_id: process.env.GITHUB_RUN_ID || 'local', runtime_sha: runtime, app_release_status: 'FAIL', production_deployment: null, previous_deployment: artifact.production_deployment, promotion_target: targetDeployment, promotion_model: staged ? 'staged_production' : 'preview_candidate', rules_mutated: false, main_unchanged: true, error: null, rollback_required: false };
   try {
     await promoteFn(s, targetDeployment);
@@ -916,6 +940,7 @@ function preflightSummary() {
     row('main', report.main_sha);
     row('Production variables present', report.env.present + '/' + REQUIRED_PROD_ENV.length + (report.env.missing.length ? ' MISSING: ' + report.env.missing.join(', ') : ''));
     row('FIREBASE_PROJECT_ID', report.firebase_project);
+    row('Numeric Apply proof (production env)', report.numeric_guard ? report.numeric_guard.status + ' [' + Object.entries(report.numeric_guard.flags).map(([k, v]) => k + ': ' + v).join('; ') + '] captured ' + report.numeric_guard.captured_at : 'MISSING');
     row('rollback artifact', report.rollback_artifact);
     row('firestore mutation path', report.app_only);
   } else {
@@ -941,6 +966,7 @@ async function main() {
     // and reported them healthy while the real path failed.
     const r = await readOnlyPreflight();
     console.log('READ-ONLY PREFLIGHT PASS: candidate ' + r.candidate.id + ' -> production ' + r.aliasDeploymentId);
+    console.log('NUMERIC APPLY PROOF: ' + r.numeric.status + ' (' + Object.entries(r.numeric.flags).map(([k, v]) => k + '=' + v).join(', ') + '; captured ' + r.numeric.captured_at + ')');
   } else if (cmd === 'stage') {
     // Creates EXACTLY ONE staged production deployment of the authorized candidate. This does NOT
     // move customer traffic: --skip-domain leaves the production alias on the previous deployment.
