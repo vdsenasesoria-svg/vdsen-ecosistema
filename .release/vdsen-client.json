@@ -10,11 +10,11 @@
   "firebase_project": "vdsen-ecosistema",
   "numeric_apply_enabled": false,
   "rules_transition": {
-    "target_sha256": "ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6",
+    "target_sha256": "fe1517306bebd4bd529adfc51a406c5e97cac6b2dfd7fcae61c87318dd2e21e0",
     "order": "verify_current_app_then_rules",
     "rollback_order": "rules_then_app",
-    "rollback_sha256": "bb4402e9b99d2d78c1f2867fa09bd75b89f9a88046189edfb0302b0635635f0b",
-    "rollback_source_path": ".release/rollback/firestore.rules.bb4402e9b99d2d78c1f2867fa09bd75b89f9a88046189edfb0302b0635635f0b.rules"
+    "rollback_sha256": "ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6",
+    "rollback_source_path": ".release/rollback/firestore.rules.ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6.rules"
   },
   "required_index": {
     "collectionGroup": "plans_backup",
@@ -34,23 +34,14 @@
       }
     ]
   },
-  "release_status": "READY",
+  "release_status": "PENDING_EXTERNAL_SETUP",
   "preconditions": {
     "entitlements_verified": true,
     "legacy_data_reviewed": true,
     "preview_production_env_verified": true,
     "human_ux_approved": true
   },
-  "observation_source": "T596-R Client app-only release, run 40055779147 attempt 2: SUCCESS/VERIFIED, staged_production, 25 verified surfaces; build issue-115-brave-rc-20261024-01 observed on production. CLIENT_APP_RELEASE_ENABLED restored to false. Physical Brave Android acceptance remains pending (#115); Numeric Apply remains OFF (#124).",
-  "release_mode": "app_only",
-  "app_release": {
-    "runtime_sha": "b5f53af5843f466528a4b95e5a3e52d6c8c77fb1",
-    "deployment": "dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw",
-    "promotion_model": "staged_production",
-    "previous_deployment": "dpl_GfBVe46gHe3GSwkGx8yufoJLMLeB",
-    "previous_runtime_sha": "c161fdbf291316bc960120f996a702e2e8696963",
-    "verified_surfaces": 25,
-    "source_release_run": "40055779147",
-    "completed_at": "2026-10-24T03:38:01Z"
-  }
+  "observation_source": "T632 local-only package: production Rules source read back consistently and held encrypted by owner; synthetic restoration verified. Not published, not deployed; canonical ancestry, current app/index checks, exact-package baseline gates and authorized production workflow remain required. Numeric Apply OFF.",
+  "release_mode": "rules_only",
+  "rules_sha": "ef91ac9072f40b2e2a1e73d77c424f9e21ccb27b"
 }
