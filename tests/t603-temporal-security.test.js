@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const { execFileSync } = require('node:child_process');
 const eff = require('../assets/progression-effective-prescription.js');
 const F = require('./helpers/lifecycle-fixture.js');
 
@@ -44,9 +45,14 @@ test('T603.7 firestore.rules: markers are create-only with at == request.time af
   assert.match(d, /request\.resource\.data\.at == request\.time/); assert.match(d, /ownsClient\(clientId\)/); assert.doesNotMatch(d, /allow (update|delete|write)/);
 });
 
-test('T603.8 the candidate rules are the DEPLOYED rules plus exactly the two additive blocks (firestore.rules is untouched; nothing else changes)', () => {
-  const base = fs.readFileSync('firestore.rules', 'utf8'), cand = fs.readFileSync('firestore.t603.rules', 'utf8');
+test('T603.8 the candidate Rules are the deployed runtime Rules plus exactly the two additive blocks', () => {
+  const state = JSON.parse(fs.readFileSync('.release/vdsen-client.json', 'utf8'));
+  const cand = fs.readFileSync('firestore.t603.rules', 'utf8');
+  const base = state.release_mode === 'rules_only'
+    ? execFileSync('git', ['show', state.runtime_sha + ':firestore.rules'], { encoding: 'utf8' })
+    : fs.readFileSync('firestore.rules', 'utf8');
   const stripped = cand.replace(/      \/\/ T603: COACH DECISION RECORD[^]*?\n      \}\n/, '').replace(/      \/\/ T603: EXPOSURE START MARKER[^]*?\n      \}\n/, '');
   assert.equal(stripped, base);
   assert.ok(cand.length > base.length);
+  if (state.release_mode === 'rules_only') assert.equal(fs.readFileSync('firestore.rules', 'utf8'), cand);
 });
