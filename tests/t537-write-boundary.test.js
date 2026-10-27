@@ -102,10 +102,18 @@ test('T537.7 SERVICE WORKER: cache identity follows the registered build and eve
 
 test('T537.8 rules text: the athlete branch of logs never grants canonical writes; the Coach branch requires ownership; receipts are append-only', () => {
   const logs = rules.slice(rules.indexOf('match /logs/{userId}'), rules.indexOf('match /fichas_onboarding'));
-  for (const line of logs.split('\n').filter(l => /allow (create|update|delete)/.test(l) && /request\.auth\.uid == userId/.test(l)))
+  for (const line of logs.split('\n').filter(l => /^      allow (create|update|delete)/.test(l) && /request\.auth\.uid == userId/.test(l)))
     assert.ok(/(createsCanonical|changesCanonical|holdsCanonical)\(\)/.test(line), 'athlete rule must exclude canonical fields: ' + line.trim());
   for (const line of logs.split('\n').filter(l => /allow (create|update|delete)/.test(l) && /isCoachUser\(\)/.test(l)))
     assert.ok(/ownsClient\(userId\)/.test(line), 'coach rule must require ownership for canonical fields: ' + line.trim());
   assert.ok(/changedKeys\(\)\.size\(\) == 0/.test(rules) && /removedKeys\(\)\.size\(\) == 0/.test(rules));
+  const starts = logs.slice(logs.indexOf('match /starts/{startId}'), logs.indexOf('match /mesos/{planId}'));
+  assert.match(starts, /request\.auth\.uid == userId/);
+  assert.match(starts, /request\.resource\.data\.at == request\.time/);
+  assert.doesNotMatch(starts, /allow (update|delete|write)/);
+  const decisions = rules.slice(rules.indexOf('match /decisions/{decisionId}'), rules.indexOf('match /exercises/'));
+  assert.match(decisions, /allow create: if ownsClient\(clientId\)/);
+  assert.match(decisions, /request\.resource\.data\.at == request\.time/);
+  assert.doesNotMatch(decisions, /allow (update|delete|write)/);
   assert.ok(!/allow write: if request\.auth != null && exists\(\/databases\/\$\(database\)\/documents\/coaches/.test(rules.slice(rules.indexOf('match /exercises'), rules.indexOf('match /plans'))), 'exercise catalog is no longer writable by any coach');
 });

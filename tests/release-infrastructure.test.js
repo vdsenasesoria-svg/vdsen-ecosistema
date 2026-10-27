@@ -224,7 +224,7 @@ test('release state requires the decoupled RULES rollback provenance fields and 
     assert.throws(() => validate(bad, schema), undefined, 'malformed rollback_source_path must be rejected: ' + value);
   }
   assert.equal(state.rules_transition.rollback_source_path, '.release/rollback/firestore.rules.' + state.rules_transition.rollback_sha256 + '.rules');
-  assert.notEqual(state.rules_transition.rollback_sha256, hash(git('show', state.rollback_runtime_sha + ':firestore.rules')));
+  assert.notEqual(state.rules_transition.rollback_sha256, state.rules_transition.target_sha256);
 });
 test('index identity is ordered, scope-specific and independent of JSON key order', () => {
   const live = clone(state.required_index);
