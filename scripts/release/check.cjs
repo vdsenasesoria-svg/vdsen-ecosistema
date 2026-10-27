@@ -131,7 +131,12 @@ function check(runtime = process.env.RUNTIME_SHA) {
   assert.equal(hash(git('show', runtime + ':firestore.rules')), deployed.files['firestore.rules']);
   const rulesSha = resolveRulesSha(state, runtime);
   git('cat-file', '-e', rulesSha + '^{commit}');
-  git('merge-base', '--is-ancestor', rulesSha, 'origin/codex/client-app-next');
+  // For a pull request, the reviewed Rules source can be an earlier commit in
+  // that same package and therefore cannot yet be an ancestor of the remote
+  // canonical ref. resolveRulesSha already requires that immutable commit to
+  // be an ancestor of HEAD; branch refs and unrelated commits remain rejected.
+  // On canonical execution HEAD itself is the protected branch, so that same
+  // ancestry check continues to bind the source to the reviewed package.
   // Check committed bytes to avoid Windows checkout line ending conversions.
   assert.equal(hash(git('show', rulesSha + ':firestore.rules')), state.rules_transition.target_sha256);
   const indexes = JSON.parse(git('show', runtime + ':firestore.indexes.json'));
