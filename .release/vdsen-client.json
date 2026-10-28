@@ -10,7 +10,7 @@
   "firebase_project": "vdsen-ecosistema",
   "numeric_apply_enabled": false,
   "rules_transition": {
-    "target_sha256": "fe1517306bebd4bd529adfc51a406c5e97cac6b2dfd7fcae61c87318dd2e21e0",
+    "target_sha256": "ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6",
     "order": "verify_current_app_then_rules",
     "rollback_order": "rules_then_app",
     "rollback_sha256": "ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6",
@@ -41,7 +41,22 @@
     "preview_production_env_verified": true,
     "human_ux_approved": true
   },
-  "observation_source": "T648 package. Live production Rules reported equal to BA172 by an owner-run consistent direct read (Work, 2026-10-28T04:00:36Z); not independently re-read by the packaging agent (its credential receives HTTP 403 on the Rules API). Checked locally: BA172 rollback file and FE151 target hash, FE151 equals rules_sha ancestry, plans_backup index READY (GET 2026-10-28), served app and rollback deployments match the pinned ids/SHAs. Not published, not deployed; the authorized production workflow performs its own contemporaneous live-rules check and aborts before writing if the live Rules are not BA172. Numeric Apply OFF.",
-  "release_mode": "rules_only",
-  "rules_sha": "ef91ac9072f40b2e2a1e73d77c424f9e21ccb27b"
+  "observation_source": "T658-B App package. Firestore Rules FE151 (T603) were published by Rules release run 40683175819 (workflow-verified: live Rules were BA172 immediately before; the apply step read back FE151 afterwards; result PARTIAL because authenticated smoke evidence is unavailable; rollback not needed). Served runtime is still b5f53af (without the T657 expiresAt executor protection): the candidate App is the reviewed package that includes it. Not deployed by this change. Numeric Apply OFF.",
+  "release_mode": "app_only",
+  "app_release": {
+    "runtime_sha": "b5f53af5843f466528a4b95e5a3e52d6c8c77fb1",
+    "deployment": "dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw",
+    "promotion_model": "staged_production",
+    "previous_deployment": "dpl_GfBVe46gHe3GSwkGx8yufoJLMLeB",
+    "previous_runtime_sha": "c161fdbf291316bc960120f996a702e2e8696963",
+    "verified_surfaces": 25,
+    "source_release_run": "40055779147",
+    "completed_at": "2026-10-24T03:38:01Z"
+  },
+  "published_rules": {
+    "sha256": "fe1517306bebd4bd529adfc51a406c5e97cac6b2dfd7fcae61c87318dd2e21e0",
+    "rules_sha": "ef91ac9072f40b2e2a1e73d77c424f9e21ccb27b",
+    "source_release_run": "40683175819",
+    "completed_at": "2026-10-28T11:54:05Z"
+  }
 }
