@@ -1,9 +1,9 @@
 {
   "runtime_sha": "21dc0e2b211facfb0df9f3079c58488c2f86952c",
-  "production_deployment": "dpl_BDdGBRjtRotiv4nJJEDoZK57He9s",
+  "production_deployment": "dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K",
   "rollback_deployment": "dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw",
   "rollback_runtime_sha": "b5f53af5843f466528a4b95e5a3e52d6c8c77fb1",
-  "target_deployment": "dpl_BDdGBRjtRotiv4nJJEDoZK57He9s",
+  "target_deployment": "dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K",
   "production_project": "prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN",
   "vercel_team": "team_VZc5H7Q1DBIJ3g0mwrSBz1o8",
   "production_origin": "https://vdsen-ecosistema.vercel.app",
@@ -41,17 +41,17 @@
     "preview_production_env_verified": true,
     "human_ux_approved": true
   },
-  "observation_source": "T660 rebaseline. Client app-only release run 40688365774: SUCCESS/VERIFIED, staged_production, 25 verified surfaces, deployment dpl_BDdGBRjtRotiv4nJJEDoZK57He9s (runtime 21dc0e2b211facfb0df9f3079c58488c2f86952c) serves the production alias; Numeric Apply OFF; previous deployment dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw (b5f53af) is the App rollback. Firestore Rules FE151 (T603) were published by Rules release run 40683175819 (workflow-verified BA172 before, FE151 read back after; PARTIAL: authenticated smoke evidence unavailable). The rules_transition rollback_* fields are the historical BA172 Rules rollback, not the App rollback. PRODUCTION_RELEASE_ENABLED and CLIENT_APP_RELEASE_ENABLED are false.",
+  "observation_source": "T663 rebaseline. Production serves dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K (runtime 21dc0e2b211facfb0df9f3079c58488c2f86952c), created as a staged production deployment by the T663 single executor from a git archive of that exact commit (served files byte-identical to .release/deployed-product.json, 21 of 21 over HTTP), promoted at 2026-10-28T21:19:29Z. It is NOT a workflow run (source_release_run 0 = no workflow run). The AUTONOMOUS_PROGRESSION_* server switches were set in Vercel Production before the build, so this deployment carries them: Numeric Apply is armed only for the single pilot athlete through the Firestore barriers (24 h expiry); the client asset flag numeric_apply_enabled stays false. CRON is off. The deployment that served immediately before is dpl_BDdGBRjtRotiv4nJJEDoZK57He9s (same runtime, built without the switches): it is the fastest emergency target (promote it to drop the switches), but the lane identifies CLI deployments by SHA and refuses two reviewed ids on one SHA, so the manifest rollback stays the last workflow-verified distinct-SHA deployment dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw (b5f53af). Rules FE151 live (workflow run 40683175819, re-read 2026-10-28 with raw sha256 equal to published_rules.sha256).",
   "release_mode": "app_only",
   "app_release": {
     "runtime_sha": "21dc0e2b211facfb0df9f3079c58488c2f86952c",
-    "deployment": "dpl_BDdGBRjtRotiv4nJJEDoZK57He9s",
+    "deployment": "dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K",
     "promotion_model": "staged_production",
     "previous_deployment": "dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw",
     "previous_runtime_sha": "b5f53af5843f466528a4b95e5a3e52d6c8c77fb1",
-    "verified_surfaces": 25,
-    "source_release_run": "40688365774",
-    "completed_at": "2026-10-28T12:33:59Z"
+    "verified_surfaces": 21,
+    "source_release_run": "0",
+    "completed_at": "2026-10-28T21:19:29Z"
   },
   "published_rules": {
     "sha256": "fe1517306bebd4bd529adfc51a406c5e97cac6b2dfd7fcae61c87318dd2e21e0",
