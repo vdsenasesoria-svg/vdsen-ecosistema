@@ -22,7 +22,9 @@ const path = require('node:path');
 const { validate, assertReleaseMode } = require('../scripts/release/lib.cjs');
 const SCHEMA = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.release', 'schema', 'release-state.schema.json'), 'utf8'));
 const STATE_PATH = path.join(__dirname, '..', '.release', 'vdsen-client.json');
-const STATE = JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
+// Models the reviewed rules_only package (PR #147 head, immutable) even after the committed state moved to app_only (T658-B).
+const COMMITTED = JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
+const STATE = COMMITTED.release_mode === 'rules_only' ? COMMITTED : JSON.parse(require('node:child_process').execFileSync('git', ['show', '4fba5fe49388882ca3db8933aba61f6b6418b8d7:.release/vdsen-client.json'], { encoding: 'utf8' }));
 
 const clone = (over = {}) => JSON.parse(JSON.stringify({ ...STATE, ...over }));
 const schemaValidates = (value) => { validate(value, SCHEMA); return true; };

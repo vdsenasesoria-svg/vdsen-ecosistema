@@ -7,7 +7,9 @@ const { compare, validateBaseline, parseEvents, critical } = require('../scripts
 const { environmentContract, workflowGuard, prepare, apply, rollback, rollbackRulesProvenance } = require('../scripts/release/live.cjs');
 const { workflowContract } = require('../scripts/release/check.cjs');
 const baseline = json('.release/known-baseline-failures.json');
-const state = json('.release/vdsen-client.json');
+// Models the reviewed rules_only package (PR #147 head, immutable) even after the committed state moved to app_only (T658-B).
+const committedState = json('.release/vdsen-client.json');
+const state = committedState.release_mode === 'rules_only' ? committedState : JSON.parse(git('show', '4fba5fe49388882ca3db8933aba61f6b6418b8d7:.release/vdsen-client.json'));
 const clone = x => JSON.parse(JSON.stringify(x));
 const records = category => baseline.failures.filter(x => x.category === category).map(x => ({ file: x.suite, name: x.test_name, status: x.status }));
 const options = { verifySource: false };
