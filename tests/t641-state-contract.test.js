@@ -8,7 +8,9 @@ const lib = require('../scripts/release/lib.cjs');
 const check = require('../scripts/release/check.cjs');
 
 const SCHEMA = lib.json('.release/schema/release-state.schema.json');
-const CURRENT = lib.json('.release/vdsen-client.json');
+// These tests model the transition FROM the reviewed rules_only package (PR #147 head, immutable); once the committed state moved to app_only (T658-B) they keep modelling that package.
+const COMMITTED = lib.json('.release/vdsen-client.json');
+const CURRENT = COMMITTED.release_mode === 'rules_only' ? COMMITTED : JSON.parse(lib.git('show', '4fba5fe49388882ca3db8933aba61f6b6418b8d7:.release/vdsen-client.json'));
 const HEAD = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 const BA172 = 'ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6', FE151 = 'fe1517306bebd4bd529adfc51a406c5e97cac6b2dfd7fcae61c87318dd2e21e0';
 const clone = (x) => JSON.parse(JSON.stringify(x));
