@@ -88,7 +88,9 @@ test('A12-8 app kill switch false -> FAIL', () => {
     process.env.CLIENT_APP_RELEASE_ENABLED = 'false';
     throws(() => app.assertKillSwitch(), /CLIENT_APP_RELEASE_ENABLED must be true/, 'kill switch false');
     process.env.CLIENT_APP_RELEASE_ENABLED = 'true';
-    throws(() => app.assertKillSwitch(), /requires release_mode=app_only/, 'rules_only never enables the app lane');
+    // The committed state decides the lane: a rules_only package never enables the app lane; an app_only package does (T658-B moved the committed state to app_only).
+    if (JSON.parse(require('node:fs').readFileSync('.release/vdsen-client.json', 'utf8')).release_mode === 'app_only') app.assertKillSwitch();
+    else throws(() => app.assertKillSwitch(), /requires release_mode=app_only/, 'rules_only never enables the app lane');
   } finally {
     if (previous === undefined) delete process.env.CLIENT_APP_RELEASE_ENABLED; else process.env.CLIENT_APP_RELEASE_ENABLED = previous;
   }

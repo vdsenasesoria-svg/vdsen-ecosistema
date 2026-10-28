@@ -10,6 +10,8 @@ const { verifyIndex, restoreRules, recover, workflowGuard } = require('../script
 const { resolveRulesSha } = require('../scripts/release/check.cjs');
 const deployedProduct = require('../scripts/release/deployed-product.cjs');
 const state = json('.release/vdsen-client.json');
+// The reviewed rules_only package (PR #147 head, immutable): tests of the Rules lane model THAT package even after the committed state moved to app_only (T658-B).
+const rulesState = state.release_mode === 'rules_only' ? state : JSON.parse(git('show', '4fba5fe49388882ca3db8933aba61f6b6418b8d7:.release/vdsen-client.json'));
 const clone = x => JSON.parse(JSON.stringify(x));
 
 // check() and apply() deliberately read the reviewed package from disk and Git.
@@ -30,7 +32,7 @@ function withRulesOnlyPackage(mutate, run) {
     const reviewed = json(path.join(temp, '.release', 'vdsen-client.json'));
     reviewed.release_mode = 'rules_only';
     reviewed.rules_sha = packageSha;
-    delete reviewed.app_release;
+    delete reviewed.app_release; delete reviewed.published_rules; reviewed.rules_transition = clone(rulesState.rules_transition);
     mutate(reviewed);
     fs.writeFileSync(path.join(temp, '.release', 'vdsen-client.json'), JSON.stringify(reviewed, null, 2) + '\n');
     return run(temp, reviewed);
@@ -134,7 +136,7 @@ test('a committed rules_only package can bind its prior committed Rules source w
     assert.equal(committedSource.status, 0, committedSource.stderr || committedSource.stdout);
     const rulesSha = run(['rev-parse', 'HEAD']).stdout.trim();
     const reviewed = json(path.join(temp, '.release', 'vdsen-client.json'));
-    reviewed.release_mode = 'rules_only'; reviewed.rules_sha = rulesSha;
+    reviewed.release_mode = 'rules_only'; delete reviewed.published_rules; reviewed.rules_sha = rulesSha;
     reviewed.rules_transition.target_sha256 = hash(fs.readFileSync(path.join(temp, 'firestore.rules')));
     fs.writeFileSync(path.join(temp, '.release', 'vdsen-client.json'), JSON.stringify(reviewed, null, 2) + '\n');
     assert.equal(run(['add', '.release/vdsen-client.json']).status, 0);
@@ -210,21 +212,21 @@ test('rules_only apply rejects a wrong Rules hash before any network or recovery
 });
 test('release state requires the decoupled RULES rollback provenance fields and rejects malformed values', () => {
   const schema = json('.release/schema/release-state.schema.json');
-  validate(state, schema);
+  validate(rulesState, schema);
   for (const drop of ['rollback_sha256', 'rollback_source_path']) {
-    const bad = clone(state); delete bad.rules_transition[drop];
+    const bad = clone(rulesState); delete bad.rules_transition[drop];
     assert.throws(() => validate(bad, schema), undefined, 'missing ' + drop + ' must be rejected');
   }
   for (const value of ['nothex', 'a'.repeat(63), 'A'.repeat(64), 'a'.repeat(65), '']) {
-    const bad = clone(state); bad.rules_transition.rollback_sha256 = value;
+    const bad = clone(rulesState); bad.rules_transition.rollback_sha256 = value;
     assert.throws(() => validate(bad, schema), undefined, 'malformed rollback_sha256 must be rejected: ' + value);
   }
   for (const value of ['firestore.rules', '.release/rollback/firestore.rules', '.release/rollback/firestore.rules.' + 'a'.repeat(64) + '.txt', '.release/rollback/' + 'a'.repeat(64) + '.rules', '']) {
-    const bad = clone(state); bad.rules_transition.rollback_source_path = value;
+    const bad = clone(rulesState); bad.rules_transition.rollback_source_path = value;
     assert.throws(() => validate(bad, schema), undefined, 'malformed rollback_source_path must be rejected: ' + value);
   }
-  assert.equal(state.rules_transition.rollback_source_path, '.release/rollback/firestore.rules.' + state.rules_transition.rollback_sha256 + '.rules');
-  assert.notEqual(state.rules_transition.rollback_sha256, state.rules_transition.target_sha256);
+  assert.equal(rulesState.rules_transition.rollback_source_path, '.release/rollback/firestore.rules.' + rulesState.rules_transition.rollback_sha256 + '.rules');
+  assert.notEqual(rulesState.rules_transition.rollback_sha256, rulesState.rules_transition.target_sha256);
 });
 test('index identity is ordered, scope-specific and independent of JSON key order', () => {
   const live = clone(state.required_index);
@@ -410,7 +412,7 @@ test('release apply path is rules_only: pinned immutable provenance, no deploy/p
   assert.ok(!/main:firestore|origin\/main:|HEAD:firestore\.rules|\blatest\b/i.test(src));
   // The reviewed package is explicitly rules_only; the assertions above prove
   // its lane cannot deploy or promote the app, or read Rules from main.
-  assert.equal(state.release_mode, 'rules_only'); assert.equal(state.numeric_apply_enabled, false);
+  assert.equal(rulesState.release_mode, 'rules_only'); assert.equal(state.numeric_apply_enabled, false);
   // Rollback order and pinned identities.
   const rec = src.slice(src.indexOf('async function recover'), src.indexOf('async function apply()'));
   assert.ok(rec.indexOf('restoreRules(') < rec.indexOf('switchApp('));
