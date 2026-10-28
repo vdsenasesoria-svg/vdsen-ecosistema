@@ -57,10 +57,27 @@ function assertReleaseMode(state, required, lane) {
     '; prepare a reviewed ' + required + ' state before dispatching');
   return state;
 }
+// Deployments created by the Vercel CLI (staged production releases) carry no Git metadata: Vercel reports only githubCommitSha. Such a deployment is accepted ONLY by exact
+// identity - its own id equals the id the reviewed state pins for that SHA, same project, READY, same SHA. Any Git metadata present (even partial) forces the full Git validation below.
+function expectedDeploymentId(state, sha) {
+  // Exactly ONE reviewed role (production xor rollback) may own the SHA, and the two roles must be pinned to different deployments; otherwise there is no unambiguous identity.
+  const roles = [];
+  if (sha === state.runtime_sha) roles.push(state.production_deployment);
+  if (sha === state.rollback_runtime_sha) roles.push(state.rollback_deployment);
+  if (roles.length !== 1 || state.production_deployment === state.rollback_deployment) return undefined;
+  return roles[0];
+}
 function verifyDeployment(d, state, sha, ref) {
   assert.equal(d.projectId, state.production_project);
   assert.equal(d.readyState, 'READY');
   assert.equal(d.meta?.githubCommitSha, sha);
+  const m = d.meta || {};
+  if (m.githubCommitOrg === undefined && m.githubCommitRepo === undefined && m.githubCommitRef === undefined) {
+    const id = expectedDeploymentId(state, sha);
+    assert.ok(typeof id === 'string' && id.length > 0, 'Deployment without Git metadata has no unambiguous reviewed id for this SHA');
+    assert.equal(d.id, id, 'Deployment without Git metadata must be exactly the reviewed deployment');
+    return d;
+  }
   assert.equal(d.meta?.githubCommitOrg, 'vdsenasesoria-svg');
   assert.equal(d.meta?.githubCommitRepo, 'vdsen-ecosistema');
   if (ref) assert.equal(d.meta?.githubCommitRef, ref);
