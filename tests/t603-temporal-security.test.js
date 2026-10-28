@@ -48,9 +48,11 @@ test('T603.7 firestore.rules: markers are create-only with at == request.time af
 test('T603.8 the candidate Rules are the deployed runtime Rules plus exactly the two additive blocks', () => {
   const state = JSON.parse(fs.readFileSync('.release/vdsen-client.json', 'utf8'));
   const cand = fs.readFileSync('firestore.t603.rules', 'utf8');
-  const base = state.release_mode === 'rules_only' || state.published_rules   // once FE151 is published, firestore.rules at HEAD is the candidate itself: the deployed-runtime Rules come from the pinned runtime
-    ? execFileSync('git', ['show', state.runtime_sha + ':firestore.rules'], { encoding: 'utf8' })
-    : fs.readFileSync('firestore.rules', 'utf8');
+  const base = state.published_rules   // once FE151 is published, firestore.rules at the pinned runtime is the candidate itself: the pre-T603 Rules are the pinned BA172 rollback artifact
+    ? fs.readFileSync(state.rules_transition.rollback_source_path, 'utf8')
+    : state.release_mode === 'rules_only'
+      ? execFileSync('git', ['show', state.runtime_sha + ':firestore.rules'], { encoding: 'utf8' })
+      : fs.readFileSync('firestore.rules', 'utf8');
   const stripped = cand.replace(/      \/\/ T603: COACH DECISION RECORD[^]*?\n      \}\n/, '').replace(/      \/\/ T603: EXPOSURE START MARKER[^]*?\n      \}\n/, '');
   assert.equal(stripped, base);
   assert.ok(cand.length > base.length);

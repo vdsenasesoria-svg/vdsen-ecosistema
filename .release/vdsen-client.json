@@ -1,16 +1,16 @@
 {
-  "runtime_sha": "b5f53af5843f466528a4b95e5a3e52d6c8c77fb1",
-  "production_deployment": "dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw",
-  "rollback_deployment": "dpl_GfBVe46gHe3GSwkGx8yufoJLMLeB",
-  "rollback_runtime_sha": "c161fdbf291316bc960120f996a702e2e8696963",
-  "target_deployment": "dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw",
+  "runtime_sha": "21dc0e2b211facfb0df9f3079c58488c2f86952c",
+  "production_deployment": "dpl_BDdGBRjtRotiv4nJJEDoZK57He9s",
+  "rollback_deployment": "dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw",
+  "rollback_runtime_sha": "b5f53af5843f466528a4b95e5a3e52d6c8c77fb1",
+  "target_deployment": "dpl_BDdGBRjtRotiv4nJJEDoZK57He9s",
   "production_project": "prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN",
   "vercel_team": "team_VZc5H7Q1DBIJ3g0mwrSBz1o8",
   "production_origin": "https://vdsen-ecosistema.vercel.app",
   "firebase_project": "vdsen-ecosistema",
   "numeric_apply_enabled": false,
   "rules_transition": {
-    "target_sha256": "ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6",
+    "target_sha256": "fe1517306bebd4bd529adfc51a406c5e97cac6b2dfd7fcae61c87318dd2e21e0",
     "order": "verify_current_app_then_rules",
     "rollback_order": "rules_then_app",
     "rollback_sha256": "ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6",
@@ -41,17 +41,17 @@
     "preview_production_env_verified": true,
     "human_ux_approved": true
   },
-  "observation_source": "T658-B App package. Firestore Rules FE151 (T603) were published by Rules release run 40683175819 (workflow-verified: live Rules were BA172 immediately before; the apply step read back FE151 afterwards; result PARTIAL because authenticated smoke evidence is unavailable; rollback not needed). Served runtime is still b5f53af (without the T657 expiresAt executor protection): the candidate App is the reviewed package that includes it. Not deployed by this change. Numeric Apply OFF.",
+  "observation_source": "T660 rebaseline. Client app-only release run 40688365774: SUCCESS/VERIFIED, staged_production, 25 verified surfaces, deployment dpl_BDdGBRjtRotiv4nJJEDoZK57He9s (runtime 21dc0e2b211facfb0df9f3079c58488c2f86952c) serves the production alias; Numeric Apply OFF; previous deployment dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw (b5f53af) is the App rollback. Firestore Rules FE151 (T603) were published by Rules release run 40683175819 (workflow-verified BA172 before, FE151 read back after; PARTIAL: authenticated smoke evidence unavailable). The rules_transition rollback_* fields are the historical BA172 Rules rollback, not the App rollback. PRODUCTION_RELEASE_ENABLED and CLIENT_APP_RELEASE_ENABLED are false.",
   "release_mode": "app_only",
   "app_release": {
-    "runtime_sha": "b5f53af5843f466528a4b95e5a3e52d6c8c77fb1",
-    "deployment": "dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw",
+    "runtime_sha": "21dc0e2b211facfb0df9f3079c58488c2f86952c",
+    "deployment": "dpl_BDdGBRjtRotiv4nJJEDoZK57He9s",
     "promotion_model": "staged_production",
-    "previous_deployment": "dpl_GfBVe46gHe3GSwkGx8yufoJLMLeB",
-    "previous_runtime_sha": "c161fdbf291316bc960120f996a702e2e8696963",
+    "previous_deployment": "dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw",
+    "previous_runtime_sha": "b5f53af5843f466528a4b95e5a3e52d6c8c77fb1",
     "verified_surfaces": 25,
-    "source_release_run": "40055779147",
-    "completed_at": "2026-10-24T03:38:01Z"
+    "source_release_run": "40688365774",
+    "completed_at": "2026-10-28T12:33:59Z"
   },
   "published_rules": {
     "sha256": "fe1517306bebd4bd529adfc51a406c5e97cac6b2dfd7fcae61c87318dd2e21e0",
