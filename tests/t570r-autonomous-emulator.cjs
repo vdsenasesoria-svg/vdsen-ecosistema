@@ -46,7 +46,7 @@ function planDoc(uid, coachId, rirTarget, exerciseId) {
 }
 // T571: the RELEASE-owned allowlist (second fence). Fixtures list their athlete unless the test says otherwise; at most 8 recent athletes.
 const ALLOWED = [];
-const setRelease = (ids, extra) => db.doc('releaseControl/autonomousProgression').set(Object.assign({ schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: ids }, extra || {}));
+const setRelease = (ids, extra) => db.doc('releaseControl/autonomousProgression').set(Object.assign({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: ids }, extra || {}));
 async function fixture(o) {
   o = o || {};
   const athlete = await signedIn(), coach = await signedIn();
@@ -318,8 +318,8 @@ test('ALLOWLIST second fence: absent / empty / disabled / malformed / wildcard /
 
 test('ALLOWLIST: the Coach cannot widen production scope from their own document or by writing the release doc', { timeout: 60000 }, async () => {
   const f = await fixture({ noRelease: true }); await setRelease(['somebody-else']);
-  await assert.rejects(() => setDoc(doc(f.coach.db, 'releaseControl', 'autonomousProgression'), { schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [f.athlete.uid] }), /PERMISSION_DENIED|permission/i);
-  await assert.rejects(() => setDoc(doc(f.athlete.db, 'releaseControl', 'autonomousProgression'), { schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [f.athlete.uid] }), /PERMISSION_DENIED|permission/i);
+  await assert.rejects(() => setDoc(doc(f.coach.db, 'releaseControl', 'autonomousProgression'), { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: [f.athlete.uid] }), /PERMISSION_DENIED|permission/i);
+  await assert.rejects(() => setDoc(doc(f.athlete.db, 'releaseControl', 'autonomousProgression'), { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: [f.athlete.uid] }), /PERMISSION_DENIED|permission/i);
   await closed(f, 'coach canary alone');
 });
 

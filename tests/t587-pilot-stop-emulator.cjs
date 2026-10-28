@@ -30,7 +30,7 @@ async function athlete() {
 const fences = async (a, rel, can) => {
   await db.doc('releaseControl/autonomousProgression').set(rel); await db.doc('coaches/' + a.coachId).set({ autoApplyCanary: can });
 };
-const OPEN = (a) => [canary.releaseDoc(a.uid, true), canary.canaryField(a.uid, true)], STOPPED = (a) => [canary.releaseDoc(a.uid, false), canary.canaryField(a.uid, false)];
+const OPEN = (a) => [canary.releaseDoc(a.uid, true, '2026-10-01T01:00:00Z'), canary.canaryField(a.uid, true)], STOPPED = (a) => [canary.releaseDoc(a.uid, false, '2026-10-01T00:00:00Z'), canary.canaryField(a.uid, false)];
 const run = (a, extra) => executor.processProgression(Object.assign({ db, clientId: a.uid, planId: a.planId, enabled: true, numericApplyEnabled: true, clock }, extra || {}));
 const dump = async (a) => JSON.stringify(await Promise.all(['clients/' + a.uid, 'plans/' + a.planId, 'coaches/' + a.coachId, 'logs/' + a.uid, 'logs/' + a.uid + '/mesos/' + a.planId, 'releaseControl/autonomousProgression'].map(async (p) => (await db.doc(p).get()).data())));
 const meso = async (a) => (await db.doc('logs/' + a.uid + '/mesos/' + a.planId).get()).data() || {};
@@ -67,7 +67,7 @@ test('T587-S3 kill switches: DISARMED writes nothing; numeric apply OFF only mat
 
 test('T587-S4 the stop is per athlete: stopping one athlete does not touch another listed in the same allowlist; a second athlete still processes normally', async () => {
   const a = await athlete(), b = await athlete();
-  await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [a.uid, b.uid] });
+  await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: '2026-10-01T01:00:00Z', clientIds: [a.uid, b.uid] });
   await db.doc('coaches/' + a.coachId).set({ autoApplyCanary: canary.canaryField(a.uid, false) }); await db.doc('coaches/' + b.coachId).set({ autoApplyCanary: canary.canaryField(b.uid, true) });
   const da = await dump(a); assert.equal((await run(a)).status, 'OUT_OF_CANARY'); assert.equal(await dump(a), da);
   assert.equal((await run(b)).status, 'MATERIALIZED'); assert.equal(ov(await meso(b)).length, 1);

@@ -15,7 +15,7 @@ function world(o) {
   d['plans/plan1'] = { fields: Object.assign({ coachId: S('coachId1'), rirByWeek: M({ 1: I(3) }), days: A([M({ dayIndex: I(0), exercises: A([ex('A', 'p1', o.range ? { repsRange: M({ min: I(8), max: I(12) }) } : {}), ex('B', o.missingPid ? null : 'p2')]) })]) },
     o.noUpdatedAt ? {} : { updatedAt: S('2026-09-26T00:00:00.000Z') }, o.prio ? { musclePriorities: M({ PRIORITARIO: A([S('pectoral')]), NO_PRIORITARIO: A([]) }) } : {}) };
   d['logs/' + UID] = { fields: { entries: M({ log_1_0_0_s0: M({ done: B(true) }), log_1_0_0_s1: M({ done: B(true) }), done_1_0: B(true) }) } };
-  d['releaseControl/autonomousProgression'] = { fields: { schema: S('vdsen-autonomous-release-v1'), enabled: B(o.releaseOff ? false : true), clientIds: A((o.extraIds || []).concat([S(UID)])) } };
+  d['releaseControl/autonomousProgression'] = { fields: { schema: S('vdsen-autonomous-release-v1'), enabled: B(o.releaseOff ? false : true), clientIds: A((o.extraIds || []).concat([S(UID)])), expiresAt: S(o.expired ? '2020-01-01T00:00:00Z' : new Date(Date.now() + 36e5).toISOString()) } };
   d['coaches/coachId1'] = { fields: { autoApplyCanary: M({ enabled: B(o.canaryOff ? false : true), clientIds: A([S(UID)]) }) } };
   d['logs/' + UID + '/mesos'] = { list: [{ fields: { planId: S('plan1'), progressionApplications: M({ k1: M({ state: S('APPLIED') }), k2: M({ state: S('PENDING') }) }), nextExposureOverlays: M({ o1: M({ dimension: S('SETS') }) }) } }] };
   const calls = []; const http = async (p) => { calls.push(p); const key = p.replace(/\?.*$/, ''); const x = d[key]; if (key.endsWith('/mesos')) return { status: 200, body: { documents: d[key].list } }; return x ? { status: 200, body: x } : { status: 404, body: null }; };
@@ -43,4 +43,9 @@ test('T587-P3 contract: a malformed UID is rejected; no write API, no Vercel / I
   await assert.rejects(() => tool.main(['--uid', '*'], { http: async () => ({ status: 404 }), token: () => 't', log: () => {} }), /--uid requerido/);
   const src = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'pilot', 'pilot-readiness.cjs'), 'utf8').replace(/\/\/.*$/gm, '');
   assert.ok(!/PATCH|POST|DELETE|vercel|CRON_SECRET|setIamPolicy/i.test(src.replace(/Vercel/g, '')), 'read-only'); assert.ok(!/z82E/.test(src), 'no real UID stored');
+});
+
+test('T657 readiness reports the release fence expiry: valid => OK, expired or absent => FALLA', async () => {
+  const ok = await run({}); assert.ok(ok.lines.some((l) => /barrera_release_con_caducidad_vigente/.test(l) && /OK/.test(l)), ok.lines.join(' | '));
+  const bad = await run({ expired: true }); assert.ok(bad.lines.some((l) => /barrera_release_con_caducidad_vigente/.test(l) && /FALLA/.test(l)), bad.lines.join(' | '));
 });

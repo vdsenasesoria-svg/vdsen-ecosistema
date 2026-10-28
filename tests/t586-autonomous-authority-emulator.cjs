@@ -41,7 +41,7 @@ async function persist(c) {
   await db.doc('logs/' + c.uid).set({ planId: c.planId, entries: c.entries }, { merge: true });
   await db.doc('logs/' + c.uid + '/mesos/' + c.planId).set({ planId: c.planId, entries: c.entries }, { merge: true });
 }
-const open = (ids) => db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: ids });
+const open = (ids) => db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: ids });
 const state = async (c) => (await db.doc('logs/' + c.uid + '/mesos/' + c.planId).get()).data() || {};
 const planDoc = async (c) => (await db.doc('plans/' + c.planId).get()).data();
 const records = (m) => Object.values((m && m.progressionApplications) || {});

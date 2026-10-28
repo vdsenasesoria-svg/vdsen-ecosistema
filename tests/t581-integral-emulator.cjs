@@ -54,7 +54,7 @@ async function seed(o) {
   await db.doc('logs/' + uid + '/mesos/' + planId).set({ planId, entries: logs });
   return { uid, planId, coachId, plan, pids, logs };
 }
-const open = (ids) => db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: ids });
+const open = (ids) => db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: ids });
 const run = async (s, extra) => {
   const { keepAllowlist, ...rest } = extra || {};
   if (!keepAllowlist) await open([s.uid]);

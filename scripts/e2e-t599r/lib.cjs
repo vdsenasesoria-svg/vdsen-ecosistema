@@ -42,7 +42,7 @@ async function seedAthlete(label, exercises, o) {
   await db.doc('plans/' + planId).set(plan);
   await db.doc('logs/' + a.uid).set({ planId, currentWeek: o.noWeek1 ? 1 : 2, entries });
   await db.doc('logs/' + a.uid + '/mesos/' + planId).set({ planId, entries });
-  await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [a.uid] });   // sandbox allowlist of the athlete under test only
+  await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: [a.uid] });   // sandbox allowlist of the athlete under test only
   let all = { who: {} }; try { all = JSON.parse(fs.readFileSync(CREDS, 'utf8')); } catch (e) { /* new file */ }
   all.who[label] = { email: a.email, password: a.password, uid: a.uid, planId, pids }; fs.writeFileSync(CREDS, JSON.stringify(all));
   return { label, uid: a.uid, planId, coachUid: coach.uid, pids, plan, coach };

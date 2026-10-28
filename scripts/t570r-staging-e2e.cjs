@@ -117,7 +117,7 @@ const mkRes = () => ({ statusCode: 0, body: null, status(n) { this.statusCode = 
   const A = await provision('reactive'), B = await provision('cron');
   const created = [A, B];
   try {
-    const relDoc = { schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [A.athlete.uid, B.athlete.uid] };
+    const relDoc = { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: [A.athlete.uid, B.athlete.uid] };
     const relBody = { fields: Object.fromEntries(Object.entries(relDoc).map(([k, v]) => [k, enc(v)])) };
     const forgedRel = await asUser(A.athTok, 'PATCH', 'releaseControl/autonomousProgression', relBody);
     const forgedRelCoach = await asUser(A.coachTok, 'PATCH', 'releaseControl/autonomousProgression', relBody);

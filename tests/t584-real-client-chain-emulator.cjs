@@ -34,7 +34,7 @@ async function seed(name, o) {
   await db.doc('logs/' + uid + '/mesos/' + planId).set({ planId, entries });
   return { name, uid, coachId, planId, plan, pids, entries };
 }
-const open = (ids) => db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: ids });
+const open = (ids) => db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: ids });
 const run = async (s, extra) => { const { keepAllowlist, ...rest } = extra || {}; if (!keepAllowlist) await open([s.uid]); return executor.processProgression(Object.assign({ db, clientId: s.uid, planId: s.planId, enabled: true, numericApplyEnabled: true, clock }, rest)); };
 const meso = async (s) => (await db.doc('logs/' + s.uid + '/mesos/' + s.planId).get()).data();
 const overlays = (m) => Object.values((m && m.nextExposureOverlays) || {});

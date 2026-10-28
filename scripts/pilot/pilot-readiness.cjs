@@ -43,6 +43,7 @@ async function main(argv, deps) {
   ok('bitacora_con_registro', R.counts.seriesRegistradas > 0, 'series=' + R.counts.seriesRegistradas + ' sesionesCerradas=' + R.counts.sesionesCerradas);
   const rel = await get('releaseControl/autonomousProgression', token), r = rel.status === 200 ? doc(rel.body) : null;
   ok('barrera_release_abierta_para_el_atleta', !!(r && r.schema === 'vdsen-autonomous-release-v1' && r.enabled === true && Array.isArray(r.clientIds) && r.clientIds.indexOf(uid) >= 0 && r.clientIds.length <= 10), r ? 'enabled=' + r.enabled + ' clientes=' + (r.clientIds || []).length : '(ausente)');
+  ok('barrera_release_con_caducidad_vigente', !!(r && typeof r.expiresAt === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(r.expiresAt) && Date.parse(r.expiresAt) > Date.now() && Date.parse(r.expiresAt) - Date.now() <= 31 * 24 * 3600e3), r ? 'expiresAt=' + (r.expiresAt || '(ausente)') : '(ausente)');
   ok('allowlist_solo_el_piloto', !!(r && Array.isArray(r.clientIds) && r.clientIds.length === 1 && r.clientIds[0] === uid));
   const coach = c.coachId ? await get('coaches/' + c.coachId, token) : { status: 404 }, cd = coach.status === 200 ? doc(coach.body) : null, can = cd && cd.autoApplyCanary;
   ok('barrera_canario_abierta_para_el_atleta', !!(can && can.enabled === true && Array.isArray(can.clientIds) && can.clientIds.indexOf(uid) >= 0), can ? 'enabled=' + can.enabled + ' clientes=' + (can.clientIds || []).length : '(ausente)');
