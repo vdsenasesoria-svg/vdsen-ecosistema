@@ -65,7 +65,7 @@ async function mkAthlete(coach, tag, o) {
   created.docs.push('logs/' + a.uid + '/mesos/' + a.planId, 'logs/' + a.uid, 'plans/' + a.planId, 'clients/' + a.uid); return a;
 }
 const setCanary = (coach, v) => adminSet('coaches/' + coach.uid, { autoApplyCanary: v }, ['autoApplyCanary']);
-const setRelease = ids => adminSet(RELEASE, { schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: ids });
+const setRelease = ids => adminSet(RELEASE, { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: ids });
 
 // ---------- Firestore evidence (operator identity, independent of the server's answers)
 async function snap(a) {

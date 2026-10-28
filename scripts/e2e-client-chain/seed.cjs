@@ -38,7 +38,7 @@ const NAMES = (process.argv[3] || 'A,B,C,D,E,F').split(',').map((x) => x.trim())
     out.who[name] = { email: a.email, password: a.password, uid: a.uid, planId, pids };
   }
   await put('coaches/' + coach.uid, { displayName: 'Coach E2E', email: coach.email, role: 'coach', autoApplyCanary: { enabled: true, clientIds: ids, prescriptionExerciseIds: [] } });
-  await put('releaseControl/autonomousProgression', { schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: ids });
+  await put('releaseControl/autonomousProgression', { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: ids });
   fs.writeFileSync(OUT, JSON.stringify(out));
   console.log('seeded coach + ' + NAMES.length + ' synthetic athletes (' + NAMES.join(',') + '); credentials in scratch file, not printed');
 })().catch((e) => { console.error('SEED FAILED:', e.message); process.exit(1); });

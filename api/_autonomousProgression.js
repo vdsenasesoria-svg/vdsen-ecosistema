@@ -25,9 +25,18 @@ var EQUIPMENT_BLOCKERS = ['UNRESOLVED_EQUIPMENT_INCREMENT', 'EQUIPMENT_IDENTITY_
 // credentials (no Firestore rule matches it, so every client/Coach access is denied). Re-read INSIDE every canonical transaction.
 // Missing / disabled / malformed / oversized / wildcard / not listing the athlete => closed. Both fences must be open.
 var RELEASE_SCHEMA = 'vdsen-autonomous-release-v1', RELEASE_MAX_CLIENTS = 10;
-async function _releaseGate(db, tx, clientId) {
+// T657: the release fence EXPIRES. `expiresAt` is a strict UTC ISO-8601 string written only by Admin; the executor compares it with its own clock inside every
+// transaction (no CRON involved). Absent / malformed / not-in-the-future / more than RELEASE_MAX_TTL_MS ahead => closed. The window cap bounds a hand-written doc.
+var RELEASE_MAX_TTL_MS = 31 * 24 * 3600 * 1000, ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
+function _releaseUnexpired(expiresAt, nowIso) {
+  if (typeof expiresAt !== 'string' || !ISO_UTC.test(expiresAt)) return false;
+  var exp = Date.parse(expiresAt), now = Date.parse(nowIso);
+  return isFinite(exp) && isFinite(now) && exp > now && exp - now <= RELEASE_MAX_TTL_MS;
+}
+async function _releaseGate(db, tx, clientId, clock) {
   var d = _data(await tx.get(db.collection('releaseControl').doc('autonomousProgression')));
   if (!d || d.schema !== RELEASE_SCHEMA || d.enabled !== true || !Array.isArray(d.clientIds)) return false;
+  if (!_releaseUnexpired(d.expiresAt, _now(clock))) return false;
   var ids = d.clientIds;
   if (!ids.length || ids.length > RELEASE_MAX_CLIENTS || ids.some(function(x) { return typeof x !== 'string' || !x || x === '*'; })) return false;
   return typeof clientId === 'string' && clientId !== '' && ids.indexOf(clientId) >= 0;
@@ -66,7 +75,7 @@ async function materialize(db, clientId, requestedPlanId, clock) {
     var refs = _refs(db, clientId, requestedPlanId, client.coachId);
     // Release-controlled canary: re-read INSIDE this transaction, before any read of evidence or any write.
     // No canary document / disabled / athlete not listed => zero writes of any kind.
-    if (!(await _releaseGate(db, tx, clientId))) return { status: 'OUT_OF_ALLOWLIST' };
+    if (!(await _releaseGate(db, tx, clientId, clock))) return { status: 'OUT_OF_ALLOWLIST' };
     var coachData = refs.coach ? _data(await tx.get(refs.coach)) : null;
     var scope = consumer.normalizeCanaryScope(coachData && coachData.autoApplyCanary);
     if (!scope.enabled || scope.clientIds.indexOf(clientId) < 0) return { status: 'OUT_OF_CANARY' };
@@ -128,7 +137,7 @@ async function applyPending(db, clientId, planId, clock) {
       var clientSnap = await tx.get(db.collection('clients').doc(clientId)), client = _data(clientSnap);
       if (!client || client.activePlanId !== planId) return { written: false, reason: 'PLAN_MISMATCH' };
       var refs = _refs(db, clientId, planId, client.coachId);
-      if (!(await _releaseGate(db, tx, clientId))) return { written: false, reason: 'OUT_OF_ALLOWLIST' };
+      if (!(await _releaseGate(db, tx, clientId, clock))) return { written: false, reason: 'OUT_OF_ALLOWLIST' };
       // T582: a verified equipment increment is used when available; otherwise the LOAD target is advisory (never a guessed machine increment).
       var equipmentResolution = null;
       var pre = _data(await tx.get(refs.meso)), precord = pre && pre.progressionApplications && pre.progressionApplications[key];
@@ -177,7 +186,7 @@ async function consumePending(db, clientId, planId, clock) {
       var client = _data(await tx.get(db.collection('clients').doc(clientId)));
       if (!client || client.activePlanId !== planId) return { written: false, reason: 'PLAN_MISMATCH' };
       var refs = _refs(db, clientId, planId, client.coachId);
-      if (!(await _releaseGate(db, tx, clientId))) return { written: false, reason: 'OUT_OF_ALLOWLIST' };
+      if (!(await _releaseGate(db, tx, clientId, clock))) return { written: false, reason: 'OUT_OF_ALLOWLIST' };
       var coachData = refs.coach ? _data(await tx.get(refs.coach)) : null;
       var m = _data(await tx.get(refs.meso)), rec = m && m.progressionApplications && m.progressionApplications[key];
       if (!rec || !consumer.inCanaryScope(coachData && coachData.autoApplyCanary, clientId, rec.prescriptionExerciseId)) return { written: false, reason: 'OUT_OF_CANARY_SCOPE' };

@@ -25,7 +25,7 @@ Sin incrementos configurados LOAD queda `BLOCKED_EQUIPMENT_DATA` por diseño. So
 
 ## 2. Activación (solo con autorización del director; orden ya probado en staging)
 1. Variables del proyecto de producción **a `false`** y desplegar por el workflow protegido (`.github/workflows/vdsen-release-prod.yml`, Environment `Production`).
-2. Crear `releaseControl/autonomousProgression` = `{ schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: ['<uid del piloto>'] }` (solo Admin; ninguna regla la expone).
+2. Crear `releaseControl/autonomousProgression` = `{ schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: ['<uid del piloto>'], expiresAt: '<ISO UTC, p. ej. 2026-11-02T10:00:00Z>' }` (solo Admin; ninguna regla la expone). T657: `expiresAt` es obligatorio y el ejecutor lo comprueba en cada transacción (ausente, mal formado, vencido o a más de 31 días => barrera cerrada). Usa `scripts/pilot/ayrton-canary.cjs --mode enable --confirm [--ttl-hours 1..168]` (24 h por defecto): escribe ambas barreras en UN commit atómico con precondición de versión.
 3. Canario del Coach: `coaches/{uid}.autoApplyCanary = { enabled: true, clientIds: ['<uid del piloto>'], prescriptionExerciseIds: ['<PIDs del paso 1>'] }`.
 4. Habilitar `AUTONOMOUS_PROGRESSION_ENABLED=true` y `AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED=true` y redeplegar. **No habilitar CRON** durante el piloto (el cron solo procesa uids de la allowlist, pero añade un secreto y una ruta más).
 5. Verificar con el propio atleta piloto: tras 2 exposiciones comparables y evidencia persistida, aparece el overlay `AUTOAJUSTE VDSEN` en la siguiente exposición; el Coach lo ve en el panel de monitoreo (estados PENDING → APPLIED → CONSUMED).

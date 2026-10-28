@@ -18,7 +18,7 @@ function seed() {
   logs.progrec_1_2 = { calculatedAt: '2026-01-02T00:00:00.000Z', recommendations: [{ prescriptionExerciseId: pid, exerciseId: 'ex-1', exerciseName: 'Press', action: 'increase_reps', newReps: 11 }] };
   return { uid, planId, docs: {
     ['clients/' + uid]: { activePlanId: planId, coachId: 'coach-1' },
-    'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [uid] },
+    'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: [uid] },
     'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: [] } },
     ['plans/' + planId]: { clientId: uid, weeks: 3, updatedAt: '2026-01-01T00:00:00.000Z', days: [0, 2].map(dayIndex => ({ dayIndex, exercises: [{ prescriptionExerciseId: pid, exerciseId: 'ex-1', exerciseName: 'Press', sets: [0, 1, 2].map(setIndex => ({ setIndex, repsTarget: 10, rirTarget: 2, restSeconds: 90 })) }] })) },
     ['logs/' + uid]: { planId, entries: logs, updatedAt: 2 },

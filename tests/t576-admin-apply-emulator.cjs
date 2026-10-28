@@ -17,7 +17,7 @@ async function seed(db, o) {
       sets: [0, 1, 2].map(setIndex => ({ setIndex, repsTarget: 10, rirTarget: 1, restSeconds: 90, load: 0 })) }] })) };
   await db.doc('clients/' + uid).set({ coachId: 'coach-t576', activePlanId: planId });
   await db.doc('coaches/coach-t576').set({ autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: [pid] } });
-  await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [uid] });
+  await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: [uid] });
   await db.doc('plans/' + planId).set(plan);
   await db.doc('logs/' + uid).set({ planId, entries: logs });
   await db.doc('logs/' + uid + '/mesos/' + planId).set({ planId, entries: logs });

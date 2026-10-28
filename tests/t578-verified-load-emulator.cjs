@@ -38,7 +38,7 @@ async function seed(o) {
   if (o.increment) coach.equipmentIncrements = { shared: { [EQUIPMENT_ID]: o.increment }, gyms: {} };
   await db.doc('clients/' + uid).set({ coachId, activePlanId: planId });
   await db.doc('coaches/' + coachId).set(coach);
-  await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [uid] }, { merge: false });
+  await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: [uid] }, { merge: false });
   await db.doc('plans/' + planId).set(plan);
   await db.doc('logs/' + uid).set({ planId, entries: logs });
   await db.doc('logs/' + uid + '/mesos/' + planId).set({ planId, entries: logs });
@@ -47,7 +47,7 @@ async function seed(o) {
 // The release allowlist is a single global document: every run opens it for exactly the athlete being processed (unless a test sets it itself).
 const run = async (s, extra) => {
   const { keepAllowlist, ...rest } = extra || {};
-  if (!keepAllowlist) await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [s.uid] });
+  if (!keepAllowlist) await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: [s.uid] });
   return executor.processProgression(Object.assign({ db, clientId: s.uid, planId: s.planId, enabled: true, numericApplyEnabled: true, clock }, rest));
 };
 const meso = async (s) => (await db.doc('logs/' + s.uid + '/mesos/' + s.planId).get()).data();
@@ -166,11 +166,11 @@ test('T578-E flags OFF: DISARMED writes nothing; numeric apply OFF materializes 
 test('T578-F scope: a PID outside the canary and a client outside the allowlist get no LOAD record or overlay', async () => {
   const s = await seed({ tag: 'f', increment: stepMeta() });
   await db.doc('coaches/' + s.coachId).set({ autoApplyCanary: { enabled: true, clientIds: [s.uid], prescriptionExerciseIds: ['pid-other'] }, equipmentIncrements: { shared: { [EQUIPMENT_ID]: stepMeta() }, gyms: {} } });
-  await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [s.uid] });
+  await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: [s.uid] });
   const a = await run(s, { keepAllowlist: true }); let m = await meso(s);
   assert.equal(records(m).length, 0); assert.equal(overlays(m).length, 0); assert.equal(a.status, 'NO_CHANGE');
   const g = await seed({ tag: 'g', increment: stepMeta() });
-  await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: ['someone-else'] });
+  await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: ['someone-else'] });
   const b = await run(g, { keepAllowlist: true });
   assert.equal(b.status, 'OUT_OF_ALLOWLIST'); m = await meso(g); assert.equal(records(m).length, 0); assert.equal(overlays(m).length, 0);
 });
