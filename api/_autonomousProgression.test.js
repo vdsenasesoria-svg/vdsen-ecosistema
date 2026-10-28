@@ -11,14 +11,17 @@ function fakeDb(seed) {
   const tx = { get: async r => snapshot(r), set: (r, value) => docs.set(r.path, Object.assign({}, docs.get(r.path) || {}, structuredClone(value))) };
   return { docs, collection: name => ref(name), runTransaction: async fn => fn(tx) };
 }
-function seed() {
+// The release fence expires relative to the EXECUTOR clock, so a fixture that is run with an injected clock must derive expiresAt from that same clock (the real clock
+// is the default). A fixed-January clock against a real-time expiry is >31 days ahead and the fence correctly stays closed.
+function seed(nowIso) {
+  const base = nowIso ? Date.parse(nowIso) : Date.now();
   const pid = 'pid-1', planId = 'plan-1', uid = 'athlete-1';
   const logs = {};
   [[1, 0], [1, 2]].forEach(([w, d]) => [0, 1, 2].forEach(s => { logs['log_' + w + '_' + d + '_0_s' + s] = { done: true, carga: '100', reps: '10', unit: 'KG', rir: 2, rir_real: 3, prescriptionExerciseId: pid, ts: 1 + s }; }));
   logs.progrec_1_2 = { calculatedAt: '2026-01-02T00:00:00.000Z', recommendations: [{ prescriptionExerciseId: pid, exerciseId: 'ex-1', exerciseName: 'Press', action: 'increase_reps', newReps: 11 }] };
   return { uid, planId, docs: {
     ['clients/' + uid]: { activePlanId: planId, coachId: 'coach-1' },
-    'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: [uid] },
+    'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(base + 36e5).toISOString(), clientIds: [uid] },
     'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: [] } },
     ['plans/' + planId]: { clientId: uid, weeks: 3, updatedAt: '2026-01-01T00:00:00.000Z', days: [0, 2].map(dayIndex => ({ dayIndex, exercises: [{ prescriptionExerciseId: pid, exerciseId: 'ex-1', exerciseName: 'Press', sets: [0, 1, 2].map(setIndex => ({ setIndex, repsTarget: 10, rirTarget: 2, restSeconds: 90 })) }] })) },
     ['logs/' + uid]: { planId, entries: logs, updatedAt: 2 },
@@ -32,10 +35,10 @@ test('T570-R trusted executor is disarmed by default and does not read or write'
   assert.deepEqual([...db.docs], before);
 });
 test('T570-R materializes only from server-re-read athlete evidence and rejects a foreign plan assertion', async () => {
-  const s = seed(), db = fakeDb(s.docs);
+  const CLOCK = '2026-01-03T00:00:00.000Z', s = seed(CLOCK), db = fakeDb(s.docs);
   const wrong = await executor.processProgression({ db, clientId: s.uid, planId: 'other', enabled: true });
   assert.equal(wrong.status, 'PLAN_MISMATCH');
-  const out = await executor.processProgression({ db, clientId: s.uid, planId: s.planId, enabled: true, clock: () => '2026-01-03T00:00:00.000Z' });
+  const out = await executor.processProgression({ db, clientId: s.uid, planId: s.planId, enabled: true, clock: () => CLOCK });
   assert.equal(out.status, 'MATERIALIZED');
   const meso = db.docs.get('logs/' + s.uid + '/mesos/' + s.planId);
   assert.equal(Object.keys(meso.progressionApplications).length, 1);
