@@ -87,6 +87,36 @@ async function cycle(c, week, o) { const t = await train(c, week, o); await ack(
 const dims = (m, week) => overlays(m).filter((x) => x.target.week === week).map((x) => x.dimension + ':' + x.previousValue + '->' + x.appliedValue).sort();
 const wk = (n) => ({ ex: [{ name: 'Ej', sets: n }] });
 
+test('T671 one fresh exposure with failure outside the RIR band materializes FREEZE, applies once and reaches the next prescription', async () => {
+  const c = await client({ exercises: [{ name: 'Synthetic curl', sets: 4, load: 7.9, repsTarget: 12, rirTarget: 2 },
+    { name: 'Synthetic extension', sets: 4, load: 16, repsTarget: 12, rirTarget: 2 }] });
+  await open([c.uid]);
+  await train(c, 1, { action: 'freeze_load', reps: 8, rirReal: 0 });
+  const values = [
+    [[7.9, 10, 2], [7.9, 10, 2], [7.9, 8, 0], [7.9, 8, 0]],
+    [[20.4, 9, 0], [16, 12, 0], [16, 12, 0], [16, 9, 0]]
+  ];
+  values.forEach((sets, ei) => sets.forEach(([load, reps, rir], si) => Object.assign(c.entries['log_1_0_' + ei + '_s' + si], { carga: String(load), reps: String(reps), rir_real: rir })));
+  await persist(c);
+  const original = structuredClone(c.entries);
+  assert.equal((await engine(c, { enabled: false })).status, 'DISARMED');
+  assert.equal(records(await state(c)).length, 0);
+  const results = await Promise.allSettled(Array.from({ length: 8 }, () => engine(c)));
+  assert.equal(results.filter(x => x.status === 'fulfilled').reduce((n, x) => n + x.value.applied.filter(a => a.written).length, 0), 2);
+  const m = await state(c);
+  assert.equal(records(m).length, 2); assert.equal(overlays(m).length, 2);
+  for (const r of records(m)) {
+    assert.equal(r.magnitude.comparableExposureCount, 1); assert.equal(r.magnitude.ruleId, 'S-FREEZE-ZERO');
+    assert.equal(r.state, 'APPLIED'); assert.equal(r.events.filter(e => e.state === 'APPLIED').length, 1);
+  }
+  for (const [ei, load] of [[0, 7.9], [1, 17.1]]) {
+    const next = await shown(c, 2, ei);
+    assert.equal(next.provenance, 'CANONICAL_OVERLAY'); assert.equal(next.sets[0].effective.load, load);
+  }
+  assert.deepEqual(m.entries, original, 'execution evidence is never rewritten');
+  assert.equal(JSON.stringify((await planDoc(c)).days), JSON.stringify(c.plan.days));
+});
+
 test('AUTH-01 ADD SET: sustained performance + ICS>=8 => the server adds a set; it is APPLIED, VISIBLE as 4 rows in the next exposure, CONSUMED once executed, and it STAYS (continuity)', async () => {
   const c = await client({ exercises: [{ name: 'Press', muscle: 'pectoral' }] }); await open([c.uid]);
   await cycle(c, 1, { action: 'maintain' }); await cycle(c, 2, { action: 'add_sets' });
