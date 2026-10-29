@@ -223,7 +223,8 @@ test('CANARY boundary: disabling the canary between the pending read and the app
   const racing = Object.create(db);
   racing.collection = n => db.collection(n);
   racing.runTransaction = async fn => { txCount++; await setCanary(f, { enabled: false, clientIds: [f.athlete.uid] }); return db.runTransaction(fn); };
-  const out = await executor.applyPending(racing, f.athlete.uid, f.planId, () => '2026-09-28T00:00:00.000Z');
+  // Use the same clock as fixture(). Its release expiry is relative to now; a fixed September clock eventually trips the 31-day release cap before the Coach revocation is reached.
+  const out = await executor.applyPending(racing, f.athlete.uid, f.planId, () => new Date().toISOString());
   assert.ok(txCount >= 1); assert.deepEqual(out.map(x => x.written), [false]); assert.equal(out[0].reason, 'OUT_OF_CANARY_SCOPE');
   assert.deepEqual(await overlays(f), []); assert.equal((await recs(f))[0].state, 'PENDING');
 });
