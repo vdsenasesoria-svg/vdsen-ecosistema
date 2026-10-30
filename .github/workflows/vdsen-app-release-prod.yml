@@ -28,7 +28,7 @@ permissions:
 
 # Share the lock with the separately authorized pilot-runtime lane. Never cancel an active release.
 concurrency:
-  group: vdsen-production-app
+  group: vdsen-production
   cancel-in-progress: false
 
 jobs:

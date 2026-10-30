@@ -112,8 +112,8 @@ test('T673 absolute expiry gives idempotent fence enable/stop without renewing o
 test('T673 pilot mutations are unavailable locally; both production workflows share a non-cancelling lock', () => {
   assert.throws(() => R.invocation({ GITHUB_ACTIONS: 'false' }));
   const pilot = fs.readFileSync('.github/workflows/vdsen-ayrton-runtime.yml', 'utf8');
-  for (const f of ['vdsen-app-release-prod.yml', 'vdsen-ayrton-runtime.yml']) {
-    const text = fs.readFileSync('.github/workflows/' + f, 'utf8'); assert.match(text, /group: vdsen-production-app/); assert.match(text, /cancel-in-progress: false/);
+  for (const f of ['vdsen-app-release-prod.yml', 'vdsen-ayrton-runtime.yml', 'vdsen-release-prod.yml', 'vdsen-rollback.yml']) {
+    const text = fs.readFileSync('.github/workflows/' + f, 'utf8'); assert.match(text, /^  group: vdsen-production$/m); assert.match(text, /cancel-in-progress: false/);
   }
   assert.match(pilot, /environment: Production/); assert.match(pilot, /AYRTON_RUNTIME_RELEASE_ENABLED/);
   assert.ok(!/pull_request_target|secrets\.(?!VERCEL_TOKEN)/.test(pilot));
