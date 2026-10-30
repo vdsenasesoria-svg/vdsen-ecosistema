@@ -3,13 +3,15 @@
 var executor = require('./_autonomousProgression');
 var sweepLib = require('./_autonomousProgressionSweep');
 var randomUUID = require('node:crypto').randomUUID;
+var PILOT_UID_HASH = 'fb6c056b17d798c07d06878a857c359aa70828ea44debb1bcab5eb644701fe12';
 // Additional restriction only; it never enables the server switches or replaces the transactional fences.
 function inspectPilotWindow(raw, uid, now, planId) {
   if (raw === undefined) return { configured: false, valid: false };
   try {
     var w = JSON.parse(raw), exp = Date.parse(w.expiresAt), clock = now === undefined ? Date.now() : now;
-    var valid = /^[a-f0-9]{64}$/.test(w.uidHash) && /^[a-f0-9]{64}$/.test(w.planHash) && /^[a-zA-Z0-9-]{8,80}$/.test(w.operationId) &&
+    var valid = w.uidHash === PILOT_UID_HASH && /^[a-f0-9]{64}$/.test(w.planHash) && /^[a-zA-Z0-9-]{8,80}$/.test(w.operationId) &&
       /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(w.expiresAt) && Number.isFinite(exp) && exp > clock && exp - clock <= 168 * 3600e3;
+    valid = valid && new Date(exp).toISOString() === w.expiresAt.replace('Z', '.000Z');
     var digest = function(x) { return require('node:crypto').createHash('sha256').update(x).digest('hex'); };
     return { configured: true, valid: valid === true, uidHash: w.uidHash, planHash: w.planHash, expiresAt: w.expiresAt, operationId: w.operationId,
       allowed: valid === true && typeof uid === 'string' && typeof planId === 'string' && digest(uid) === w.uidHash && digest(planId) === w.planHash };
@@ -38,7 +40,9 @@ function makeHandler(deps) {
       if (typeof res.setHeader === 'function') res.setHeader('Cache-Control', 'no-store');
       var probeToken = /^Bearer\s+(\S+)$/.exec(String(req.headers && req.headers.authorization || '').trim());
       if (!probeToken) return res.status(401).json({ error: 'AUTH_MISSING' });
-      try { await deps.verifyIdToken(probeToken[1]); } catch (_) { return res.status(401).json({ error: 'AUTH_INVALID' }); }
+      var probeIdentity;
+      try { probeIdentity = await deps.verifyIdToken(probeToken[1]); } catch (_) { return res.status(401).json({ error: 'AUTH_INVALID' }); }
+      if (!probeIdentity || typeof probeIdentity.uid !== 'string' || require('node:crypto').createHash('sha256').update(probeIdentity.uid).digest('hex') !== PILOT_UID_HASH) return res.status(403).json({ error: 'PROBE_FORBIDDEN' });
       var bound = inspectPilotWindow(deps.pilotWindow);
       return res.status(200).json({ schema: 'vdsen-progression-runtime-v1', processingEnabled: deps.enabled === true,
         numericApplyEnabled: deps.numericApplyEnabled === true, cronConfigured: !!deps.cronSecret,
@@ -100,3 +104,4 @@ async function defaultHandler(req, res) {
 module.exports = defaultHandler;
 module.exports.makeHandler = makeHandler;
 module.exports.inspectPilotWindow = inspectPilotWindow;
+module.exports.PILOT_UID_HASH = PILOT_UID_HASH;

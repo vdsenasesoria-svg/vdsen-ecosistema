@@ -33,6 +33,8 @@ Antes de una nueva apertura Firestore hay otro gate concreto: retirar el antiguo
 
 La nueva vía `.github/workflows/vdsen-ayrton-runtime.yml` es distinta de app-only. No modifica variables guardadas, Firestore, Rules o IAM. Está cerrada por defecto: necesita `AYRTON_RUNTIME_RELEASE_ENABLED=true`, Environment `Production`, repositorio/ref/workflow exactos y primer intento del run. Comparte con app-only un lock que no cancela ejecuciones activas.
 
+Antes de armar o restaurar, descarga por GitHub autenticado los artefactos del run app-only oficial del baseline OFF. Deben coincidir repositorio, workflow, ref, run, deployment, SHA, resultado VERIFIED/SUCCESS y las pruebas Numeric Guard de antes/después del build. Los metadatos de un deployment y los valores actuales del proyecto no prueban por sí solos sus flags inmutables. La prueba histórica del build se distingue de la prueba fresca de configuración del proyecto: no se cambia el reloj de ningún guard. Un artefacto ausente, caducado o discordante bloquea ambas operaciones.
+
 La autorización debe nombrar: único UID real de Ayrton (se verifica contra su hash fijo), Coach/plan, SHA piloto revisado, expiración UTC absoluta con TTL positivo de hasta 168 horas, operación única, deployment OFF de recuperación y permiso para verificar/revocar. El tiempo de build consume el TTL; nunca se vuelve a calcular al confirmar.
 
 El SHA del piloto debe incluir la nueva consulta GET autenticada y la restricción `VDSEN_PILOT_WINDOW`. Será un SHA revisado posterior a T671; nunca inventar ese SHA ni desplegar HEAD implícitamente. No se alteran prescripciones, decisiones o datos históricos.
@@ -58,7 +60,7 @@ node scripts/pilot/ayrton-window.cjs --window <archivo_aprobado> --mode enable
 node scripts/pilot/ayrton-window.cjs --window <archivo_aprobado> --mode enable --confirm
 ```
 
-El wrapper obtiene por GET el deployment exacto de la API, verifica equipo/proyecto/READY/SHA/alias y consulta su URL directa con `?check=runtime`. No ejecuta un trigger: la consulta no lee Firestore ni llama al motor. Exige ambos flags efectivos ON, CRON ausente y hash/TTL/operación exactamente iguales al archivo. Repite la prueba antes del commit y después del readback.
+El wrapper obtiene por GET el deployment exacto de la API, verifica equipo/proyecto/READY/SHA/alias y consulta su URL directa con `?check=runtime`. El token debe pertenecer al UID de Ayrton: otro usuario autenticado recibe 403 sin flags ni metadatos de la ventana. No ejecuta un trigger: la consulta no lee Firestore ni llama al motor. Exige ambos flags efectivos ON, CRON ausente y hash/TTL/operación exactamente iguales al archivo. Repite la prueba antes del commit y después del readback.
 
 Solo entonces usa el writer canónico: dos barreras en un único commit con precondiciones de versión, sin `--replace`. Registra versiones antes y después, estados, SHA y expiry en `<archivo_aprobado>.evidence.json`, sin credenciales. Una repetición de la misma ventana ya coincidente escribe cero documentos y nunca extiende el TTL. Conflictos, cambios de plan/Coach, scopes ajenos o caducidad bloquean la activación. Un commit con respuesta incierta provoca lectura de las dos barreras y queda incierto aunque parezca aplicado: no se reintenta ni se declara éxito. Un fallo de verificación posterior al commit no se presenta como éxito: revocar y conciliar, sin repetir enable.
 
@@ -79,3 +81,7 @@ La caducidad es automática en las barreras del motor y en la restricción del r
 ## Evidencia y límites de la preparación
 
 Pruebas de preparación: transición sin lectura de Secret, guard fail-closed, protocolo de un solo deploy, concurrencia, fallos/rollback, GET sin acceso a datos, aislamiento de otro UID, expiry, idempotencia y revocación, todas aisladas. No hay sesiones ficticias ni escrituras productivas. La ejecución protegida/WIF, el build con overrides y la restauración se validan por simulación y contrato; su prueba real queda para la ejecución expresamente autorizada. No declarar REAL_APPLY_VERIFIED por estas pruebas: exige una sesión auténtica posterior, aplicación canónica, overlay y siguiente prescripción comprobados.
+
+## Revisión pre-merge del HEAD 8552b05
+
+La revisión reprodujo y corrigió: rollback pese a conservar el alias baseline; UID distinto aceptado por la restricción del runtime si se configuraba otro hash; diagnóstico accesible a otros usuarios autenticados; fechas UTC inexistentes normalizadas por Date.parse; y ausencia de evidencia oficial OFF para el destino de rollback. El runtime y el instrumento comparten ahora una única constante del UID permitido. La recuperación automática solo actúa después de un intento propio de promoción y si el alias sigue en ese staged. El historial de la primera ejecución debe incluir exactamente el run actual: una lista vacía o incompleta no autoriza otro deploy. Las regresiones se comprueban en pruebas aisladas; no se infiere de ellas ninguna aplicación productiva.

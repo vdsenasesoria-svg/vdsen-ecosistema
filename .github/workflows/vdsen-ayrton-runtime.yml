@@ -62,12 +62,14 @@ jobs:
       - name: One arm attempt per verified OFF baseline; uncertainty requires review
         if: inputs.restore_run == ''
         run: |
-          node -e "const cp=require('child_process'),s=require('./.release/vdsen-client.json');if(s.runtime_sha!==require('./scripts/pilot/ayrton-runtime.cjs').T671||!Number.isFinite(Date.parse(s.app_release.completed_at)))process.exit(1);const p='repos/'+process.env.GITHUB_REPOSITORY+'/actions/workflows/vdsen-ayrton-runtime.yml/runs?per_page=100&event=workflow_dispatch&created='+encodeURIComponent('>='+s.app_release.completed_at);const r=JSON.parse(cp.execFileSync('gh',['api',p],{encoding:'utf8'}));if(r.total_count>100||r.workflow_runs.some(x=>String(x.id)!==process.env.GITHUB_RUN_ID))process.exit(1);"
+          node -e "const cp=require('child_process'),s=require('./.release/vdsen-client.json');if(s.runtime_sha!==require('./scripts/pilot/ayrton-runtime.cjs').T671||!Number.isFinite(Date.parse(s.app_release.completed_at)))process.exit(1);const p='repos/'+process.env.GITHUB_REPOSITORY+'/actions/workflows/vdsen-ayrton-runtime.yml/runs?per_page=100&event=workflow_dispatch&created='+encodeURIComponent('>='+s.app_release.completed_at);const r=JSON.parse(cp.execFileSync('gh',['api',p],{encoding:'utf8'}));if(r.total_count!==1||r.workflow_runs.length!==1||String(r.workflow_runs[0].id)!==process.env.GITHUB_RUN_ID)process.exit(1);"
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Repo and pilot contracts
         run: |
           node scripts/release/check.cjs
-          node --test tests/t673-pilot-protocol.test.js tests/t584-ayrton-canary-script.test.js tests/t641-numeric-guard.test.js
+          node --test tests/t673-pilot-protocol.test.js tests/t673-premerge-security.test.js tests/t584-ayrton-canary-script.test.js tests/t641-numeric-guard.test.js
+      - name: Prove the captured OFF baseline from its official app release artifacts
+        run: node scripts/pilot/off-baseline.cjs
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
         if: inputs.restore_run == ''
         with:

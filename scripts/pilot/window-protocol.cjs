@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const G = require('../release/numeric-guard.cjs');
 const C = require('./ayrton-canary.cjs');
-const UID_HASH = 'fb6c056b17d798c07d06878a857c359aa70828ea44debb1bcab5eb644701fe12';
+const UID_HASH = require('../../api/autonomous-progression-trigger').PILOT_UID_HASH;
 const PROJECT = 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN', TEAM = 'team_VZc5H7Q1DBIJ3g0mwrSBz1o8';
 const LEGACY_ARMED_DEPLOYMENT = 'dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K';
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
@@ -17,6 +17,7 @@ function windowSpec(w, now = Date.now(), allowExpired = false) {
   for (const key of ['coachId', 'planId']) assert.match(w[key] || '', /^[a-zA-Z0-9_-]{1,128}$/);
   assert.match(w.expiresAt || '', /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
   const exp = Date.parse(w.expiresAt); assert.ok(Number.isFinite(exp), 'EXPIRY_INVALID');
+  assert.equal(new Date(exp).toISOString(), w.expiresAt.replace('Z', '.000Z'), 'EXPIRY_INVALID');
   assert.ok(exp - now <= 168 * 3600e3 && (allowExpired || exp > now), 'EXPIRY_INVALID');
   return w;
 }

@@ -53,6 +53,7 @@ function planWrites(mode, uid, state, opts) {
   const now = opts.now instanceof Date ? opts.now : new Date(), ttl = validateTtlHours(opts.ttlHours);
   const expiresAt = enabled ? (opts.expiresAt || iso(new Date(now.getTime() + ttl * 3600 * 1000))) : iso(now);
   if (enabled && (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(expiresAt) || !Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= now.getTime() || Date.parse(expiresAt) - now.getTime() > MAX_TTL_HOURS * 3600e3)) throw new Error('expiresAt inválido o caducado; no se renueva automáticamente.');
+  if (enabled && new Date(Date.parse(expiresAt)).toISOString() !== expiresAt.replace('Z', '.000Z')) throw new Error('expiresAt inválido: fecha UTC inexistente.');
   const foreign = (ids) => Array.isArray(ids) && ids.some((x) => x !== uid);
   const rel = state.release, canary = state.coach && state.coach.autoApplyCanary;
   if (enabled && !opts.replace && foreign(rel && rel.clientIds)) refusals.push('La allowlist de la release ya lista a otros clientes; usa --replace solo si quieres sustituirla por este único atleta.');

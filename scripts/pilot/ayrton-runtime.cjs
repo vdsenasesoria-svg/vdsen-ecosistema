@@ -30,7 +30,7 @@ async function arm(w, baseline, io) {
   const save = () => io.save(report);
   const fenceEvidence = snapshot => ({ readAt: new Date().toISOString(), releaseEnabled: snapshot.release && snapshot.release.enabled,
     coachEnabled: snapshot.coach.autoApplyCanary && snapshot.coach.autoApplyCanary.enabled, exclusiveScopeVerified: true });
-  report.treeSha = await io.validateSource(w.runtimeSha); await io.validateBaseline(baseline);
+  report.treeSha = await io.validateSource(w.runtimeSha); report.baselineProof = await io.validateBaseline(baseline);
   assert.equal(await io.current(), baseline.deployment, 'BASELINE_MOVED');
   const fencesBefore = await io.snapshot(w); closed(w, fencesBefore); report.fencesBefore = fenceEvidence(fencesBefore);
   const before = await io.offProof(); G.assertDisarmedEvidence(before); G.assertFresh(before);
@@ -42,6 +42,7 @@ async function arm(w, baseline, io) {
     report.productionMutations++; report.staged = { id: d.id, url: d.url };
     report.window = { ...w, deployment: d.id }; report.status = 'STAGED'; await save();
     assert.equal(d.projectId, P.PROJECT); assert.equal(d.teamId, P.TEAM);
+    assert.match(d.id, /^dpl_[A-Za-z0-9]+$/); assert.notEqual(d.id, baseline.deployment, 'STAGED_IS_BASELINE');
     assert.equal(d.sha, w.runtimeSha); assert.equal(d.target, 'production'); assert.equal(d.state, 'READY');
     assert.ok(!d.envNames.includes('CRON_SECRET'), 'CRON_NOT_ALLOWED');
     assert.equal(await io.current(), baseline.deployment, 'ALIAS_MOVED_DURING_STAGE');
@@ -55,7 +56,7 @@ async function arm(w, baseline, io) {
     report.status = 'RUNTIME_READY_FENCES_CLOSED_NOT_ACTIVATED'; await save(); return report;
   } catch (_) {
     const current = await io.current();
-    if (report.staged && current === report.staged.id) {
+    if (current !== baseline.deployment && report.promotionAttempted && report.staged && current === report.staged.id) {
       report.status = 'ROLLBACK_INTENT'; await save();
       try {
         await io.rollback(baseline.deployment); report.productionMutations++;
@@ -104,6 +105,7 @@ function adapters(s) {
       assert.equal(d.id || d.uid, b.deployment);
       assert.equal(d.projectId, P.PROJECT); assert.equal(d.teamId || d.ownerId, P.TEAM);
       assert.equal(d.meta && d.meta.githubCommitSha, b.runtimeSha);
+      return require('./off-baseline.cjs').load(s, b, d);
     },
     snapshot: async w => {
       const client = await read('clients/' + w.uid + '?mask.fieldPaths=coachId&mask.fieldPaths=activePlanId');
@@ -153,7 +155,7 @@ async function main(argv) {
   if (argv[0] === 'restore') return restore(JSON.parse(fs.readFileSync(FILE, 'utf8')), io);
   assert.equal(argv[0], 'arm');
   const w = JSON.parse(fs.readFileSync(process.env.PILOT_WINDOW_FILE, 'utf8'));
-  return arm(w, { runtimeSha: s.runtime_sha, deployment: s.production_deployment }, io);
+  return arm(w, { runtimeSha: s.runtime_sha, deployment: s.production_deployment, officialReleaseRun: String(s.app_release.source_release_run) }, io);
 }
 module.exports = { arm, restore, closed, invocation, T671 };
 if (require.main === module) main(process.argv.slice(2)).then(r => console.log(JSON.stringify({ status: r.status }))).catch(() => {

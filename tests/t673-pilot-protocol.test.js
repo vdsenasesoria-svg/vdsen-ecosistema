@@ -53,7 +53,7 @@ test('T673 authenticated GET runtime probe has no Firestore, executor, sweep or 
   for (const [authorization, expected] of [[undefined, 401], ['Bearer rejected', 401], ['Bearer accepted', 200]]) {
     const headers = {}; let body, code;
     const h = makeHandler({ enabled: true, numericApplyEnabled: true, db: new Proxy({}, { get() { throw Error('DATABASE_TOUCHED'); } }),
-      verifyIdToken: async token => { if (token !== 'accepted') throw Error('private'); return { uid: 'synthetic-user' }; } });
+      verifyIdToken: async token => { if (token !== 'accepted') throw Error('private'); return { uid: UID }; } });
     await h({ method: 'GET', query: { check: 'runtime' }, headers: { authorization } }, { setHeader: (k, v) => { headers[k] = v; }, status: n => { code = n; return { json: b => { body = b; } }; } });
     assert.equal(code, expected); assert.equal(headers['Cache-Control'], 'no-store');
     if (code === 200) assert.deepEqual(body, { schema: 'vdsen-progression-runtime-v1', processingEnabled: true, numericApplyEnabled: true, cronConfigured: false, pilotWindow: null });
