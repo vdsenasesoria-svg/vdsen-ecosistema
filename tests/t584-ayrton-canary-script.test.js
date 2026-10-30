@@ -87,7 +87,7 @@ test('T584-P7 it never widens the scope: another athlete already listed => refus
 test('T584-P8 it never touches Vercel variables, CRON or any other collection (static contract)', () => {
   const src = require('node:fs').readFileSync('scripts/pilot/ayrton-canary.cjs', 'utf8');
   assert.ok(!/vercel|CRON_SECRET|NUMERIC_APPLY|env add|env rm/i.test(src.replace(/\/\/.*$/gm, '')), 'no Vercel / CRON code'); assert.ok(!/DELETE/.test(src), 'no deletes');
-  assert.deepEqual(Object.keys(S).sort(), ['PROJECT', 'RELEASE_PATH', 'RELEASE_SCHEMA', 'canaryField', 'main', 'planWrites', 'releaseDoc', 'validateTtlHours', 'validateUid']);
+  assert.deepEqual(Object.keys(S).sort(), ['PROJECT', 'RELEASE_PATH', 'RELEASE_SCHEMA', 'canaryField', 'decDoc', 'http', 'main', 'planWrites', 'releaseDoc', 'validateTtlHours', 'validateUid']);
 });
 
 test('T657-A a failed or contended commit leaves BOTH fences untouched (no partial activation)', async () => {
