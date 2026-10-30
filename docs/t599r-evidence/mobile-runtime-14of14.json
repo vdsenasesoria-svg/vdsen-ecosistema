@@ -1,0 +1,833 @@
+[
+  {
+    "name": "base effective target is visible before Client execution fields",
+    "ok": true,
+    "detail": [
+      {
+        "text": "OBJETIVO DE ESTA SERIE\nESTRUCTURA COACH\n10 reps\nRIR 2\n3 series\nDescanso 1:30",
+        "source": "COACH",
+        "top": 1078.671875,
+        "fieldsTop": 1394.828125
+      },
+      {
+        "text": "OBJETIVO DE ESTA SERIE\nESTRUCTURA COACH\n10 reps\nRIR 2\n3 series\nDescanso 1:30",
+        "source": "COACH",
+        "top": 1991.6875,
+        "fieldsTop": null
+      },
+      {
+        "text": "OBJETIVO DE ESTA SERIE\nESTRUCTURA COACH\n10 reps\nRIR 2\n3 series\nDescanso 1:30",
+        "source": "COACH",
+        "top": 2321.34375,
+        "fieldsTop": null
+      }
+    ]
+  },
+  {
+    "name": "logbook load reference (or SIN HISTORIAL) is shown before the editable fields and never as a Coach load",
+    "ok": true,
+    "detail": {
+      "kind": "logbook",
+      "text": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 100 KG.",
+      "refTop": 1193.171875,
+      "fieldsTop": 1394.828125,
+      "noPlanLoadText": true
+    }
+  },
+  {
+    "name": "CTA flow 320x640",
+    "ok": true,
+    "detail": {
+      "viewport": "320x640",
+      "position": "static",
+      "steps": [
+        {
+          "y": 0,
+          "btnTop": 1886,
+          "btnBottom": 1934,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 613,
+          "btnTop": 1273,
+          "btnBottom": 1321,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 1226,
+          "btnTop": 660,
+          "btnBottom": 708,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 1838,
+          "btnTop": 48,
+          "btnBottom": 96,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 2451,
+          "btnTop": -565,
+          "btnBottom": -517,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        }
+      ],
+      "navTop": 569,
+      "ok": true,
+      "btnHeight": 48,
+      "touchOk": true,
+      "docOverflow": false
+    }
+  },
+  {
+    "name": "CTA flow 360x740",
+    "ok": true,
+    "detail": {
+      "viewport": "360x740",
+      "position": "static",
+      "steps": [
+        {
+          "y": 0,
+          "btnTop": 1847,
+          "btnBottom": 1901,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 556,
+          "btnTop": 1291,
+          "btnBottom": 1345,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 1112,
+          "btnTop": 735,
+          "btnBottom": 789,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 1668,
+          "btnTop": 179,
+          "btnBottom": 233,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 2224,
+          "btnTop": -377,
+          "btnBottom": -323,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        }
+      ],
+      "navTop": 669,
+      "ok": true,
+      "btnHeight": 54,
+      "touchOk": true,
+      "docOverflow": false
+    }
+  },
+  {
+    "name": "CTA flow 360x780",
+    "ok": true,
+    "detail": {
+      "viewport": "360x780",
+      "position": "static",
+      "steps": [
+        {
+          "y": 0,
+          "btnTop": 1847,
+          "btnBottom": 1901,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 546,
+          "btnTop": 1301,
+          "btnBottom": 1355,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 1092,
+          "btnTop": 755,
+          "btnBottom": 809,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 1638,
+          "btnTop": 209,
+          "btnBottom": 263,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 2184,
+          "btnTop": -337,
+          "btnBottom": -283,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        }
+      ],
+      "navTop": 709,
+      "ok": true,
+      "btnHeight": 54,
+      "touchOk": true,
+      "docOverflow": false
+    }
+  },
+  {
+    "name": "CTA flow 390x844",
+    "ok": true,
+    "detail": {
+      "viewport": "390x844",
+      "position": "static",
+      "steps": [
+        {
+          "y": 0,
+          "btnTop": 1828,
+          "btnBottom": 1882,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 517,
+          "btnTop": 1311,
+          "btnBottom": 1365,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 1033,
+          "btnTop": 795,
+          "btnBottom": 849,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 1550,
+          "btnTop": 278,
+          "btnBottom": 332,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 2066,
+          "btnTop": -238,
+          "btnBottom": -184,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        }
+      ],
+      "navTop": 773,
+      "ok": true,
+      "btnHeight": 54,
+      "touchOk": true,
+      "docOverflow": false
+    }
+  },
+  {
+    "name": "CTA flow 430x932",
+    "ok": true,
+    "detail": {
+      "viewport": "430x932",
+      "position": "static",
+      "steps": [
+        {
+          "y": 0,
+          "btnTop": 1818,
+          "btnBottom": 1872,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 489,
+          "btnTop": 1329,
+          "btnBottom": 1383,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 977,
+          "btnTop": 841,
+          "btnBottom": 895,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 1466,
+          "btnTop": 352,
+          "btnBottom": 406,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 1954,
+          "btnTop": -136,
+          "btnBottom": -82,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        }
+      ],
+      "navTop": 861,
+      "ok": true,
+      "btnHeight": 54,
+      "touchOk": true,
+      "docOverflow": false
+    }
+  },
+  {
+    "name": "CTA flow 740x360",
+    "ok": true,
+    "detail": {
+      "viewport": "740x360",
+      "position": "static",
+      "steps": [
+        {
+          "y": 0,
+          "btnTop": 1721,
+          "btnBottom": 1775,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 588,
+          "btnTop": 1133,
+          "btnBottom": 1187,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 1176,
+          "btnTop": 545,
+          "btnBottom": 599,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 1764,
+          "btnTop": -43,
+          "btnBottom": 11,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 2352,
+          "btnTop": -631,
+          "btnBottom": -577,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        }
+      ],
+      "navTop": 289,
+      "ok": true,
+      "btnHeight": 54,
+      "touchOk": true,
+      "docOverflow": false
+    }
+  },
+  {
+    "name": "CTA flow 360x320",
+    "ok": true,
+    "detail": {
+      "viewport": "360x320",
+      "position": "static",
+      "steps": [
+        {
+          "y": 0,
+          "btnTop": 1847,
+          "btnBottom": 1901,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 661,
+          "btnTop": 1186,
+          "btnBottom": 1240,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 1322,
+          "btnTop": 525,
+          "btnBottom": 579,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 1983,
+          "btnTop": -136,
+          "btnBottom": -82,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 2644,
+          "btnTop": -797,
+          "btnBottom": -743,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        }
+      ],
+      "navTop": 249,
+      "ok": true,
+      "btnHeight": 54,
+      "touchOk": true,
+      "docOverflow": false
+    }
+  },
+  {
+    "name": "no horizontal overflow in every tab scroller",
+    "ok": true,
+    "detail": [
+      {
+        "viewport": "320x640",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "320x640",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "320x640",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "320x640",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "320x640",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "360x740",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "360x740",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "360x740",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "360x740",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "360x740",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "360x780",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "360x780",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "360x780",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "360x780",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "360x780",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "390x844",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "390x844",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "390x844",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "390x844",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "390x844",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "430x932",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "430x932",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "430x932",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "430x932",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "430x932",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "740x360",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "740x360",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "740x360",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "740x360",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "740x360",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "360x320",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "360x320",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "360x320",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "360x320",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      },
+      {
+        "viewport": "360x320",
+        "docOverflow": false,
+        "offenders": [],
+        "ok": true
+      }
+    ]
+  },
+  {
+    "name": "negative sticky CSS reliably fails geometry audit",
+    "ok": true,
+    "detail": {
+      "viewport": "360x740",
+      "position": "sticky",
+      "steps": [
+        {
+          "y": 0,
+          "btnTop": 1061,
+          "btnBottom": 1115,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": false
+        },
+        {
+          "y": 556,
+          "btnTop": 507,
+          "btnBottom": 561,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": false
+        },
+        {
+          "y": 1112,
+          "btnTop": 507,
+          "btnBottom": 561,
+          "hitsFields": 6,
+          "hits": [
+            "rir_btn_log_2_0_0_s0_0",
+            "rir_btn_log_2_0_0_s0_1",
+            "rir_btn_log_2_0_0_s0_2",
+            "rir_btn_log_2_0_0_s0_3"
+          ],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": false
+        },
+        {
+          "y": 1668,
+          "btnTop": 181,
+          "btnBottom": 235,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        },
+        {
+          "y": 2224,
+          "btnTop": -375,
+          "btnBottom": -321,
+          "hitsFields": 0,
+          "hits": [],
+          "coversNav": false,
+          "coversHeader": false,
+          "btnBelowFields": true
+        }
+      ],
+      "navTop": 669,
+      "ok": false,
+      "btnHeight": 54,
+      "touchOk": true,
+      "docOverflow": false
+    }
+  },
+  {
+    "name": "runtime diagnostics identifies this HTML build, its worker controller and its cache",
+    "ok": true,
+    "detail": {
+      "expectedBuild": "t599r-progression-authority-20261024-01",
+      "build": "t599r-progression-authority-20261024-01",
+      "controller": "http://localhost:5199/sw.js?build=t599r-progression-authority-20261024-01",
+      "registrations": [
+        {
+          "scope": "http://localhost:5199/",
+          "active": "http://localhost:5199/sw.js?build=t599r-progression-authority-20261024-01",
+          "waiting": null,
+          "installing": null
+        }
+      ],
+      "caches": [
+        "vdsen-t599r-progression-authority-20261024-01"
+      ],
+      "viewport": {
+        "innerWidth": 360,
+        "innerHeight": 740,
+        "visual": {
+          "width": 360,
+          "height": 740,
+          "offsetTop": 0,
+          "offsetLeft": 0,
+          "scale": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "after the first save the NEXT set shows the athlete own 80 KG as logbook reference",
+    "ok": true,
+    "detail": {
+      "kind": "logbook",
+      "text": "REFERENCIA DE BITÁCORA\nÚltima carga de trabajo válida: 80 KG."
+    }
+  },
+  {
+    "name": "three real UI saves persist once with stable per-set keys",
+    "ok": true,
+    "detail": {
+      "keys": [
+        "log_2_0_0_s0",
+        "log_2_0_0_s1",
+        "log_2_0_0_s2"
+      ],
+      "saved": [
+        "log_2_0_0_s0",
+        "log_2_0_0_s1",
+        "log_2_0_0_s2"
+      ]
+    }
+  }
+]

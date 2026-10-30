@@ -1,0 +1,6 @@
+{
+  "projects": {
+    "production": "vdsen-ecosistema",
+    "staging": "vdsen-ecosistema-staging"
+  }
+}

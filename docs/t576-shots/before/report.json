@@ -1,0 +1,43 @@
+{
+  "label": "before",
+  "at": "2026-10-17T16:08:10.374Z",
+  "screens": {
+    "390-s1-noplan-landing-scrOnboarding": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 390,
+      "innerWidth": 390
+    },
+    "390-s2-home": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 390,
+      "innerWidth": 390
+    },
+    "390-s3-set-filled": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 390,
+      "innerWidth": 390
+    },
+    "390-s3-set-saved": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 390,
+      "innerWidth": 390
+    },
+    "390-s4-offline": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 390,
+      "innerWidth": 390
+    },
+    "390-s5-keyboard-height": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 390,
+      "innerWidth": 390
+    }
+  },
+  "noPlanLanding": "scrOnboarding"
+}

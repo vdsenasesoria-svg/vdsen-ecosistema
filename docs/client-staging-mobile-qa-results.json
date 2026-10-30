@@ -1,0 +1,258 @@
+{
+  "summary": {
+    "project": "vdsen-ecosistema-staging",
+    "checks": 48,
+    "failed": [],
+    "synthetic": true,
+    "widths": [
+      320,
+      360,
+      375,
+      390,
+      414,
+      430
+    ]
+  },
+  "results": [
+    {
+      "id": "W320_home_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":320,\"sw\":320,\"bodySw\":320,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W320_training_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":320,\"sw\":320,\"bodySw\":320,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W320_nutrition_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":320,\"sw\":320,\"bodySw\":320,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W320_checkin_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":320,\"sw\":320,\"bodySw\":320,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W320_profile_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":320,\"sw\":320,\"bodySw\":320,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W320_SET_ROW_TOUCH_TARGETS_44",
+      "pass": true,
+      "note": "[]"
+    },
+    {
+      "id": "W320_SET_ROW_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":320,\"sw\":320,\"bodySw\":320,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W320_NO_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "W360_home_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":360,\"sw\":360,\"bodySw\":360,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W360_training_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":360,\"sw\":360,\"bodySw\":360,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W360_nutrition_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":360,\"sw\":360,\"bodySw\":360,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W360_checkin_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":360,\"sw\":360,\"bodySw\":360,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W360_profile_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":360,\"sw\":360,\"bodySw\":360,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W360_SET_ROW_TOUCH_TARGETS_44",
+      "pass": true,
+      "note": "[]"
+    },
+    {
+      "id": "W360_SET_ROW_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":360,\"sw\":360,\"bodySw\":360,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W360_NO_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "W375_home_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":375,\"sw\":375,\"bodySw\":375,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W375_training_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":375,\"sw\":375,\"bodySw\":375,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W375_nutrition_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":375,\"sw\":375,\"bodySw\":375,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W375_checkin_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":375,\"sw\":375,\"bodySw\":375,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W375_profile_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":375,\"sw\":375,\"bodySw\":375,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W375_SET_ROW_TOUCH_TARGETS_44",
+      "pass": true,
+      "note": "[]"
+    },
+    {
+      "id": "W375_SET_ROW_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":375,\"sw\":375,\"bodySw\":375,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W375_NO_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "W390_home_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":390,\"sw\":390,\"bodySw\":390,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W390_training_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":390,\"sw\":390,\"bodySw\":390,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W390_nutrition_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":390,\"sw\":390,\"bodySw\":390,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W390_checkin_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":390,\"sw\":390,\"bodySw\":390,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W390_profile_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":390,\"sw\":390,\"bodySw\":390,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W390_SET_ROW_TOUCH_TARGETS_44",
+      "pass": true,
+      "note": "[]"
+    },
+    {
+      "id": "W390_SET_ROW_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":390,\"sw\":390,\"bodySw\":390,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W390_NO_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "W414_home_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":414,\"sw\":414,\"bodySw\":414,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W414_training_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":414,\"sw\":414,\"bodySw\":414,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W414_nutrition_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":414,\"sw\":414,\"bodySw\":414,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W414_checkin_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":414,\"sw\":414,\"bodySw\":414,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W414_profile_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":414,\"sw\":414,\"bodySw\":414,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W414_SET_ROW_TOUCH_TARGETS_44",
+      "pass": true,
+      "note": "[]"
+    },
+    {
+      "id": "W414_SET_ROW_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":414,\"sw\":414,\"bodySw\":414,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W414_NO_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "W430_home_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":430,\"sw\":430,\"bodySw\":430,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W430_training_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":430,\"sw\":430,\"bodySw\":430,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W430_nutrition_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":430,\"sw\":430,\"bodySw\":430,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W430_checkin_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":430,\"sw\":430,\"bodySw\":430,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W430_profile_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":430,\"sw\":430,\"bodySw\":430,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W430_SET_ROW_TOUCH_TARGETS_44",
+      "pass": true,
+      "note": "[]"
+    },
+    {
+      "id": "W430_SET_ROW_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"W\":430,\"sw\":430,\"bodySw\":430,\"over\":[],\"nOver\":0}"
+    },
+    {
+      "id": "W430_NO_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    }
+  ]
+}

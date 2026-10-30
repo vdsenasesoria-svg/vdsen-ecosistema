@@ -1,0 +1,62 @@
+{
+  "runtime_sha": "21dc0e2b211facfb0df9f3079c58488c2f86952c",
+  "production_deployment": "dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K",
+  "rollback_deployment": "dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw",
+  "rollback_runtime_sha": "b5f53af5843f466528a4b95e5a3e52d6c8c77fb1",
+  "target_deployment": "dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K",
+  "production_project": "prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN",
+  "vercel_team": "team_VZc5H7Q1DBIJ3g0mwrSBz1o8",
+  "production_origin": "https://vdsen-ecosistema.vercel.app",
+  "firebase_project": "vdsen-ecosistema",
+  "numeric_apply_enabled": false,
+  "rules_transition": {
+    "target_sha256": "fe1517306bebd4bd529adfc51a406c5e97cac6b2dfd7fcae61c87318dd2e21e0",
+    "order": "verify_current_app_then_rules",
+    "rollback_order": "rules_then_app",
+    "rollback_sha256": "ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6",
+    "rollback_source_path": ".release/rollback/firestore.rules.ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6.rules"
+  },
+  "required_index": {
+    "collectionGroup": "plans_backup",
+    "queryScope": "COLLECTION",
+    "fields": [
+      {
+        "fieldPath": "coachId",
+        "order": "ASCENDING"
+      },
+      {
+        "fieldPath": "clientId",
+        "order": "ASCENDING"
+      },
+      {
+        "fieldPath": "backedUpAt",
+        "order": "DESCENDING"
+      }
+    ]
+  },
+  "release_status": "READY",
+  "preconditions": {
+    "entitlements_verified": true,
+    "legacy_data_reviewed": true,
+    "preview_production_env_verified": true,
+    "human_ux_approved": true
+  },
+  "observation_source": "T663 rebaseline. Production serves dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K (runtime 21dc0e2b211facfb0df9f3079c58488c2f86952c), created as a staged production deployment by the T663 single executor from a git archive of that exact commit (served files byte-identical to .release/deployed-product.json, 21 of 21 over HTTP), promoted at 2026-10-28T21:19:29Z. It is NOT a workflow run (source_release_run 0 = no workflow run). The AUTONOMOUS_PROGRESSION_* server switches were set in Vercel Production before the build, so this deployment carries them: Numeric Apply is armed only for the single pilot athlete through the Firestore barriers (24 h expiry); the client asset flag numeric_apply_enabled stays false. CRON is off. The deployment that served immediately before is dpl_BDdGBRjtRotiv4nJJEDoZK57He9s (same runtime, built without the switches): it is the fastest emergency target (promote it to drop the switches), but the lane identifies CLI deployments by SHA and refuses two reviewed ids on one SHA, so the manifest rollback stays the last workflow-verified distinct-SHA deployment dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw (b5f53af). Rules FE151 live (workflow run 40683175819, re-read 2026-10-28 with raw sha256 equal to published_rules.sha256).",
+  "release_mode": "app_only",
+  "app_release": {
+    "runtime_sha": "21dc0e2b211facfb0df9f3079c58488c2f86952c",
+    "deployment": "dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K",
+    "promotion_model": "staged_production",
+    "previous_deployment": "dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw",
+    "previous_runtime_sha": "b5f53af5843f466528a4b95e5a3e52d6c8c77fb1",
+    "verified_surfaces": 21,
+    "source_release_run": "0",
+    "completed_at": "2026-10-28T21:19:29Z"
+  },
+  "published_rules": {
+    "sha256": "fe1517306bebd4bd529adfc51a406c5e97cac6b2dfd7fcae61c87318dd2e21e0",
+    "rules_sha": "ef91ac9072f40b2e2a1e73d77c424f9e21ccb27b",
+    "source_release_run": "40683175819",
+    "completed_at": "2026-10-28T11:54:05Z"
+  }
+}
