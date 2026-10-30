@@ -11963,6 +11963,12 @@ async function _doSaveLogs() {
 }
 
 var _trustedProgressionPending = Object.create(null);
+var _trustedProgressionDiagnostics = [], _trustedProgressionDiagnosticOwner = null;
+// In-memory, redacted evidence for the last notifications of the CURRENT session only. Never persisted to the athlete's logbook.
+window.getVdsenProgressionDiagnostics = function() {
+  if (!USER || _trustedProgressionDiagnosticOwner !== USER.uid + ':' + ACTIVE_PLAN_ID) return [];
+  return _trustedProgressionDiagnostics.map(function(event) { return Object.assign({}, event); });
+};
 function _scheduleTrustedProgression(uid, planId) {
   if (!uid || !planId || !USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId || !FB || typeof FB.waitForPendingWrites !== 'function') return;
   var key = uid + ':' + planId;
@@ -11970,14 +11976,42 @@ function _scheduleTrustedProgression(uid, planId) {
   // it is remembered and one more call runs when the current one ends.
   if (_trustedProgressionPending[key]) { _trustedProgressionPending[key] = 'again'; return; }
   _trustedProgressionPending[key] = true;
+  if (typeof _trustedProgressionDiagnostics === 'undefined') _trustedProgressionDiagnostics = [];
+  if (typeof _trustedProgressionDiagnosticOwner === 'undefined' || _trustedProgressionDiagnosticOwner !== key) {
+    _trustedProgressionDiagnosticOwner = key; _trustedProgressionDiagnostics = [];
+  }
+  var stage = 'WRITE_SYNC', sent = false;
+  function current() { return USER && USER.uid === uid && ACTIVE_PLAN_ID === planId; }
+  function record(category, httpStatus, requestId, engineStatus) {
+    if (!current() || _trustedProgressionDiagnosticOwner !== key) return;
+    var event = { at: Date.now(), sent: sent, httpStatus: httpStatus || null, requestId: requestId || null, category: category, engineStatus: engineStatus || null };
+    _trustedProgressionDiagnostics.push(event);
+    if (_trustedProgressionDiagnostics.length > 20) _trustedProgressionDiagnostics.shift();
+    if (category !== 'OK') { try { console.warn('[progression executor]', event); } catch (_) { /* Diagnostic logging never blocks saving. */ } }
+  }
   FB.waitForPendingWrites(FB.db).then(function() {
-    if (!USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId) return null;
+    if (!current()) return null;
+    stage = 'TOKEN';
     return USER.getIdToken().then(function(token) {
-      return fetch('/api/autonomous-progression-trigger', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ planId: planId }) });
+      if (!current()) return null;
+      stage = 'NETWORK'; sent = true;
+      return fetch('/api/autonomous-progression-trigger', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ planId: planId }) }).then(function(res) {
+        if (!current()) return null;
+        var http = Number.isInteger(res.status) && res.status >= 100 && res.status <= 599 ? res.status : null;
+        var id = res.headers && typeof res.headers.get === 'function' ? res.headers.get('x-vdsen-progression-request-id') : null;
+        if (typeof id !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id)) id = null;
+        if (!res.ok) { record(http === 401 || http === 403 ? 'AUTH' : http === 503 ? 'RUNTIME' : http >= 500 ? 'SERVER' : 'REQUEST', http, id); return null; }
+        stage = 'RESPONSE_INVALID';
+        return Promise.resolve().then(function() { return res.json(); }).then(function(body) {
+          var status = body && body.status, allowed = ['DISARMED', 'OUT_OF_ALLOWLIST', 'OUT_OF_CANARY', 'PLAN_MISMATCH', 'SOURCE_INVALID', 'NO_CHANGE', 'MATERIALIZED'];
+          if (allowed.indexOf(status) < 0) { record('RESPONSE_INVALID', http, id); return null; }
+          record(status === 'NO_CHANGE' || status === 'MATERIALIZED' ? 'OK' : 'ENGINE_BLOCKED', http, id, status);
+        }).catch(function() { record('RESPONSE_INVALID', http, id); });
+      });
     });
-  }).catch(function(err) {
+  }).catch(function() {
     // Saving execution evidence never depends on this background service.
-    console.warn('[progression executor] deferred:', err && err.message);
+    record(stage);
   }).finally(function() { var again = _trustedProgressionPending[key] === 'again'; delete _trustedProgressionPending[key]; if (again) _scheduleTrustedProgression(uid, planId); });
 }
 
