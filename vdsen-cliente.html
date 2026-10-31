@@ -12092,8 +12092,22 @@ function _acceptTrustedProgressionSnapshot(uid, planId, snap) {
 }
 function _refreshTrustedProgression(uid, planId) {
   if (!FB || typeof FB.getDoc !== 'function' || typeof FB.doc !== 'function') return;
-  var seq = ++_trustedProgressionRefreshSeq;
-  FB.getDoc(FB.doc(FB.db, 'logs', uid, 'mesos', planId)).then(function(snap) { if (seq === _trustedProgressionRefreshSeq) _acceptTrustedProgressionSnapshot(uid, planId, snap); }).catch(function() { console.warn('[progression executor] canonical refresh unavailable'); });
+  var seq = ++_trustedProgressionRefreshSeq, attempts = 0;
+  function read() {
+    if (seq !== _trustedProgressionRefreshSeq || !USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId) return;
+    attempts++;
+    FB.getDoc(FB.doc(FB.db, 'logs', uid, 'mesos', planId)).then(function(snap) {
+      if (seq !== _trustedProgressionRefreshSeq || !USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId) return;
+      if (snap.metadata && (snap.metadata.fromCache || snap.metadata.hasPendingWrites)) { retry(); return; }
+      _acceptTrustedProgressionSnapshot(uid, planId, snap);
+    }).catch(retry);
+  }
+  function retry() {
+    if (seq !== _trustedProgressionRefreshSeq || !USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId) return;
+    if (attempts < 6 && typeof setTimeout === 'function') setTimeout(read, Math.min(30000, 1500 * Math.pow(2, attempts - 1)));
+    else console.warn('[progression executor] canonical refresh unavailable');
+  }
+  read();
 }
 
 // T570-R: the athlete app never creates canonical records. It may only notify

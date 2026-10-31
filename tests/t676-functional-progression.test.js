@@ -72,6 +72,46 @@ test('T676 out-of-order canonical reads never replace a newer overlay snapshot',
   pending[1](snap('CONSUMED')); await flush(); pending[0](snap('APPLIED')); await flush();
   assert.equal(b.LIFECYCLE_STATE.records.r.state,'CONSUMED');
 });
+test('T676 canonical refresh retries failed and cached reads without repeating the trigger', async () => {
+  const a=transport(), b=a.box; let reads=0, renders=0;
+  b.LIFECYCLE_STATE={uid:'athlete',planId:'plan',records:{},overlays:{},receipts:{},candidatePlanDoc:{}};
+  b.document.activeElement=null; b.renderEntrenamiento=()=>renders++; b.renderResumen=()=>{};
+  b.FB.doc=()=>({}); b.FB.getDoc=()=>{
+    reads++;
+    if (reads===1) return Promise.reject(Error('offline'));
+    return Promise.resolve({exists:()=>true,metadata:{fromCache:reads===2},data:()=>({planId:'plan',progressionApplications:{r:{state:'APPLIED'}}})});
+  };
+  b._refreshTrustedProgression('athlete','plan'); await flush();
+  assert.equal(a.timers.size,1); await a.next(); assert.equal(renders,0);
+  await a.next(); assert.equal(reads,3); assert.equal(renders,1);
+  assert.equal(b.LIFECYCLE_STATE.records.r.state,'APPLIED'); assert.equal(a.requests.length,0);
+});
+test('T676 canonical refresh stops retries after account changes', async () => {
+  const a=transport(), b=a.box; let reads=0;
+  b.FB.doc=()=>({}); b.FB.getDoc=()=>{reads++; return Promise.reject(Error('offline'));};
+  b._refreshTrustedProgression('athlete','plan'); await flush();
+  b.USER={uid:'other'}; await a.next(); assert.equal(reads,1); assert.equal(a.timers.size,0);
+});
+test('T676 canonical refresh stops after six failed reads and cancels on plan change', async () => {
+  const a=transport(), b=a.box; let reads=0;
+  b.FB.doc=()=>({}); b.FB.getDoc=()=>{reads++; return Promise.reject(Error('offline'));};
+  b._refreshTrustedProgression('athlete','plan'); await flush();
+  while (a.timers.size) await a.next();
+  assert.equal(reads,6); assert.equal(a.requests.length,0);
+  b._refreshTrustedProgression('athlete','plan'); await flush();
+  b.ACTIVE_PLAN_ID='another-plan'; await a.next(); assert.equal(reads,7);
+});
+test('T676 an obsolete retry cannot replace a newer canonical read', async () => {
+  const a=transport(), b=a.box, pending=[];
+  b.LIFECYCLE_STATE={uid:'athlete',planId:'plan',records:{},overlays:{},receipts:{},candidatePlanDoc:{}};
+  b.document.activeElement=null; b.renderEntrenamiento=()=>{}; b.renderResumen=()=>{};
+  b.FB.doc=()=>({}); b.FB.getDoc=()=>new Promise((resolve,reject)=>pending.push({resolve,reject}));
+  const snap=state=>({exists:()=>true,metadata:{},data:()=>({planId:'plan',progressionApplications:{r:{state}}})});
+  b._refreshTrustedProgression('athlete','plan'); pending[0].reject(Error('offline')); await flush();
+  await a.next(); b._refreshTrustedProgression('athlete','plan');
+  pending[2].resolve(snap('CONSUMED')); await flush(); pending[1].resolve(snap('APPLIED')); await flush();
+  assert.equal(b.LIFECYCLE_STATE.records.r.state,'CONSUMED'); assert.equal(a.timers.size,0);
+});
 function monitoring(days = 1) {
   const planDoc = {clientId:'a', days:[{dayIndex:0,exercises:[{prescriptionExerciseId:'p'}]}]}, entries = {};
   for (let w=1; w<=days; w++) {

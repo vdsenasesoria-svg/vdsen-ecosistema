@@ -3,7 +3,7 @@
 // Synthetic users only; the shared fixture helper pins BOTH SDKs to local demo emulators.
 const fs = require('node:fs'), path = require('node:path'), {spawn} = require('node:child_process');
 const {chromium} = require('playwright-core'), L = require('../e2e-t599r/lib.cjs');
-const OUT = path.join(L.root,'release-output','t676'), ORIGIN = 'http://localhost:5276';
+const OUT = process.env.T676_OUTPUT_DIRECTORY || path.join(L.root,'release-output','t676'), ORIGIN = 'http://localhost:5276';
 const checks = [], evidence = {};
 // `sts` is a server timestamp independently assigned to each write, so equality of execution fields excludes only that per-document timestamp.
 function sameEntry(a,b) { if (!a || !b) return false; const {sts: _a,...x}=a, {sts: _b,...y}=b; return JSON.stringify(x)===JSON.stringify(y); }
@@ -64,8 +64,29 @@ async function singleSession(page,real=4,post={}) {
     // Reload preserves localStorage + authenticated persistence. No manual trigger or direct handler invocation.
     blocked=false;await b.page.reload();await b.page.addScriptTag({url:'/__driver.js'});
     await b.page.evaluate(async()=>{const s=document.getElementById('clientModuleSrc');await import(URL.createObjectURL(new Blob([s.textContent],{type:'text/javascript'})));});
+    // Fail the first canonical refresh read, then return an explicitly cache-marked snapshot.
+    // The real Firestore read and all writes continue against the local emulator.
+    await b.page.evaluate(() => {
+      const originalRefresh=window._refreshTrustedProgression, originalGet=FB.getDoc;
+      window.__canonicalReadFault={active:false,failed:0,cached:0};
+      window._refreshTrustedProgression=function(uid,planId){window.__canonicalReadFault.active=true;return originalRefresh(uid,planId);};
+      FB.getDoc=function(ref){
+        const f=window.__canonicalReadFault;
+        if(f.active && String(ref.path).includes('/mesos/')) {
+          if(!f.failed){f.failed++;return Promise.reject(Error('injected canonical read failure'));}
+          if(!f.cached){f.cached++;return originalGet(ref).then(s=>({exists:()=>s.exists(),data:()=>s.data(),metadata:{fromCache:true}}));}
+        }
+        return originalGet(ref);
+      };
+    });
     await b.page.waitForFunction(()=>typeof window.selDia==='function'&&document.getElementById('tabEntr'),{timeout:20000});
-    await until(async()=>L.overlaysOf(await L.meso(a)).length===5);await training(b.page);
+    await until(async()=>L.overlaysOf(await L.meso(a)).length===5);
+    await until(async()=>b.page.evaluate(()=>window.__canonicalReadFault.failed===1));
+    const afterFailedRead=await L.meso(a);
+    must('failed canonical read leaves saved session unchanged',Object.entries(sessionBefore).every(([k,v])=>JSON.stringify(afterFailedRead.entries[k])===JSON.stringify(v)));
+    await until(async()=>b.page.evaluate(()=>window.__canonicalReadFault.cached===1));
+    must('canonical read failure and cached snapshot injected',await b.page.evaluate(()=>window.__canonicalReadFault.failed===1&&window.__canonicalReadFault.cached===1));
+    await training(b.page);
     m=await L.meso(a);
     evidence.main={records:L.recordsOf(m).map(L.slim),overlays:L.overlaysOf(m).map(L.slimOv)};
     must('B C D autonomous recovery materializes canonical decisions and five overlays',dimensions.every((d,i)=>L.ovFor(m,a.pids[i]).some(o=>o.dimension===d&&o.status==='APPLIED')),evidence.main.overlays);
