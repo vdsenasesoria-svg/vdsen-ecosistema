@@ -7,7 +7,8 @@ const { spawn, spawnSync } = require('child_process');
 const { chromium } = require('playwright-core');
 const ROOT = path.resolve(__dirname, '../..'), PROJECT = 'demo-vdsen-client-e2e';
 const arg = (n, d) => { const i = process.argv.indexOf('--' + n); return i < 0 ? d : process.argv[i + 1]; };
-const OUT = path.resolve(arg('out', path.join(os.tmpdir(), 'vdsen-t599-progression')));
+const OUT = path.resolve(arg('out', path.join(os.tmpdir(), 'vdsen-t599-progression'))), only = arg('only', null);
+const delayConsumption = Number(arg('delay-consumption-ms', 0));
 process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8085'; process.env.GCLOUD_PROJECT = PROJECT;
 delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
 const admin = require(path.join(ROOT, 'node_modules/firebase-admin'));
@@ -79,7 +80,9 @@ const specs = [
     if (seeded.status) throw new Error('seed failed: ' + seeded.stderr);
     const who = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'vdsen-client-e2e-creds.json'))).who;
     browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
-    for (const spec of specs) {
+    if (only && !specs.some(s => s.dim === only)) throw new Error('Unknown dimension: ' + only);
+    if (!Number.isFinite(delayConsumption) || delayConsumption < 0 || delayConsumption > 10000) throw new Error('Invalid consumption delay');
+    for (const spec of specs.filter(s => !only || s.dim === only)) {
       const a = who[spec.label]; await shape(a, spec);
       let b = await boot(browser, spec.label);
       const logged = await b.page.evaluate(async s => window.__session(0, [0, 1, 2].map(si => [0, si, { carga: 10, reps: s.reps || 10, rir: s.real, ics: s.ics, pump: 1 }]), s.post), spec);
@@ -99,12 +102,22 @@ const specs = [
       must(spec.dim + ' real next-exposure DOM has exact server objective and row count', ui.state === 'APPLIED' && eff.length === expectedN && ui.rows === expectedN && /OBJETIVO DE ESTA SERIE/.test(ui.target) &&
         (['LOAD','FREEZE'].includes(spec.dim) ? eff.every(s => s.load === ov.appliedValue) : spec.dim === 'REPS' ? eff.every(s => s.repsTarget === ov.appliedValue) : spec.dim === 'REST' ? eff.every(s => s.restSeconds === ov.appliedValue) : spec.dim === 'DELOAD' ? eff.every(s => s.load === c.LOAD && s.rirTarget === c.RIR) : true), ui);
       await b.page.screenshot({ path: path.join(OUT, spec.dim.toLowerCase() + '-applied.png'), fullPage: true });
+      if (delayConsumption) await b.page.evaluate(ms => { const original = window._maybeConsumeOverlays; window._maybeConsumeOverlays = uid => new Promise(resolve => setTimeout(resolve, ms)).then(() => original(uid)); }, delayConsumption);
       const v = eff[0]; await b.page.evaluate(x => window.__logSet(0, 0, 0, x), { carga: v.load || 10, reps: v.repsTarget, rir: v.rirTarget, ics: 7.5, pump: 1 });
       const timer = await b.page.evaluate(() => ({ stored: Number(localStorage.getItem('vdsen_restTotal')), visible: document.getElementById('restTimerNum')?.innerText }));
       must(spec.dim + ' real save starts effective rest timer', timer.stored === v.restSeconds, timer);
-      await trigger(a); await sleep(1000); m = await state(a);
+      await trigger(a);
+      const deadline = Date.now() + 30000; let initial;
+      do {
+        m = await state(a);
+        const current = { overlayState: m.nextExposureOverlays?.[ov.key]?.status, recordState: m.progressionApplications?.[ov.sourceRecordKey]?.state, receiptPresent: !!m.consumptionReceipts?.[ov.sourceRecordKey] };
+        if (!initial) initial = current;
+        if (current.overlayState === 'CONSUMED' && current.recordState === 'CONSUMED') break;
+        if (Date.now() >= deadline) break;
+        await sleep(250);
+      } while (true);
       const stored = m.entries.log_3_0_0_s0, receipt = m.consumptionReceipts?.[ov.sourceRecordKey];
-      must(spec.dim + ' real Client receipt + persisted PID execution become CONSUMED', !!receipt && m.nextExposureOverlays[ov.key].status === 'CONSUMED' && m.progressionApplications[ov.sourceRecordKey].state === 'CONSUMED' && stored.prescriptionExerciseId === a.pids[0] && Number(stored.carga) === (v.load || 10) && Number(stored.reps) === v.repsTarget && Number(stored.rir) === v.rirTarget, { receipt, stored });
+      must(spec.dim + ' real Client receipt + persisted PID execution become CONSUMED', !!receipt && m.nextExposureOverlays?.[ov.key]?.status === 'CONSUMED' && m.progressionApplications?.[ov.sourceRecordKey]?.state === 'CONSUMED' && stored?.prescriptionExerciseId === a.pids[0] && Number(stored.carga) === (v.load || 10) && Number(stored.reps) === v.repsTarget && Number(stored.rir) === v.rirTarget, { initial, overlayState: m.nextExposureOverlays?.[ov.key]?.status, recordState: m.progressionApplications?.[ov.sourceRecordKey]?.state, receipt, stored });
       for (let si = 1; si < expectedN; si++) await b.page.evaluate(async x => { window.stopRestTimer(); return window.__logSet(0, 0, x.si, x.v); }, { si, v: { carga: eff[si].load || 10, reps: eff[si].repsTarget, rir: eff[si].rirTarget, ics: 7.5, pump: 1 } });
       m = await state(a); const rootLog = (await db.doc('logs/' + a.uid).get()).data();
       const executedKeys = Object.keys(m.entries).filter(k => /^log_3_0_0_s\d+$/.test(k) && m.entries[k].done);
@@ -118,7 +131,8 @@ const specs = [
       evidence.push({ dimension: spec.dim, overlay: ov, pending: { state: pending.state, key: pending.key }, ui, timer, receipt, execution: stored, continuity: next.effective });
       await b.ctx.close();
     }
-    const n = who.N; await shape(n, { rir: 3, real: 3, ics: 7.5 });
+    if (!only) {
+      const n = who.N; await shape(n, { rir: 3, real: 3, ics: 7.5 });
     const pr = db.doc('plans/' + n.planId), plan = (await pr.get()).data(); plan.days[0].exercises[0].sets.forEach(s => s.repsTarget = 8); await pr.set(plan);
     const b = await boot(browser, 'N'), before = await snapshot(b.page);
     must('Brave reported case: historical 10 KG remains separate from 3x8 RIR3 rest2:30, no invented adjustment', before.effective.length === 3 && before.effective.every(s => s.repsTarget === 8 && s.rirTarget === 3 && s.restSeconds === 150 && !s.load) && /10 KG/.test(before.history) && /Sin autoajuste aplicado/.test(before.authority), before);
@@ -126,6 +140,7 @@ const specs = [
     const copy = await b.page.evaluate(() => { const row = document.querySelector('.workout-set-current'), btn = row.querySelector('.pw-use'); const warning = row.innerText; btn.click(); return { warning, draft: row.querySelector('[id^="reps_"]').value, target: row.querySelector('[data-effective-target]').innerText }; });
     must('historical copy warns about 10 vs 8 reps; editable execution stays separate from objective', /Objetivo vigente: 8 reps/.test(copy.warning) && /No es una recomendación/.test(copy.warning) && copy.draft === '10' && /8/.test(copy.target), copy);
     await b.ctx.close();
+    }
   } catch (e) { check('full real-browser lifecycle completed', false, e.stack); }
   finally { if (browser) await browser.close(); servers.forEach(p => p.kill()); await app.delete(); }
   fs.writeFileSync(path.join(OUT, 'result.json'), JSON.stringify({ project: PROJECT, source: 'real Chrome mobile emulation + Auth/Firestore emulators + real server handler; no physical Brave claim', checks, evidence }, null, 2));
