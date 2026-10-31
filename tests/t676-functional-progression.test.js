@@ -33,6 +33,13 @@ test('T676 retries are bounded and account changes never send a stale intent', a
   assert.equal(a.requests.length,6); assert.equal(a.storage.size,1);
   a.events.online(); a.box.USER = { uid: 'other' }; await a.next(); assert.equal(a.requests.length,6);
 });
+test('T676 a blocked storage write retains the current-page intent and retries', async () => {
+  const a=transport(); a.box.localStorage.setItem=()=>{throw Error('quota');};
+  a.box._scheduleTrustedProgression('athlete','plan'); await flush();
+  assert.equal(a.requests.length,1); assert.equal(a.storage.size,0); assert.equal(a.timers.size,1);
+  a.success(); await a.next(); assert.equal(a.requests.length,2);
+  assert.equal(a.box._trustedProgressionIntent('athlete','plan',false),null);
+});
 test('T676 an older acknowledgement cannot erase a newer save from another tab', async () => {
   const a = transport(); let done;
   a.box.fetch = () => new Promise(r => { done = r; });

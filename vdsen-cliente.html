@@ -12039,17 +12039,17 @@ function _scheduleTrustedProgression(uid, planId, recovering) {
 
 // Transport recovery only: the durable evidence and decisions remain in their canonical Firestore paths.
 // One bounded, per-account/plan intent; no token or training data is stored here. A closed server gate is terminal.
-var _trustedProgressionIntents = Object.create(null), _trustedProgressionRetryTimer = null, _trustedProgressionRefreshSeq = 0;
+var _trustedProgressionIntents = Object.create(null), _trustedProgressionStorageUnavailable = Object.create(null), _trustedProgressionRetryTimer = null, _trustedProgressionRefreshSeq = 0;
 function _trustedProgressionStorageKey(uid, planId) { return 'vdsen_progression_pending_v1:' + uid + ':' + planId; }
 function _storeTrustedProgressionIntent(uid, planId, value) {
   var key = _trustedProgressionStorageKey(uid, planId);
   _trustedProgressionIntents[key] = value;
-  try { if (value) localStorage.setItem(key, JSON.stringify(value)); else localStorage.removeItem(key); }
-  catch (_) { console.warn('[progression executor] recovery storage unavailable; using current-page recovery'); }
+  try { if (value) localStorage.setItem(key, JSON.stringify(value)); else localStorage.removeItem(key); delete _trustedProgressionStorageUnavailable[key]; }
+  catch (_) { _trustedProgressionStorageUnavailable[key] = true; console.warn('[progression executor] recovery storage unavailable; using current-page recovery'); }
 }
 function _trustedProgressionIntent(uid, planId, create) {
   var key = _trustedProgressionStorageKey(uid, planId), v = _trustedProgressionIntents[key];
-  try { v = JSON.parse(localStorage.getItem(key) || 'null'); } catch (_) { /* The current-page intent remains available when storage is blocked. */ }
+  try { if (!_trustedProgressionStorageUnavailable[key]) v = JSON.parse(localStorage.getItem(key) || 'null'); } catch (_) { /* The current-page intent remains available when storage is blocked. */ }
   if (v && (v.version !== 1 || typeof v.revision !== 'string' || !/^[a-z0-9]{10,100}$/.test(v.revision) || !Number.isInteger(v.attempts) || v.attempts < 0 || !Number.isFinite(v.at) || !Number.isFinite(v.nextAt) || Date.now() - v.at > 86400000)) v = null;
   if (create) { v = { version: 1, revision: Date.now().toString(36) + Math.random().toString(36).slice(2), attempts: 0, at: Date.now(), nextAt: 0 }; _storeTrustedProgressionIntent(uid, planId, v); }
   return v;
