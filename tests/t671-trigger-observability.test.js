@@ -93,6 +93,7 @@ test('T671 the real session save remains successful when the real notification g
     assert.ok(writes.every(w => w.payload.entries.log_1_0_0_s0.reps === '8'));
     assert.equal(box._trustedProgressionDiagnostics.at(-1).category, status === 'network' ? 'NETWORK' : status === 500 ? 'SERVER' : 'AUTH');
     assert.equal(entry.reps, '8');
+    clearTimeout(box._trustedProgressionRetryTimer); // T676: background recovery is now bounded and covered with a deterministic clock separately.
   }
 });
 

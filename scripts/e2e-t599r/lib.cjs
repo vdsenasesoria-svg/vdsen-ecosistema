@@ -22,7 +22,8 @@ async function signUp(label) {
 const S = (n, reps, rir, rest) => Array.from({ length: n }, (_, i) => ({ setIndex: i, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: rest }));   // the Coach prescribes NO kg/lb: load 0
 // exercises: [{ name, muscleGroup, repsRange, sets:[...] , w1: {load, reps:[..], rirReal, ics, rir}}]
 function buildPlan(exercises, prefix, extra) {
-  const motor = { weeks: 4, daysPerWeek: 1, days: [{ dayIndex: 0, label: 'Dia 1 - T599R', exercises: exercises.map((e) => ({ exerciseName: e.name, technique: 'straight', muscleGroup: e.muscleGroup, repsRange: e.repsRange, sets: e.sets })) }] };
+  const motor = { weeks: 4, daysPerWeek: 1, days: [{ dayIndex: 0, label: 'Dia 1 - T599R', exercises: exercises.map((e) => ({ exerciseName: e.name, technique: 'straight', muscleGroup: e.muscleGroup, repsRange: e.repsRange, sets: e.sets,
+    primaryMuscles: e.primaryMuscles, secondaryMuscles: e.secondaryMuscles, stabilizers: e.stabilizers, exerciseType: e.exerciseType, duracionMin: e.duracionMin })) }] };
   return Object.assign({ schema: 'vdsen-plan-v2', status: 'active', generatedBy: 'import', createdAt: '2026-09-26T00:00:00.000Z', updatedAt: '2026-09-26T00:00:00.000Z' }, importLikeCoach(motor, { idPrefix: prefix }), extra || {});
 }
 // Week-1 history is the ONLY synthetic evidence; week 2 is executed through the REAL Client UI (which also writes post-session + progrec with its own v3.1 algorithm).

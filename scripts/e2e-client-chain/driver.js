@@ -36,6 +36,7 @@
     window.selectEimd(post.eimd); await sleep(150); window.psArticularSel(post.articular); await sleep(150);
     const sb = [...document.querySelectorAll('button')].find((x) => (x.getAttribute('onclick') || '') === "psSuenoSel(this,'" + post.sleep + "')"); sb && sb.click(); await sleep(150);
     const rpe = document.getElementById('psRpe'); if (rpe) { rpe.value = String(post.rpe); rpe.dispatchEvent(new Event('input', { bubbles: true })); rpe.dispatchEvent(new Event('change', { bubbles: true })); }
+    if (post.durationMinutes !== undefined) document.getElementById('psDurationMin').value = String(post.durationMinutes);
     const go = [...document.querySelectorAll('button')].find((x) => (x.getAttribute('onclick') || '') === 'submitPostSession()'); if (!go) throw new Error('no submit'); go.click(); await sleep(5500);
     const log = await (await fetch('/__trigger-log')).json(); return { triggerCalls: log.length, last: log[log.length - 1] && { status: log[log.length - 1].status, body: log[log.length - 1].body }, errs: window.__errs.slice() };
   };

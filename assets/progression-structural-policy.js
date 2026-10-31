@@ -13,8 +13,8 @@
  * MUSCLE PRIORITY (declared by the Coach in the initial prescription; unclassified or legacy plans are NEVER classified here): the ONLY thing priority changes is the
  * volume ceiling for ADD SET, taken from the same MEV/MRV table (the app's own comment: "optimal hypertrophy volume = midpoint"):
  *   PRIORITARIO -> up to MRV     NO_PRIORITARIO -> up to the MEV/MRV midpoint     (no declared class -> MRV, exactly as before)
- * Priority never overrides a safety condition (pain, deload, ICS, EIMD) and never changes a percentage. Volume counts ONLY the exercise's declared primary muscle
- * (no secondary counting), so a multi-joint exercise is never counted several times as a prime mover.
+ * Priority never overrides a safety condition (pain, deload, ICS, EIMD) and never changes a percentage. Declared direct contributions count 1, indirect 0.5,
+ * stabilizers 0. Legacy plans keep their declared primary muscle; no secondary contribution is inferred from an exercise name.
  * Not covered because no VDSEN rule defines it (reported, never guessed): reps regression, regression magnitude after one hard exposure beyond the v3.1 numbers,
  * volume redistribution BETWEEN muscles under fatigue, RIR-target adaptation outside a plan-declared `rirByWeek`. */
 (function(root, factory) {
@@ -88,25 +88,30 @@
     return ts.length ? Math.max.apply(null, ts) : null;
   }
 
-  // Weekly volume of ONE primary muscle for `week`: executed standard working sets of each exercise declaring it; an exercise with none executed yet counts its prescribed
+  // Weekly fractional volume for `week`: verified declared primary/secondary contributions; an exercise with none executed yet counts its prescribed
   // sets (the app's own proxy). `carried` = { pid: sets } overrides the prescribed count with the carried (already applied) set count.
   function weeklyVolume(plan, entries, week, muscle, carried) {
     if (!muscle) return null;
-    var total = 0;
+    var total = 0, verified = true;
     (Array.isArray(plan && plan.days) ? plan.days : []).forEach(function(d) {
       (d.exercises || []).forEach(function(e, ei) {
-        if (e.muscleGroup !== muscle) return;
+        var fields = ['primaryMuscles', 'secondaryMuscles', 'stabilizers'];
+        if (fields.some(function(f) { return e[f] !== undefined && (!Array.isArray(e[f]) || e[f].some(function(m) { return typeof m !== 'string' || !MEV_MRV[m]; })); })) { verified = false; return; }
+        var direct = e.muscleGroup === muscle || (e.primaryMuscles || []).indexOf(muscle) >= 0;
+        var indirect = (e.secondaryMuscles || []).indexOf(muscle) >= 0;
+        var weight = direct ? 1 : indirect && (e.stabilizers || []).indexOf(muscle) < 0 ? 0.5 : 0;
+        if (!weight || e.exerciseType === 'cardio') return;
         var done = 0;
         Object.keys(entries || {}).forEach(function(k) {
           var m = /^log_(\d+)_(\d+)_(\d+)_s\d+$/.exec(k), x = entries[k];
-          if (m && Number(m[1]) === week && Number(m[2]) === d.dayIndex && x && x.done === true && x.autoFilled !== true && x.express !== true && x.expressFinal !== true &&
-              (!e.prescriptionExerciseId || x.prescriptionExerciseId === e.prescriptionExerciseId)) done++;
+          if (m && Number(m[1]) === week && Number(m[2]) === d.dayIndex && x && x.done === true && !x.autoFilled && !x.express && !x.expressFinal && !x.pending && !x.failed && !x.rollback && !x.stale && !x.warmup && !x.exType &&
+              e.prescriptionExerciseId && x.prescriptionExerciseId === e.prescriptionExerciseId) done++;
         });
         var planned = carried && e.prescriptionExerciseId && Number.isInteger(carried[e.prescriptionExerciseId]) ? carried[e.prescriptionExerciseId] : (e.sets || []).length;
-        total += done > 0 ? done : planned;
+        total += weight * (done > 0 ? done : planned);
       });
     });
-    return total;
+    return verified ? total : null;
   }
   function priorityOf(plan, muscle) {
     var p = plan && plan.musclePriorities;
@@ -190,7 +195,7 @@
       var loadHeld = m.avgLoad >= pm.avgLoad * 0.98;
       performedWell = repsHeld && rirHeld && loadHeld;
     }
-    var volumeBlocked = ceiling !== null && vol !== null && vol + 1 > ceiling;
+    var volumeBlocked = ctx.volume === null || (ceiling !== null && vol !== null && vol + 1 > ceiling);
     // Conservative refinement of v3.1 (which compares only against the previous exposure): no volume is added while the prescribed repetitions are NOT being completed (that is rule C /
     // E territory: rest or review, never more stimulus).
     var repsFloor = _repsFloor(rx), repsOk = repsFloor === null || (m.avgReps !== null && m.avgReps >= repsFloor);

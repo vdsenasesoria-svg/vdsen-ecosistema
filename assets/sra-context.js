@@ -121,6 +121,62 @@ function _buildSraTrace(input) {
     };
   }
 
+  // Programming template 2026: actual session RPE x reported minutes; exact sum(load x reps).
+  // Context only. Missing days, missing duration and constant load never become fabricated zeros or permission to apply.
+  function sessionMonitoring(input) {
+    input = input || {}; var plan = input.planDoc || {}, entries = input.entries || {};
+    var out = { source: 'VDSEN_PROGRAMMING_2026', classification: 'MONITOR', numericApplyEnabled: false, mutation: 'NONE', sessions: [],
+      acuteEWMA7: null, chronicEWMA28: null, acwr: null, monotony7: null, strain7: null, reasons: [] };
+    if (!input.clientId || (plan.clientId && plan.clientId !== input.clientId)) { out.reasons.push('IDENTITY_MISMATCH'); return out; }
+    function num(x) { if ((typeof x !== 'string' && typeof x !== 'number') || x === '') return null; var n = Number(x); return Number.isFinite(n) ? n : null; }
+    var known = {}, locations = {}, grouped = {};
+    (plan.days || []).forEach(function(d) { (d.exercises || []).forEach(function(e, ei) { if (e.prescriptionExerciseId && e.exerciseType !== 'cardio') { known[e.prescriptionExerciseId] = (known[e.prescriptionExerciseId] || 0) + 1; locations[e.prescriptionExerciseId] = String(d.dayIndex) + '_' + ei; } }); });
+    Object.keys(entries).forEach(function(k) {
+      var m = /^log_(\d+)_(\d+)_(\d+)_s\d+$/.exec(k), e = entries[k];
+      if (!m || !e || known[e.prescriptionExerciseId] !== 1 || locations[e.prescriptionExerciseId] !== m[2] + '_' + m[3] || e.done !== true || e.autoFilled || e.pending || e.failed || e.rollback || e.stale || e.express || e.expressFinal || e.warmup || e.exType) return;
+      var id = m[1] + '_' + m[2]; (grouped[id] || (grouped[id] = [])).push(e);
+    });
+    Object.keys(grouped).forEach(function(id) {
+      var done = entries['done_' + id], post = entries['postsession_' + id], prep = entries['readiness_' + id];
+      if (!done || (typeof done === 'object' && (done.skipped || done.autoClosed || done.express || done.pending || done.failed || done.rollback || done.stale))) return;
+      post = post && !post.pending && !post.failed && !post.rollback && !post.stale && !post.partial && !post.autoClosed ? post : {};
+      var duration = num(post.durationMinutes), rpe = num(post.rpeAverage), ts = num(done.ts);
+      var s = { week: Number(id.split('_')[0]), dayIndex: Number(id.split('_')[1]), at: ts, workingSets: grouped[id].length,
+        reportedDurationMinutes: duration > 0 && duration <= 720 ? duration : null, sessionRPE: rpe >= 1 && rpe <= 10 ? rpe : null,
+        loadAU: null, repetitions: 0, tonnageByUnit: {}, realRIR: null, readiness: null, sleepHours: num(post.sleepHours), eimd: num(post.eimd), reasons: [] };
+      var rirs = [];
+      grouped[id].forEach(function(e) {
+        var reps = num(e.reps), load = num(e.carga), rir = num(e.rir_real);
+        if (reps > 0) s.repetitions += reps;
+        if (reps > 0 && load !== null && load >= 0 && ['KG', 'LB'].indexOf(e.unit) >= 0) s.tonnageByUnit[e.unit] = (s.tonnageByUnit[e.unit] || 0) + load * reps;
+        if (rir !== null && rir >= 0 && rir <= 10) rirs.push(rir);
+      });
+      s.realRIR = rirs.length ? rirs.reduce(function(a,b) { return a+b; }, 0) / rirs.length : null;
+      if (prep && prep.completed === true && !prep.pending && !prep.failed && !prep.stale && !prep.rollback) s.readiness = { pain: num(prep.dolor), motivation: num(prep.motivacion), composite: null };
+      if (s.reportedDurationMinutes !== null && s.sessionRPE !== null) s.loadAU = s.reportedDurationMinutes * s.sessionRPE;
+      else s.reasons.push('REPORTED_SESSION_DURATION_OR_RPE_MISSING');
+      out.sessions.push(s);
+    });
+    out.sessions.sort(function(a,b) { return a.week - b.week || a.dayIndex - b.dayIndex; });
+    var days = {};
+    out.sessions.forEach(function(s) { if (!(s.at > 0) || !Number.isFinite(new Date(s.at).getTime())) return; var day = new Date(s.at).toISOString().slice(0,10); if (s.loadAU === null) days[day] = null; else if (days[day] !== null) days[day] = (days[day] || 0) + s.loadAU; });
+    var keys = Object.keys(days).sort(), daily = [], prev = null;
+    keys.forEach(function(k) { var t = Date.parse(k); if (days[k] === null || (prev !== null && t - prev !== 86400000)) daily = []; if (days[k] !== null) daily.push(days[k]); prev = t; });
+    function ewma(n) { var v = daily[0], alpha = 2 / (n + 1); daily.slice(1).forEach(function(x) { v = alpha*x + (1-alpha)*v; }); return v; }
+    if (daily.length >= 7) {
+      out.acuteEWMA7 = ewma(7); var last = daily.slice(-7), mean = last.reduce(function(a,b) { return a+b; },0) / 7;
+      var sd = Math.sqrt(last.reduce(function(a,x) { return a + Math.pow(x-mean,2); },0) / 6);
+      if (sd > 0) { out.monotony7 = mean / sd; out.strain7 = last.reduce(function(a,b) { return a+b; },0) * out.monotony7; }
+      else out.reasons.push('MONOTONY_ZERO_VARIANCE');
+    }
+    if (daily.length >= 28) { out.chronicEWMA28 = ewma(28); if (out.chronicEWMA28 > 0) out.acwr = out.acuteEWMA7 / out.chronicEWMA28; }
+    else out.reasons.push('INCOMPLETE_DAILY_HISTORY_NO_REST_DAYS_INFERRED');
+    out.sessionCount = out.sessions.length;
+    out.reportedSessionCount = out.sessions.filter(function(s) { return s.loadAU !== null; }).length;
+    out.sessions = out.sessions.slice(-2); // Bounded canonical provenance, not another copy of the athlete's history.
+    return out;
+  }
+
   function buildContext(input) {
     input = input || {};
     var entries = input.entries || {}, pid = input.prescriptionExerciseId;
@@ -140,7 +196,9 @@ function _buildSraTrace(input) {
     });
     var sra = _computeRecoverySensitivity(input.clientId && known && (!plan.clientId || plan.clientId === input.clientId) ? scoped : {}, plan, null);
     input = Object.assign({}, input, { progressionSignal: input.progressionSignal || progression || 'UNAVAILABLE' });
-    return _buildSraTrace(Object.assign({}, input, { sra: sra }));
+    var trace = _buildSraTrace(Object.assign({}, input, { sra: sra }));
+    if (known && input.clientId && (!plan.clientId || plan.clientId === input.clientId)) trace.inputEvidence.sessionMonitoring = input.sessionMonitoring || sessionMonitoring(input);
+    return trace;
   }
   function renderTrace(trace, audience) {
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) { return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
@@ -152,7 +210,7 @@ function _buildSraTrace(input) {
       + ' · Volumen de sesión: MONITOR_ONLY</p><p>Cliente: ' + esc(trace.clientId) + ' · Revisión: ' + esc(trace.reviewRequired) + ' · Mutación: ' + esc(trace.mutation) + '</p><pre>' + esc(JSON.stringify(trace.inputEvidence)) + '</pre></details></section>';
   }
 
-var api = { computeRecoverySensitivity: _computeRecoverySensitivity, buildSraTrace: _buildSraTrace, buildContext: buildContext, renderTrace: renderTrace, NUMERIC_APPLY_ENABLED: false };
+var api = { computeRecoverySensitivity: _computeRecoverySensitivity, buildSraTrace: _buildSraTrace, buildContext: buildContext, sessionMonitoring: sessionMonitoring, renderTrace: renderTrace, NUMERIC_APPLY_ENABLED: false };
 if (typeof module === 'object' && module.exports) module.exports = api;
 else root.VDSEN_SRA = api;
 })(typeof window !== 'undefined' ? window : globalThis);

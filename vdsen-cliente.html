@@ -2859,6 +2859,8 @@ function _clearLiveListeners() {
   if (_liveUnsubClient)    { try { _liveUnsubClient();    } catch(e){} _liveUnsubClient    = null; }
   if (_liveUnsubPlan)      { try { _liveUnsubPlan();      } catch(e){} _liveUnsubPlan      = null; }
   if (_liveUnsubLogs)      { try { _liveUnsubLogs();      } catch(e){} _liveUnsubLogs      = null; }
+  if (typeof _trustedProgressionRefreshSeq === 'number') _trustedProgressionRefreshSeq++;
+  if (typeof _trustedProgressionRetryTimer !== 'undefined' && _trustedProgressionRetryTimer) { clearTimeout(_trustedProgressionRetryTimer); _trustedProgressionRetryTimer = null; }
   if (_waitUnsubClientDoc) { try { _waitUnsubClientDoc(); } catch(e){} _waitUnsubClientDoc = null; }
   if (_waitUnsubActivePlan){ try { _waitUnsubActivePlan();} catch(e){} _waitUnsubActivePlan= null; }
   // T125-C: reset plan-update baseline — if loadPlan is called again without a page reload
@@ -3433,6 +3435,7 @@ async function loadPlan(user) {
         if (_nutricionChanged) { try { renderNutricion(); } catch(e){} }
         if (newData.profileType && newData.profileType !== PLAN.profileType) { PLAN.profileType = newData.profileType; try { renderPerfil(); } catch(e){} }
         CLIENT_ADVANCED = _buildClientAdvancedState(planData, newData);
+        if (LIFECYCLE_STATE && LIFECYCLE_STATE.uid === user.uid && LIFECYCLE_STATE.planId === activePlanId) LIFECYCLE_STATE.interventions = Array.isArray(newData.coachInterventions) ? newData.coachInterventions : [];
         try { renderResumen(); } catch(e){}
       });
 
@@ -3488,6 +3491,7 @@ async function loadPlan(user) {
           if (newWeek > REAL_WEEK) { REAL_WEEK = newWeek; CURRENT_WEEK = newWeek; }
           if (newWeek > _remoteWeekSeen) _remoteWeekSeen = newWeek;
           _adoptRemoteLogs(d.entries || {}, d.exerciseUnits, d.exerciseHistory, _confirmed);
+          if (_confirmed && _hasNews && typeof _scheduleTrustedProgression === 'function') _scheduleTrustedProgression(user.uid, activePlanId);
           try { _writeLocalBackup(); } catch(_wb) {}   // the on-device copy follows what this device now knows
           if (_confirmed) _acceptSraPersisted(user.uid, activePlanId, d.entries || {}, Number(d.updatedAt) || 0);
           _logsAuthorityUpdatedAt = Number(d.updatedAt) || 0;
@@ -11959,6 +11963,7 @@ async function _doSaveLogs() {
     return false;
   } finally {
     _logsWriteInFlight = Math.max(0, _logsWriteInFlight - 1);
+    if (typeof _flushTrustedProgressionRender === 'function') _flushTrustedProgressionRender();
   }
 }
 
@@ -11969,9 +11974,11 @@ window.getVdsenProgressionDiagnostics = function() {
   if (!USER || _trustedProgressionDiagnosticOwner !== USER.uid + ':' + ACTIVE_PLAN_ID) return [];
   return _trustedProgressionDiagnostics.map(function(event) { return Object.assign({}, event); });
 };
-function _scheduleTrustedProgression(uid, planId) {
+function _scheduleTrustedProgression(uid, planId, recovering) {
   if (!uid || !planId || !USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId || !FB || typeof FB.waitForPendingWrites !== 'function') return;
   var key = uid + ':' + planId;
+  var intent = _trustedProgressionIntent(uid, planId, !recovering);
+  if (!intent) return;
   // T599-R (D-08): a request that arrives while one is in flight is not dropped (the in-flight call may have read the evidence BEFORE a consumption receipt was written);
   // it is remembered and one more call runs when the current one ends.
   if (_trustedProgressionPending[key]) { _trustedProgressionPending[key] = 'again'; return; }
@@ -11980,7 +11987,7 @@ function _scheduleTrustedProgression(uid, planId) {
   if (typeof _trustedProgressionDiagnosticOwner === 'undefined' || _trustedProgressionDiagnosticOwner !== key) {
     _trustedProgressionDiagnosticOwner = key; _trustedProgressionDiagnostics = [];
   }
-  var stage = 'WRITE_SYNC', sent = false;
+  var stage = 'WRITE_SYNC', sent = false, retry = true, terminal = false, abortTimer = null;
   function current() { return USER && USER.uid === uid && ACTIVE_PLAN_ID === planId; }
   function record(category, httpStatus, requestId, engineStatus) {
     if (!current() || _trustedProgressionDiagnosticOwner !== key) return;
@@ -11995,24 +12002,98 @@ function _scheduleTrustedProgression(uid, planId) {
     return USER.getIdToken().then(function(token) {
       if (!current()) return null;
       stage = 'NETWORK'; sent = true;
-      return fetch('/api/autonomous-progression-trigger', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ planId: planId }) }).then(function(res) {
+      var controller = typeof AbortController === 'function' ? new AbortController() : null;
+      if (controller && typeof setTimeout === 'function') abortTimer = setTimeout(function() { controller.abort(); }, 20000);
+      return fetch('/api/autonomous-progression-trigger', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ planId: planId }), signal: controller ? controller.signal : undefined }).then(function(res) {
         if (!current()) return null;
         var http = Number.isInteger(res.status) && res.status >= 100 && res.status <= 599 ? res.status : null;
         var id = res.headers && typeof res.headers.get === 'function' ? res.headers.get('x-vdsen-progression-request-id') : null;
         if (typeof id !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id)) id = null;
-        if (!res.ok) { record(http === 401 || http === 403 ? 'AUTH' : http === 503 ? 'RUNTIME' : http >= 500 ? 'SERVER' : 'REQUEST', http, id); return null; }
+        if (!res.ok) { retry = http === 401 || http === 403 || http === 408 || http === 429 || http >= 500; terminal = !retry; record(http === 401 || http === 403 ? 'AUTH' : http === 503 ? 'RUNTIME' : http >= 500 ? 'SERVER' : 'REQUEST', http, id); return null; }
         stage = 'RESPONSE_INVALID';
         return Promise.resolve().then(function() { return res.json(); }).then(function(body) {
           var status = body && body.status, allowed = ['DISARMED', 'OUT_OF_ALLOWLIST', 'OUT_OF_CANARY', 'PLAN_MISMATCH', 'SOURCE_INVALID', 'NO_CHANGE', 'MATERIALIZED'];
           if (allowed.indexOf(status) < 0) { record('RESPONSE_INVALID', http, id); return null; }
+          terminal = true; retry = false;
           record(status === 'NO_CHANGE' || status === 'MATERIALIZED' ? 'OK' : 'ENGINE_BLOCKED', http, id, status);
+          if (status === 'NO_CHANGE' || status === 'MATERIALIZED') _refreshTrustedProgression(uid, planId);
         }).catch(function() { record('RESPONSE_INVALID', http, id); });
       });
     });
   }).catch(function() {
     // Saving execution evidence never depends on this background service.
     record(stage);
-  }).finally(function() { var again = _trustedProgressionPending[key] === 'again'; delete _trustedProgressionPending[key]; if (again) _scheduleTrustedProgression(uid, planId); });
+  }).finally(function() {
+    if (abortTimer) clearTimeout(abortTimer);
+    var again = _trustedProgressionPending[key] === 'again'; delete _trustedProgressionPending[key];
+    if (!current()) return;
+    var latest = _trustedProgressionIntent(uid, planId, false);
+    if (latest && latest.revision === intent.revision) {
+      if (terminal) _storeTrustedProgressionIntent(uid, planId, null);
+      else if (retry) { latest.attempts++; latest.nextAt = Date.now() + Math.min(30000, 1500 * Math.pow(2, latest.attempts - 1)); _storeTrustedProgressionIntent(uid, planId, latest); }
+    }
+    if (again) _scheduleTrustedProgression(uid, planId, true);
+    else _recoverTrustedProgression();
+  });
+}
+
+// Transport recovery only: the durable evidence and decisions remain in their canonical Firestore paths.
+// One bounded, per-account/plan intent; no token or training data is stored here. A closed server gate is terminal.
+var _trustedProgressionIntents = Object.create(null), _trustedProgressionRetryTimer = null, _trustedProgressionRefreshSeq = 0;
+function _trustedProgressionStorageKey(uid, planId) { return 'vdsen_progression_pending_v1:' + uid + ':' + planId; }
+function _storeTrustedProgressionIntent(uid, planId, value) {
+  var key = _trustedProgressionStorageKey(uid, planId);
+  _trustedProgressionIntents[key] = value;
+  try { if (value) localStorage.setItem(key, JSON.stringify(value)); else localStorage.removeItem(key); }
+  catch (_) { console.warn('[progression executor] recovery storage unavailable; using current-page recovery'); }
+}
+function _trustedProgressionIntent(uid, planId, create) {
+  var key = _trustedProgressionStorageKey(uid, planId), v = _trustedProgressionIntents[key];
+  try { v = JSON.parse(localStorage.getItem(key) || 'null'); } catch (_) { /* The current-page intent remains available when storage is blocked. */ }
+  if (v && (v.version !== 1 || typeof v.revision !== 'string' || !/^[a-z0-9]{10,100}$/.test(v.revision) || !Number.isInteger(v.attempts) || v.attempts < 0 || !Number.isFinite(v.at) || !Number.isFinite(v.nextAt) || Date.now() - v.at > 86400000)) v = null;
+  if (create) { v = { version: 1, revision: Date.now().toString(36) + Math.random().toString(36).slice(2), attempts: 0, at: Date.now(), nextAt: 0 }; _storeTrustedProgressionIntent(uid, planId, v); }
+  return v;
+}
+function _recoverTrustedProgression(force) {
+  if (_trustedProgressionRetryTimer) { clearTimeout(_trustedProgressionRetryTimer); _trustedProgressionRetryTimer = null; }
+  if (!USER || !ACTIVE_PLAN_ID || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
+  var uid = USER.uid, planId = ACTIVE_PLAN_ID, v = _trustedProgressionIntent(uid, planId, false);
+  if (!v || (!force && v.attempts >= 6) || _trustedProgressionPending[uid + ':' + planId]) return;
+  if (force) { v.attempts = 0; v.nextAt = 0; _storeTrustedProgressionIntent(uid, planId, v); }
+  if (typeof setTimeout === 'function') _trustedProgressionRetryTimer = setTimeout(function() {
+    _trustedProgressionRetryTimer = null;
+    if (USER && USER.uid === uid && ACTIVE_PLAN_ID === planId) _scheduleTrustedProgression(uid, planId, true);
+  }, Math.max(0, Math.min(30000, v.nextAt - Date.now())));
+}
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('online', function() { _recoverTrustedProgression(true); });
+  window.addEventListener('pageshow', function() { _recoverTrustedProgression(true); });
+  document.addEventListener('visibilitychange', function() { if (document.visibilityState === 'visible') _recoverTrustedProgression(true); });
+  document.addEventListener('focusout', function() { setTimeout(_flushTrustedProgressionRender, 0); });
+}
+function _flushTrustedProgressionRender() {
+  var st = typeof LIFECYCLE_STATE === 'undefined' ? null : LIFECYCLE_STATE;
+  if (!st || !st.progressionRenderPending || !USER || USER.uid !== st.uid || ACTIVE_PLAN_ID !== st.planId) return;
+  var active = document.activeElement;
+  if ((typeof _logsWriteInFlight === 'number' && _logsWriteInFlight > 0) || (typeof _saveLogsTimer !== 'undefined' && _saveLogsTimer) || (active && active.offsetParent !== null && (active.matches('input,textarea,select') || active.isContentEditable))) return;
+  st.progressionRenderPending = false;
+  try { renderEntrenamiento(); renderResumen(); } catch (_) { console.warn('[progression executor] canonical update awaits next render'); }
+}
+function _acceptTrustedProgressionSnapshot(uid, planId, snap) {
+  var st = LIFECYCLE_STATE;
+  if (!USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId || !st || st.uid !== uid || st.planId !== planId || !snap.exists() || (snap.metadata && (snap.metadata.fromCache || snap.metadata.hasPendingWrites))) return;
+  var m = snap.data(); if (!m || m.planId !== planId) return;
+  var before = JSON.stringify([st.records, st.overlays, st.receipts]);
+  st.planDoc = st.planDoc || st.candidatePlanDoc;
+  st.records = m.progressionApplications || {}; st.overlays = m.nextExposureOverlays || {}; st.receipts = m.consumptionReceipts || {};
+  if (before === JSON.stringify([st.records, st.overlays, st.receipts])) return;
+  st.progressionRenderPending = true;
+  _flushTrustedProgressionRender();
+}
+function _refreshTrustedProgression(uid, planId) {
+  if (!FB || typeof FB.getDoc !== 'function' || typeof FB.doc !== 'function') return;
+  var seq = ++_trustedProgressionRefreshSeq;
+  FB.getDoc(FB.doc(FB.db, 'logs', uid, 'mesos', planId)).then(function(snap) { if (seq === _trustedProgressionRefreshSeq) _acceptTrustedProgressionSnapshot(uid, planId, snap); }).catch(function() { console.warn('[progression executor] canonical refresh unavailable'); });
 }
 
 // T570-R: the athlete app never creates canonical records. It may only notify
@@ -12024,7 +12105,7 @@ function _scheduleTrustedProgression(uid, planId) {
 // APPLIED -> CONSUMED (VDSEN_APPLICATION_CONSUMER.recordConsumptionReceiptTransaction: an append-only receipt), and only after the first working set is PERSISTED.
 function _lifecycleEnabled() { var e = window.VDSEN_EFFECTIVE_PRESCRIPTION; return !!(e && e.NUMERIC_APPLY_ENABLED === true); }
 function _captureLifecycleState(uid, planId, planData, clientData, mesoSnap) {
-  LIFECYCLE_STATE = { uid: uid, planId: planId, planDoc: null, records: {}, overlays: {}, receipts: {}, interventions: [], consumeBusy: {} };
+  LIFECYCLE_STATE = { uid: uid, planId: planId, planDoc: null, candidatePlanDoc: planData || null, records: {}, overlays: {}, receipts: {}, interventions: Array.isArray(clientData && clientData.coachInterventions) ? clientData.coachInterventions : [], consumeBusy: {} };
   // T570-R: capture is read-only and always on; the trusted executor is the only writer of overlays.
   // A returning athlete also recovers any evidence whose post-save notification was lost (tab closed / offline).
   if (typeof setTimeout === 'function' && typeof _scheduleTrustedProgression === 'function') setTimeout(function() { try { _scheduleTrustedProgression(uid, planId); } catch(_e) {} }, 1500);
@@ -16128,6 +16209,7 @@ function showPostSessionModal(di) {
   document.getElementById('psArticularPatternSel').value = '';
   document.getElementById('psSueno').value = '';
   document.getElementById('psRpe').value = '7';
+  var durationInput = document.getElementById('psDurationMin'); if (durationInput) durationInput.value = '';
   document.getElementById('psRpeVal').textContent = '7';
   // Reset botones articular
   var artSi=document.getElementById('artSiBtn'), artNo=document.getElementById('artNoBtn');
@@ -16220,6 +16302,12 @@ async function submitPostSession() {
   var articularPattern = document.getElementById('psArticularPatternSel').value;
   var sueno = parseFloat(document.getElementById('psSueno').value) || 7;
   var rpe   = parseFloat(document.getElementById('psRpe').value)   || 7;
+  var durationInput = document.getElementById('psDurationMin');
+  var durationRaw = durationInput ? durationInput.value.trim() : '';
+  var durationMin = durationRaw === '' ? null : Number(durationRaw);
+  if (durationRaw !== '' && (!Number.isFinite(durationMin) || durationMin <= 0 || durationMin > 720)) {
+    _postSessionSubmitting = false; showToast('Duración real: indica minutos entre 0 y 720, o deja el campo vacío.', true); return;
+  }
 
   // Cerrar el modal PRIMERO — cualquier error posterior no deja al usuario bloqueado
   closePostSessionModal();
@@ -16238,6 +16326,7 @@ async function submitPostSession() {
     };
 
     var postKey = 'postsession_'+CURRENT_WEEK+'_'+di;
+    if (durationMin !== null) postData.durationMinutes = durationMin;
     var progKey = 'progrec_'+CURRENT_WEEK+'_'+di;
     var hadPost = Object.prototype.hasOwnProperty.call(LOGS, postKey);
     var hadProg = Object.prototype.hasOwnProperty.call(LOGS, progKey);
@@ -18122,6 +18211,11 @@ function _renderClientMissingHints(items) {
       </div>
     </section>
 
+    <section class="ps-q">
+      <label class="ps-ql" for="psDurationMin">DURACIÓN REAL DE LA SESIÓN (MIN)</label>
+      <div class="ps-qd" id="psDurationHelp">Opcional. Excluye el calentamiento. Se utiliza para el seguimiento de carga de sesión.</div>
+      <input id="psDurationMin" type="number" min="0.5" max="720" step="0.5" inputmode="decimal" aria-describedby="psDurationHelp" placeholder="Minutos reales">
+    </section>
     <button onclick="submitPostSession()" class="btn btn-primary ps-go">GUARDAR Y CALCULAR PROGRESIÓN <svg class="ico sm" aria-hidden="true" focusable="false"><use href="#i-chev-r"/></svg></button>
     <div class="ps-foot">El motor VDSEN analiza tus datos y genera recomendaciones de carga, series y RIR para la próxima semana.</div>
   </div>
