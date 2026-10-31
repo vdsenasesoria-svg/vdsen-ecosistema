@@ -130,8 +130,12 @@ async function singleSession(page,real=4,post={}) {
     must('reactive DELOAD and plan-owned RIR reach live prescription',dov.dimension==='DELOAD'&&dov.components.SETS===2&&dov.components.LOAD===90&&dov.components.RIR===4&&dv.sets.length===2&&dv.sets.every(s=>s.load===90&&s.rirTarget===4),{overlay:L.slimOv(dov),view:dv});await bd.ctx.close();
     const expired=await L.seedAthlete('T676EXPIRED',[ex('T676 Vencido','pectoral',100)]);
     await L.db.doc('releaseControl/autonomousProgression').update({expiresAt:new Date(Date.now()-1000).toISOString()});
-    const be=await boot(browser,expired.label);await singleSession(be.page);const em=await L.meso(expired);
-    must('H expired canary preserves the session and blocks all canonical applications',!!em.entries.done_2_0&&!L.recordsOf(em).length&&!L.overlaysOf(em).length);
+    const be=await boot(browser,expired.label);
+    for(let s=0;s<3;s++)await save(be.page,0,s,{carga:100,reps:10,rir:4,ics:7,pump:1});
+    const expiredResponse=be.page.waitForResponse(async res=>res.url().endsWith('/api/autonomous-progression-trigger') && res.ok() && (await res.json().catch(()=>({}))).status==='OUT_OF_ALLOWLIST', {timeout:30000});
+    await be.page.evaluate(()=>window.__finish(0,{})); await expiredResponse;
+    const em=await L.meso(expired);
+    must('H expired release fence returns OUT_OF_ALLOWLIST, preserves the session and blocks all canonical applications',!!em.entries.done_2_0&&!L.recordsOf(em).length&&!L.overlaysOf(em).length);
     await be.ctx.close();evidence.productionMutations=0;
   }catch(e){checks.push({name:'integrated cycle completed',ok:false,detail:e.stack});console.error(e.stack);}
   finally{if(browser)await browser.close();if(server)server.kill();if(fd!==undefined)fs.closeSync(fd);await L.admin.app('t599r').delete();}
