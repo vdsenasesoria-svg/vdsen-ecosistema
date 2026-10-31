@@ -5,7 +5,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 assert.ok(process.env.FIRESTORE_EMULATOR_HOST, 'Firestore emulator is required');
-const T0 = Date.parse('2026-09-27T12:00:00.000Z');
+const T0 = Date.parse('2026-09-27T12:00:00.000Z'), clock = () => '2026-10-01T00:00:00.000Z';
 
 async function seed(db, o) {
   o = o || {};
@@ -17,7 +17,7 @@ async function seed(db, o) {
       sets: [0, 1, 2].map(setIndex => ({ setIndex, repsTarget: 10, rirTarget: 1, restSeconds: 90, load: 0 })) }] })) };
   await db.doc('clients/' + uid).set({ coachId: 'coach-t576', activePlanId: planId });
   await db.doc('coaches/coach-t576').set({ autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: [pid] } });
-  await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: [uid] });
+  await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.parse(clock()) + 36e5).toISOString(), clientIds: [uid] });
   await db.doc('plans/' + planId).set(plan);
   await db.doc('logs/' + uid).set({ planId, entries: logs });
   await db.doc('logs/' + uid + '/mesos/' + planId).set({ planId, entries: logs });
@@ -30,7 +30,6 @@ test('T576 Admin SDK: PENDING -> APPLIED (REPS overlay) and idempotent repeat', 
   const app = admin.initializeApp({ projectId: process.env.GCLOUD_PROJECT || 'demo-vdsen-shadow' }, 't576-a');
   const db = admin.firestore(app), executor = require('../api/_autonomousProgression');
   const s = await seed(db);
-  const clock = () => '2026-10-01T00:00:00.000Z';
   const out = await executor.processProgression({ db, clientId: s.uid, planId: s.planId, enabled: true, numericApplyEnabled: true, clock });
   assert.equal(out.status, 'MATERIALIZED');
   assert.equal(out.applied.length, 1);
