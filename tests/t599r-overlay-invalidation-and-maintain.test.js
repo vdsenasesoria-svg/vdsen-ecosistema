@@ -154,8 +154,9 @@ function fnSrc(name) { const i = HTML.indexOf('function ' + name + '('); let d =
 test('D-08 a trigger requested while one is in flight is remembered and runs once more (never dropped); no storm', async () => {
   const calls = []; let release;
   const ctx = { USER: { uid: 'u', getIdToken: async () => 't' }, ACTIVE_PLAN_ID: 'p', FB: { db: {}, waitForPendingWrites: () => new Promise((r) => { release = r; }) }, console, Promise,
-    fetch: async (url) => { calls.push(url); return { ok: true }; }, _trustedProgressionPending: Object.create(null) };
-  vm.createContext(ctx); vm.runInContext(fnSrc('_scheduleTrustedProgression'), ctx);
+    fetch: async (url) => { calls.push(url); return { ok: true, status: 200, json: async () => ({ status: 'NO_CHANGE' }) }; }, _trustedProgressionPending: Object.create(null) };
+  const begin = HTML.indexOf('function _scheduleTrustedProgression(');
+  vm.createContext(ctx); vm.runInContext(HTML.slice(begin, HTML.indexOf('// T570-R: the athlete app never creates canonical records.', begin)), ctx);
   ctx._scheduleTrustedProgression('u', 'p'); ctx._scheduleTrustedProgression('u', 'p'); ctx._scheduleTrustedProgression('u', 'p');
   release(); await new Promise((r) => setTimeout(r, 20)); release(); await new Promise((r) => setTimeout(r, 20));
   assert.equal(calls.length, 2, 'one in-flight call + exactly one remembered re-run');

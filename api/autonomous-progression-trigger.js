@@ -3,6 +3,20 @@
 var executor = require('./_autonomousProgression');
 var sweepLib = require('./_autonomousProgressionSweep');
 var randomUUID = require('node:crypto').randomUUID;
+var PILOT_UID_HASH = 'fb6c056b17d798c07d06878a857c359aa70828ea44debb1bcab5eb644701fe12';
+// Additional restriction only; it never enables the server switches or replaces the transactional fences.
+function inspectPilotWindow(raw, uid, now, planId) {
+  if (raw === undefined) return { configured: false, valid: false };
+  try {
+    var w = JSON.parse(raw), exp = Date.parse(w.expiresAt), clock = now === undefined ? Date.now() : now;
+    var valid = w.uidHash === PILOT_UID_HASH && /^[a-f0-9]{64}$/.test(w.planHash) && /^[a-zA-Z0-9-]{8,80}$/.test(w.operationId) &&
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(w.expiresAt) && Number.isFinite(exp) && exp > clock && exp - clock <= 168 * 3600e3;
+    valid = valid && new Date(exp).toISOString() === w.expiresAt.replace('Z', '.000Z');
+    var digest = function(x) { return require('node:crypto').createHash('sha256').update(x).digest('hex'); };
+    return { configured: true, valid: valid === true, uidHash: w.uidHash, planHash: w.planHash, expiresAt: w.expiresAt, operationId: w.operationId,
+      allowed: valid === true && typeof uid === 'string' && typeof planId === 'string' && digest(uid) === w.uidHash && digest(planId) === w.planHash };
+  } catch (_) { return { configured: true, valid: false, allowed: false }; }
+}
 
 // Only fixed categories, booleans and counts reach the diagnostic sink. No token, UID, plan, record key or exception text.
 function reply(res, code, body, trace, deps) {
@@ -21,6 +35,20 @@ function makeHandler(deps) {
   deps = deps || {};
   return async function handler(req, res) {
     // GET = scheduled recovery sweep (Vercel cron, CRON_SECRET). One function on purpose: the Hobby plan caps functions at 12.
+    if (req.method === 'GET' && req.query && req.query.check === 'runtime') {
+      // Read-only probe. Never delegates to the executor or the scheduled sweep; no Firestore access.
+      if (typeof res.setHeader === 'function') res.setHeader('Cache-Control', 'no-store');
+      var probeToken = /^Bearer\s+(\S+)$/.exec(String(req.headers && req.headers.authorization || '').trim());
+      if (!probeToken) return res.status(401).json({ error: 'AUTH_MISSING' });
+      var probeIdentity;
+      try { probeIdentity = await deps.verifyIdToken(probeToken[1]); } catch (_) { return res.status(401).json({ error: 'AUTH_INVALID' }); }
+      if (!probeIdentity || typeof probeIdentity.uid !== 'string' || require('node:crypto').createHash('sha256').update(probeIdentity.uid).digest('hex') !== PILOT_UID_HASH) return res.status(403).json({ error: 'PROBE_FORBIDDEN' });
+      var bound = inspectPilotWindow(deps.pilotWindow);
+      return res.status(200).json({ schema: 'vdsen-progression-runtime-v1', processingEnabled: deps.enabled === true,
+        numericApplyEnabled: deps.numericApplyEnabled === true, cronConfigured: !!deps.cronSecret,
+        pilotWindow: bound.valid ? { uidHash: bound.uidHash, planHash: bound.planHash, expiresAt: bound.expiresAt, operationId: bound.operationId } : null });
+    }
+    if (req.method === 'GET' && deps.pilotWindow !== undefined) return res.status(403).json({ error: 'PILOT_CRON_DISABLED' });
     if (req.method === 'GET') return sweepLib.makeHandler({ db: deps.db, cronSecret: deps.cronSecret, enabled: deps.enabled === true,
       numericApplyEnabled: deps.numericApplyEnabled === true })(req, res);
     var trace = { requestId: randomUUID(), authentication: 'NOT_CHECKED' };
@@ -39,6 +67,10 @@ function makeHandler(deps) {
     }
     var uid = identity && identity.uid, planId = req.body && req.body.planId;
     if (!uid || typeof planId !== 'string' || !planId) return send(400, { error: 'REQUEST_INVALID' });
+    if (deps.pilotWindow !== undefined && !inspectPilotWindow(deps.pilotWindow, uid, undefined, planId).allowed) {
+      trace.outcome = 'OUT_OF_ALLOWLIST';
+      return send(202, { status: 'OUT_OF_ALLOWLIST', created: [], applied: [], consumed: [] });
+    }
     try {
       var out = await executor.processProgression({ db: deps.db, clientId: uid, planId: planId,
         enabled: deps.enabled === true, numericApplyEnabled: deps.numericApplyEnabled === true });
@@ -63,6 +95,7 @@ async function defaultHandler(req, res) {
     return reply(res, 503, { error: 'RUNTIME_NOT_CONFIGURED' }, {}, { enabled: process.env.AUTONOMOUS_PROGRESSION_ENABLED === 'true', numericApplyEnabled: process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED === 'true' });
   }
   return makeHandler({ db: firebaseAdmin.firestore(app), verifyIdToken: admin.verifyIdToken, cronSecret: process.env.CRON_SECRET,
+    pilotWindow: process.env.VDSEN_PILOT_WINDOW,
     allowProbe: admin.isFederatedMode(process.env, req.headers && req.headers['x-vercel-oidc-token']),
     enabled: process.env.AUTONOMOUS_PROGRESSION_ENABLED === 'true',
     numericApplyEnabled: process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED === 'true' })(req, res);
@@ -70,3 +103,5 @@ async function defaultHandler(req, res) {
 
 module.exports = defaultHandler;
 module.exports.makeHandler = makeHandler;
+module.exports.inspectPilotWindow = inspectPilotWindow;
+module.exports.PILOT_UID_HASH = PILOT_UID_HASH;

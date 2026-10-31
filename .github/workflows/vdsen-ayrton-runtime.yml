@@ -1,0 +1,118 @@
+name: VDSEN Ayrton pilot runtime (separate authorization)
+on:
+  workflow_dispatch:
+    inputs:
+      runtime_sha:
+        description: Exact reviewed pilot SHA including the read-only runtime probe (arm only)
+        type: string
+      pilot_uid:
+        description: Explicit Ayrton UID, validated against the single allowed UID hash (arm only)
+        type: string
+      coach_id:
+        type: string
+      plan_id:
+        type: string
+      expires_at:
+        description: Fixed UTC expiry, no fractional seconds, at most 168 hours (arm only)
+        type: string
+      operation_id:
+        description: Unique approved window ID, never reuse to rebuild (arm only)
+        type: string
+      restore_run:
+        description: Restore only from this completed official pilot run; leave empty to arm
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: vdsen-production
+  cancel-in-progress: false
+jobs:
+  pilot-runtime:
+    if: github.repository == 'vdsenasesoria-svg/vdsen-ecosistema' && github.ref == 'refs/heads/codex/client-app-next'
+    environment: Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      AYRTON_RUNTIME_RELEASE_ENABLED: ${{ vars.AYRTON_RUNTIME_RELEASE_ENABLED }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      RESTORE_RUN: ${{ inputs.restore_run }}
+      PILOT_WINDOW_FILE: release-output/ayrton-window-input.json
+      INPUT_RUNTIME: ${{ inputs.runtime_sha }}
+      INPUT_UID: ${{ inputs.pilot_uid }}
+      INPUT_COACH: ${{ inputs.coach_id }}
+      INPUT_PLAN: ${{ inputs.plan_id }}
+      INPUT_EXPIRY: ${{ inputs.expires_at }}
+      INPUT_OPERATION: ${{ inputs.operation_id }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Enforce the independent pilot kill switch and trusted workflow
+        run: node -e "require('./scripts/pilot/ayrton-runtime.cjs').invocation(process.env)"
+      - name: One arm attempt per verified OFF baseline; uncertainty requires review
+        if: inputs.restore_run == ''
+        run: |
+          node -e "const cp=require('child_process'),s=require('./.release/vdsen-client.json');if(s.runtime_sha!==require('./scripts/pilot/ayrton-runtime.cjs').T671||!Number.isFinite(Date.parse(s.app_release.completed_at)))process.exit(1);const p='repos/'+process.env.GITHUB_REPOSITORY+'/actions/workflows/vdsen-ayrton-runtime.yml/runs?per_page=100&event=workflow_dispatch&created='+encodeURIComponent('>='+s.app_release.completed_at);const r=JSON.parse(cp.execFileSync('gh',['api',p],{encoding:'utf8'}));if(r.total_count!==1||r.workflow_runs.length!==1||String(r.workflow_runs[0].id)!==process.env.GITHUB_RUN_ID)process.exit(1);"
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Repo and pilot contracts
+        run: |
+          node scripts/release/check.cjs
+          node --test tests/t673-pilot-protocol.test.js tests/t673-premerge-security.test.js tests/t584-ayrton-canary-script.test.js tests/t641-numeric-guard.test.js
+      - name: Prove the captured OFF baseline from its official app release artifacts
+        run: node scripts/pilot/off-baseline.cjs
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        if: inputs.restore_run == ''
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Full baseline gates before a new runtime
+        if: inputs.restore_run == ''
+        run: |
+          node scripts/release/baseline.cjs unit
+          node scripts/release/baseline.cjs emulator
+      - id: google
+        if: inputs.restore_run == ''
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_RELEASE_SERVICE_ACCOUNT }}
+          project_id: vdsen-ecosistema
+          token_format: access_token
+          create_credentials_file: false
+          access_token_scopes: https://www.googleapis.com/auth/datastore
+      - name: Prepare the explicit absolute window (no Firestore writes)
+        if: inputs.restore_run == ''
+        run: |
+          node -e "const fs=require('fs');fs.mkdirSync('release-output',{recursive:true});const w={schema:'vdsen-ayrton-window-v1',uid:process.env.INPUT_UID,coachId:process.env.INPUT_COACH,planId:process.env.INPUT_PLAN,runtimeSha:process.env.INPUT_RUNTIME,deployment:require('./.release/vdsen-client.json').production_deployment,expiresAt:process.env.INPUT_EXPIRY,operationId:process.env.INPUT_OPERATION};require('./scripts/pilot/window-protocol.cjs').windowSpec(w);fs.writeFileSync(process.env.PILOT_WINDOW_FILE,JSON.stringify(w));"
+      - name: One pilot deployment with both fences closed, then promote the same ID
+        if: inputs.restore_run == ''
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: node scripts/pilot/ayrton-runtime.cjs arm
+      - name: Obtain a rollback artifact only from this official completed lane
+        if: inputs.restore_run != ''
+        run: |
+          node -e "if(!/^[1-9][0-9]+$/.test(process.env.RESTORE_RUN))process.exit(1)"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RESTORE_RUN" > /tmp/pilot-run.json
+          node -e "const r=require('/tmp/pilot-run.json');if(r.path!=='.github/workflows/vdsen-ayrton-runtime.yml'||r.head_branch!=='codex/client-app-next'||r.event!=='workflow_dispatch'||r.status!=='completed')process.exit(1)"
+          gh run download "$RESTORE_RUN" --repo "$GITHUB_REPOSITORY" --name "ayrton-runtime-$RESTORE_RUN" --dir release-output
+      - name: Restore only the captured OFF baseline, with alias and byte readback
+        if: inputs.restore_run != ''
+        run: node scripts/pilot/ayrton-runtime.cjs restore
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: ayrton-runtime-${{ github.run_id }}
+          path: release-output/ayrton-runtime.json
+          if-no-files-found: warn
+          retention-days: 90
