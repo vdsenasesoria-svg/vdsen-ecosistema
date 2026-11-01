@@ -868,7 +868,8 @@ async function apply(steps = {}) {
   numericGuard.assertPromotionAllowed({ preflight: pre.numeric_guard, staged: staged ? staged.numeric_guard : null, fresh: await guardFn(s, runtime),
     expect: { project: s.production_project, team: s.vercel_team, runtimeSha: runtime } });
   if (artifact.safe_off_deployment || steps.verifySafeOffBaseline || !steps.promote) {
-    assertSafeRollbackProof(artifact, await (steps.verifySafeOffBaseline || verifySafeOffBaseline)(s));
+    const verifySafeOffProofFn = steps.verifySafeOffBaseline || ((st) => verifySafeOffBaseline(st, false, deploymentFn));
+    assertSafeRollbackProof(artifact, await verifySafeOffProofFn(s));
     if (!steps.promote) {
       assert.equal(await currentAppFn(s), artifact.production_deployment, 'BASELINE_MOVED_BEFORE_PROMOTION');
     }
@@ -937,16 +938,39 @@ async function rollbackApp() {
     console.log('APP ROLLBACK NOT NEEDED: production was never mutated in this run');
     return out;
   }
-  const artifact = assertRollbackArtifact(json(path.join(OUT, process.env.APP_ROLLBACK_ARTIFACT || 'app-rollback-' + (process.env.GITHUB_RUN_ID || 'local') + '.json')));
+  let artifactName = process.env.APP_ROLLBACK_ARTIFACT;
+  if (!artifactName) {
+    try {
+      const pre = json(path.join(OUT, 'app-preflight.json'));
+      if (pre && pre.rollback_artifact) artifactName = pre.rollback_artifact;
+    } catch (e) {}
+  }
+  if (!artifactName) {
+    const expected = 'app-rollback-' + (process.env.GITHUB_RUN_ID || 'local') + '.json';
+    if (fs.existsSync(path.join(OUT, expected))) {
+      artifactName = expected;
+    } else {
+      try {
+        const found = fs.readdirSync(OUT).filter(f => /^app-rollback-.*\.json$/.test(f));
+        if (found.length === 1) artifactName = found[0];
+        else if (fs.existsSync(path.join(OUT, 'app-rollback-local.json'))) artifactName = 'app-rollback-local.json';
+        else artifactName = expected;
+      } catch (e) {
+        artifactName = expected;
+      }
+    }
+  }
+  const artifact = assertRollbackArtifact(json(path.join(OUT, artifactName)));
   assertSafeRollbackProof(artifact, await verifySafeOffFn(s));
   // Final guard, independent of whatever asked for recovery: if the rollback target is ALREADY the
   // current production deployment there is nothing to restore, and issuing the call would be a
   // meaningless mutation whose failure would be misread as "rollback is broken". Re-read
   // production here instead of trusting the value captured earlier in the run.
   let currentId = null;
-  try { currentId = await currentApp(s); } catch (e) { currentId = null; }
   if (steps.currentApp) {
-    try { currentId = await currentAppFn(s); } catch (e) { currentId = null; }
+    try { currentId = await steps.currentApp(s); } catch (e) { currentId = null; }
+  } else {
+    try { currentId = await currentApp(s); } catch (e) { currentId = null; }
   }
   if ((currentId && currentId === artifact.production_deployment) || currentId === SAFE_OFF_BASELINE.deployment) {
     const out = {

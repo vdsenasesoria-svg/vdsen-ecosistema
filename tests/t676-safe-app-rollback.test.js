@@ -19,8 +19,12 @@ const mockProof = {
 function setupEnv() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 't676-focused-'));
   const prevOut = app.getOut();
+  const prevArtifact = process.env.APP_ROLLBACK_ARTIFACT;
+  process.env.APP_ROLLBACK_ARTIFACT = 'app-rollback-local.json';
   app.setOut(tmp);
   const cleanup = () => {
+    if (prevArtifact === undefined) delete process.env.APP_ROLLBACK_ARTIFACT;
+    else process.env.APP_ROLLBACK_ARTIFACT = prevArtifact;
     app.setOut(prevOut);
     fs.rmSync(tmp, { recursive: true, force: true });
   };
