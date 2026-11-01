@@ -104,10 +104,11 @@ async function materialize(db, clientId, requestedPlanId, clock) {
       return inScope;
     });
     if (createdBefore && !out.created.length) out.changed = false;
+    var sessionMonitoring = out.created.length ? sra.sessionMonitoring({ clientId: clientId, planDoc: plan, entries: authority.entries || {} }) : null;
     out.created.forEach(function(key) {
       var record = out.records[key];
       out.records[key] = Object.assign({}, record, { sraTrace: sra.buildContext({ clientId: clientId, prescriptionExerciseId: record.prescriptionExerciseId,
-        planDoc: plan, entries: authority.entries || {}, recommendation: record.action || 'MONITOR' }) });
+        planDoc: plan, entries: authority.entries || {}, recommendation: record.action || 'MONITOR', sessionMonitoring: sessionMonitoring }) });
     });
     var summary = shadow.summarize(out.records, requestedPlanId);
     if (out.changed) {

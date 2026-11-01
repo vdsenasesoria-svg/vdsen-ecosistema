@@ -10644,7 +10644,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   const _MUSCLE_KEYS = ['pectoral','dorsal_ancho','trapecio_medio','delt_anterior','delt_lateral','delt_posterior','biceps','braquial','triceps','cuadriceps','isquios','gluteo_mayor','gluteo_medio','gastrocnemio','soleo','erectores','recto_abdominal','oblicuos','serrato'];
   function _carryMuscleGroup(ex) {
     var v = ex && ex.muscleGroup;
-    return (typeof v === 'string' && _MUSCLE_KEYS.indexOf(v) >= 0) ? { muscleGroup: v } : {};
+    var out = (typeof v === 'string' && _MUSCLE_KEYS.indexOf(v) >= 0) ? { muscleGroup: v } : {};
+    ['primaryMuscles', 'secondaryMuscles', 'stabilizers'].forEach(function(field) {
+      if (!ex || ex[field] === undefined) return;
+      // Legacy catalog names can differ from the autonomous engine's keys. Preserve
+      // them without mapping or rejecting the plan; unverified volume stays fail-closed.
+      out[field] = !Array.isArray(ex[field]) || ex[field].some(function(k) { return typeof k !== 'string'; })
+        ? null : ex[field].filter(function(k,i,a) { return a.indexOf(k) === i; });
+    });
+    return out;
   }
   function _normalizeMusclePriorities(raw) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;

@@ -9,6 +9,7 @@ const run = (file, args = []) => {
   if (r.status !== 0) process.exit(r.status || 1);
 };
 run('t599-progression-e2e.cjs', ['--out', path.join(out, 'progression')]);
+run('t676-functional-e2e.cjs');
 run('t598-logbook-sync-e2e.cjs', ['--root', root, '--out', path.join(out, 't598-sync.json')]);
 // T599-R regression gate (D-01 rules C/E reachable from Client data, D-02 invalidated overlay, D-07 coherence, honest labels, numeric OFF = PENDING only). Subset in CI; the full matrix is `scripts/e2e-t599r/chain.cjs`.
 run('../e2e-t599r/chain.cjs', ['--numeric', '1', '--only', 'T1,T9,T12', '--out', path.join(out, 't599r-numeric-on.json')]);

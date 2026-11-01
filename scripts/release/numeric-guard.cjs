@@ -63,6 +63,7 @@ function evaluateProductionEnv(envs, ctx) {
     if (!KNOWN_FLAGS.includes(e.key)) reject('UNKNOWN_PROGRESSION_VARIABLE', e.key);
     if (e.gitBranch) reject('ENV_SCOPE_INDETERMINATE', e.key + ' is branch-scoped');
     if (flags[e.key]) reject('AMBIGUOUS_VARIABLE', e.key + ' is defined more than once for production');
+    if (e.visibility !== undefined && e.visibility !== 'config') reject('VALUE_NOT_READABLE', e.key + ' is not a Config variable');
     if (!PLAIN_TYPES.has(e.type)) reject('VALUE_NOT_READABLE', e.key + ' has type ' + String(e.type) + '; its value cannot be proven OFF');
     if (e.value === 'true') reject(e.key === FLAG_NUMERIC ? 'NUMERIC_APPLY_ACTIVE' : 'GLOBAL_PROGRESSION_ACTIVE', e.key);
     if (e.value !== 'false') reject('VALUE_MALFORMED', e.key + ' must be exactly "false" or absent');

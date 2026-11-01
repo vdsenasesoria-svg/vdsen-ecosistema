@@ -26,6 +26,11 @@ on:
 permissions:
   contents: read
 
+# Share the lock with the separately authorized pilot-runtime lane. Never cancel an active release.
+concurrency:
+  group: vdsen-production
+  cancel-in-progress: false
+
 jobs:
   app-release:
     # The candidate is a Git commit, not a branch head: this must run from the canonical branch.
