@@ -31,6 +31,8 @@ const deployedProduct = require('./deployed-product.cjs');
 const numericGuard = require('./numeric-guard.cjs');
 
 const STATE = '.release/vdsen-client.json';
+// Reviewed immutable OFF build; distinct from the currently serving T663 deployment.
+const SAFE_OFF_BASELINE = Object.freeze({ runtimeSha: '21dc0e2b211facfb0df9f3079c58488c2f86952c', deployment: 'dpl_BDdGBRjtRotiv4nJJEDoZK57He9s', officialReleaseRun: '40688365774' });
 // Configurable so tests can exercise the full flow against a temp directory.
 let OUT = 'release-output';
 const VERCEL_API = 'https://api.vercel.com';
@@ -257,6 +259,27 @@ function assertRollbackArtifact(artifact) {
   const text = JSON.stringify(artifact);
   assert.ok(!/Bearer |VERCEL_TOKEN|private_key|BEGIN [A-Z ]*PRIVATE KEY/.test(text), 'Rollback artifact must not contain secrets');
   return artifact;
+}
+
+// Validate authenticated official build evidence independently of the serving alias.
+async function verifySafeOffBaseline(s, downloadEvidence = false, deploymentFn = deployment) {
+  const B = require('../pilot/off-baseline.cjs'), b = SAFE_OFF_BASELINE;
+  assert.equal(s.runtime_sha, b.runtimeSha, 'SAFE_OFF_BASELINE_RUNTIME_MISMATCH');
+  const historical = Object.assign({}, s, { runtime_sha: b.runtimeSha, production_deployment: b.deployment,
+    app_release: Object.assign({}, s.app_release, { runtime_sha: b.runtimeSha, deployment: b.deployment, source_release_run: b.officialReleaseRun }) });
+  if (downloadEvidence) B.download(historical);
+  return B.load(historical, b, await deploymentFn(s, b.deployment));
+}
+function assertSafeRollbackProof(artifact, proof) {
+  const b = SAFE_OFF_BASELINE;
+  assert.ok(proof && proof.status === 'OFF_AT_IMMUTABLE_BUILD', 'SAFE_OFF_PROOF_REQUIRED');
+  assert.equal(proof.deployment, b.deployment, 'SAFE_OFF_DEPLOYMENT_MISMATCH');
+  assert.equal(String(proof.officialReleaseRun), b.officialReleaseRun, 'SAFE_OFF_RUN_MISMATCH');
+  assert.match(proof.evidenceSha256 || '', /^[a-f0-9]{64}$/, 'SAFE_OFF_EVIDENCE_INVALID');
+  assert.equal(artifact.production_runtime_sha, b.runtimeSha, 'SAFE_OFF_RUNTIME_MISMATCH');
+  assert.equal(artifact.safe_off_deployment, b.deployment, 'SAFE_OFF_TARGET_MISMATCH');
+  assert.equal(artifact.safe_off_evidence_sha256, proof.evidenceSha256, 'SAFE_OFF_EVIDENCE_CHANGED');
+  return proof;
 }
 
 // ── live operations
@@ -498,6 +521,14 @@ async function stageProduction() {
 
   // 2. the production alias must still be on the previous deployment BEFORE anything is built
   const currentBefore = await currentApp(s);
+  const rollbackArtifact = assertRollbackArtifact(json(path.join(OUT, pf.rollback_artifact)));
+  assertSafeRollbackProof(rollbackArtifact, await verifySafeOffBaseline(s));
+  assert.equal(currentBefore, rollbackArtifact.production_deployment, 'BASELINE_MOVED_BEFORE_STAGE');
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    assert.equal(process.env.GITHUB_RUN_ATTEMPT, '1', 'NO_JOB_RERUNS');
+  }
+  const intent = path.join(OUT, 'app-stage-intent.json');
+  fs.writeFileSync(intent, JSON.stringify({ runtime_sha: runtime }), { flag: 'wx' });
 
   // 3. one staged production deployment, not aliased to any production domain
   //
@@ -726,6 +757,7 @@ async function preflight() {
   assertKillSwitch();
   const { s, runtime, candidate, aliasDeploymentId, mainSha, env, fb, current, numeric } = await readOnlyPreflight();
 
+  const safeProof = await verifySafeOffBaseline(s, true);
   const artifact = assertRollbackArtifact(save('app-rollback-' + (process.env.GITHUB_RUN_ID || 'local') + '.json', {
     release_id: process.env.GITHUB_RUN_ID || 'local',
     release_reason: process.env.APP_RELEASE_REASON || '',
@@ -733,6 +765,7 @@ async function preflight() {
     candidate_deployment: candidate.id,
     production_deployment: aliasDeploymentId,
     production_runtime_sha: current.meta.githubCommitSha,
+    safe_off_deployment: SAFE_OFF_BASELINE.deployment, safe_off_evidence_sha256: safeProof.evidenceSha256,
     production_project: s.production_project,
     vercel_team: s.vercel_team,
     production_origin: s.production_origin,
@@ -741,6 +774,7 @@ async function preflight() {
     captured_at: new Date().toISOString(),
   }));
 
+  assertSafeRollbackProof(artifact, safeProof);
   const report = {
     runtime_sha: runtime, candidate: candidate.id, production_deployment: aliasDeploymentId,
     production_runtime_sha: current.meta.githubCommitSha, main_sha: mainSha,
@@ -822,11 +856,23 @@ async function apply(steps = {}) {
   let staged = null;
   try { staged = json(path.join(OUT, 'app-staged.json')); } catch (e) { staged = null; }
   const targetDeployment = staged && staged.staged_deployment ? staged.staged_deployment : artifact.candidate_deployment;
+  if (staged) {
+    assert.ok(staged.staged_deployment && staged.numeric_guard, 'OFF_STAGED_EVIDENCE_REQUIRED');
+    assert.equal(staged.candidate_sha, runtime, 'STAGED_RUNTIME_MISMATCH');
+    assert.equal(staged.production_project, s.production_project, 'STAGED_PROJECT_MISMATCH');
+    assert.equal(staged.vercel_team, s.vercel_team, 'STAGED_TEAM_MISMATCH');
+  }
   // T641: last gate. Fresh evidence taken NOW must be DISARMED and identical to the evidence captured before and after staging, and none of it may be stale. There is no
   // override: without a successful proof the promotion is not attempted (nothing is mutated, no result claims otherwise).
   const guardFn = steps.numericGuard || numericGuardEvidence;
   numericGuard.assertPromotionAllowed({ preflight: pre.numeric_guard, staged: staged ? staged.numeric_guard : null, fresh: await guardFn(s, runtime),
     expect: { project: s.production_project, team: s.vercel_team, runtimeSha: runtime } });
+  if (artifact.safe_off_deployment || steps.verifySafeOffBaseline || !steps.promote) {
+    assertSafeRollbackProof(artifact, await (steps.verifySafeOffBaseline || verifySafeOffBaseline)(s));
+    if (!steps.promote) {
+      assert.equal(await currentAppFn(s), artifact.production_deployment, 'BASELINE_MOVED_BEFORE_PROMOTION');
+    }
+  }
   const result = { release_id: process.env.GITHUB_RUN_ID || 'local', runtime_sha: runtime, app_release_status: 'FAIL', production_deployment: null, previous_deployment: artifact.production_deployment, promotion_target: targetDeployment, promotion_model: staged ? 'staged_production' : 'preview_candidate', rules_mutated: false, main_unchanged: true, error: null, rollback_required: false };
   try {
     await promoteFn(s, targetDeployment);
@@ -869,8 +915,16 @@ async function apply(steps = {}) {
 }
 
 async function rollbackApp() {
+  const steps = arguments[0] || {};
   assertAppOnlySources();
   const s = state();
+  const currentAppFn = steps.currentApp || currentApp;
+  const revertAppFn = steps.revertApp || revertApp;
+  const deploymentFn = steps.deployment || deployment;
+  const verifyFn = steps.verifyPublicBytes || verifyPublicBytes;
+  const surfaceFn = steps.servedSurface || servedSurface;
+  const verifySafeOffFn = steps.verifySafeOffBaseline || (async (st) => verifySafeOffBaseline(st, false, deploymentFn));
+
   // Only revert if a promotion actually happened. The workflow calls this with `if: failure()`,
   // which also fires when an EARLIER gate (preflight, tests, kill switch) failed — in that case
   // production was never touched, and reverting would be a pointless mutation followed by a
@@ -884,13 +938,17 @@ async function rollbackApp() {
     return out;
   }
   const artifact = assertRollbackArtifact(json(path.join(OUT, process.env.APP_ROLLBACK_ARTIFACT || 'app-rollback-' + (process.env.GITHUB_RUN_ID || 'local') + '.json')));
+  assertSafeRollbackProof(artifact, await verifySafeOffFn(s));
   // Final guard, independent of whatever asked for recovery: if the rollback target is ALREADY the
   // current production deployment there is nothing to restore, and issuing the call would be a
   // meaningless mutation whose failure would be misread as "rollback is broken". Re-read
   // production here instead of trusting the value captured earlier in the run.
   let currentId = null;
   try { currentId = await currentApp(s); } catch (e) { currentId = null; }
-  if (currentId && currentId === artifact.production_deployment) {
+  if (steps.currentApp) {
+    try { currentId = await currentAppFn(s); } catch (e) { currentId = null; }
+  }
+  if ((currentId && currentId === artifact.production_deployment) || currentId === SAFE_OFF_BASELINE.deployment) {
     const out = {
       rollback_status: 'NOT_NEEDED',
       state: 'NO_MUTATION',
@@ -902,12 +960,15 @@ async function rollbackApp() {
     console.log('APP ROLLBACK NOT NEEDED: production already serves the captured deployment');
     return out;
   }
-  const id = await revertApp(s, artifact.production_deployment);
-  const d = await deployment(s, id);
+  const staged = json(path.join(OUT, 'app-staged.json'));
+  assert.ok(staged && staged.staged_deployment && staged.numeric_guard, 'OFF_STAGED_EVIDENCE_REQUIRED');
+  assert.equal(currentId, staged.staged_deployment, 'FOREIGN_ALIAS_NO_AUTOMATIC_OVERWRITE');
+  const id = steps.revertApp ? await steps.revertApp(s, SAFE_OFF_BASELINE.deployment) : await revertApp(s, SAFE_OFF_BASELINE.deployment);
+  const d = await deploymentFn(s, id);
   assert.equal(d.readyState, 'READY', 'Restored deployment is not READY');
-  assert.equal(d.meta?.githubCommitSha, artifact.production_runtime_sha, 'Restored runtime identity mismatch');
-  await verifyPublicBytes(s, artifact.production_runtime_sha, servedSurface());
-  const out = { rollback_status: 'PASS', state: 'RECOVERED', restored_deployment: id, restored_runtime_sha: artifact.production_runtime_sha, rules_mutated: false };
+  assert.equal(d.meta?.githubCommitSha, SAFE_OFF_BASELINE.runtimeSha, 'Restored runtime identity mismatch');
+  await verifyFn(s, SAFE_OFF_BASELINE.runtimeSha, surfaceFn());
+  const out = { rollback_status: 'PASS', state: 'RECOVERED', restored_deployment: id, restored_runtime_sha: SAFE_OFF_BASELINE.runtimeSha, rules_mutated: false };
   save('app-rollback-result.json', out);
   console.log('APP ROLLBACK PASS: ' + id);
   return out;
@@ -992,7 +1053,7 @@ if (require.main === module) {
 }
 
 module.exports = {
-  assertExplicitRuntime, assertKillSwitch, assertAppOnlySources, assertCandidate,
+  SAFE_OFF_BASELINE, verifySafeOffBaseline, assertSafeRollbackProof, assertExplicitRuntime, assertKillSwitch, assertAppOnlySources, assertCandidate,
   assertCandidateNotAlreadyProduction, assertBaseline, assertEnvironment,
   assertFirebaseProject, assertPromoted, assertRollbackArtifact,
   resolveCandidate, selectCandidate, listDeploymentPages, currentApp, listDeployments, normalizeDeployment, deployment, productionEnv, promote, revertApp,

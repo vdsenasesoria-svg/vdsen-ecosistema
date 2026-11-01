@@ -25,6 +25,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 # Share the lock with the separately authorized pilot-runtime lane. Never cancel an active release.
 concurrency:
@@ -40,12 +41,14 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+      actions: read
       id-token: write
     env:
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
       VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
       CLIENT_APP_RELEASE_ENABLED: ${{ vars.CLIENT_APP_RELEASE_ENABLED }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
       APP_RUNTIME_SHA: ${{ inputs.runtime_sha }}
       APP_RELEASE_REASON: ${{ inputs.reason }}
       APP_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
