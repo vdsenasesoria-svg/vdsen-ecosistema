@@ -149,16 +149,20 @@ test('A12-12 failed post-promotion verification triggers APP rollback', async ()
   try {
     app.setOut(tmp);
     process.env.APP_RUNTIME_SHA = RUNTIME;
-    fs.writeFileSync(path.join(tmp, 'app-preflight.json'), JSON.stringify({ runtime_sha: RUNTIME, rollback_artifact: 'app-rollback-test.json', numeric_guard: NG.evaluateProductionEnv([], { project: PROJECT, team: TEAM, runtimeSha: RUNTIME }) }));   // T641: apply() requires the numeric-off proof
+    // T677: artifacts must carry this run's id and agree with each other; the alias must be the baseline right before the request and the authorized target afterwards.
+    const RID = process.env.GITHUB_RUN_ID || 'local', TARGET = 'dpl_candidate000000000000000001';
+    const aliasFlow = () => { let n = 0; return async () => (n++ === 0 ? PROD_DEPLOYMENT : TARGET); };
+    fs.writeFileSync(path.join(tmp, 'app-preflight.json'), JSON.stringify({ release_id: RID, runtime_sha: RUNTIME, candidate: TARGET, production_deployment: PROD_DEPLOYMENT, rollback_artifact: 'app-rollback-test.json', numeric_guard: NG.evaluateProductionEnv([], { project: PROJECT, team: TEAM, runtimeSha: RUNTIME }) }));   // T641: apply() requires the numeric-off proof
     fs.writeFileSync(path.join(tmp, 'app-rollback-test.json'), JSON.stringify({
-      candidate_sha: RUNTIME, candidate_deployment: 'dpl_candidate000000000000000001',
+      release_id: RID,
+      candidate_sha: RUNTIME, candidate_deployment: TARGET,
       production_deployment: PROD_DEPLOYMENT, production_runtime_sha: PROD_RUNTIME,
       production_project: PROJECT, vercel_team: TEAM, production_origin: 'https://x', main_sha: MAIN, captured_at: 'now',
     }));
     const steps = {
       promote: async () => 'ok',
       numericGuard: async () => NG.evaluateProductionEnv([], { project: PROJECT, team: TEAM, runtimeSha: RUNTIME }),   // fresh proof taken right before promotion
-      currentApp: async () => 'dpl_new0000000000000000000001',
+      currentApp: aliasFlow(),
       deployment: async () => ({ readyState: 'READY', projectId: PROJECT, teamId: TEAM, meta: { githubCommitSha: RUNTIME } }),
       servedSurface: () => ['vdsen-cliente.html'],
       verifyPublicBytes: async () => { throw new Error('Public byte mismatch: vdsen-cliente.html'); },
@@ -172,14 +176,14 @@ test('A12-12 failed post-promotion verification triggers APP rollback', async ()
 
     // and a promoted deployment carrying the wrong SHA is rejected before any success claim
     throws(() => app.assertPromoted({ readyState: 'READY', projectId: PROJECT, teamId: TEAM, meta: { githubCommitSha: 'c'.repeat(40) } },
-      { runtime: RUNTIME, project: PROJECT, team: TEAM, productionDeploymentId: 'dpl_x' }), /Promoted runtime SHA mismatch/, 'sha promovido distinto');
+      { runtime: RUNTIME, project: PROJECT, team: TEAM, productionDeploymentId: 'dpl_x', targetDeployment: 'dpl_x' }), /Promoted runtime SHA mismatch/, 'sha promovido distinto');
 
     // the success path, for contrast, is clean
-    const okSteps = Object.assign({}, steps, { verifyPublicBytes: async () => ['vdsen-cliente.html'] });
+    const okSteps = Object.assign({}, steps, { currentApp: aliasFlow(), verifyPublicBytes: async () => ['vdsen-cliente.html'] });
     const ok = await app.apply(okSteps);
     assert.equal(ok.app_release_status, 'SUCCESS');
     assert.equal(ok.rules_mutated, false);
-    assert.equal(ok.production_deployment, 'dpl_new0000000000000000000001');
+    assert.equal(ok.production_deployment, TARGET);
   } finally {
     app.setOut(prevOut);
     if (prevRuntime === undefined) delete process.env.APP_RUNTIME_SHA; else process.env.APP_RUNTIME_SHA = prevRuntime;
@@ -213,7 +217,7 @@ test('A12-15 exact successful candidate -> PASS', () => {
   assert.equal(c.readyState, 'READY');
   assert.equal(app.assertCandidateNotAlreadyProduction(c, PROD_DEPLOYMENT), true);
   assert.equal(app.assertPromoted({ readyState: 'READY', projectId: PROJECT, teamId: TEAM, meta: { githubCommitSha: RUNTIME } },
-    { runtime: RUNTIME, project: PROJECT, team: TEAM, productionDeploymentId: 'dpl_new' }), undefined);
+    { runtime: RUNTIME, project: PROJECT, team: TEAM, productionDeploymentId: 'dpl_new', targetDeployment: 'dpl_new' }), undefined);
 });
 
 test('A12-16 no secret values are printed', () => {

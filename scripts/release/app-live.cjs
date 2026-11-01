@@ -32,7 +32,11 @@ const numericGuard = require('./numeric-guard.cjs');
 
 const STATE = '.release/vdsen-client.json';
 // Reviewed immutable OFF build; distinct from the currently serving T663 deployment.
-const SAFE_OFF_BASELINE = Object.freeze({ runtimeSha: '21dc0e2b211facfb0df9f3079c58488c2f86952c', deployment: 'dpl_BDdGBRjtRotiv4nJJEDoZK57He9s', officialReleaseRun: '40688365774' });
+// `evidenceArtifactDigest` pins the GitHub-reported digest of artifact `app-release-result-<run>` of the official run
+// (read from the authenticated Actions API during T677 review; reviewers can re-read it). It is a provenance anchor reviewed
+// in the repository; the locally computed `evidenceSha256` is only tamper evidence of what was downloaded.
+const SAFE_OFF_BASELINE = Object.freeze({ runtimeSha: '21dc0e2b211facfb0df9f3079c58488c2f86952c', deployment: 'dpl_BDdGBRjtRotiv4nJJEDoZK57He9s', officialReleaseRun: '40688365774',
+  evidenceArtifactDigest: 'sha256:27e222d6d8e4bd0d02ebd6d8f00fd550ae665923e7893b0c0221ccae1fc34131' });
 // Configurable so tests can exercise the full flow against a temp directory.
 let OUT = 'release-output';
 const VERCEL_API = 'https://api.vercel.com';
@@ -234,7 +238,12 @@ function assertFirebaseProject(envs, expected) {
   return 'MATCH';
 }
 
-function assertPromoted(d, { runtime, project, team, productionDeploymentId }) {
+function assertPromoted(d, { runtime, project, team, productionDeploymentId, targetDeployment }) {
+  // Exact identity first: sharing the commit SHA is NOT equivalence. A different deployment of the same commit (another
+  // actor's build, a preview, an older staged build) must never be reported as the authorized promotion.
+  assert.ok(targetDeployment, 'The authorized target deployment is required to verify the promotion');
+  assert.equal(productionDeploymentId, targetDeployment, 'Production alias does not point to the authorized deployment');
+  if (d.id !== undefined || d.uid !== undefined) assert.equal(d.id || d.uid, targetDeployment, 'Observed deployment id does not match the authorized deployment');
   assert.equal(d.readyState, 'READY', 'Promoted deployment is not READY');
   assert.equal(d.projectId, project, 'Promoted project mismatch');
   assert.equal(d.teamId || team, team, 'Promoted team mismatch');
@@ -267,7 +276,7 @@ async function verifySafeOffBaseline(s, downloadEvidence = false, deploymentFn =
   assert.equal(s.runtime_sha, b.runtimeSha, 'SAFE_OFF_BASELINE_RUNTIME_MISMATCH');
   const historical = Object.assign({}, s, { runtime_sha: b.runtimeSha, production_deployment: b.deployment,
     app_release: Object.assign({}, s.app_release, { runtime_sha: b.runtimeSha, deployment: b.deployment, source_release_run: b.officialReleaseRun }) });
-  if (downloadEvidence) B.download(historical);
+  if (downloadEvidence) B.download(historical, b);
   return B.load(historical, b, await deploymentFn(s, b.deployment));
 }
 function assertSafeRollbackProof(artifact, proof) {
@@ -576,6 +585,7 @@ async function stageProduction() {
   assert.equal(currentAfter, currentBefore, 'production alias moved during staging; refusing to continue');
 
   const report = {
+    release_id: process.env.GITHUB_RUN_ID || 'local',
     staged_deployment: d0.id || d0.uid || stagedId,
     staged_url: stagedUrl,
     staged_target: d0.target,
@@ -776,6 +786,7 @@ async function preflight() {
 
   assertSafeRollbackProof(artifact, safeProof);
   const report = {
+    release_id: process.env.GITHUB_RUN_ID || 'local',
     runtime_sha: runtime, candidate: candidate.id, production_deployment: aliasDeploymentId,
     production_runtime_sha: current.meta.githubCommitSha, main_sha: mainSha,
     env, firebase_project: fb, numeric_guard: numeric, rollback_artifact: 'app-rollback-' + (process.env.GITHUB_RUN_ID || 'local') + '.json',
@@ -836,8 +847,87 @@ function decideRecovery({ observed, observedError, previous, expectedNew }) {
   };
 }
 
+// ── T677 evidence helpers (defined before apply/rollbackApp; pure or file-only, no network)
+
+const ROLLBACK_ARTIFACT_NAME = /^app-rollback-[A-Za-z0-9_-]+\.json$/;
+const releaseId = () => process.env.GITHUB_RUN_ID || 'local';
+
+// MISSING and UNREADABLE are different facts. A write-ahead record that exists but cannot be parsed is evidence of an
+// attempt we cannot interpret; it must never be collapsed into "nothing happened".
+function readEvidence(name) {
+  const file = path.join(OUT, name);
+  if (!fs.existsSync(file)) return { status: 'MISSING', data: null };
+  try { return { status: 'PRESENT', data: json(file) }; }
+  catch (e) { return { status: 'UNREADABLE', data: null, error: String(e && e.message ? e.message : e).slice(0, 300) }; }
+}
+
+// The rollback artifact is selected by name, never by scanning the directory: environment override, else the name the
+// preflight of THIS run recorded, else the name derived from the run id. Two disagreeing sources are rejected, not ranked.
+function resolveRollbackArtifactName() {
+  const fromEnv = process.env.APP_ROLLBACK_ARTIFACT || null;
+  const pre = readEvidence('app-preflight.json');
+  const fromPreflight = pre.status === 'PRESENT' && pre.data && pre.data.rollback_artifact ? pre.data.rollback_artifact : null;
+  if (fromEnv && fromPreflight) assert.equal(fromEnv, fromPreflight, 'ROLLBACK_ARTIFACT_AMBIGUOUS: environment and preflight name different artifacts');
+  const name = fromEnv || fromPreflight || 'app-rollback-' + releaseId() + '.json';
+  assert.match(name, ROLLBACK_ARTIFACT_NAME, 'ROLLBACK_ARTIFACT_NAME_INVALID');
+  return name;
+}
+
+// Every artifact consumed by a mutation or a recovery must belong to the run that is executing it. A missing run id is a
+// rejection: it is how an artifact from another execution would otherwise be accepted silently.
+function assertSameRelease(records) {
+  const expected = releaseId();
+  for (const [label, record] of Object.entries(records)) {
+    if (!record) continue;
+    assert.ok(record.release_id !== undefined && record.release_id !== null, 'ARTIFACT_RELEASE_MISSING: ' + label + ' carries no run id');
+    assert.equal(String(record.release_id), expected, 'ARTIFACT_RELEASE_MISMATCH: ' + label + ' belongs to another run');
+  }
+}
+
+// Links between the artifacts of one release: same candidate commit, same project and team, and a staged build that is
+// neither the current production deployment nor derived from another baseline.
+function assertCandidateLinkage({ pre, artifact, staged, runtime, s }) {
+  assert.equal(artifact.candidate_sha, runtime, 'ARTIFACT_RUNTIME_MISMATCH: rollback artifact is for another commit');
+  assert.equal(artifact.production_project, s.production_project, 'ARTIFACT_PROJECT_MISMATCH');
+  assert.equal(artifact.vercel_team, s.vercel_team, 'ARTIFACT_TEAM_MISMATCH');
+  assert.equal(pre.candidate, artifact.candidate_deployment, 'ARTIFACT_CANDIDATE_MISMATCH: preflight and rollback artifact name different candidates');
+  assert.equal(pre.production_deployment, artifact.production_deployment, 'ARTIFACT_BASELINE_MISMATCH: preflight and rollback artifact captured different production deployments');
+  if (staged) {
+    assert.equal(staged.production_alias_before, artifact.production_deployment, 'STAGED_BASELINE_MISMATCH: the staged build was created against another production deployment');
+    assert.notEqual(staged.staged_deployment, artifact.production_deployment, 'STAGED_IS_CURRENT_PRODUCTION');
+  }
+}
+
+// Ids only, never a secret or a response body.
+function recoveryEvidence({ artifact, staged, runtime, lastObserved, observedError }) {
+  return {
+    release_id: releaseId(),
+    candidate_sha: (artifact && artifact.candidate_sha) || runtime || null,
+    candidate_deployment: artifact ? artifact.candidate_deployment : null,
+    staged_deployment: staged ? staged.staged_deployment : null,
+    safe_off_deployment: SAFE_OFF_BASELINE.deployment,
+    previous_deployment: artifact ? artifact.production_deployment : null,
+    last_observed_deployment: lastObserved || null,
+    observed_error: observedError ? String(observedError).slice(0, 300) : null,
+  };
+}
+
+// A recovery that cannot prove the identity of production is a manual incident, recorded in the artifact the workflow
+// already uploads (`app-*.json`). No automatic overwrite follows from it.
+function recordManualRecovery(status, reason, evidence) {
+  return save('app-rollback-result.json', { rollback_status: status, state: 'RECOVERY_REQUIRED', manual_recovery_required: true, reason, recovery_evidence: evidence, rules_mutated: false });
+}
+
 // The mutation steps are injectable so the failure path can be proven with fakes instead of
 // being asserted from source text. Production always calls this with no second argument.
+//
+// RESIDUAL RISK (not removable here): Vercel's promote and rollback operations take only the project and the deployment
+// id (no expected-current-deployment / If-Match style precondition is used or known to be offered), so there is no
+// atomic compare-and-swap between "the alias is X" and "move the alias to Y". The window is narrowed, not closed:
+// every identity read is placed immediately before the mutation, the alias is re-read after the public bytes are
+// verified, and runs are serialized by the `vdsen-production` concurrency group. An actor outside that group (a
+// dashboard user, another tool) can still move the alias inside the window; it is detected afterwards and reported as a
+// manual recovery, never overwritten automatically.
 async function apply(steps = {}) {
   assertAppOnlySources();
   const promoteFn = steps.promote || promote;
@@ -849,6 +939,7 @@ async function apply(steps = {}) {
   const runtime = assertExplicitRuntime(process.env.APP_RUNTIME_SHA);
   const pre = json(path.join(OUT, 'app-preflight.json'));
   assert.equal(pre.runtime_sha, runtime, 'Preflight was not for this exact runtime');
+  assert.match(String(pre.rollback_artifact), ROLLBACK_ARTIFACT_NAME, 'ROLLBACK_ARTIFACT_NAME_INVALID');
   const artifact = assertRollbackArtifact(json(path.join(OUT, pre.rollback_artifact)));
   // The promotion target is the STAGED PRODUCTION deployment built from the exact candidate tree,
   // not an ephemeral Preview. Falling back to the preview candidate keeps older runs reproducible,
@@ -862,6 +953,9 @@ async function apply(steps = {}) {
     assert.equal(staged.production_project, s.production_project, 'STAGED_PROJECT_MISMATCH');
     assert.equal(staged.vercel_team, s.vercel_team, 'STAGED_TEAM_MISMATCH');
   }
+  // T677: every artifact must belong to THIS run and agree on candidate, project, team and baseline.
+  assertSameRelease({ preflight: pre, 'rollback artifact': artifact, 'staged report': staged });
+  assertCandidateLinkage({ pre, artifact, staged, runtime, s });
   // T641: last gate. Fresh evidence taken NOW must be DISARMED and identical to the evidence captured before and after staging, and none of it may be stale. There is no
   // override: without a successful proof the promotion is not attempted (nothing is mutated, no result claims otherwise).
   const guardFn = steps.numericGuard || numericGuardEvidence;
@@ -870,17 +964,25 @@ async function apply(steps = {}) {
   if (artifact.safe_off_deployment || steps.verifySafeOffBaseline || !steps.promote) {
     const verifySafeOffProofFn = steps.verifySafeOffBaseline || ((st) => verifySafeOffBaseline(st, false, deploymentFn));
     assertSafeRollbackProof(artifact, await verifySafeOffProofFn(s));
-    if (!steps.promote) {
-      assert.equal(await currentAppFn(s), artifact.production_deployment, 'BASELINE_MOVED_BEFORE_PROMOTION');
-    }
   }
-  const result = { release_id: process.env.GITHUB_RUN_ID || 'local', runtime_sha: runtime, app_release_status: 'FAIL', production_deployment: null, previous_deployment: artifact.production_deployment, promotion_target: targetDeployment, promotion_model: staged ? 'staged_production' : 'preview_candidate', rules_mutated: false, main_unchanged: true, error: null, rollback_required: false };
+  // T677: the LAST reads before the production request, placed after every slow gate above. The alias must still be the
+  // captured baseline and the authorized target must still be the exact READY build of the approved commit.
+  assert.equal(await currentAppFn(s), artifact.production_deployment, 'BASELINE_MOVED_BEFORE_PROMOTION');
+  assertPromoted(normalizeDeployment(await deploymentFn(s, targetDeployment)), { runtime, project: s.production_project, team: s.vercel_team, productionDeploymentId: targetDeployment, targetDeployment });
+  const result = { release_id: process.env.GITHUB_RUN_ID || 'local', runtime_sha: runtime, app_release_status: 'FAIL', production_deployment: null, previous_deployment: artifact.production_deployment, promotion_target: targetDeployment, promotion_model: staged ? 'staged_production' : 'preview_candidate', candidate_deployment: artifact.candidate_deployment, staged_deployment: staged ? staged.staged_deployment : null, safe_off_deployment: SAFE_OFF_BASELINE.deployment, rules_mutated: false, main_unchanged: true, error: null, rollback_required: false };
+  // T677 write-ahead record: persisted BEFORE the production request. From here until the final result replaces it,
+  // production is treated as possibly mutated (outcome UNKNOWN, recovery required). If the process dies after the request,
+  // this file is what lets recovery tell an interrupted attempt from a run that never started. A failed write aborts here.
+  save('app-result.json', Object.assign({}, result, { state: 'MUTATION_REQUESTED', mutation_status: 'UNKNOWN', rollback_required: true, requested_at: new Date().toISOString(), recovery_reason: 'promotion requested; its outcome was not recorded' }));
   try {
     await promoteFn(s, targetDeployment);
     const aliasDeploymentId = await currentAppFn(s);
     const d = await deploymentFn(s, aliasDeploymentId);
-    assertPromoted(d, { runtime, project: s.production_project, team: s.vercel_team, productionDeploymentId: aliasDeploymentId });
+    assertPromoted(d, { runtime, project: s.production_project, team: s.vercel_team, productionDeploymentId: aliasDeploymentId, targetDeployment });
     const verified = await verifyFn(s, runtime, surfaceFn());
+    // T677: the bytes were read over HTTP and say nothing about WHICH deployment answered. Re-read the alias after them;
+    // a change here forbids VERIFIED and is handled by the recovery decision below.
+    assert.equal(await currentAppFn(s), targetDeployment, 'ALIAS_CHANGED_AFTER_VERIFICATION: production no longer points to the authorized deployment');
     result.production_deployment = aliasDeploymentId;
     result.verified_surfaces = verified.length;
     result.app_release_status = 'SUCCESS';
@@ -907,6 +1009,13 @@ async function apply(steps = {}) {
     result.recovery_reason = decision.reason;
     result.state = decision.rollback_required ? 'RECOVERY_REQUIRED' : 'NO_MUTATION';
     if (result.rollback_required) result.production_deployment = observed.id;
+    // T677: UNKNOWN (production unreadable) and UNEXPECTED (a deployment that is neither the baseline nor the target)
+    // cannot be resolved by this lane. They are recorded as a manual recovery with the ids needed to act; the alias is
+    // overwritten automatically only when it is observed on the staged build.
+    if (decision.mutation_status === 'UNKNOWN' || decision.mutation_status === 'UNEXPECTED') {
+      result.manual_recovery_required = true;
+      result.recovery_evidence = recoveryEvidence({ artifact, staged, runtime, lastObserved: observed.id, observedError: observed.error });
+    }
     save('app-result.json', result);
     throw e;
   }
@@ -926,51 +1035,50 @@ async function rollbackApp() {
   const surfaceFn = steps.servedSurface || servedSurface;
   const verifySafeOffFn = steps.verifySafeOffBaseline || (async (st) => verifySafeOffBaseline(st, false, deploymentFn));
 
-  // Only revert if a promotion actually happened. The workflow calls this with `if: failure()`,
+  // Only revert if a promotion may have happened. The workflow calls this with `if: failure()`,
   // which also fires when an EARLIER gate (preflight, tests, kill switch) failed — in that case
   // production was never touched, and reverting would be a pointless mutation followed by a
   // confusing false failure.
-  let result = null;
-  try { result = json(path.join(OUT, 'app-result.json')); } catch (e) { result = null; }
-  if (!result || result.rollback_required !== true) {
-    const out = { rollback_status: 'NOT_NEEDED', reason: 'no promotion was performed in this run', rules_mutated: false };
+  //
+  // `app-result.json` is persisted BEFORE the production request (write-ahead), so a MISSING file means no promotion was
+  // requested, while an UNREADABLE one is an attempt that cannot be interpreted and is never read as "nothing happened".
+  const recorded = readEvidence('app-result.json');
+  const result = recorded.data;
+  let mustRecover = false;
+  if (recorded.status === 'PRESENT') mustRecover = !result || result.rollback_required === true;
+  else if (recorded.status === 'UNREADABLE') mustRecover = true;
+  else {
+    // No record. If a staged build exists, confirm production is not serving it before concluding nothing happened.
+    const probe = readEvidence('app-staged.json');
+    if (probe.status === 'UNREADABLE') mustRecover = true;
+    else if (probe.status === 'PRESENT') {
+      let seen = null, seenError = null;
+      try { seen = await currentAppFn(s); } catch (e) { seen = null; seenError = e && e.message ? e.message : String(e); }
+      if (!seen) {
+        recordManualRecovery('MANUAL_RECOVERY_REQUIRED', 'no attempt record exists and production could not be read; its identity cannot be established', recoveryEvidence({ staged: probe.data, lastObserved: null, observedError: seenError }));
+        throw new Error('PRODUCTION_ALIAS_UNREADABLE_MANUAL_RECOVERY_REQUIRED');
+      }
+      mustRecover = !!probe.data && seen === probe.data.staged_deployment;
+    }
+  }
+  if (!mustRecover) {
+    const out = { rollback_status: 'NOT_NEEDED', state: recorded.status === 'MISSING' ? 'NOT_STARTED' : 'NO_MUTATION', reason: 'no promotion was performed in this run', rules_mutated: false };
     save('app-rollback-result.json', out);
     console.log('APP ROLLBACK NOT NEEDED: production was never mutated in this run');
     return out;
   }
-  let artifactName = process.env.APP_ROLLBACK_ARTIFACT;
-  if (!artifactName) {
-    try {
-      const pre = json(path.join(OUT, 'app-preflight.json'));
-      if (pre && pre.rollback_artifact) artifactName = pre.rollback_artifact;
-    } catch (e) {}
-  }
-  if (!artifactName) {
-    const expected = 'app-rollback-' + (process.env.GITHUB_RUN_ID || 'local') + '.json';
-    if (fs.existsSync(path.join(OUT, expected))) {
-      artifactName = expected;
-    } else {
-      try {
-        const found = fs.readdirSync(OUT).filter(f => /^app-rollback-.*\.json$/.test(f));
-        if (found.length === 1) artifactName = found[0];
-        else if (fs.existsSync(path.join(OUT, 'app-rollback-local.json'))) artifactName = 'app-rollback-local.json';
-        else artifactName = expected;
-      } catch (e) {
-        artifactName = expected;
-      }
-    }
-  }
-  const artifact = assertRollbackArtifact(json(path.join(OUT, artifactName)));
+  const artifact = assertRollbackArtifact(json(path.join(OUT, resolveRollbackArtifactName())));
+  assertSameRelease({ 'rollback artifact': artifact, 'release result': result });
   assertSafeRollbackProof(artifact, await verifySafeOffFn(s));
   // Final guard, independent of whatever asked for recovery: if the rollback target is ALREADY the
   // current production deployment there is nothing to restore, and issuing the call would be a
   // meaningless mutation whose failure would be misread as "rollback is broken". Re-read
   // production here instead of trusting the value captured earlier in the run.
-  let currentId = null;
+  let currentId = null, currentError = null;
   if (steps.currentApp) {
-    try { currentId = await steps.currentApp(s); } catch (e) { currentId = null; }
+    try { currentId = await steps.currentApp(s); } catch (e) { currentId = null; currentError = e && e.message ? e.message : String(e); }
   } else {
-    try { currentId = await currentApp(s); } catch (e) { currentId = null; }
+    try { currentId = await currentApp(s); } catch (e) { currentId = null; currentError = e && e.message ? e.message : String(e); }
   }
   if ((currentId && currentId === artifact.production_deployment) || currentId === SAFE_OFF_BASELINE.deployment) {
     const out = {
@@ -986,13 +1094,33 @@ async function rollbackApp() {
   }
   const staged = json(path.join(OUT, 'app-staged.json'));
   assert.ok(staged && staged.staged_deployment && staged.numeric_guard, 'OFF_STAGED_EVIDENCE_REQUIRED');
-  assert.equal(currentId, staged.staged_deployment, 'FOREIGN_ALIAS_NO_AUTOMATIC_OVERWRITE');
+  assertSameRelease({ 'staged report': staged });
+  assert.equal(staged.candidate_sha, artifact.candidate_sha, 'STAGED_CANDIDATE_MISMATCH: staged report is for another commit');
+  assert.equal(staged.production_project, artifact.production_project, 'STAGED_PROJECT_MISMATCH');
+  assert.equal(staged.vercel_team, artifact.vercel_team, 'STAGED_TEAM_MISMATCH');
+  if (!currentId) {
+    recordManualRecovery('MANUAL_RECOVERY_REQUIRED', 'production could not be read before recovery; its identity cannot be established', recoveryEvidence({ artifact, staged, lastObserved: null, observedError: currentError }));
+    throw new Error('PRODUCTION_ALIAS_UNREADABLE_MANUAL_RECOVERY_REQUIRED');
+  }
+  if (currentId !== staged.staged_deployment) {
+    recordManualRecovery('MANUAL_RECOVERY_REQUIRED', 'production serves a deployment that is neither the captured baseline, the safe OFF target nor the staged build; it is not overwritten automatically', recoveryEvidence({ artifact, staged, lastObserved: currentId }));
+    throw new Error('FOREIGN_ALIAS_NO_AUTOMATIC_OVERWRITE: production serves ' + currentId);
+  }
   const id = steps.revertApp ? await steps.revertApp(s, SAFE_OFF_BASELINE.deployment) : await revertApp(s, SAFE_OFF_BASELINE.deployment);
+  assert.equal(id, SAFE_OFF_BASELINE.deployment, 'RESTORED_DEPLOYMENT_MISMATCH: the restore did not return the safe OFF target');
   const d = await deploymentFn(s, id);
   assert.equal(d.readyState, 'READY', 'Restored deployment is not READY');
   assert.equal(d.meta?.githubCommitSha, SAFE_OFF_BASELINE.runtimeSha, 'Restored runtime identity mismatch');
   await verifyFn(s, SAFE_OFF_BASELINE.runtimeSha, surfaceFn());
-  const out = { rollback_status: 'PASS', state: 'RECOVERED', restored_deployment: id, restored_runtime_sha: SAFE_OFF_BASELINE.runtimeSha, rules_mutated: false };
+  // Public bytes do not identify the deployment that served them: re-read the alias and require the exact safe OFF target
+  // before claiming RECOVERED. If it cannot be proven, the incident is recorded as manual and RECOVERED is never written.
+  let finalId = null, finalError = null;
+  try { finalId = await currentAppFn(s); } catch (e) { finalId = null; finalError = e && e.message ? e.message : String(e); }
+  if (finalId !== SAFE_OFF_BASELINE.deployment) {
+    recordManualRecovery('RECOVERY_NOT_PROVEN', 'the alias could not be proven on the safe OFF target after verification', recoveryEvidence({ artifact, staged, lastObserved: finalId, observedError: finalError }));
+    throw new Error('ALIAS_NOT_PROVEN_AFTER_RECOVERY: expected the safe OFF target');
+  }
+  const out = { rollback_status: 'PASS', state: 'RECOVERED', restored_deployment: id, restored_runtime_sha: SAFE_OFF_BASELINE.runtimeSha, verified_alias: finalId, rules_mutated: false };
   save('app-rollback-result.json', out);
   console.log('APP ROLLBACK PASS: ' + id);
   return out;
@@ -1085,4 +1213,5 @@ module.exports = {
   REQUIRED_PROD_ENV, FORBIDDEN_RUNTIME_VALUES, setOut, getOut,
   observeProduction, decideRecovery,
   exportCandidateTree, verifyExportedTree, assertStaged, stageProduction, runVercelCli, diagnosticLines, VERCEL_CLI_VERSION,
+  readEvidence, resolveRollbackArtifactName, assertSameRelease, assertCandidateLinkage, recoveryEvidence, recordManualRecovery,
 };

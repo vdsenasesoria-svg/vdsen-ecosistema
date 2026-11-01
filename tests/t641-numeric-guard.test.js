@@ -116,10 +116,12 @@ test('T641.7 promotion gate: evidence must be present, DISARMED, for this exact 
 });
 
 // ── apply(): the REAL function with fake mutation steps. A rejected guard must mutate nothing and record no promotion.
+// T677: artifacts consumed by apply() carry the id of the run that executes it.
+const RID = process.env.GITHUB_RUN_ID || 'local';
 function applyFixture(preGuard) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ng-apply-')), runtime = RUNTIME, wrote = [];
-  fs.writeFileSync(path.join(tmp, 'app-preflight.json'), JSON.stringify({ runtime_sha: runtime, rollback_artifact: 'app-rollback-test.json', numeric_guard: preGuard }));
-  fs.writeFileSync(path.join(tmp, 'app-rollback-test.json'), JSON.stringify({ candidate_sha: runtime, candidate_deployment: 'dpl_candidate000000000000000001', production_deployment: 'dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw',
+  fs.writeFileSync(path.join(tmp, 'app-preflight.json'), JSON.stringify({ release_id: RID, runtime_sha: runtime, candidate: 'dpl_candidate000000000000000001', production_deployment: 'dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw', rollback_artifact: 'app-rollback-test.json', numeric_guard: preGuard }));
+  fs.writeFileSync(path.join(tmp, 'app-rollback-test.json'), JSON.stringify({ release_id: RID, candidate_sha: runtime, candidate_deployment: 'dpl_candidate000000000000000001', production_deployment: 'dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw',
     production_runtime_sha: 'b5f53af5843f466528a4b95e5a3e52d6c8c77fb1', production_project: PROJECT, vercel_team: TEAM, production_origin: 'https://x', main_sha: 'f'.repeat(40), captured_at: 'now' }));
   return { tmp, wrote };
 }
@@ -128,7 +130,7 @@ async function runApply(preGuard, freshGuard) {
   const realNow = Date.now;
   try {
     app.setOut(tmp); process.env.APP_RUNTIME_SHA = RUNTIME;
-    const steps = { promote: async () => { promoted++; }, currentApp: async () => { aliasReads++; return 'dpl_new0000000000000000000001'; }, servedSurface: () => ['vdsen-cliente.html'], verifyPublicBytes: async () => ['vdsen-cliente.html'],
+    const steps = { promote: async () => { promoted++; }, currentApp: async () => { aliasReads++; return aliasReads === 1 ? 'dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw' : 'dpl_candidate000000000000000001'; }, servedSurface: () => ['vdsen-cliente.html'], verifyPublicBytes: async () => ['vdsen-cliente.html'],
       deployment: async () => ({ readyState: 'READY', projectId: PROJECT, teamId: TEAM, meta: { githubCommitSha: RUNTIME } }),
       numericGuard: typeof freshGuard === 'function' ? freshGuard : async () => freshGuard };
     let error = null; try { await app.apply(steps); } catch (e) { error = e; }
