@@ -47,13 +47,15 @@ function offProof() {
   const before = G.evaluateProductionEnv([], { project: P.PROJECT, team: P.TEAM, runtimeSha: R.T671, now: Date.parse('2026-10-29T10:00:00Z') });
   const after = { ...before, captured_at: '2026-10-29T10:01:00Z' };
   const d = { id: baseline.deployment, projectId: P.PROJECT, teamId: P.TEAM, readyState: 'READY', target: 'production', meta: { githubCommitSha: R.T671 }, env: [] };
-  const proof = { run: { id: 12345, repository: { full_name: 'vdsenasesoria-svg/vdsen-ecosistema' }, path: '.github/workflows/vdsen-app-release-prod.yml',
+  const proof = { run: { id: 12345, repository: { full_name: 'vdsenasesoria-svg/vdsen-ecosistema' }, path: '.github/workflows/vdsen-app-release-prod.yml', head_sha: R.T671,
     head_branch: 'codex/client-app-next', event: 'workflow_dispatch', status: 'completed', conclusion: 'success', run_attempt: 1 },
-    preflight: { runtime_sha: R.T671, numeric_guard: before },
+    preflight: { runtime_sha: R.T671, candidate: 'dpl_cand', production_deployment: 'dpl_prev', rollback_artifact: 'app-rollback-12345.json', numeric_guard: before },
     staged: { staged_deployment: baseline.deployment, candidate_sha: R.T671, production_project: P.PROJECT, vercel_team: P.TEAM,
-      staged_target: 'production', staged_ready_state: 'READY', numeric_guard: after, staged_at: '2026-10-29T10:01:01Z' },
-    result: { release_id: '12345', runtime_sha: R.T671, app_release_status: 'SUCCESS', state: 'VERIFIED', promotion_model: 'staged_production',
-      promotion_target: baseline.deployment, production_deployment: baseline.deployment, rollback_required: false, rules_mutated: false, main_unchanged: true } };
+      staged_target: 'production', staged_ready_state: 'READY', production_alias_before: 'dpl_prev', production_alias_after: 'dpl_prev', numeric_guard: after, staged_at: '2026-10-29T10:01:01Z' },
+    result: { release_id: '12345', runtime_sha: R.T671, app_release_status: 'SUCCESS', state: 'VERIFIED', promotion_model: 'staged_production', previous_deployment: 'dpl_prev',
+      promotion_target: baseline.deployment, production_deployment: baseline.deployment, rollback_required: false, rules_mutated: false, main_unchanged: true },
+    rollback: { release_id: '12345', candidate_sha: R.T671, candidate_deployment: 'dpl_cand', production_deployment: 'dpl_prev', production_project: P.PROJECT, vercel_team: P.TEAM },
+    artifact: { name: 'app-release-result-12345', expired: false, digest: 'sha256:' + 'a'.repeat(64), workflow_run: { id: 12345, head_sha: R.T671, head_branch: 'codex/client-app-next' } } };
   return { s, baseline, d, proof };
 }
 test('T673 review: OFF rollback requires authenticated official build evidence for the exact immutable deployment', () => {

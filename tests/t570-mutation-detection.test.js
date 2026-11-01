@@ -23,6 +23,8 @@ const NG = require('../scripts/release/numeric-guard.cjs');
 // T641: apply() takes a fresh Numeric-Apply-OFF proof right before promoting; these tests drive the recovery logic, so the proof is a valid, fresh, unchanged one.
 const proof = () => NG.evaluateProductionEnv([], { project: 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN', team: 'team_VZc5H7Q1DBIJ3g0mwrSBz1o8', runtimeSha: '8365410cf7f09427c79ead77aa4f769c16e9a803' });
 
+// T677: every artifact consumed by apply() must carry the id of the run that executes it.
+const RID = process.env.GITHUB_RUN_ID || 'local';
 const PREVIOUS = 'dpl_FngrtpodSKHZ9aPk75aA5SS7JGnB';
 const CANDIDATE = 'dpl_9rCu3FswEnseDvcgpf6FbrjzuJJS';
 const RUNTIME = '8365410cf7f09427c79ead77aa4f769c16e9a803';
@@ -33,6 +35,7 @@ const TEAM = 'team_VZc5H7Q1DBIJ3g0mwrSBz1o8';
 // assertRollbackArtifact requires every one of these fields, so the fixture must be complete or
 // apply() fails before the path under test can be exercised.
 const artifact = (over = {}) => ({
+  release_id: RID,
   candidate_sha: RUNTIME,
   candidate_deployment: CANDIDATE,
   production_deployment: PREVIOUS,
@@ -126,7 +129,7 @@ async function runApply(t, { promoteThrows, aliasSequence }) {
   t.after(() => { app.setOut(prevOut); fs.rmSync(out, { recursive: true, force: true }); });
 
   fs.writeFileSync(path.join(out, 'app-preflight.json'), JSON.stringify({
-    runtime_sha: RUNTIME, candidate: CANDIDATE, production_deployment: PREVIOUS,
+    release_id: RID, runtime_sha: RUNTIME, candidate: CANDIDATE, production_deployment: PREVIOUS,
     rollback_artifact: 'app-rollback-test.json', numeric_guard: proof(),
   }));
   fs.writeFileSync(path.join(out, 'app-rollback-test.json'), JSON.stringify(artifact()));
@@ -162,7 +165,7 @@ test('T570-9 apply(): promote throws and production never moved => NO_MUTATION, 
 });
 
 test('T570-10 apply(): promote throws but production DID move => MUTATED, rollback required', async (t) => {
-  const { result } = await runApply(t, { promoteThrows: 'socket hang up', aliasSequence: [CANDIDATE] });
+  const { result } = await runApply(t, { promoteThrows: 'socket hang up', aliasSequence: [PREVIOUS, CANDIDATE] });
   assert.equal(result.mutation_status, 'MUTATED');
   assert.equal(result.rollback_required, true);
   assert.equal(result.state, 'RECOVERY_REQUIRED');
@@ -175,7 +178,7 @@ test('T570-11 apply(): promotion succeeds but verification fails => rollback req
   app.setOut(out);
   t.after(() => { app.setOut(prevOut); fs.rmSync(out, { recursive: true, force: true }); });
   fs.writeFileSync(path.join(out, 'app-preflight.json'), JSON.stringify({
-    runtime_sha: RUNTIME, candidate: CANDIDATE, production_deployment: PREVIOUS, rollback_artifact: 'app-rollback-test.json', numeric_guard: proof(),
+    release_id: RID, runtime_sha: RUNTIME, candidate: CANDIDATE, production_deployment: PREVIOUS, rollback_artifact: 'app-rollback-test.json', numeric_guard: proof(),
   }));
   fs.writeFileSync(path.join(out, 'app-rollback-test.json'), JSON.stringify(artifact()));
   const prevSha = process.env.APP_RUNTIME_SHA;
@@ -185,7 +188,7 @@ test('T570-11 apply(): promotion succeeds but verification fails => rollback req
   await assert.rejects(() => app.apply({
     numericGuard: async () => proof(),
     promote: async () => {},
-    currentApp: async () => CANDIDATE,
+    currentApp: (reads => async () => (reads++ === 0 ? PREVIOUS : CANDIDATE))(0),   // the baseline right before the request, then the candidate
     deployment: async (s, id) => ({ id, uid: id, readyState: 'READY', target: null, projectId: 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN', meta: { githubCommitSha: RUNTIME } }),
     verifyPublicBytes: async () => { throw new Error('served bytes do not match the candidate'); },
     servedSurface: () => ['vdsen-cliente.html'],
@@ -196,7 +199,7 @@ test('T570-11 apply(): promotion succeeds but verification fails => rollback req
 });
 
 test('T570-12 apply(): promotion succeeds and verification succeeds => no rollback', async (t) => {
-  const { result, error } = await runApply(t, { promoteThrows: null, aliasSequence: [CANDIDATE] });
+  const { result, error } = await runApply(t, { promoteThrows: null, aliasSequence: [PREVIOUS, CANDIDATE] });
   assert.equal(error, null, 'a clean release does not throw');
   assert.equal(result.app_release_status, 'SUCCESS');
   assert.equal(result.rollback_required, false);
@@ -205,7 +208,7 @@ test('T570-12 apply(): promotion succeeds and verification succeeds => no rollba
 });
 
 test('T570-13 apply(): the recovery decision is only reached on failure, never on success', async (t) => {
-  const { result } = await runApply(t, { promoteThrows: null, aliasSequence: [CANDIDATE] });
+  const { result } = await runApply(t, { promoteThrows: null, aliasSequence: [PREVIOUS, CANDIDATE] });
   assert.equal(result.mutation_status, undefined, 'no mutation bookkeeping on the happy path');
   assert.equal(result.recovery_reason, undefined);
 });
