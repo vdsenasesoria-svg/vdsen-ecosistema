@@ -528,3 +528,168 @@ test('T677.9 simulated test runs do not make real network requests to Vercel', a
     cleanup();
   }
 });
+
+// ── T677.1 focal rollback classification hardening
+
+// T677.1-1: app-result.json de otra ejecución con rollback_required: false
+test('T677.1-1 app-result.json from another execution with rollback_required=false is rejected', async () => {
+  const { tmp, cleanup } = setupEnv();
+  try {
+    put(tmp, 'app-result.json', {
+      release_id: 'other-run-999999',
+      rollback_required: false,
+      state: 'NO_MUTATION',
+      mutation_status: 'NO_MUTATION',
+    });
+
+    await assert.rejects(
+      () => app.rollbackApp({ currentApp: async () => SAFE_OFF_BASELINE.deployment }),
+      /ARTIFACT_RELEASE_MISMATCH: release result belongs to another run/
+    );
+
+    const rbResult = JSON.parse(fs.readFileSync(path.join(tmp, 'app-rollback-result.json'), 'utf8'));
+    assert.equal(rbResult.state, 'RECOVERY_REQUIRED');
+    assert.equal(rbResult.manual_recovery_required, true);
+    assert.notEqual(rbResult.rollback_status, 'NOT_NEEDED');
+  } finally {
+    cleanup();
+  }
+});
+
+// T677.1-2: Resultado incompleto o ilegible
+test('T677.1-2 incomplete or unreadable app-result.json is rejected and never becomes NOT_NEEDED', async () => {
+  const { tmp, cleanup } = setupEnv();
+  try {
+    // Case A: Structurally incomplete (missing rollback_required boolean)
+    put(tmp, 'app-result.json', { release_id: RID });
+    await assert.rejects(
+      () => app.rollbackApp({ currentApp: async () => SAFE_OFF_BASELINE.deployment }),
+      /RESULT_ARTIFACT_INCOMPLETE: rollback_required must be a boolean/
+    );
+    let rbResult = JSON.parse(fs.readFileSync(path.join(tmp, 'app-rollback-result.json'), 'utf8'));
+    assert.equal(rbResult.state, 'RECOVERY_REQUIRED');
+    assert.equal(rbResult.manual_recovery_required, true);
+
+    // Case B: rollback_required=false without proven NO_MUTATION or VERIFIED state
+    put(tmp, 'app-result.json', { release_id: RID, rollback_required: false, state: 'MUTATION_REQUESTED' });
+    await assert.rejects(
+      () => app.rollbackApp({ currentApp: async () => SAFE_OFF_BASELINE.deployment }),
+      /RESULT_ARTIFACT_INCOMPLETE: rollback_required=false requires proven NO_MUTATION or VERIFIED state/
+    );
+    rbResult = JSON.parse(fs.readFileSync(path.join(tmp, 'app-rollback-result.json'), 'utf8'));
+    assert.equal(rbResult.state, 'RECOVERY_REQUIRED');
+    assert.equal(rbResult.manual_recovery_required, true);
+
+    // Case C: Unreadable / corrupt JSON even if production serves the baseline
+    fs.writeFileSync(path.join(tmp, 'app-result.json'), '{corrupt-json');
+    put(tmp, ARTIFACT, validRollbackArtifact());
+    await assert.rejects(
+      () => app.rollbackApp({
+        verifySafeOffBaseline: async () => mockProof,
+        currentApp: async () => 'dpl_previous',
+      }),
+      /RESULT_ARTIFACT_UNREADABLE/
+    );
+    rbResult = JSON.parse(fs.readFileSync(path.join(tmp, 'app-rollback-result.json'), 'utf8'));
+    assert.equal(rbResult.state, 'RECOVERY_REQUIRED');
+    assert.equal(rbResult.manual_recovery_required, true);
+    assert.notEqual(rbResult.rollback_status, 'NOT_NEEDED');
+  } finally {
+    cleanup();
+  }
+});
+
+// T677.1-3: Resultado ausente con evidencia staged y alias ajeno
+test('T677.1-3 missing app-result.json with staged evidence and foreign production alias records manual recovery without overwrite', async () => {
+  const { tmp, cleanup } = setupEnv();
+  try {
+    put(tmp, ARTIFACT, validRollbackArtifact());
+    put(tmp, 'app-staged.json', validStagedReport());
+
+    let revertCalled = false;
+    await assert.rejects(
+      () => app.rollbackApp({
+        verifySafeOffBaseline: async () => mockProof,
+        currentApp: async () => 'dpl_foreign_unrecognized',
+        revertApp: async () => { revertCalled = true; },
+      }),
+      /FOREIGN_ALIAS_NO_AUTOMATIC_OVERWRITE: production serves dpl_foreign_unrecognized/
+    );
+
+    assert.equal(revertCalled, false, 'Must not overwrite foreign alias');
+    const rbResult = JSON.parse(fs.readFileSync(path.join(tmp, 'app-rollback-result.json'), 'utf8'));
+    assert.equal(rbResult.rollback_status, 'MANUAL_RECOVERY_REQUIRED');
+    assert.equal(rbResult.state, 'RECOVERY_REQUIRED');
+    assert.equal(rbResult.manual_recovery_required, true);
+    assert.equal(rbResult.recovery_evidence.last_observed_deployment, 'dpl_foreign_unrecognized');
+    assert.equal(rbResult.recovery_evidence.staged_deployment, 'dpl_staged');
+  } finally {
+    cleanup();
+  }
+});
+
+// T677.1-4: Resultado válido sin necesidad de rollback
+test('T677.1-4 valid current-run app-result.json with rollback_required=false returns NOT_NEEDED', async () => {
+  const { tmp, cleanup } = setupEnv();
+  try {
+    put(tmp, 'app-result.json', {
+      release_id: RID,
+      rollback_required: false,
+      state: 'NO_MUTATION',
+      mutation_status: 'NO_MUTATION',
+    });
+    put(tmp, 'app-staged.json', validStagedReport());
+
+    let revertCalled = false;
+    const out = await app.rollbackApp({
+      revertApp: async () => { revertCalled = true; },
+    });
+
+    assert.equal(out.rollback_status, 'NOT_NEEDED');
+    assert.equal(out.state, 'NO_MUTATION');
+    assert.equal(out.rules_mutated, false);
+    assert.equal(revertCalled, false);
+  } finally {
+    cleanup();
+  }
+});
+
+// T677.1-5: Producción ya restaurada al baseline OFF (con o sin app-result.json)
+test('T677.1-5 legitimate idempotency when production already serves SAFE_OFF_BASELINE.deployment', async () => {
+  const { tmp, cleanup } = setupEnv();
+  try {
+    // Subcase A: Missing app-result.json + staged evidence present + production already at SAFE_OFF_BASELINE.deployment
+    put(tmp, ARTIFACT, validRollbackArtifact());
+    put(tmp, 'app-staged.json', validStagedReport());
+
+    let revertCalled = false;
+    const outMissing = await app.rollbackApp({
+      verifySafeOffBaseline: async () => mockProof,
+      currentApp: async () => SAFE_OFF_BASELINE.deployment,
+      revertApp: async () => { revertCalled = true; },
+    });
+    assert.equal(outMissing.rollback_status, 'NOT_NEEDED');
+    assert.equal(outMissing.state, 'NO_MUTATION');
+    assert.equal(outMissing.current_deployment, SAFE_OFF_BASELINE.deployment);
+    assert.equal(revertCalled, false);
+
+    // Subcase B: Write-ahead / rollback_required=true present + production already at SAFE_OFF_BASELINE.deployment
+    put(tmp, 'app-result.json', {
+      release_id: RID,
+      rollback_required: true,
+      state: 'MUTATION_REQUESTED',
+      mutation_status: 'UNKNOWN',
+    });
+    const outPresent = await app.rollbackApp({
+      verifySafeOffBaseline: async () => mockProof,
+      currentApp: async () => SAFE_OFF_BASELINE.deployment,
+      revertApp: async () => { revertCalled = true; },
+    });
+    assert.equal(outPresent.rollback_status, 'NOT_NEEDED');
+    assert.equal(outPresent.state, 'NO_MUTATION');
+    assert.equal(outPresent.current_deployment, SAFE_OFF_BASELINE.deployment);
+    assert.equal(revertCalled, false);
+  } finally {
+    cleanup();
+  }
+});

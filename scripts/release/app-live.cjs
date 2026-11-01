@@ -884,6 +884,25 @@ function assertSameRelease(records) {
   }
 }
 
+// Validates that app-result.json belongs to the current release and has a complete, self-consistent contract
+// before its rollback_required classification is trusted.
+function assertResultRecord(result) {
+  assert.ok(result && typeof result === 'object' && !Array.isArray(result), 'RESULT_ARTIFACT_INVALID');
+  assertSameRelease({ 'release result': result });
+  assert.equal(typeof result.rollback_required, 'boolean', 'RESULT_ARTIFACT_INCOMPLETE: rollback_required must be a boolean');
+  if (result.rollback_required === false) {
+    const validNoMutation = result.state === 'NO_MUTATION' && result.mutation_status === 'NO_MUTATION';
+    const validVerified = result.state === 'VERIFIED' && result.app_release_status === 'SUCCESS';
+    assert.ok(validNoMutation || validVerified, 'RESULT_ARTIFACT_INCOMPLETE: rollback_required=false requires proven NO_MUTATION or VERIFIED state');
+  } else {
+    const validRollbackState = ['MUTATED', 'UNKNOWN', 'UNEXPECTED'].includes(result.mutation_status) ||
+      result.state === 'MUTATION_REQUESTED' ||
+      result.state === 'RECOVERY_REQUIRED';
+    assert.ok(validRollbackState, 'RESULT_ARTIFACT_INCOMPLETE: rollback_required=true requires a valid mutation or recovery state');
+  }
+  return result;
+}
+
 // Links between the artifacts of one release: same candidate commit, same project and team, and a staged build that is
 // neither the current production deployment nor derived from another baseline.
 function assertCandidateLinkage({ pre, artifact, staged, runtime, s }) {
@@ -1045,24 +1064,76 @@ async function rollbackApp() {
   const recorded = readEvidence('app-result.json');
   const result = recorded.data;
   let mustRecover = false;
-  if (recorded.status === 'PRESENT') mustRecover = !result || result.rollback_required === true;
-  else if (recorded.status === 'UNREADABLE') mustRecover = true;
-  else {
+  if (recorded.status === 'UNREADABLE') {
+    recordManualRecovery('MANUAL_RECOVERY_REQUIRED', 'app-result.json exists but is unreadable; mutation state cannot be established', recoveryEvidence({ observedError: recorded.error }));
+    throw new Error('RESULT_ARTIFACT_UNREADABLE: ' + recorded.error);
+  } else if (recorded.status === 'PRESENT') {
+    try {
+      assertResultRecord(result);
+    } catch (e) {
+      recordManualRecovery('MANUAL_RECOVERY_REQUIRED', e.message, recoveryEvidence({ observedError: e.message }));
+      throw e;
+    }
+    if (result.rollback_required === false) {
+      const preProbe = readEvidence('app-preflight.json');
+      if (preProbe.status === 'UNREADABLE') throw new Error('PREFLIGHT_ARTIFACT_UNREADABLE: ' + preProbe.error);
+      if (preProbe.status === 'PRESENT') assertSameRelease({ preflight: preProbe.data });
+      const stagedProbe = readEvidence('app-staged.json');
+      if (stagedProbe.status === 'UNREADABLE') throw new Error('STAGED_ARTIFACT_UNREADABLE: ' + stagedProbe.error);
+      if (stagedProbe.status === 'PRESENT') assertSameRelease({ 'staged report': stagedProbe.data });
+      const out = { rollback_status: 'NOT_NEEDED', state: 'NO_MUTATION', reason: 'no promotion was performed in this run', rules_mutated: false };
+      save('app-rollback-result.json', out);
+      console.log('APP ROLLBACK NOT NEEDED: production was never mutated in this run');
+      return out;
+    }
+    mustRecover = true;
+  } else {
     // No record. If a staged build exists, confirm production is not serving it before concluding nothing happened.
     const probe = readEvidence('app-staged.json');
-    if (probe.status === 'UNREADABLE') mustRecover = true;
-    else if (probe.status === 'PRESENT') {
+    if (probe.status === 'UNREADABLE') {
+      recordManualRecovery('MANUAL_RECOVERY_REQUIRED', 'app-staged.json exists but is unreadable while app-result.json is missing', recoveryEvidence({ observedError: probe.error }));
+      throw new Error('STAGED_ARTIFACT_UNREADABLE: ' + probe.error);
+    } else if (probe.status === 'PRESENT') {
+      assert.ok(probe.data && probe.data.staged_deployment && probe.data.numeric_guard, 'OFF_STAGED_EVIDENCE_REQUIRED');
+      assertSameRelease({ 'staged report': probe.data });
+      const rbProbe = readEvidence(resolveRollbackArtifactName());
+      if (rbProbe.status === 'UNREADABLE') {
+        recordManualRecovery('MANUAL_RECOVERY_REQUIRED', 'rollback artifact exists but is unreadable while app-result.json is missing', recoveryEvidence({ staged: probe.data, observedError: rbProbe.error }));
+        throw new Error('ROLLBACK_ARTIFACT_UNREADABLE: ' + rbProbe.error);
+      }
+      if (rbProbe.status === 'PRESENT') {
+        assertRollbackArtifact(rbProbe.data);
+        assertSameRelease({ 'rollback artifact': rbProbe.data });
+      }
       let seen = null, seenError = null;
       try { seen = await currentAppFn(s); } catch (e) { seen = null; seenError = e && e.message ? e.message : String(e); }
       if (!seen) {
-        recordManualRecovery('MANUAL_RECOVERY_REQUIRED', 'no attempt record exists and production could not be read; its identity cannot be established', recoveryEvidence({ staged: probe.data, lastObserved: null, observedError: seenError }));
+        recordManualRecovery('MANUAL_RECOVERY_REQUIRED', 'no attempt record exists and production could not be read; its identity cannot be established', recoveryEvidence({ artifact: rbProbe.data, staged: probe.data, lastObserved: null, observedError: seenError }));
         throw new Error('PRODUCTION_ALIAS_UNREADABLE_MANUAL_RECOVERY_REQUIRED');
       }
-      mustRecover = !!probe.data && seen === probe.data.staged_deployment;
+      const expectedBaseline = (rbProbe.data && rbProbe.data.production_deployment) || probe.data.production_alias_before || null;
+      if (seen === probe.data.staged_deployment) {
+        mustRecover = true;
+      } else if (seen === SAFE_OFF_BASELINE.deployment) {
+        const proof = await verifySafeOffFn(s);
+        if (rbProbe.data) assertSafeRollbackProof(rbProbe.data, proof);
+        const out = { rollback_status: 'NOT_NEEDED', state: 'NO_MUTATION', reason: 'production already serves the captured deployment; no rollback was issued', current_deployment: seen, rules_mutated: false };
+        save('app-rollback-result.json', out);
+        console.log('APP ROLLBACK NOT NEEDED: production already serves the captured deployment');
+        return out;
+      } else if (expectedBaseline && seen === expectedBaseline) {
+        const out = { rollback_status: 'NOT_NEEDED', state: 'NOT_STARTED', reason: 'no promotion was performed in this run', current_deployment: seen, rules_mutated: false };
+        save('app-rollback-result.json', out);
+        console.log('APP ROLLBACK NOT NEEDED: production was never mutated in this run');
+        return out;
+      } else {
+        recordManualRecovery('MANUAL_RECOVERY_REQUIRED', 'no attempt record exists while a staged deployment is present and production serves an unexpected deployment; manual review required without automatic overwrite', recoveryEvidence({ artifact: rbProbe.data, staged: probe.data, lastObserved: seen }));
+        throw new Error('FOREIGN_ALIAS_NO_AUTOMATIC_OVERWRITE: production serves ' + seen);
+      }
     }
   }
   if (!mustRecover) {
-    const out = { rollback_status: 'NOT_NEEDED', state: recorded.status === 'MISSING' ? 'NOT_STARTED' : 'NO_MUTATION', reason: 'no promotion was performed in this run', rules_mutated: false };
+    const out = { rollback_status: 'NOT_NEEDED', state: 'NOT_STARTED', reason: 'no promotion was performed in this run', rules_mutated: false };
     save('app-rollback-result.json', out);
     console.log('APP ROLLBACK NOT NEEDED: production was never mutated in this run');
     return out;
@@ -1213,5 +1284,5 @@ module.exports = {
   REQUIRED_PROD_ENV, FORBIDDEN_RUNTIME_VALUES, setOut, getOut,
   observeProduction, decideRecovery,
   exportCandidateTree, verifyExportedTree, assertStaged, stageProduction, runVercelCli, diagnosticLines, VERCEL_CLI_VERSION,
-  readEvidence, resolveRollbackArtifactName, assertSameRelease, assertCandidateLinkage, recoveryEvidence, recordManualRecovery,
+  readEvidence, resolveRollbackArtifactName, assertSameRelease, assertResultRecord, assertCandidateLinkage, recoveryEvidence, recordManualRecovery,
 };
