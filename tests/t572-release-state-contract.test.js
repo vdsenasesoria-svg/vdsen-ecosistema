@@ -20,6 +20,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { validate, assertReleaseMode } = require('../scripts/release/lib.cjs');
+const { assertAppReleaseCoherence } = require('../scripts/release/check.cjs');
 const SCHEMA = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.release', 'schema', 'release-state.schema.json'), 'utf8'));
 const STATE_PATH = path.join(__dirname, '..', '.release', 'vdsen-client.json');
 // Models the reviewed rules_only package (PR #147 head, immutable) even after the committed state moved to app_only (T658-B).
@@ -157,6 +158,8 @@ test('T572-9 the reviewed state passes the whole hardened contract', () => {
   assert.equal(historical.app_release.runtime_sha, 'b5f53af5843f466528a4b95e5a3e52d6c8c77fb1');
   assert.equal(historical.app_release.deployment, 'dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw');
   assert.equal(historical.app_release.source_release_run, '40055779147');
+  assert.ok(schemaValidates(COMMITTED));
+  assert.ok(assertAppReleaseCoherence(COMMITTED));
 });
 
 // ── 10-11. the mode gates ─────────────────────────────────────────────────────────────────────

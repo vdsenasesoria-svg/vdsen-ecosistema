@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { hash, json, git, validate, noSecrets } = require('./lib.cjs');
 const { validateBaseline } = require('./baseline.cjs');
 const deployedProduct = require('./deployed-product.cjs');
+const { LEGACY_ARMED_DEPLOYMENT } = require('../pilot/window-protocol.cjs');
 function workflowContract() {
   for (const name of ['vdsen-release-prod', 'vdsen-rollback', 'vdsen-oidc-validate']) {
     const source = fs.readFileSync('.github/workflows/' + name + '.yml', 'utf8');
@@ -75,8 +76,18 @@ function assertAppReleaseCoherence(state) {
   assert.ok(a, 'release_mode app_only requires app_release');
   assert.equal(a.runtime_sha, state.runtime_sha, 'app_release.runtime_sha must equal runtime_sha');
   assert.equal(a.deployment, state.production_deployment, 'app_release.deployment must equal production_deployment');
-  assert.equal(a.previous_deployment, state.rollback_deployment, 'app_release.previous_deployment must equal rollback_deployment');
-  assert.equal(a.previous_runtime_sha, state.rollback_runtime_sha, 'app_release.previous_runtime_sha must equal rollback_runtime_sha');
+  assert.notEqual(state.rollback_deployment, LEGACY_ARMED_DEPLOYMENT, 'rollback_deployment must never point to the retired legacy armed deployment');
+  if (a.safe_recovery_deployment !== undefined || a.safe_recovery_runtime_sha !== undefined) {
+    assert.ok(typeof a.safe_recovery_deployment === 'string' && a.safe_recovery_deployment.length > 0, 'app_release.safe_recovery_deployment is required when separating previous_deployment from rollback_deployment');
+    assert.match(a.safe_recovery_runtime_sha || '', /^[0-9a-f]{40}$/, 'app_release.safe_recovery_runtime_sha must be a 40-char commit SHA');
+    assert.equal(a.safe_recovery_deployment, state.rollback_deployment, 'app_release.safe_recovery_deployment must equal rollback_deployment');
+    assert.equal(a.safe_recovery_runtime_sha, state.rollback_runtime_sha, 'app_release.safe_recovery_runtime_sha must equal rollback_runtime_sha');
+    assert.notEqual(a.safe_recovery_deployment, LEGACY_ARMED_DEPLOYMENT, 'app_release.safe_recovery_deployment must never point to the retired legacy armed deployment');
+    assert.notEqual(a.previous_deployment, a.deployment, 'app_release.previous_deployment must be distinct from app_release.deployment');
+  } else {
+    assert.equal(a.previous_deployment, state.rollback_deployment, 'app_release.previous_deployment must equal rollback_deployment');
+    assert.equal(a.previous_runtime_sha, state.rollback_runtime_sha, 'app_release.previous_runtime_sha must equal rollback_runtime_sha');
+  }
   assert.match(a.source_release_run, /^[0-9]+$/, 'app_release.source_release_run must be digits only');
   assert.ok(Number.isInteger(a.verified_surfaces) && a.verified_surfaces > 0, 'app_release.verified_surfaces must be a positive integer');
   // ISO-8601 and a real instant: `Date.parse` accepts junk like '2026-13-45', so round-trip the

@@ -354,5 +354,6 @@ test('A12-20 served surface matches the frozen deployed-product manifest', () =>
   assert.ok(surface.length > 10, 'superficie completa');
   // and the manifest still describes the DEPLOYED runtime, not the candidate
   const manifest = require('../scripts/release/lib.cjs').json('.release/deployed-product.json');
-  assert.equal(manifest.runtime_sha, PROD_RUNTIME, 'el manifiesto debe seguir describiendo lo desplegado');
+  const state = require('../scripts/release/lib.cjs').json('.release/vdsen-client.json');
+  assert.equal(manifest.runtime_sha, state.runtime_sha, 'el manifiesto debe seguir describiendo lo desplegado');
 });

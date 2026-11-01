@@ -197,6 +197,14 @@
           "type": "string",
           "pattern": "^[0-9a-f]{40}$"
         },
+        "safe_recovery_deployment": {
+          "type": "string",
+          "pattern": "^dpl_[A-Za-z0-9]+$"
+        },
+        "safe_recovery_runtime_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
         "verified_surfaces": {
           "type": "number",
           "minimum": 1
