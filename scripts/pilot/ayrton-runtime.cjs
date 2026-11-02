@@ -5,7 +5,9 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
 const { execFileSync } = require('node:child_process');
 const A = require('../release/app-live.cjs'), G = require('../release/numeric-guard.cjs');
 const C = require('./ayrton-canary.cjs'), P = require('./window-protocol.cjs');
-const T671 = 'a8cf462c78c4bd795cc9f485a82f64429c179f00';
+const OFF_BASELINE_SHA = A.SAFE_OFF_BASELINE.runtimeSha;
+const LEGACY_T671_SHA = 'a8cf462c78c4bd795cc9f485a82f64429c179f00';
+const T671 = OFF_BASELINE_SHA;
 const FILE = 'release-output/ayrton-runtime.json';
 function closed(w, snapshot) {
   P.stateGate(w, snapshot, 'enable');
@@ -24,7 +26,7 @@ function invocation(env) {
 async function arm(w, baseline, io) {
   P.windowSpec(w);
   assert.equal(baseline.runtimeSha, T671, 'OFF_T671_RELEASE_REQUIRED_FIRST');
-  assert.notEqual(w.runtimeSha, T671, 'PILOT_PROBE_RUNTIME_REQUIRED');
+  assert.notEqual(w.runtimeSha, LEGACY_T671_SHA, 'PILOT_PROBE_RUNTIME_REQUIRED');
   const report = { schema: 'vdsen-ayrton-runtime-release-v1', operationId: w.operationId, runtimeSha: w.runtimeSha,
     baseline, staged: null, status: 'PREPARING', promotionAttempted: false, productionMutations: 0 };
   const save = () => io.save(report);
@@ -157,7 +159,7 @@ async function main(argv) {
   const w = JSON.parse(fs.readFileSync(process.env.PILOT_WINDOW_FILE, 'utf8'));
   return arm(w, { runtimeSha: s.runtime_sha, deployment: s.production_deployment, officialReleaseRun: String(s.app_release.source_release_run) }, io);
 }
-module.exports = { arm, restore, closed, invocation, T671 };
+module.exports = { arm, restore, closed, invocation, T671, OFF_BASELINE_SHA, LEGACY_T671_SHA };
 if (require.main === module) main(process.argv.slice(2)).then(r => console.log(JSON.stringify({ status: r.status }))).catch(() => {
   console.error('PILOT_RUNTIME_STOPPED: review the redacted checkpoint; do not repeat deployment.'); process.exitCode = 1;
 });

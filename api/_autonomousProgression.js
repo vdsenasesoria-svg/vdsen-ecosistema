@@ -12,6 +12,7 @@ var visualCatalog = require('../assets/exercise-visual-catalog.js');
 // The consumer loads this module through an injected require (_req), which Vercel's file tracer cannot follow: without this literal
 // require it is absent from the deployed function and applyPending throws MODULE_NOT_FOUND (hosted-only; see _functionBundleTrace.test.js).
 var effective = require('../assets/progression-effective-prescription.js');
+var eligibility = require('./_clientEligibility.js');
 // T586: same reason for the structural / fatigue rules (loaded lazily by the magnitude policy through a literal require).
 require('../assets/progression-structural-policy.js');
 
@@ -71,7 +72,7 @@ async function materialize(db, clientId, requestedPlanId, clock) {
     var clientSnap = await tx.get(clientRef), client = _data(clientSnap);
     // The authenticated athlete is the sole tenant selector. A plan id from
     // the browser is only an equality assertion against the canonical client.
-    if (!client || !client.activePlanId || client.activePlanId !== requestedPlanId) return { status: 'PLAN_MISMATCH' };
+    if (!client || !client.activePlanId || client.activePlanId !== requestedPlanId || !eligibility.isClientStatusValid(client)) return { status: 'PLAN_MISMATCH' };
     var refs = _refs(db, clientId, requestedPlanId, client.coachId);
     // Release-controlled canary: re-read INSIDE this transaction, before any read of evidence or any write.
     // No canary document / disabled / athlete not listed => zero writes of any kind.
@@ -79,20 +80,25 @@ async function materialize(db, clientId, requestedPlanId, clock) {
     var coachData = refs.coach ? _data(await tx.get(refs.coach)) : null;
     var scope = consumer.normalizeCanaryScope(coachData && coachData.autoApplyCanary);
     if (!scope.enabled || scope.clientIds.indexOf(clientId) < 0) return { status: 'OUT_OF_CANARY' };
-    var decisionTimes = {};
-    for (var di = 0, ivs = (Array.isArray(client.coachInterventions) ? client.coachInterventions : []).filter(function(iv) { return iv && iv.id && iv.targetType === 'EXERCISE'; }).slice(-200); di < ivs.length; di++) {
-      var dd = _data(await tx.get(refs.decision(String(ivs[di].id)))); if (dd && dd.at && dd.id === ivs[di].id) decisionTimes[ivs[di].id] = dd.at;
-    }
-    var verifiedInterventions = effective.withServerDecisionTimes(client.coachInterventions, decisionTimes);
     var snaps = await Promise.all([tx.get(refs.plan), tx.get(refs.meso), tx.get(refs.root)]);
     var plan = _data(snaps[0]), meso = _data(snaps[1]), root = _data(snaps[2]);
-    if (!plan || !root || (plan.clientId && plan.clientId !== clientId) || root.planId !== requestedPlanId || (meso && meso.planId !== requestedPlanId)) return { status: 'SOURCE_INVALID' };
+    if (!plan || !root || !eligibility.isPlanStatusValid(plan, client) || (plan.clientId && plan.clientId !== clientId) || root.planId !== requestedPlanId || (meso && meso.planId !== requestedPlanId)) return { status: 'SOURCE_INVALID' };
     var authority = shadow.selectLogAuthority(meso, root, requestedPlanId);
     if (!authority) return { status: 'SOURCE_INVALID' };
+    var cleanEntries = eligibility.sanitizeClientEntries(authority.entries || {}, plan, requestedPlanId);
+    var existingRecords = (meso && meso.progressionApplications) || {};
+    var hasWork = Object.keys(cleanEntries).some(function(k) { return /^progrec_\d+_\d+$/.test(k); }) || Object.keys(existingRecords).length > 0;
+    var decisionTimes = {};
+    if (hasWork) {
+      for (var di = 0, ivs = (Array.isArray(client.coachInterventions) ? client.coachInterventions : []).filter(function(iv) { return iv && iv.id && iv.targetType === 'EXERCISE'; }).slice(-200); di < ivs.length; di++) {
+        var dd = _data(await tx.get(refs.decision(String(ivs[di].id)))); if (dd && dd.at && dd.id === ivs[di].id) decisionTimes[ivs[di].id] = dd.at;
+      }
+    }
+    var verifiedInterventions = effective.withServerDecisionTimes(client.coachInterventions, decisionTimes);
     var out = shadow.materializeRecords({
       clientId: clientId, planId: requestedPlanId, activePlanId: client.activePlanId,
-      plan: plan, interventions: verifiedInterventions, entries: authority.entries || {},
-      records: (meso && meso.progressionApplications) || {}, overlays: (meso && meso.nextExposureOverlays) || {}, structural: true, at: _now(clock), isStarted: consumer.targetStarted
+      plan: plan, interventions: verifiedInterventions, entries: cleanEntries,
+      records: existingRecords, overlays: (meso && meso.nextExposureOverlays) || {}, structural: true, at: _now(clock), isStarted: consumer.targetStarted
     });
     // SRA is attached as a read-only provenance trace, not a second decision
     // engine and never a gate for an otherwise valid progression candidate.
@@ -104,11 +110,11 @@ async function materialize(db, clientId, requestedPlanId, clock) {
       return inScope;
     });
     if (createdBefore && !out.created.length) out.changed = false;
-    var sessionMonitoring = out.created.length ? sra.sessionMonitoring({ clientId: clientId, planDoc: plan, entries: authority.entries || {} }) : null;
+    var sessionMonitoring = out.created.length ? sra.sessionMonitoring({ clientId: clientId, planDoc: plan, entries: cleanEntries }) : null;
     out.created.forEach(function(key) {
       var record = out.records[key];
       out.records[key] = Object.assign({}, record, { sraTrace: sra.buildContext({ clientId: clientId, prescriptionExerciseId: record.prescriptionExerciseId,
-        planDoc: plan, entries: authority.entries || {}, recommendation: record.action || 'MONITOR', sessionMonitoring: sessionMonitoring }) });
+        planDoc: plan, entries: cleanEntries, recommendation: record.action || 'MONITOR', sessionMonitoring: sessionMonitoring }) });
     });
     var summary = shadow.summarize(out.records, requestedPlanId);
     if (out.changed) {
@@ -124,6 +130,7 @@ async function applyPending(db, clientId, planId, clock) {
   var snap = await db.collection('logs').doc(clientId).collection('mesos').doc(planId).get();
   var meso = _data(snap);
   var clientDoc = _data(await db.collection('clients').doc(clientId).get());
+  if (!clientDoc || clientDoc.activePlanId !== planId || !eligibility.isClientStatusValid(clientDoc)) return [];
   var coachDoc = clientDoc && clientDoc.coachId ? _data(await db.collection('coaches').doc(clientDoc.coachId).get()) : null;
   var canary = coachDoc && coachDoc.autoApplyCanary;
   // Cheap pre-filter only; the authoritative scope check is repeated inside each transaction by the consumer.
@@ -136,7 +143,7 @@ async function applyPending(db, clientId, planId, clock) {
     var key = keys[i];
     var r = await db.runTransaction(async function(tx) {
       var clientSnap = await tx.get(db.collection('clients').doc(clientId)), client = _data(clientSnap);
-      if (!client || client.activePlanId !== planId) return { written: false, reason: 'PLAN_MISMATCH' };
+      if (!client || client.activePlanId !== planId || !eligibility.isClientStatusValid(client)) return { written: false, reason: 'PLAN_MISMATCH' };
       var refs = _refs(db, clientId, planId, client.coachId);
       if (!(await _releaseGate(db, tx, clientId, clock))) return { written: false, reason: 'OUT_OF_ALLOWLIST' };
       // T582: a verified equipment increment is used when available; otherwise the LOAD target is advisory (never a guessed machine increment).
@@ -146,6 +153,7 @@ async function applyPending(db, clientId, planId, clock) {
         // Increments come only from verified, already-configured sources (coach equipmentIncrements config + the catalog's canonical equipment
         // identity). Nothing is inferred from the equipment type or the exercise name; no data => BLOCKED_EQUIPMENT_DATA for LOAD only.
         var coachDoc = refs.coach ? _data(await tx.get(refs.coach)) : null, planDoc = _data(await tx.get(refs.plan));
+        if (!eligibility.isPlanStatusValid(planDoc, client)) return { written: false, reason: 'PLAN_MISMATCH' };
         var pex = null;
         ((planDoc && planDoc.days) || []).forEach(function(d) { (d.exercises || []).forEach(function(e) { if (!pex && e.prescriptionExerciseId === precord.prescriptionExerciseId) pex = e; }); });
         // Identity of the prescribed exercise: the plan's own exerciseId, else the Coach's EXPLICIT link for this exact prescriptionExerciseId
@@ -185,7 +193,7 @@ async function consumePending(db, clientId, planId, clock) {
     var key = keys[i];
     var r = await db.runTransaction(async function(tx) {
       var client = _data(await tx.get(db.collection('clients').doc(clientId)));
-      if (!client || client.activePlanId !== planId) return { written: false, reason: 'PLAN_MISMATCH' };
+      if (!client || client.activePlanId !== planId || !eligibility.isClientStatusValid(client)) return { written: false, reason: 'PLAN_MISMATCH' };
       var refs = _refs(db, clientId, planId, client.coachId);
       if (!(await _releaseGate(db, tx, clientId, clock))) return { written: false, reason: 'OUT_OF_ALLOWLIST' };
       var coachData = refs.coach ? _data(await tx.get(refs.coach)) : null;
@@ -206,8 +214,10 @@ async function processProgression(input) {
   if (!input.enabled) return { status: 'DISARMED', writes: 0 };
   var m = await materialize(input.db, input.clientId, input.planId, input.clock);
   if (['PLAN_MISMATCH', 'SOURCE_INVALID', 'OUT_OF_CANARY', 'OUT_OF_ALLOWLIST'].indexOf(m.status) >= 0 || !input.numericApplyEnabled) return Object.assign({}, m, { applied: [], consumed: [] });
-  var applied = await applyPending(input.db, input.clientId, input.planId, input.clock);
-  return Object.assign({}, m, { applied: applied, consumed: await consumePending(input.db, input.clientId, input.planId, input.clock) });
+  var hasPending = !(m.summary && m.summary.counts && m.summary.counts.PENDING === 0);
+  var applied = hasPending ? await applyPending(input.db, input.clientId, input.planId, input.clock) : [];
+  var hasApplied = !(m.summary && m.summary.counts && m.summary.counts.APPLIED === 0) || applied.some(function(a) { return a && a.written; });
+  return Object.assign({}, m, { applied: applied, consumed: hasApplied ? await consumePending(input.db, input.clientId, input.planId, input.clock) : [] });
 }
 
-module.exports = { materialize: materialize, applyPending: applyPending, consumePending: consumePending, releaseGate: _releaseGate, processProgression: processProgression };
+module.exports = { materialize: materialize, applyPending: applyPending, consumePending: consumePending, releaseGate: _releaseGate, releaseUnexpired: _releaseUnexpired, processProgression: processProgression, eligibility: eligibility };

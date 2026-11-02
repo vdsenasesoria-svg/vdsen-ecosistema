@@ -8,10 +8,18 @@
 // trigger or a retried sweep cannot double-apply.
 var crypto = require('crypto');
 var executor = require('./_autonomousProgression');
+var eligibility = require('./_clientEligibility.js');
 
 function _data(snap) { return snap && snap.exists === true ? snap.data() : null; }
+function _now(clock) { return (clock || function() { return new Date().toISOString(); })(); }
 
-async function canaryTargets(db) {
+async function canaryTargets(db, clock) {
+  // T685: check the bounded release fence FIRST (1 doc read). When closed or expired, skip querying coaches altogether.
+  var rel = _data(await db.collection('releaseControl').doc('autonomousProgression').get());
+  if (!rel || rel.schema !== eligibility.RELEASE_SCHEMA || rel.enabled !== true || !Array.isArray(rel.clientIds)) return [];
+  if (!executor.releaseUnexpired(rel.expiresAt, _now(clock))) return [];
+  var allowed = rel.clientIds.filter(function(x) { return typeof x === 'string' && x.trim() !== '' && x !== '*'; });
+  if (!allowed.length || allowed.length > eligibility.RELEASE_MAX_CLIENTS || allowed.length !== rel.clientIds.length) return [];
   var coaches = await db.collection('coaches').where('autoApplyCanary.enabled', '==', true).get();
   var targets = [];
   for (var i = 0; i < coaches.docs.length; i++) {
@@ -19,20 +27,18 @@ async function canaryTargets(db) {
     var ids = Array.isArray(scope.clientIds) ? scope.clientIds.filter(function(x) { return typeof x === 'string' && x; }) : [];
     for (var j = 0; j < ids.length; j++) targets.push(ids[j]);
   }
-  // Second fence: only athletes the RELEASE system lists are even attempted (each is re-checked inside its transactions).
-  var rel = _data(await db.collection('releaseControl').doc('autonomousProgression').get());
-  var allowed = rel && rel.enabled === true && Array.isArray(rel.clientIds) ? rel.clientIds : [];
   return Array.from(new Set(targets)).filter(function(id) { return allowed.indexOf(id) >= 0; });
 }
 
 async function runSweep(input) {
   input = input || {};
   if (!input.enabled) return { status: 'DISARMED', processed: 0 };
-  var targets = await canaryTargets(input.db), results = [];
+  var targets = await canaryTargets(input.db, input.clock), results = [];
   for (var i = 0; i < targets.length; i++) {
     try {
       var client = _data(await input.db.collection('clients').doc(targets[i]).get());
       if (!client || !client.activePlanId) { results.push({ clientId: targets[i], status: 'NO_ACTIVE_PLAN' }); continue; }
+      if (!eligibility.isClientStatusValid(client)) { results.push({ clientId: targets[i], status: 'INACTIVE_CLIENT' }); continue; }
       var out = await executor.processProgression({ db: input.db, clientId: targets[i], planId: client.activePlanId, enabled: true,
         numericApplyEnabled: input.numericApplyEnabled === true, clock: input.clock });
       results.push({ clientId: targets[i], status: out.status });
