@@ -73,7 +73,7 @@ function makeHandler(deps) {
     }
     try {
       var out = await executor.processProgression({ db: deps.db, clientId: uid, planId: planId,
-        enabled: deps.enabled === true, numericApplyEnabled: deps.numericApplyEnabled === true, enforceActiveEligibility: true });
+        enabled: deps.enabled === true, numericApplyEnabled: deps.numericApplyEnabled === true, enforceActiveEligibility: true, clock: deps.clock });
       trace.outcome = out.status;
       trace.created = (out.created || []).length;
       trace.applied = (out.applied || []).filter(function(x) { return x.written === true; }).length;

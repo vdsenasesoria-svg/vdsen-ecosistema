@@ -90,6 +90,21 @@ async function materialize(db, clientId, requestedPlanId, clock, opts) {
 
     // Enforce full client eligibility evaluation when requested (sweep and individual trigger)
     if (opts.enforceActiveEligibility === true) {
+      var starts = (opts.starts && typeof opts.starts === 'object') ? opts.starts : {};
+      if (Object.keys(starts).length === 0) {
+        try {
+          var startsCol = db.collection('logs').doc(clientId).collection('starts');
+          var sq = startsCol.where('planId', '==', requestedPlanId);
+          if (typeof sq.limit === 'function') sq = sq.limit(50);
+          var startsSnap = typeof tx.get === 'function' && !tx._fake ? await tx.get(sq).catch(function() { return sq.get(); }) : await sq.get();
+          if (startsSnap && Array.isArray(startsSnap.docs)) {
+            startsSnap.docs.forEach(function(d) {
+              starts[d.id] = typeof d.data === 'function' ? d.data() : d.data;
+            });
+          }
+        } catch (_) {}
+      }
+
       var clientEval = eligibility.evaluateClientEligibility({
         clientId: clientId,
         client: client,
@@ -99,6 +114,7 @@ async function materialize(db, clientId, requestedPlanId, clock, opts) {
         meso: meso,
         root: root,
         entries: cleanEntries,
+        starts: starts,
         receipts: (meso && meso.consumptionReceipts) || null,
         releaseDoc: { schema: RELEASE_SCHEMA, enabled: true, expiresAt: _now(clock) },
         coachDoc: coachData,
@@ -242,7 +258,8 @@ async function processProgression(input) {
   var terminalStatuses = [
     'PLAN_MISMATCH', 'SOURCE_INVALID', 'OUT_OF_CANARY', 'OUT_OF_ALLOWLIST',
     'INACTIVE_CLIENT', 'NO_VERIFIABLE_APP_USAGE', 'AWAITING_FIRST_ACTIVITY',
-    'NEW_CLIENT_AWAITING_FIRST_ACTIVITY', 'NO_TEMPORAL_EVIDENCE', 'SAFETY_HOLD', 'NOT_ELIGIBLE'
+    'NEW_CLIENT_AWAITING_FIRST_ACTIVITY', 'NEEDS_VERIFIED_ACTIVITY',
+    'NO_TEMPORAL_EVIDENCE', 'SAFETY_HOLD', 'NOT_ELIGIBLE'
   ];
   if (terminalStatuses.indexOf(m.status) >= 0 || !input.numericApplyEnabled) return Object.assign({}, m, { applied: [], consumed: [] });
   var hasPending = !(m.summary && m.summary.counts && m.summary.counts.PENDING === 0);

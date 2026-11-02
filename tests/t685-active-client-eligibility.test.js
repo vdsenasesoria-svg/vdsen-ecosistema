@@ -122,6 +122,30 @@ function makeRecurrentEntries(opts) {
   return entries;
 }
 
+function makeRecurrentStarts(planId, t1, t2) {
+  planId = planId || 'plan-active-1';
+  t1 = t1 !== undefined ? t1 : NOW_MS - 4 * DAY_MS;
+  t2 = t2 !== undefined ? t2 : NOW_MS - 2 * DAY_MS;
+  var starts = {};
+  starts[planId + '_1_0_0'] = {
+    planId: planId,
+    week: 1,
+    dayIndex: 0,
+    exerciseIndex: 0,
+    setKey: 'log_1_0_0_s0',
+    at: new Date(t1).toISOString()
+  };
+  starts[planId + '_1_2_0'] = {
+    planId: planId,
+    week: 1,
+    dayIndex: 2,
+    exerciseIndex: 0,
+    setKey: 'log_1_2_0_s0',
+    at: new Date(t2).toISOString()
+  };
+  return starts;
+}
+
 function makeFakeDb(seedDocs, failingClients) {
   var docs = new Map(Object.entries(seedDocs || {}));
   var failSet = new Set(failingClients || []);
@@ -157,7 +181,8 @@ function makeFakeDb(seedDocs, failingClients) {
       path: colPath,
       doc: function(id) { return makeRef(colPath + '/' + id); },
       where: function(field, op, expected) {
-        return {
+        var queryObj = {
+          limit: function() { return queryObj; },
           get: async function() {
             stats.queries++;
             stats.pathsRead.push('QUERY:' + colPath + ':' + field);
@@ -174,12 +199,16 @@ function makeFakeDb(seedDocs, failingClients) {
             return { docs: out };
           }
         };
+        return queryObj;
       }
     };
   }
 
   var tx = {
     get: async function(ref) {
+      if (ref && typeof ref.get === 'function') {
+        return ref.get();
+      }
       stats.gets++;
       stats.pathsRead.push(ref.path);
       for (var fc of failSet) {
@@ -220,6 +249,7 @@ function makeFakeDb(seedDocs, failingClients) {
 test('T685.1 Scenario 1: Existing client with recurrent verifiable App Cliente usage and active plan is PRIORITY_A', () => {
   var plan = makePlan();
   var entries = makeRecurrentEntries();
+  var starts = makeRecurrentStarts('plan-active-1');
   var releaseDoc = { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: '2026-10-20T00:00:00.000Z', clientIds: ['client-1'] };
   var coachDoc = { autoApplyCanary: { enabled: true, clientIds: ['client-1'], prescriptionExerciseIds: [] } };
   var ev = eligibility.evaluateClientEligibility({
@@ -227,6 +257,7 @@ test('T685.1 Scenario 1: Existing client with recurrent verifiable App Cliente u
     client: { coachId: 'coach-1', activePlanId: 'plan-active-1', createdAt: '2026-08-01T00:00:00.000Z' },
     plan: plan,
     entries: entries,
+    starts: starts,
     releaseDoc: releaseDoc,
     coachDoc: coachDoc,
     now: NOW_ISO
@@ -260,9 +291,9 @@ test('T685.2 Scenario 2: New client onboarding — account creation without trai
   assert.equal(beforeActivity.isNewClient, true);
   assert.equal(beforeActivity.readyForMotorProgression, false);
 
-  // 2b) First real working set recorded in App Cliente -> becomes eligible as PRIORITY_B
+  // 2b) Unverified working set (only device ts/sts without start marker) does not accredit activity
   var firstSetTs = NOW_MS - 1 * DAY_MS;
-  var afterFirstSet = eligibility.evaluateClientEligibility({
+  var unverifiedFirstSet = eligibility.evaluateClientEligibility({
     clientId: 'client-new',
     client: client,
     plan: plan,
@@ -271,18 +302,17 @@ test('T685.2 Scenario 2: New client onboarding — account creation without trai
     },
     now: NOW_ISO
   });
-  assert.equal(afterFirstSet.eligible, true);
-  assert.equal(afterFirstSet.priority, 'PRIORITY_B');
-  assert.equal(afterFirstSet.priorityRank, 2);
-  assert.equal(afterFirstSet.category, 'NEW_CLIENT_ACTIVE');
-  assert.equal(afterFirstSet.activity.windowSessionsCount, 1);
+  assert.equal(unverifiedFirstSet.eligible, false);
+  assert.equal(unverifiedFirstSet.reason, 'NEW_CLIENT_AWAITING_FIRST_ACTIVITY');
 
-  // 2c) First exposure start marker in logs/{uid}/starts/* also counts as verifiable first activity
+  // 2c) First working set backed by immutable start marker in logs/{uid}/starts/* accredits first real activity -> activates PRIORITY_B
   var afterStartMarker = eligibility.evaluateClientEligibility({
     clientId: 'client-new',
     client: client,
     plan: plan,
-    entries: {},
+    entries: {
+      log_1_0_0_s0: { done: true, carga: '60', reps: '10', unit: 'KG', rir: 2, rir_real: 2, prescriptionExerciseId: 'pid-press', ts: firstSetTs }
+    },
     starts: {
       'plan-active-1_1_0_0': { planId: 'plan-active-1', week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: new Date(firstSetTs).toISOString() }
     },
@@ -290,6 +320,9 @@ test('T685.2 Scenario 2: New client onboarding — account creation without trai
   });
   assert.equal(afterStartMarker.eligible, true);
   assert.equal(afterStartMarker.priority, 'PRIORITY_B');
+  assert.equal(afterStartMarker.priorityRank, 2);
+  assert.equal(afterStartMarker.category, 'NEW_CLIENT_ACTIVE');
+  assert.equal(afterStartMarker.activity.windowSessionsCount, 1);
 });
 
 test('T685.3 Scenario 3: Clients without active plan, without coach, or needing plan prep are strictly excluded', () => {
@@ -361,11 +394,13 @@ test('T685.5 Scenario 5: Client who stops being active (INACTIVE_CLIENT) vs occa
 
   // 5a) Client whose last real activity was 35 days ago (> inactiveDays = 28) -> INACTIVE_CLIENT
   var oldEntries = makeRecurrentEntries({ t1: NOW_MS - 40 * DAY_MS, t2: NOW_MS - 35 * DAY_MS });
+  var oldStarts = makeRecurrentStarts('plan-active-1', NOW_MS - 40 * DAY_MS, NOW_MS - 35 * DAY_MS);
   var inactiveEv = eligibility.evaluateClientEligibility({
     clientId: 'client-1',
     client: existingClient,
     plan: plan,
     entries: oldEntries,
+    starts: oldStarts,
     now: NOW_ISO,
     windowDays: 14,
     inactiveDays: 28
@@ -375,11 +410,13 @@ test('T685.5 Scenario 5: Client who stops being active (INACTIVE_CLIENT) vs occa
 
   // 5b) Existing client with activity 20 days ago and 5 days ago (only 1 session in the 14-day rolling window, not inactive) -> PRIORITY_C
   var occasionalEntries = makeRecurrentEntries({ t1: NOW_MS - 20 * DAY_MS, t2: NOW_MS - 5 * DAY_MS });
+  var occasionalStarts = makeRecurrentStarts('plan-active-1', NOW_MS - 20 * DAY_MS, NOW_MS - 5 * DAY_MS);
   var occasionalEv = eligibility.evaluateClientEligibility({
     clientId: 'client-1',
     client: existingClient,
     plan: plan,
     entries: occasionalEntries,
+    starts: occasionalStarts,
     now: NOW_ISO,
     windowDays: 14,
     inactiveDays: 28
@@ -397,6 +434,7 @@ test('T685.6 Scenario 6: Plan replacement, suspension, or revocation immediately
       client: { coachId: 'coach-1', activePlanId: 'plan-active-1' },
       plan: suspendedPlan,
       entries: makeRecurrentEntries(),
+      starts: makeRecurrentStarts('plan-active-1'),
       now: NOW_ISO
     });
     assert.equal(ev.eligible, false, badStatus);
@@ -411,7 +449,9 @@ test('T685.6 Scenario 6: Plan replacement, suspension, or revocation immediately
     'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: ['client-1'], prescriptionExerciseIds: [] } },
     'plans/plan-active-1': makePlan({ status: 'suspended' }),
     'logs/client-1': { planId: 'plan-active-1', entries: entries, updatedAt: 2 },
-    'logs/client-1/mesos/plan-active-1': { planId: 'plan-active-1', entries: entries, updatedAt: 2 }
+    'logs/client-1/mesos/plan-active-1': { planId: 'plan-active-1', entries: entries, updatedAt: 2 },
+    'logs/client-1/starts/plan-active-1_1_0_0': { planId: 'plan-active-1', week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: new Date(NOW_MS - 4 * DAY_MS).toISOString() },
+    'logs/client-1/starts/plan-active-1_1_2_0': { planId: 'plan-active-1', week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: new Date(NOW_MS - 2 * DAY_MS).toISOString() }
   });
   var out = await executor.processProgression({ db: db, clientId: 'client-1', planId: 'plan-active-1', enabled: true, numericApplyEnabled: true, clock: function() { return NOW_ISO; } });
   assert.equal(out.status, 'SOURCE_INVALID');
@@ -429,32 +469,39 @@ test('T685.7 Scenario 7: Progressive cohort activation respects RELEASE_MAX_CLIE
   var items = [];
   // 6 Priority A recurrent clients
   for (var ia = 1; ia <= 6; ia++) {
+    var t1A = NOW_MS - (ia + 2) * DAY_MS, t2A = NOW_MS - ia * DAY_MS;
     items.push({
       clientId: 'rec-' + ia,
       client: { coachId: 'coach-1', activePlanId: 'plan-active-1', createdAt: '2026-07-01T00:00:00.000Z' },
       plan: makePlan({ clientId: 'rec-' + ia }),
-      entries: makeRecurrentEntries({ t1: NOW_MS - (ia + 2) * DAY_MS, t2: NOW_MS - ia * DAY_MS }),
+      entries: makeRecurrentEntries({ t1: t1A, t2: t2A }),
+      starts: makeRecurrentStarts('plan-active-1', t1A, t2A),
       now: NOW_ISO
     });
   }
   // 4 Priority B new active clients (1 session after onboarding)
   for (var ib = 1; ib <= 4; ib++) {
     var tsB = NOW_MS - ib * 3600000;
+    var startsB = {};
+    startsB['plan-active-1_1_0_0'] = { planId: 'plan-active-1', week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: new Date(tsB).toISOString() };
     items.push({
       clientId: 'new-active-' + ib,
       client: { coachId: 'coach-1', activePlanId: 'plan-active-1', createdAt: '2026-10-10T00:00:00.000Z' },
       plan: makePlan({ clientId: 'new-active-' + ib, createdAt: '2026-10-10T00:00:00.000Z', updatedAt: '2026-10-10T00:00:00.000Z' }),
-      entries: { log_1_0_0_s0: { done: true, carga: '80', reps: '10', unit: 'KG', rir: 2, rir_real: 2, prescriptionExerciseId: 'pid-press', ts: tsB, sts: tsB } },
+      entries: { log_1_0_0_s0: { done: true, carga: '80', reps: '10', unit: 'KG', rir: 2, rir_real: 2, prescriptionExerciseId: 'pid-press', ts: tsB } },
+      starts: startsB,
       now: NOW_ISO
     });
   }
   // 3 Priority C occasional clients
   for (var ic = 1; ic <= 3; ic++) {
+    var t1C = NOW_MS - 22 * DAY_MS, t2C = NOW_MS - 6 * DAY_MS;
     items.push({
       clientId: 'occ-' + ic,
       client: { coachId: 'coach-1', activePlanId: 'plan-active-1', createdAt: '2026-05-01T00:00:00.000Z' },
       plan: makePlan({ clientId: 'occ-' + ic, createdAt: '2026-05-01T00:00:00.000Z', updatedAt: '2026-05-01T00:00:00.000Z' }),
-      entries: makeRecurrentEntries({ t1: NOW_MS - 22 * DAY_MS, t2: NOW_MS - 6 * DAY_MS }),
+      entries: makeRecurrentEntries({ t1: t1C, t2: t2C }),
+      starts: makeRecurrentStarts('plan-active-1', t1C, t2C),
       now: NOW_ISO
     });
   }
@@ -462,10 +509,10 @@ test('T685.7 Scenario 7: Progressive cohort activation respects RELEASE_MAX_CLIE
   items.push({ clientId: 'ex-noplan', client: { coachId: 'coach-1', activePlanId: null }, plan: null, entries: {}, now: NOW_ISO });
   items.push({ clientId: 'ex-new-idle', client: { coachId: 'coach-1', activePlanId: 'plan-active-1', createdAt: '2026-10-13T00:00:00.000Z' }, plan: makePlan({ clientId: 'ex-new-idle', createdAt: '2026-10-13T00:00:00.000Z' }), entries: {}, now: NOW_ISO });
   items.push({ clientId: 'ex-unused', client: { coachId: 'coach-1', activePlanId: 'plan-active-1', createdAt: '2026-05-01T00:00:00.000Z' }, plan: makePlan({ clientId: 'ex-unused' }), entries: {}, now: NOW_ISO });
-  items.push({ clientId: 'ex-inactive', client: { coachId: 'coach-1', activePlanId: 'plan-active-1', createdAt: '2026-05-01T00:00:00.000Z' }, plan: makePlan({ clientId: 'ex-inactive' }), entries: makeRecurrentEntries({ t1: NOW_MS - 45 * DAY_MS, t2: NOW_MS - 35 * DAY_MS }), now: NOW_ISO });
+  items.push({ clientId: 'ex-inactive', client: { coachId: 'coach-1', activePlanId: 'plan-active-1', createdAt: '2026-05-01T00:00:00.000Z' }, plan: makePlan({ clientId: 'ex-inactive' }), entries: makeRecurrentEntries({ t1: NOW_MS - 45 * DAY_MS, t2: NOW_MS - 35 * DAY_MS }), starts: makeRecurrentStarts('plan-active-1', NOW_MS - 45 * DAY_MS, NOW_MS - 35 * DAY_MS), now: NOW_ISO });
   var painEntries = makeRecurrentEntries();
   painEntries.postsession_1_2 = { completedAt: NOW_ISO, articularPain: { present: true } };
-  items.push({ clientId: 'ex-pain', client: { coachId: 'coach-1', activePlanId: 'plan-active-1', createdAt: '2026-05-01T00:00:00.000Z' }, plan: makePlan({ clientId: 'ex-pain' }), entries: painEntries, now: NOW_ISO });
+  items.push({ clientId: 'ex-pain', client: { coachId: 'coach-1', activePlanId: 'plan-active-1', createdAt: '2026-05-01T00:00:00.000Z' }, plan: makePlan({ clientId: 'ex-pain' }), entries: painEntries, starts: makeRecurrentStarts('plan-active-1'), now: NOW_ISO });
 
   var planResult = eligibility.planCohortActivation(items, { maxPerWindow: 10, initialCohortSize: 5 });
   assert.equal(planResult.capacityAnalysis.totalEvaluated, 18);
@@ -524,7 +571,9 @@ test('T685.8 Scenario 8: Full motor integration — LOAD, REPS, REST, SETS (MEV/
       'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: [] } },
       ['plans/' + planId]: plan,
       ['logs/' + uid]: { planId: planId, entries: entries, updatedAt: 2 },
-      ['logs/' + uid + '/mesos/' + planId]: { planId: planId, entries: entries, updatedAt: 2 }
+      ['logs/' + uid + '/mesos/' + planId]: { planId: planId, entries: entries, updatedAt: 2 },
+      ['logs/' + uid + '/starts/' + planId + '_1_0_0']: { planId: planId, week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: new Date(NOW_MS - 4 * DAY_MS).toISOString() },
+      ['logs/' + uid + '/starts/' + planId + '_1_2_0']: { planId: planId, week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: new Date(NOW_MS - 2 * DAY_MS).toISOString() }
     });
 
     var out = await executor.processProgression({ db: db, clientId: uid, planId: planId, enabled: true, numericApplyEnabled: true, clock: function() { return NOW_ISO; } });
@@ -581,7 +630,9 @@ test('T685.9 Scenario 9, 10, 11 & 12: Idempotency, revocation, expiration, and r
     'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: [] } },
     'plans/plan-active-1': makePlan(),
     'logs/client-1': { planId: planId, entries: entries, updatedAt: 2 },
-    'logs/client-1/mesos/plan-active-1': { planId: planId, entries: entries, updatedAt: 2 }
+    'logs/client-1/mesos/plan-active-1': { planId: planId, entries: entries, updatedAt: 2 },
+    'logs/client-1/starts/plan-active-1_1_0_0': { planId: planId, week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: new Date(NOW_MS - 4 * DAY_MS).toISOString() },
+    'logs/client-1/starts/plan-active-1_1_2_0': { planId: planId, week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: new Date(NOW_MS - 2 * DAY_MS).toISOString() }
   });
 
   // First run materializes and applies
@@ -643,7 +694,9 @@ test('T685.13 Scenario 13: Safe error recovery in sweep, browser startup/empty-s
     'clients/client-inactive': { coachId: 'coach-1', activePlanId: 'plan-inactive', status: 'inactive' },
     'plans/plan-ok': makePlan({ id: 'plan-ok', clientId: 'client-ok' }),
     'logs/client-ok': { planId: 'plan-ok', entries: entries, updatedAt: 2 },
-    'logs/client-ok/mesos/plan-ok': { planId: 'plan-ok', entries: entries, updatedAt: 2 }
+    'logs/client-ok/mesos/plan-ok': { planId: 'plan-ok', entries: entries, updatedAt: 2 },
+    'logs/client-ok/starts/plan-ok_1_0_0': { planId: 'plan-ok', week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: new Date(NOW_MS - 4 * DAY_MS).toISOString() },
+    'logs/client-ok/starts/plan-ok_1_2_0': { planId: 'plan-ok', week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: new Date(NOW_MS - 2 * DAY_MS).toISOString() }
   }, ['plan-broken']);
 
   var sweepRes = await sweep.runSweep({ db: db, enabled: true, numericApplyEnabled: true, clock: function() { return NOW_ISO; } });
@@ -690,8 +743,9 @@ test('T685.1 Obligatory 10 cases: strict gate enforcement across evaluation, swe
   var planActive = makePlan({ clientId: 'c1' });
   var clientActive = { coachId: 'coach-1', activePlanId: 'plan-active-1' };
   var recentLogs = makeRecurrentEntries();
+  var recentStarts = makeRecurrentStarts('plan-active-1');
   var c1 = eligibility.evaluateClientEligibility({
-    clientId: 'c1', client: clientActive, plan: planActive, entries: recentLogs, now: NOW_ISO
+    clientId: 'c1', client: clientActive, plan: planActive, entries: recentLogs, starts: recentStarts, now: NOW_ISO
   });
   assert.equal(c1.eligible, true, 'Case 1: eligible');
   assert.equal(c1.priority, 'PRIORITY_A', 'Case 1: Priority A');
@@ -700,9 +754,10 @@ test('T685.1 Obligatory 10 cases: strict gate enforcement across evaluation, swe
   // Case 2: Cliente con plan activo pero última sesión hace más de 28 días: excluido en ejecución real
   var planActive2 = makePlan({ clientId: 'c2', createdAt: '2026-06-01T00:00:00.000Z', updatedAt: '2026-06-01T00:00:00.000Z' });
   var oldLogs = makeRecurrentEntries({ t1: NOW_MS - 45 * DAY_MS, t2: NOW_MS - 35 * DAY_MS });
+  var oldStarts = makeRecurrentStarts('plan-active-1', NOW_MS - 45 * DAY_MS, NOW_MS - 35 * DAY_MS);
   var clientActive2 = { coachId: 'coach-1', activePlanId: 'plan-active-1', createdAt: '2026-06-01T00:00:00.000Z' };
   var c2 = eligibility.evaluateClientEligibility({
-    clientId: 'c2', client: clientActive2, plan: planActive2, entries: oldLogs, now: NOW_ISO
+    clientId: 'c2', client: clientActive2, plan: planActive2, entries: oldLogs, starts: oldStarts, now: NOW_ISO
   });
   assert.equal(c2.eligible, false, 'Case 2: not eligible');
   assert.equal(c2.reason, 'INACTIVE_CLIENT', 'Case 2: INACTIVE_CLIENT reason');
@@ -714,6 +769,8 @@ test('T685.1 Obligatory 10 cases: strict gate enforcement across evaluation, swe
     'plans/plan-active-1': planActive2,
     'logs/c2': { planId: 'plan-active-1', entries: oldLogs, updatedAt: 2 },
     'logs/c2/mesos/plan-active-1': { planId: 'plan-active-1', entries: oldLogs, updatedAt: 2 },
+    'logs/c2/starts/plan-active-1_1_0_0': { planId: 'plan-active-1', week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: new Date(NOW_MS - 45 * DAY_MS).toISOString() },
+    'logs/c2/starts/plan-active-1_1_2_0': { planId: 'plan-active-1', week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: new Date(NOW_MS - 35 * DAY_MS).toISOString() },
     'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: '2026-10-20T00:00:00.000Z', clientIds: ['c2'] },
     'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: ['c2'], prescriptionExerciseIds: [] } }
   });
@@ -726,7 +783,7 @@ test('T685.1 Obligatory 10 cases: strict gate enforcement across evaluation, swe
   var clientDraft = { coachId: 'coach-1', activePlanId: 'plan-active-1' };
   assert.equal(eligibility.isPlanStatusValid(planDraft, clientDraft), false, 'Case 3: draft plan status is invalid');
   var c3 = eligibility.evaluateClientEligibility({
-    clientId: 'c3', client: clientDraft, plan: planDraft, entries: recentLogs, now: NOW_ISO
+    clientId: 'c3', client: clientDraft, plan: planDraft, entries: recentLogs, starts: recentStarts, now: NOW_ISO
   });
   assert.equal(c3.eligible, false, 'Case 3: draft is not eligible');
   assert.equal(c3.reason, 'PLAN_SUSPENDED_OR_REVOKED', 'Case 3: rejected for non-active plan status');
@@ -736,13 +793,15 @@ test('T685.1 Obligatory 10 cases: strict gate enforcement across evaluation, swe
     'plans/plan-active-1': planDraft,
     'logs/c3': { planId: 'plan-active-1', entries: recentLogs, updatedAt: 2 },
     'logs/c3/mesos/plan-active-1': { planId: 'plan-active-1', entries: recentLogs, updatedAt: 2 },
+    'logs/c3/starts/plan-active-1_1_0_0': { planId: 'plan-active-1', week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: new Date(NOW_MS - 4 * DAY_MS).toISOString() },
+    'logs/c3/starts/plan-active-1_1_2_0': { planId: 'plan-active-1', week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: new Date(NOW_MS - 2 * DAY_MS).toISOString() },
     'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: '2026-10-20T00:00:00.000Z', clientIds: ['c3'] },
     'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: ['c3'], prescriptionExerciseIds: [] } }
   });
   var out3 = await executor.processProgression({ db: db3, clientId: 'c3', planId: 'plan-active-1', enabled: true, numericApplyEnabled: true, clock: () => NOW_ISO });
   assert.equal(out3.status, 'SOURCE_INVALID', 'Case 3 execution: draft plan returns SOURCE_INVALID with 0 writes');
 
-  // Case 4: Cliente sin timestamps verificables: nunca recibe prioridad recurrente por defecto
+  // Case 4: Cliente sin timestamps verificables: excluido del motor (NEEDS_VERIFIED_ACTIVITY)
   var planActive4 = makePlan({ clientId: 'c4' });
   var unverifiedEntries = {};
   [[1, 0], [1, 2]].forEach(([w, d]) => {
@@ -758,8 +817,9 @@ test('T685.1 Obligatory 10 cases: strict gate enforcement across evaluation, swe
   var c4 = eligibility.evaluateClientEligibility({
     clientId: 'c4', client: clientActive, plan: planActive4, entries: unverifiedEntries, now: NOW_ISO
   });
-  assert.notEqual(c4.priority, 'PRIORITY_A', 'Case 4: NEVER receives PRIORITY_A by default');
-  assert.equal(c4.priority, 'PRIORITY_C', 'Case 4: relegated to PRIORITY_C');
+  assert.equal(c4.eligible, false, 'Case 4: unverified timeline is excluded');
+  assert.equal(c4.reason, 'NEEDS_VERIFIED_ACTIVITY', 'Case 4: reason is NEEDS_VERIFIED_ACTIVITY');
+  assert.equal(c4.priority, null, 'Case 4: priority is null');
 
   // Case 5: Cliente con registros sintéticos o importados: no obtiene elegibilidad
   var planActive5 = makePlan({ clientId: 'c5' });
@@ -782,8 +842,11 @@ test('T685.1 Obligatory 10 cases: strict gate enforcement across evaluation, swe
   var firstActivityEntries = {
     'log_1_0_0_s0': { done: true, carga: '100', reps: '10', unit: 'KG', rir: 1, rir_real: 3, prescriptionExerciseId: 'pid-press', ts: NOW_MS - 3600000 }
   };
+  var firstActivityStarts = {
+    'plan-active-1_1_0_0': { planId: 'plan-active-1', week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: new Date(NOW_MS - 3600000).toISOString() }
+  };
   var c6 = eligibility.evaluateClientEligibility({
-    clientId: 'c6', client: newClientDoc, plan: planActive6, entries: firstActivityEntries, now: NOW_ISO
+    clientId: 'c6', client: newClientDoc, plan: planActive6, entries: firstActivityEntries, starts: firstActivityStarts, now: NOW_ISO
   });
   assert.equal(c6.eligible, true, 'Case 6: eligible');
   assert.equal(c6.priority, 'PRIORITY_B', 'Case 6: PRIORITY_B');
@@ -814,8 +877,12 @@ test('T685.1 Obligatory 10 cases: strict gate enforcement across evaluation, swe
     'plans/plan-active-1': planActive8,
     'logs/c8-inactive': { planId: 'plan-inact-1', entries: oldLogs, updatedAt: 2 },
     'logs/c8-inactive/mesos/plan-inact-1': { planId: 'plan-inact-1', entries: oldLogs, updatedAt: 2 },
+    'logs/c8-inactive/starts/plan-inact-1_1_0_0': { planId: 'plan-inact-1', week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: new Date(NOW_MS - 45 * DAY_MS).toISOString() },
+    'logs/c8-inactive/starts/plan-inact-1_1_2_0': { planId: 'plan-inact-1', week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: new Date(NOW_MS - 35 * DAY_MS).toISOString() },
     'logs/c8-active': { planId: 'plan-active-1', entries: recentLogs, updatedAt: 2 },
     'logs/c8-active/mesos/plan-active-1': { planId: 'plan-active-1', entries: recentLogs, updatedAt: 2 },
+    'logs/c8-active/starts/plan-active-1_1_0_0': { planId: 'plan-active-1', week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: new Date(NOW_MS - 4 * DAY_MS).toISOString() },
+    'logs/c8-active/starts/plan-active-1_1_2_0': { planId: 'plan-active-1', week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: new Date(NOW_MS - 2 * DAY_MS).toISOString() },
     'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: ['c8-inactive', 'c8-active'] },
     'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: ['c8-inactive', 'c8-active'], prescriptionExerciseIds: [] } }
   });
@@ -858,4 +925,201 @@ test('T685.1 Obligatory 10 cases: strict gate enforcement across evaluation, swe
   // Case 10: Cero regresiones en PENDING -> APPLIED -> CONSUMED
   // Demonstrated in Scenario 8 and verified via active client flow
   assert.ok(true, 'Case 10: verified');
+});
+
+test('T685.2: Cierre de autoridad temporal y elegibilidad real (10 pruebas específicas)', async () => {
+  var trigger = require('../api/autonomous-progression-trigger.js');
+  var plan = makePlan({ clientId: 'client-1' });
+  var client = { coachId: 'coach-1', activePlanId: 'plan-active-1', createdAt: '2026-07-01T00:00:00.000Z' };
+
+  // Prueba 1: "sts" fabricado o manipulable no otorga recurrencia
+  var fakeStsEntries = {};
+  [[1, 0], [1, 2]].forEach(function(item) {
+    var w = item[0], d = item[1];
+    fakeStsEntries['log_' + w + '_' + d + '_0_s0'] = {
+      done: true, carga: '100', reps: '10', unit: 'KG', rir: 2, rir_real: 2,
+      prescriptionExerciseId: 'pid-press', ts: NOW_MS - 2 * DAY_MS, sts: NOW_MS - 2 * DAY_MS
+    };
+  });
+  var act1 = eligibility.extractRealAppActivity({ entries: fakeStsEntries, plan: plan, activePlanId: 'plan-active-1', now: NOW_MS });
+  assert.equal(act1.hasVerifiedTimestamps, false, 'Prueba 1: sts in entries does NOT prove server time');
+  assert.equal(act1.windowSessionsCount, 0, 'Prueba 1: windowSessionsCount is 0 without verified start markers');
+  var ev1 = eligibility.evaluateClientEligibility({ clientId: 'client-1', client: client, plan: plan, entries: fakeStsEntries, starts: {}, now: NOW_ISO });
+  assert.equal(ev1.eligible, false, 'Prueba 1: not eligible without verified temporal authority');
+  assert.equal(ev1.reason, 'NEEDS_VERIFIED_ACTIVITY', 'Prueba 1: reason is NEEDS_VERIFIED_ACTIVITY');
+  assert.notEqual(ev1.priority, 'PRIORITY_A', 'Prueba 1: fabricated sts never grants recurrence');
+
+  // Prueba 2: Dos sesiones antiguas con "ts" reciente no califican como actividad reciente
+  var oldPlan = makePlan({ clientId: 'client-1', createdAt: new Date(NOW_MS - 60 * DAY_MS).toISOString() });
+  var oldStarts = makeRecurrentStarts('plan-active-1', NOW_MS - 40 * DAY_MS, NOW_MS - 35 * DAY_MS);
+  var oldEntriesWithRecentTs = makeRecurrentEntries({ t1: NOW_MS - 40 * DAY_MS, t2: NOW_MS - 35 * DAY_MS });
+  // Athlete or compromised client sets recent ts on old sessions
+  oldEntriesWithRecentTs['log_1_0_0_s0'].ts = NOW_MS - 1000;
+  oldEntriesWithRecentTs['log_1_2_0_s0'].ts = NOW_MS - 500;
+  var act2 = eligibility.extractRealAppActivity({ entries: oldEntriesWithRecentTs, starts: oldStarts, plan: oldPlan, activePlanId: 'plan-active-1', now: NOW_MS });
+  assert.equal(act2.lastVerifiedActivityMs, NOW_MS - 35 * DAY_MS, 'Prueba 2: unverified ts does not update verified start date');
+  assert.equal(act2.windowSessionsCount, 0, 'Prueba 2: 0 sessions in 14-day rolling window');
+  var ev2 = eligibility.evaluateClientEligibility({ clientId: 'client-1', client: client, plan: oldPlan, entries: oldEntriesWithRecentTs, starts: oldStarts, now: NOW_ISO });
+  assert.equal(ev2.eligible, false, 'Prueba 2: not eligible due to confirmed inactivity (> 28 days)');
+  assert.equal(ev2.reason, 'INACTIVE_CLIENT', 'Prueba 2: reason is INACTIVE_CLIENT');
+
+  // Prueba 3: Un marcador "starts.at" válido y reciente acredita la sesión correspondiente
+  var validRecentAt = NOW_MS - 2 * DAY_MS;
+  var doneEntries = {
+    log_1_0_0_s0: { done: true, carga: '100', reps: '10', unit: 'KG', rir: 2, rir_real: 2, prescriptionExerciseId: 'pid-press', ts: validRecentAt }
+  };
+  var validStartMarker = {
+    planId: 'plan-active-1', week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: new Date(validRecentAt).toISOString()
+  };
+  var val3 = eligibility.validateStartMarker('plan-active-1_1_0_0', validStartMarker, 'plan-active-1', doneEntries);
+  assert.equal(val3.valid, true, 'Prueba 3: start marker is valid');
+  assert.equal(val3.atMs, validRecentAt, 'Prueba 3: verified timestamp matches at');
+  assert.equal(val3.sessionKey, '1_0', 'Prueba 3: accredited sessionKey is 1_0');
+  var act3 = eligibility.extractRealAppActivity({
+    entries: doneEntries,
+    starts: { 'plan-active-1_1_0_0': validStartMarker },
+    plan: plan, activePlanId: 'plan-active-1', now: NOW_MS
+  });
+  assert.equal(act3.hasVerifiedTimestamps, true, 'Prueba 3: hasVerifiedTimestamps is true');
+  assert.equal(act3.windowSessionsCount, 1, 'Prueba 3: 1 verified session in window');
+
+  // Prueba 4: Un marcador de otro plan o cliente no acredita actividad
+  var foreignStartMarker = {
+    planId: 'foreign-plan-999', week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: new Date(validRecentAt).toISOString()
+  };
+  var val4 = eligibility.validateStartMarker('foreign-plan-999_1_0_0', foreignStartMarker, 'plan-active-1', doneEntries);
+  assert.equal(val4.valid, false, 'Prueba 4: foreign plan marker is rejected');
+  assert.equal(val4.reason, 'PLAN_MISMATCH', 'Prueba 4: reason is PLAN_MISMATCH');
+  var act4 = eligibility.extractRealAppActivity({
+    entries: doneEntries,
+    starts: { 'foreign-plan-999_1_0_0': foreignStartMarker },
+    plan: plan, activePlanId: 'plan-active-1', now: NOW_MS
+  });
+  assert.equal(act4.hasVerifiedTimestamps, false, 'Prueba 4: foreign marker does not grant verified timestamps');
+  assert.equal(act4.windowSessionsCount, 0, 'Prueba 4: 0 verified sessions in window');
+
+  // Prueba 5: Un cliente sin timestamps verificables queda excluido del motor
+  var ev5 = eligibility.evaluateClientEligibility({
+    clientId: 'client-1', client: client, plan: plan, entries: doneEntries, starts: {}, now: NOW_ISO
+  });
+  assert.equal(ev5.eligible, false, 'Prueba 5: eligible is false');
+  assert.equal(ev5.reason, 'NEEDS_VERIFIED_ACTIVITY', 'Prueba 5: reason is NEEDS_VERIFIED_ACTIVITY');
+  assert.equal(ev5.priority, null, 'Prueba 5: priority is null (NEVER Priority C for unverified activity)');
+  assert.equal(ev5.readyForMotorProgression, false, 'Prueba 5: readyForMotorProgression is false');
+
+  // Prueba 6: Cliente nuevo con primera interacción verificable accede a Prioridad B
+  var newClient = { coachId: 'coach-1', activePlanId: 'plan-active-1', createdAt: new Date(NOW_MS - 3 * DAY_MS).toISOString() };
+  var ev6 = eligibility.evaluateClientEligibility({
+    clientId: 'client-1', client: newClient, plan: plan,
+    entries: doneEntries,
+    starts: { 'plan-active-1_1_0_0': validStartMarker },
+    now: NOW_ISO
+  });
+  assert.equal(ev6.eligible, true, 'Prueba 6: eligible after first verified training interaction');
+  assert.equal(ev6.priority, 'PRIORITY_B', 'Prueba 6: accesses PRIORITY_B');
+  assert.equal(ev6.category, 'NEW_CLIENT_ACTIVE', 'Prueba 6: category is NEW_CLIENT_ACTIVE');
+  assert.equal(ev6.reason, 'ELIGIBLE_PRIORITY_B', 'Prueba 6: reason is ELIGIBLE_PRIORITY_B');
+
+  // Prueba 7: Cliente recurrente genuino accede a Prioridad A
+  var recStarts = makeRecurrentStarts('plan-active-1', NOW_MS - 4 * DAY_MS, NOW_MS - 2 * DAY_MS);
+  var recEntries = makeRecurrentEntries({ t1: NOW_MS - 4 * DAY_MS, t2: NOW_MS - 2 * DAY_MS });
+  var ev7 = eligibility.evaluateClientEligibility({
+    clientId: 'client-1', client: client, plan: plan,
+    entries: recEntries,
+    starts: recStarts,
+    now: NOW_ISO
+  });
+  assert.equal(ev7.eligible, true, 'Prueba 7: genuine recurrent client is eligible');
+  assert.equal(ev7.priority, 'PRIORITY_A', 'Prueba 7: accesses PRIORITY_A');
+  assert.equal(ev7.category, 'RECURRENT_ACTIVE', 'Prueba 7: category is RECURRENT_ACTIVE');
+  assert.equal(ev7.activity.windowSessionsCount, 2, 'Prueba 7: exactly 2 verified sessions in 14-day rolling window');
+
+  // Prueba 8: Un cliente sin actividad reciente no recibe escrituras de progresión
+  var db8 = makeFakeDb({
+    'clients/client-1': client,
+    'plans/plan-active-1': plan,
+    'logs/client-1': { planId: 'plan-active-1', entries: fakeStsEntries, updatedAt: 1 },
+    'logs/client-1/mesos/plan-active-1': { planId: 'plan-active-1', entries: fakeStsEntries, updatedAt: 1 },
+    'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: '2026-10-20T00:00:00.000Z', clientIds: ['client-1'] },
+    'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: ['client-1'], prescriptionExerciseIds: [] } }
+  });
+  var writesBefore8 = db8.stats.sets;
+  var out8 = await executor.processProgression({
+    db: db8, clientId: 'client-1', planId: 'plan-active-1', enabled: true, numericApplyEnabled: true, clock: () => NOW_ISO, enforceActiveEligibility: true
+  });
+  assert.equal(out8.status, 'NEEDS_VERIFIED_ACTIVITY', 'Prueba 8: returns NEEDS_VERIFIED_ACTIVITY');
+  assert.equal(db8.stats.sets, writesBefore8, 'Prueba 8: exactly 0 writes executed');
+  assert.deepEqual(out8.applied, [], 'Prueba 8: 0 applied');
+  assert.deepEqual(out8.consumed, [], 'Prueba 8: 0 consumed');
+
+  // Prueba 9: El POST y el sweep tienen la misma política
+  var db9 = makeFakeDb({
+    'clients/client-1': client,
+    'plans/plan-active-1': plan,
+    'logs/client-1': { planId: 'plan-active-1', entries: fakeStsEntries, updatedAt: 1 },
+    'logs/client-1/mesos/plan-active-1': { planId: 'plan-active-1', entries: fakeStsEntries, updatedAt: 1 },
+    'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: '2026-10-20T00:00:00.000Z', clientIds: ['client-1'] },
+    'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: ['client-1'], prescriptionExerciseIds: [] } }
+  });
+  var sweep9 = await sweep.runSweep({ db: db9, enabled: true, numericApplyEnabled: true, clock: () => NOW_ISO });
+  assert.equal(sweep9.results[0].status, 'NEEDS_VERIFIED_ACTIVITY', 'Prueba 9 sweep: returns NEEDS_VERIFIED_ACTIVITY');
+
+  var postResStatus9 = null, postResBody9 = null;
+  var fakeRes9 = {
+    status: function(code) { postResStatus9 = code; return this; },
+    json: function(data) { postResBody9 = data; return this; },
+    setHeader: function() {}
+  };
+  var postHandler9 = trigger.makeHandler({
+    db: db9,
+    verifyIdToken: async function() { return { uid: 'client-1' }; },
+    enabled: true,
+    numericApplyEnabled: true,
+    clock: () => NOW_ISO
+  });
+  await postHandler9({ method: 'POST', headers: { authorization: 'Bearer token-ok' }, body: { planId: 'plan-active-1' } }, fakeRes9);
+  assert.equal(postResStatus9, 200, 'Prueba 9 POST: status 200');
+  assert.equal(postResBody9.status, 'NEEDS_VERIFIED_ACTIVITY', 'Prueba 9 POST: outcome is identical NEEDS_VERIFIED_ACTIVITY');
+
+  // Prueba 10: Las progresiones PENDING -> APPLIED -> CONSUMED siguen funcionando
+  var uid10 = 'client-1', p10 = 'plan-active-1';
+  var db10 = makeFakeDb({
+    ['clients/' + uid10]: client,
+    'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: '2026-10-20T00:00:00.000Z', clientIds: [uid10] },
+    'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: [uid10], prescriptionExerciseIds: [] } },
+    ['plans/' + p10]: plan,
+    ['logs/' + uid10]: { planId: p10, entries: recEntries, updatedAt: 2 },
+    ['logs/' + uid10 + '/mesos/' + p10]: { planId: p10, entries: recEntries, updatedAt: 2 },
+    ['logs/' + uid10 + '/starts/' + p10 + '_1_0_0']: { planId: p10, week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: new Date(NOW_MS - 4 * DAY_MS).toISOString() },
+    ['logs/' + uid10 + '/starts/' + p10 + '_1_2_0']: { planId: p10, week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: new Date(NOW_MS - 2 * DAY_MS).toISOString() }
+  });
+  var step1 = await executor.processProgression({ db: db10, clientId: uid10, planId: p10, enabled: true, numericApplyEnabled: true, clock: () => NOW_ISO, enforceActiveEligibility: true });
+  assert.equal(step1.status, 'MATERIALIZED', 'Prueba 10: materialized');
+  assert.equal(step1.applied[0].written, true, 'Prueba 10: applied');
+  var meso10 = db10.docs.get('logs/' + uid10 + '/mesos/' + p10);
+  var [rec10] = Object.values(meso10.progressionApplications);
+  var [ovl10] = Object.values(meso10.nextExposureOverlays);
+  assert.equal(rec10.state, 'APPLIED', 'Prueba 10: record state is APPLIED');
+
+  // Next exposure set + start marker + receipt
+  var nextSetKey = 'log_' + ovl10.target.week + '_' + ovl10.target.dayIndex + '_0_s0';
+  meso10.entries[nextSetKey] = { done: true, carga: '100', reps: '12', unit: 'KG', rir: 2, rir_real: 2, prescriptionExerciseId: 'pid-press', ts: NOW_MS };
+  meso10.consumptionReceipts = {
+    [rec10.key]: {
+      schema: consumer.RECEIPT_SCHEMA, recordKey: rec10.key, overlayKey: ovl10.key, clientId: uid10, planId: p10,
+      prescriptionExerciseId: 'pid-press', target: ovl10.target, dimension: ovl10.dimension, appliedValue: ovl10.appliedValue,
+      provenance: 'CANONICAL_OVERLAY', ackAt: NOW_ISO
+    }
+  };
+  db10.docs.set('logs/' + uid10 + '/mesos/' + p10, meso10);
+  db10.docs.set('logs/' + uid10, { planId: p10, entries: meso10.entries, updatedAt: 3 });
+  db10.docs.set('logs/' + uid10 + '/starts/' + p10 + '_' + ovl10.target.week + '_' + ovl10.target.dayIndex + '_0', {
+    planId: p10, week: ovl10.target.week, dayIndex: ovl10.target.dayIndex, exerciseIndex: 0, setKey: nextSetKey, at: NOW_ISO
+  });
+
+  var step2 = await executor.processProgression({ db: db10, clientId: uid10, planId: p10, enabled: true, numericApplyEnabled: true, clock: () => NOW_ISO, enforceActiveEligibility: true });
+  assert.deepEqual(step2.consumed.map(x => [x.written, x.reason]), [[true, null]], 'Prueba 10: consumed');
+  var finalMeso10 = db10.docs.get('logs/' + uid10 + '/mesos/' + p10);
+  assert.equal(finalMeso10.progressionApplications[rec10.key].state, 'CONSUMED', 'Prueba 10: record state is CONSUMED');
+  assert.equal(finalMeso10.nextExposureOverlays[ovl10.key].status, 'CONSUMED', 'Prueba 10: overlay state is CONSUMED');
 });

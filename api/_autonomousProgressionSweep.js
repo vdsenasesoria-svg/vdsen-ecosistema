@@ -65,6 +65,20 @@ async function runSweep(input) {
       var receipts = (meso && meso.consumptionReceipts) || null;
       var cleanEntries = eligibility.sanitizeClientEntries(rawEntries, plan, client.activePlanId);
 
+      // Bounded read of active plan start markers (immutable request.time authority)
+      var starts = {};
+      try {
+        var startsCol = input.db.collection('logs').doc(cid).collection('starts');
+        var sq = startsCol.where('planId', '==', client.activePlanId);
+        if (typeof sq.limit === 'function') sq = sq.limit(50);
+        var startsSnap = await sq.get();
+        if (startsSnap && Array.isArray(startsSnap.docs)) {
+          startsSnap.docs.forEach(function(d) {
+            starts[d.id] = typeof d.data === 'function' ? d.data() : d.data;
+          });
+        }
+      } catch (_) {}
+
       var ev = eligibility.evaluateClientEligibility({
         clientId: cid,
         client: client,
@@ -74,10 +88,11 @@ async function runSweep(input) {
         meso: meso,
         root: root,
         entries: cleanEntries,
+        starts: starts,
         receipts: receipts,
         now: _now(input.clock)
       });
-      evaluations.push(Object.assign({ clientId: cid, client: client, plan: plan }, ev));
+      evaluations.push(Object.assign({ clientId: cid, client: client, plan: plan, starts: starts }, ev));
     } catch (_) {
       evaluations.push({ clientId: cid, eligible: false, status: 'ERROR', reason: 'ERROR' });
     }
@@ -90,7 +105,9 @@ async function runSweep(input) {
   var resultsMap = {};
   // Record excluded clients (zero progression transactions / zero writes)
   excluded.forEach(function(e) {
-    var outStatus = e.reason === 'PLAN_SUSPENDED_OR_REVOKED' ? 'SOURCE_INVALID' : (e.status || e.reason || 'NOT_ELIGIBLE');
+    var outStatus = (e.reason === 'PLAN_SUSPENDED_OR_REVOKED' || e.reason === 'NEEDS_PLAN_PREP')
+      ? 'SOURCE_INVALID'
+      : (e.reason === 'CLIENT_SUSPENDED_OR_INACTIVE' ? 'INACTIVE_CLIENT' : (e.reason || e.status || 'NOT_ELIGIBLE'));
     resultsMap[e.clientId] = { clientId: e.clientId, status: outStatus };
   });
 
@@ -112,7 +129,8 @@ async function runSweep(input) {
       var out = await executor.processProgression({
         db: input.db, clientId: target.clientId, planId: target.client.activePlanId,
         enabled: true, numericApplyEnabled: input.numericApplyEnabled === true, clock: input.clock,
-        enforceActiveEligibility: true
+        enforceActiveEligibility: true,
+        starts: target.starts
       });
       resultsMap[target.clientId] = { clientId: target.clientId, status: out.status };
     } catch (_) {

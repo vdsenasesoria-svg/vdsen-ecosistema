@@ -185,16 +185,66 @@ function isSyntheticOrNonClientEntry(entry, activePlanId) {
 }
 
 // Verified server/database authority timestamps (governed by T603 rules, Firestore server timestamps, post-session records or receipts)
+// T603 / T685.2: In Firestore Rules, free-form entries map fields (sts, ts, savedAt, completedAt, ackAt)
+// are NEVER proven to be database time. The sole canonical authority for athlete exposure timing
+// is the immutable start marker in logs/{uid}/starts/{startId} where `at == request.time`.
 function entryVerifiedWallClockMs(entry) {
   if (!entry || typeof entry !== 'object') return null;
-  return parseWallClockMs(entry.sts) ||
-    parseWallClockMs(entry.at) ||
-    parseWallClockMs(entry.savedAt) ||
-    parseWallClockMs(entry.completedAt) ||
-    parseWallClockMs(entry.calculatedAt) ||
-    parseWallClockMs(entry.ackAt) ||
-    parseWallClockMs(entry._serverTimestamp) ||
-    null;
+  // If the object is an immutable start marker with `at` and `setKey`
+  if (typeof entry.setKey === 'string' && entry.at !== undefined) {
+    return parseWallClockMs(entry.at);
+  }
+  return null;
+}
+
+function validateStartMarker(skId, st, activePlanId, entries) {
+  if (!st || typeof st !== 'object') return { valid: false, reason: 'INVALID_OBJECT' };
+  var planId = st.planId;
+  if (typeof planId !== 'string' || planId.trim() === '') {
+    return { valid: false, reason: 'MISSING_PLAN_ID' };
+  }
+  if (activePlanId && planId !== activePlanId) {
+    return { valid: false, reason: 'PLAN_MISMATCH' };
+  }
+  if (isSyntheticOrNonClientEntry(st, activePlanId)) return { valid: false, reason: 'SYNTHETIC_OR_NON_CLIENT' };
+  var w = Number(st.week), d = Number(st.dayIndex), e = Number(st.exerciseIndex);
+  var mStart = /^(.+)_(\d+)_(\d+)_(\d+)$/.exec(skId);
+  if ((!Number.isInteger(w) || !Number.isInteger(d) || !Number.isInteger(e)) && mStart) {
+    if (activePlanId && mStart[1] !== activePlanId) return { valid: false, reason: 'PLAN_MISMATCH' };
+    w = Number(mStart[2]); d = Number(mStart[3]); e = Number(mStart[4]);
+  }
+  if (!Number.isInteger(w) || w < 0 || !Number.isInteger(d) || d < 0 || !Number.isInteger(e) || e < 0) {
+    return { valid: false, reason: 'INVALID_INDICES' };
+  }
+  var expectedId = planId + '_' + w + '_' + d + '_' + e;
+  if (skId && skId !== expectedId) {
+    if (skId.indexOf(planId) !== 0) return { valid: false, reason: 'ID_MISMATCH' };
+  }
+  var expectedPrefix = 'log_' + w + '_' + d + '_' + e + '_';
+  if (typeof st.setKey !== 'string' || st.setKey.indexOf(expectedPrefix) !== 0 || !/^log_\d+_\d+_\d+_s\d+$/.test(st.setKey)) {
+    return { valid: false, reason: 'INVALID_SET_KEY' };
+  }
+  var atMs = parseWallClockMs(st.at);
+  if (atMs === null) {
+    return { valid: false, reason: 'NO_VALID_TIMESTAMP' };
+  }
+  // If entries map contains entries, check that the referenced working set exists and is done
+  if (entries && typeof entries === 'object' && Object.keys(entries).length > 0) {
+    var ws = entries[st.setKey];
+    if (!ws || ws.done !== true) {
+      return { valid: false, reason: 'WORKING_SET_NOT_DONE' };
+    }
+  }
+  return {
+    valid: true,
+    planId: planId,
+    week: w,
+    dayIndex: d,
+    exerciseIndex: e,
+    setKey: st.setKey,
+    atMs: atMs,
+    sessionKey: w + '_' + d
+  };
 }
 
 function entryWallClockMs(entry) {
@@ -258,6 +308,8 @@ function extractRealAppActivity(input) {
   var ignoredSyntheticCount = 0;
 
   var sessionSetCounts = {};
+  var sessionVerifiedTimestamps = {};
+  var sessionDeviceTimestamps = {};
   var sessionTimestamps = {};
   var perPidComparable = {};
   var postSessions = [];
@@ -266,19 +318,29 @@ function extractRealAppActivity(input) {
   var lastActivityMs = null;
   var lastVerifiedActivityMs = null;
 
-  function recordTimestamp(sessionKey, ms, isVerified) {
-    if (ms !== null && Number.isFinite(ms)) {
-      hasWallClockTimestamps = true;
-      if (lastActivityMs === null || ms > lastActivityMs) lastActivityMs = ms;
-      if (isVerified) {
-        hasVerifiedTimestamps = true;
-        if (lastVerifiedActivityMs === null || ms > lastVerifiedActivityMs) lastVerifiedActivityMs = ms;
-      }
-      if (sessionKey && (sessionTimestamps[sessionKey] === undefined || ms > sessionTimestamps[sessionKey])) {
-        sessionTimestamps[sessionKey] = ms;
-      }
+  // Evaluate immutable exposure start markers (logs/{uid}/starts/{planId}_{w}_{d}_{e})
+  // These documents are governed by firestore.rules T603 (request.resource.data.at == request.time).
+  Object.keys(starts).forEach(function(skId) {
+    var st = starts[skId];
+    var val = validateStartMarker(skId, st, activePlanId, entries);
+    if (!val.valid) {
+      ignoredSyntheticCount++;
+      return;
     }
-  }
+    if (planFloorMs !== null && val.atMs < planFloorMs) {
+      ignoredSyntheticCount++;
+      return;
+    }
+    realStartsCount++;
+    hasVerifiedTimestamps = true;
+    hasWallClockTimestamps = true;
+    if (lastVerifiedActivityMs === null || val.atMs > lastVerifiedActivityMs) lastVerifiedActivityMs = val.atMs;
+    if (lastActivityMs === null || val.atMs > lastActivityMs) lastActivityMs = val.atMs;
+    sessionSetCounts[val.sessionKey] = (sessionSetCounts[val.sessionKey] || 0) + 1;
+    if (sessionVerifiedTimestamps[val.sessionKey] === undefined || val.atMs > sessionVerifiedTimestamps[val.sessionKey]) {
+      sessionVerifiedTimestamps[val.sessionKey] = val.atMs;
+    }
+  });
 
   Object.keys(entries).forEach(function(k) {
     var e = entries[k];
@@ -286,8 +348,7 @@ function extractRealAppActivity(input) {
       ignoredSyntheticCount++;
       return;
     }
-    var vms = entryVerifiedWallClockMs(e);
-    var ms = vms !== null ? vms : entryWallClockMs(e);
+    var ms = entryWallClockMs(e);
     if (planFloorMs !== null && ms !== null && ms < planFloorMs) {
       ignoredSyntheticCount++;
       return;
@@ -306,7 +367,13 @@ function extractRealAppActivity(input) {
       var sk = mSet[1] + '_' + mSet[2];
       realSetsCount++;
       sessionSetCounts[sk] = (sessionSetCounts[sk] || 0) + 1;
-      recordTimestamp(sk, ms, vms !== null);
+      if (ms !== null) {
+        hasWallClockTimestamps = true;
+        if (lastActivityMs === null || ms > lastActivityMs) lastActivityMs = ms;
+        if (sessionDeviceTimestamps[sk] === undefined || ms > sessionDeviceTimestamps[sk]) {
+          sessionDeviceTimestamps[sk] = ms;
+        }
+      }
 
       // Comparable exposures for resistance progression (never cardio, never before plan.updatedAt)
       if (inPlanPid && !cardioPidSet.has(pid) && e.exerciseType !== 'cardio') {
@@ -324,54 +391,31 @@ function extractRealAppActivity(input) {
       var psk = mPost[1] + '_' + mPost[2];
       realPostSessionsCount++;
       postSessions.push({ w: Number(mPost[1]), d: Number(mPost[2]), sk: psk, p: e });
-      recordTimestamp(psk, ms, vms !== null);
+      if (ms !== null) {
+        hasWallClockTimestamps = true;
+        if (lastActivityMs === null || ms > lastActivityMs) lastActivityMs = ms;
+        if (sessionDeviceTimestamps[psk] === undefined || ms > sessionDeviceTimestamps[psk]) {
+          sessionDeviceTimestamps[psk] = ms;
+        }
+      }
       return;
     }
-  });
 
-  // Evaluate immutable exposure start markers (logs/{uid}/starts/{planId}_{w}_{d}_{e})
-  Object.keys(starts).forEach(function(skId) {
-    var st = starts[skId];
-    if (isSyntheticOrNonClientEntry(st, activePlanId)) {
-      ignoredSyntheticCount++;
-      return;
-    }
-    if (activePlanId && st.planId && st.planId !== activePlanId) {
-      ignoredSyntheticCount++;
-      return;
-    }
-    var ms = entryWallClockMs(st);
-    if (planFloorMs !== null && ms !== null && ms < planFloorMs) {
-      ignoredSyntheticCount++;
-      return;
-    }
-    var w = Number(st.week), d = Number(st.dayIndex);
-    var mStart = /^(.+)_(\d+)_(\d+)_(\d+)$/.exec(skId);
-    if ((!Number.isFinite(w) || !Number.isFinite(d)) && mStart) {
-      if (activePlanId && mStart[1] !== activePlanId) { ignoredSyntheticCount++; return; }
-      w = Number(mStart[2]); d = Number(mStart[3]);
-    }
-    if (!Number.isFinite(w) || !Number.isFinite(d)) return;
-    var sKey = w + '_' + d;
-    realStartsCount++;
-    sessionSetCounts[sKey] = (sessionSetCounts[sKey] || 0) + 1;
-    recordTimestamp(sKey, ms, true);
-  });
-
-  // Evaluate done_{w}_{d} sessions only when backed by real training sets/starts in that session
-  Object.keys(entries).forEach(function(k) {
     var mDone = /^done_(\d+)_(\d+)$/.exec(k);
-    if (!mDone) return;
-    var e = entries[k];
-    if (isSyntheticOrNonClientEntry(e, activePlanId)) return;
-    if (e.autoClosed === true && e.skipped === true) return;
-    var dsk = mDone[1] + '_' + mDone[2];
-    if (!sessionSetCounts[dsk]) return; // Administrative/empty done_ marker without sets/starts does not count
-    var vms = entryVerifiedWallClockMs(e);
-    var ms = vms !== null ? vms : entryWallClockMs(e);
-    if (planFloorMs !== null && ms !== null && ms < planFloorMs) return;
-    realDoneSessionsCount++;
-    recordTimestamp(dsk, ms, vms !== null);
+    if (mDone) {
+      if (e.autoClosed === true && e.skipped === true) return;
+      var dsk = mDone[1] + '_' + mDone[2];
+      if (!sessionSetCounts[dsk]) return; // Administrative/empty done_ marker without sets/starts does not count
+      realDoneSessionsCount++;
+      if (ms !== null) {
+        hasWallClockTimestamps = true;
+        if (lastActivityMs === null || ms > lastActivityMs) lastActivityMs = ms;
+        if (sessionDeviceTimestamps[dsk] === undefined || ms > sessionDeviceTimestamps[dsk]) {
+          sessionDeviceTimestamps[dsk] = ms;
+        }
+      }
+      return;
+    }
   });
 
   // Evaluate athlete consumption receipts
@@ -388,7 +432,10 @@ function extractRealAppActivity(input) {
     }
     if (typeof rc.ackAt === 'string' && rc.ackAt.trim() !== '') {
       realReceiptsCount++;
-      recordTimestamp(null, ms, true);
+      if (ms !== null) {
+        hasWallClockTimestamps = true;
+        if (lastActivityMs === null || ms > lastActivityMs) lastActivityMs = ms;
+      }
     }
   });
 
@@ -404,11 +451,26 @@ function extractRealAppActivity(input) {
   });
   realSessionKeys.sort();
 
+  // CRITICAL (Hallazgo 1 & 2): Reconcile session timestamps.
+  // If a session has a verified timestamp from an immutable start marker, that verified timestamp
+  // is authoritative and CANNOT be updated or overwritten by an unverified device mark.
+  realSessionKeys.forEach(function(sk) {
+    if (sessionVerifiedTimestamps[sk] !== undefined) {
+      sessionTimestamps[sk] = sessionVerifiedTimestamps[sk];
+    } else if (sessionDeviceTimestamps[sk] !== undefined) {
+      sessionTimestamps[sk] = sessionDeviceTimestamps[sk];
+    }
+  });
+
+  // Rolling window of verified sessions (14 days):
+  // Only sessions backed by authorized, verified start markers within [windowStartMs, nowMs + 86400000] count!
   var windowSessionsCount = 0;
   if (hasVerifiedTimestamps) {
     realSessionKeys.forEach(function(sk) {
-      var sms = sessionTimestamps[sk];
-      if (sms !== undefined && sms >= windowStartMs && sms <= nowMs + 86400000) windowSessionsCount++;
+      var vms = sessionVerifiedTimestamps[sk];
+      if (vms !== undefined && vms >= windowStartMs && vms <= nowMs + 86400000) {
+        windowSessionsCount++;
+      }
     });
   } else {
     // FAIL-CLOSED: Without verified wall-clock timestamps, NO sessions can be counted toward the rolling window.
@@ -551,8 +613,24 @@ function evaluateClientEligibility(input) {
     };
   }
 
-  // CONFIRMED INACTIVITY: Last activity has verified timestamps and is older than inactive window (default 28 days)
-  if (!isNewClient && activity.hasVerifiedTimestamps && activity.lastVerifiedActivityMs !== null && (nowMs - activity.lastVerifiedActivityMs) > inactiveDays * 86400000) {
+  // LACK OF VERIFIED TEMPORAL EVIDENCE (Hallazgo 1 & 3):
+  // If the client has entries/interactions but lacks verified start markers (lastVerifiedActivityMs === null):
+  // Exclude from the engine. Never assign PRIORITY_C to unverified evidence.
+  if (!activity.hasVerifiedTimestamps || activity.lastVerifiedActivityMs === null) {
+    var unverifiedReason = isNewClient ? 'NEW_CLIENT_AWAITING_FIRST_ACTIVITY' : 'NEEDS_VERIFIED_ACTIVITY';
+    var unverifiedCat = isNewClient ? 'AWAITING_FIRST_ACTIVITY' : 'EXCLUDED';
+    return {
+      clientId: clientId, coachId: planCheck.coachId, planId: activePlanId,
+      eligible: false, priority: null, priorityRank: null,
+      category: unverifiedCat, reason: unverifiedReason, technicalState: 'NEEDS_EVIDENCE',
+      isNewClient: isNewClient,
+      readyForMotorProgression: false, authorized: false, authorization: auth,
+      planValidation: planCheck, activity: activity
+    };
+  }
+
+  // CONFIRMED INACTIVITY: Last verified activity is older than inactive window (default 28 days)
+  if (!isNewClient && (nowMs - activity.lastVerifiedActivityMs) > inactiveDays * 86400000) {
     return {
       clientId: clientId, coachId: planCheck.coachId, planId: activePlanId,
       eligible: false, priority: null, priorityRank: null,
@@ -564,20 +642,29 @@ function evaluateClientEligibility(input) {
   }
 
   var priority, category, reason;
-  // FAIL-CLOSED: A client without verifiable timestamps never receives recurrent priority (PRIORITY_A).
-  if (activity.hasVerifiedTimestamps && activity.windowSessionsCount >= recurrentSessionsMin) {
+  if (activity.windowSessionsCount >= recurrentSessionsMin) {
     priority = 'PRIORITY_A';
     category = 'RECURRENT_ACTIVE';
     reason = 'ELIGIBLE_PRIORITY_A';
-  } else if (isNewClient && (activity.windowSessionsCount >= 1 || (activity.hasWallClockTimestamps && activity.lastActivityMs !== null && (nowMs - activity.lastActivityMs) <= newClientWindowDays * 86400000))) {
+  } else if (isNewClient && (activity.windowSessionsCount >= 1 || (nowMs - activity.lastVerifiedActivityMs) <= newClientWindowDays * 86400000)) {
+    // New active client: Priority B after first accredited verified interaction
     priority = 'PRIORITY_B';
     category = 'NEW_CLIENT_ACTIVE';
     reason = 'ELIGIBLE_PRIORITY_B';
-  } else {
-    // Occasional active or unverified timeline: NEVER receives recurrent priority by default
+  } else if ((nowMs - activity.lastVerifiedActivityMs) <= inactiveDays * 86400000) {
+    // Occasional active client whose recent activity is verified (< 28 days)
     priority = 'PRIORITY_C';
     category = 'OCCASIONAL_ACTIVE';
-    reason = activity.hasVerifiedTimestamps ? 'ELIGIBLE_PRIORITY_C' : 'UNVERIFIED_TIMELINE_PRIORITY_C';
+    reason = 'ELIGIBLE_PRIORITY_C';
+  } else {
+    return {
+      clientId: clientId, coachId: planCheck.coachId, planId: activePlanId,
+      eligible: false, priority: null, priorityRank: null,
+      category: 'EXCLUDED', reason: 'NEEDS_VERIFIED_ACTIVITY', technicalState: 'NEEDS_EVIDENCE',
+      isNewClient: isNewClient,
+      readyForMotorProgression: false, authorized: false, authorization: auth,
+      planValidation: planCheck, activity: activity
+    };
   }
 
   var existingRecords = (meso && meso.progressionApplications) || {};
@@ -715,5 +802,7 @@ module.exports = {
   extractRealAppActivity: extractRealAppActivity,
   evaluateAuthorization: evaluateAuthorization,
   evaluateClientEligibility: evaluateClientEligibility,
+  validateStartMarker: validateStartMarker,
+  entryVerifiedWallClockMs: entryVerifiedWallClockMs,
   planCohortActivation: planCohortActivation
 };
