@@ -7,6 +7,7 @@
 // never "all clients".  Processing is idempotent, so overlap with the browser
 // trigger or a retried sweep cannot double-apply.
 var crypto = require('crypto');
+var shadow = require('../assets/progression-auto-apply-shadow.js');
 var executor = require('./_autonomousProgression');
 var eligibility = require('./_clientEligibility.js');
 
@@ -34,19 +35,96 @@ async function runSweep(input) {
   input = input || {};
   if (!input.enabled) return { status: 'DISARMED', processed: 0 };
   var targets = await canaryTargets(input.db, input.clock), results = [];
+  if (!targets.length) return { status: 'SWEPT', processed: 0, results: [] };
+
+  var evaluations = [];
   for (var i = 0; i < targets.length; i++) {
+    var cid = targets[i];
     try {
-      var client = _data(await input.db.collection('clients').doc(targets[i]).get());
-      if (!client || !client.activePlanId) { results.push({ clientId: targets[i], status: 'NO_ACTIVE_PLAN' }); continue; }
-      if (!eligibility.isClientStatusValid(client)) { results.push({ clientId: targets[i], status: 'INACTIVE_CLIENT' }); continue; }
-      var out = await executor.processProgression({ db: input.db, clientId: targets[i], planId: client.activePlanId, enabled: true,
-        numericApplyEnabled: input.numericApplyEnabled === true, clock: input.clock });
-      results.push({ clientId: targets[i], status: out.status });
+      var clientSnap = await input.db.collection('clients').doc(cid).get();
+      var client = _data(clientSnap);
+      if (!client || !client.activePlanId) {
+        evaluations.push({ clientId: cid, eligible: false, status: 'NO_ACTIVE_PLAN', reason: 'NO_ACTIVE_PLAN' });
+        continue;
+      }
+      if (!eligibility.isClientStatusValid(client)) {
+        evaluations.push({ clientId: cid, eligible: false, status: 'INACTIVE_CLIENT', reason: 'CLIENT_SUSPENDED_OR_INACTIVE' });
+        continue;
+      }
+      var planSnap = await input.db.collection('plans').doc(client.activePlanId).get();
+      var plan = _data(planSnap);
+      if (!plan || !eligibility.isPlanStatusValid(plan, client)) {
+        evaluations.push({ clientId: cid, eligible: false, status: 'SOURCE_INVALID', reason: 'PLAN_SUSPENDED_OR_REVOKED' });
+        continue;
+      }
+      var rootSnap = await input.db.collection('logs').doc(cid).get();
+      var mesoSnap = await input.db.collection('logs').doc(cid).collection('mesos').doc(client.activePlanId).get();
+      var root = _data(rootSnap), meso = _data(mesoSnap);
+      var authority = shadow.selectLogAuthority(meso, root, client.activePlanId);
+      var rawEntries = (authority && authority.entries) || (root && root.entries) || {};
+      var receipts = (meso && meso.consumptionReceipts) || null;
+      var cleanEntries = eligibility.sanitizeClientEntries(rawEntries, plan, client.activePlanId);
+
+      var ev = eligibility.evaluateClientEligibility({
+        clientId: cid,
+        client: client,
+        clientCreateTime: clientSnap && clientSnap.createTime,
+        plan: plan,
+        requestedPlanId: client.activePlanId,
+        meso: meso,
+        root: root,
+        entries: cleanEntries,
+        receipts: receipts,
+        now: _now(input.clock)
+      });
+      evaluations.push(Object.assign({ clientId: cid, client: client, plan: plan }, ev));
     } catch (_) {
-      // One athlete failing never blocks the rest; the next sweep retries.
-      results.push({ clientId: targets[i], status: 'ERROR' });
+      evaluations.push({ clientId: cid, eligible: false, status: 'ERROR', reason: 'ERROR' });
     }
   }
+
+  // Filter excluded vs eligible
+  var eligible = evaluations.filter(function(e) { return e.eligible === true; });
+  var excluded = evaluations.filter(function(e) { return e.eligible !== true; });
+
+  var resultsMap = {};
+  // Record excluded clients (zero progression transactions / zero writes)
+  excluded.forEach(function(e) {
+    var outStatus = e.reason === 'PLAN_SUSPENDED_OR_REVOKED' ? 'SOURCE_INVALID' : (e.status || e.reason || 'NOT_ELIGIBLE');
+    resultsMap[e.clientId] = { clientId: e.clientId, status: outStatus };
+  });
+
+  // Sort eligible by priority rank (Priority A -> Priority B -> Priority C), then window sessions count
+  eligible.sort(function(a, b) {
+    if (a.priorityRank !== b.priorityRank) return a.priorityRank - b.priorityRank;
+    var sa = (a.activity && a.activity.windowSessionsCount) || 0;
+    var sb = (b.activity && b.activity.windowSessionsCount) || 0;
+    if (sa !== sb) return sb - sa;
+    var la = (a.activity && a.activity.lastActivityMs) || 0;
+    var lb = (b.activity && b.activity.lastActivityMs) || 0;
+    return lb - la;
+  });
+
+  var toProcess = eligible.slice(0, eligibility.RELEASE_MAX_CLIENTS);
+  for (var j = 0; j < toProcess.length; j++) {
+    var target = toProcess[j];
+    try {
+      var out = await executor.processProgression({
+        db: input.db, clientId: target.clientId, planId: target.client.activePlanId,
+        enabled: true, numericApplyEnabled: input.numericApplyEnabled === true, clock: input.clock,
+        enforceActiveEligibility: true
+      });
+      resultsMap[target.clientId] = { clientId: target.clientId, status: out.status };
+    } catch (_) {
+      resultsMap[target.clientId] = { clientId: target.clientId, status: 'ERROR' };
+    }
+  }
+
+  // Preserve stable response format mapped to target order
+  for (var k = 0; k < targets.length; k++) {
+    results.push(resultsMap[targets[k]] || { clientId: targets[k], status: 'ERROR' });
+  }
+
   return { status: 'SWEPT', processed: results.length, results: results };
 }
 

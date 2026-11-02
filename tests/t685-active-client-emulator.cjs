@@ -236,7 +236,7 @@ test('T685.E2 new client onboarding on emulator: 0 activity -> first real set + 
   assert.equal(mesoFinal.nextExposureOverlays[ovl.key].status, 'CONSUMED');
 });
 
-test('T685.E3 plan suspension or client deactivation immediately blocks progression on emulator with zero writes', { timeout: 60000 }, async () => {
+test('T685.E3 plan suspension, draft status, or client deactivation immediately blocks progression on emulator with zero writes', { timeout: 60000 }, async () => {
   const coach = await signedIn(), athlete = await signedIn();
   const planId = 'plan-' + athlete.uid;
   const logs = makeRecurrentLogs();
@@ -252,4 +252,11 @@ test('T685.E3 plan suspension or client deactivation immediately blocks progress
   assert.equal(outSuspended.status, 'SOURCE_INVALID');
   const m1 = (await db.doc('logs/' + athlete.uid + '/mesos/' + planId).get()).data();
   assert.equal(m1.progressionApplications, undefined);
+
+  // Draft plan test on real emulator
+  await db.doc('plans/' + planId).set(makePlanDoc(athlete.uid, coach.uid, { status: 'draft' }));
+  const outDraft = await executor.processProgression({ db, clientId: athlete.uid, planId, enabled: true, numericApplyEnabled: true, clock: () => T_NOW_ISO });
+  assert.equal(outDraft.status, 'SOURCE_INVALID', 'Draft plan is strictly excluded');
+  const mDraft = (await db.doc('logs/' + athlete.uid + '/mesos/' + planId).get()).data();
+  assert.equal(mDraft.progressionApplications, undefined, 'Zero progression applications written for draft plan');
 });

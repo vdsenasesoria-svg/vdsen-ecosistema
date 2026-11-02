@@ -18,8 +18,12 @@ var DEFAULT_NEW_CLIENT_DAYS = 14;
 var DEFAULT_RECURRENT_SESSIONS_MIN = 2;
 var WALL_CLOCK_FLOOR_MS = 946684800000; // 2000-01-01T00:00:00.000Z (separates real epoch ms from synthetic test counters 1, 2, 3)
 
-var SUSPENDED_STATUSES = Object.freeze(['suspended', 'revoked', 'cancelled', 'canceled', 'archived', 'inactive', 'deleted', 'disabled']);
-var NON_CLIENT_SOURCES = Object.freeze(['import', 'historical_import', 'coach_admin', 'coach', 'server', 'system', 'migration', 'admin', 'seed']);
+var SUSPENDED_STATUSES = Object.freeze(['suspended', 'revoked', 'cancelled', 'canceled', 'archived', 'inactive', 'deleted', 'disabled', 'draft', 'template', 'pending']);
+var NON_CLIENT_SOURCES = Object.freeze([
+  'synthetic', 'imported', 'import', 'historical_import', 'historical', 'legacy_import',
+  'coach_admin', 'coach', 'server', 'server_generated', 'system', 'migration', 'admin',
+  'seed', 'demo', 'test', 'mock', 'bot', 'script', 'trusted-progressor'
+]);
 var NON_CLIENT_ACTORS = Object.freeze(['coach', 'server', 'admin', 'system', 'trusted-progressor']);
 var PRIORITY_RANK = Object.freeze({ PRIORITY_A: 1, PRIORITY_B: 2, PRIORITY_C: 3 });
 
@@ -31,13 +35,24 @@ function parseWallClockMs(value) {
     return Number.isFinite(parsed) && parsed >= WALL_CLOCK_FLOOR_MS ? parsed : null;
   }
   if (typeof value === 'object') {
+    if (typeof value.toDate === 'function') {
+      try {
+        var d = value.toDate();
+        var t = d && d.getTime();
+        if (Number.isFinite(t) && t >= WALL_CLOCK_FLOOR_MS) return t;
+      } catch (_) {}
+    }
     if (typeof value.toMillis === 'function') {
       var ms = value.toMillis();
       return Number.isFinite(ms) && ms >= WALL_CLOCK_FLOOR_MS ? ms : null;
     }
     if (typeof value.seconds === 'number') {
-      var secMs = value.seconds * 1000;
+      var secMs = value.seconds * 1000 + (value.nanoseconds ? value.nanoseconds / 1e6 : 0);
       return Number.isFinite(secMs) && secMs >= WALL_CLOCK_FLOOR_MS ? secMs : null;
+    }
+    if (typeof value._seconds === 'number') {
+      var adminMs = value._seconds * 1000 + (value._nanoseconds ? value._nanoseconds / 1e6 : 0);
+      return Number.isFinite(adminMs) && adminMs >= WALL_CLOCK_FLOOR_MS ? adminMs : null;
     }
   }
   return null;
@@ -51,7 +66,7 @@ function releaseUnexpired(expiresAt, nowIso) {
 
 function isClientStatusValid(client) {
   if (!client || typeof client !== 'object') return false;
-  if (client.suspended === true || client.revoked === true || client.active === false || client.archived === true || client.inactive === true) return false;
+  if (client.suspended === true || client.revoked === true || client.active === false || client.archived === true || client.inactive === true || client.deleted === true) return false;
   if (typeof client.status === 'string' && SUSPENDED_STATUSES.indexOf(client.status.trim().toLowerCase()) >= 0) return false;
   return true;
 }
@@ -59,9 +74,41 @@ function isClientStatusValid(client) {
 function isPlanStatusValid(plan, client) {
   if (client !== undefined && !isClientStatusValid(client)) return false;
   if (!plan || typeof plan !== 'object') return false;
-  if (plan.suspended === true || plan.revoked === true || plan.active === false || plan.archived === true || plan.inactive === true) return false;
-  if (typeof plan.status === 'string' && SUSPENDED_STATUSES.indexOf(plan.status.trim().toLowerCase()) >= 0) return false;
-  return true;
+  if (plan.suspended === true || plan.revoked === true || plan.active === false ||
+      plan.archived === true || plan.inactive === true || plan.deleted === true ||
+      plan.draft === true) return false;
+
+  var planId = (plan && plan.id) || null;
+  var clientActivePlanId = (client && typeof client.activePlanId === 'string' && client.activePlanId.trim() !== '') ? client.activePlanId.trim() : null;
+
+  if (typeof plan.status === 'string') {
+    var st = plan.status.trim().toLowerCase();
+    if (st === 'draft' || SUSPENDED_STATUSES.indexOf(st) >= 0) return false;
+    if (st === 'active') return true;
+    if (st === 'draft_approved') {
+      // AI plan: draft_approved is only active when currently referenced by the client's activePlanId
+      return !!(clientActivePlanId && (!planId || clientActivePlanId === planId));
+    }
+    return false;
+  }
+
+  // Legacy plans without explicit status field: require CANONICAL ACTIVATION EVIDENCE before admitting.
+  // Never assume absence of status implies activation.
+  // When client is provided, strictly verify that the client references this plan as activePlanId.
+  if (client !== undefined) {
+    if (!client || !clientActivePlanId) return false;
+    if (planId && clientActivePlanId !== planId) return false;
+  }
+
+  var hasExplicitActivation = plan.active === true ||
+    parseWallClockMs(plan.activatedAt) !== null ||
+    parseWallClockMs(client && client.planActivatedAt) !== null ||
+    parseWallClockMs(client && client.activePlanActivatedAt) !== null;
+
+  var hasCanonicalTimestamp = Number.isFinite(Date.parse(plan.updatedAt || plan.createdAt));
+  var hasStructure = Array.isArray(plan.days) && plan.days.length > 0;
+
+  return hasExplicitActivation || hasCanonicalTimestamp || hasStructure;
 }
 
 function isCardioExercise(ex) {
@@ -113,19 +160,52 @@ function validateActivePlan(client, plan, requestedPlanId, clientId) {
 
 function isSyntheticOrNonClientEntry(entry, activePlanId) {
   if (!entry || typeof entry !== 'object') return true;
-  if (entry.imported === true || entry.historicalImport === true || entry.migrated === true || entry.serverGenerated === true || entry.coachAdmin === true) return true;
+  // Explicit non-client boolean flags
+  if (entry.synthetic === true || entry.isSynthetic === true ||
+      entry.imported === true || entry.isImported === true ||
+      entry.historicalImport === true || entry.legacyImport === true ||
+      entry.migrated === true || entry.serverGenerated === true ||
+      entry.coachAdmin === true || entry.adminCreated === true ||
+      entry.seed === true || entry.demo === true || entry.mock === true) return true;
+
+  // Source / Origin checks
   if (typeof entry.source === 'string' && NON_CLIENT_SOURCES.indexOf(entry.source.trim().toLowerCase()) >= 0) return true;
   if (typeof entry.origin === 'string' && NON_CLIENT_SOURCES.indexOf(entry.origin.trim().toLowerCase()) >= 0) return true;
+
+  // Canonical actor / author evidence (overrides any user-supplied source claim)
   if (typeof entry.actor === 'string' && NON_CLIENT_ACTORS.indexOf(entry.actor.trim().toLowerCase()) >= 0) return true;
   if (typeof entry.actorId === 'string' && NON_CLIENT_ACTORS.indexOf(entry.actorId.trim().toLowerCase()) >= 0) return true;
+  if (typeof entry.createdBy === 'string' && NON_CLIENT_ACTORS.indexOf(entry.createdBy.trim().toLowerCase()) >= 0) return true;
+  if (typeof entry.author === 'string' && NON_CLIENT_ACTORS.indexOf(entry.author.trim().toLowerCase()) >= 0) return true;
+  if (typeof entry.writer === 'string' && NON_CLIENT_ACTORS.indexOf(entry.writer.trim().toLowerCase()) >= 0) return true;
+
+  // Plan scope mismatch
   if (activePlanId && typeof entry.planId === 'string' && entry.planId !== '' && entry.planId !== activePlanId) return true;
   return false;
 }
 
+// Verified server/database authority timestamps (governed by T603 rules, Firestore server timestamps, post-session records or receipts)
+function entryVerifiedWallClockMs(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  return parseWallClockMs(entry.sts) ||
+    parseWallClockMs(entry.at) ||
+    parseWallClockMs(entry.savedAt) ||
+    parseWallClockMs(entry.completedAt) ||
+    parseWallClockMs(entry.calculatedAt) ||
+    parseWallClockMs(entry.ackAt) ||
+    parseWallClockMs(entry._serverTimestamp) ||
+    null;
+}
+
 function entryWallClockMs(entry) {
   if (!entry || typeof entry !== 'object') return null;
-  return parseWallClockMs(entry.sts) || parseWallClockMs(entry.ts) || parseWallClockMs(entry.at) ||
-    parseWallClockMs(entry.completedAt) || parseWallClockMs(entry.calculatedAt) || parseWallClockMs(entry.ackAt) || null;
+  return entryVerifiedWallClockMs(entry) ||
+    parseWallClockMs(entry.ts) ||
+    parseWallClockMs(entry.updatedAt) ||
+    parseWallClockMs(entry.createdAt) ||
+    parseWallClockMs(entry.timestamp) ||
+    parseWallClockMs(entry.time) ||
+    null;
 }
 
 // Removes imported, Coach-administrative, server-generated, or foreign-plan entries before progression materialization.
@@ -182,12 +262,18 @@ function extractRealAppActivity(input) {
   var perPidComparable = {};
   var postSessions = [];
   var hasWallClockTimestamps = false;
+  var hasVerifiedTimestamps = false;
   var lastActivityMs = null;
+  var lastVerifiedActivityMs = null;
 
-  function recordTimestamp(sessionKey, ms) {
+  function recordTimestamp(sessionKey, ms, isVerified) {
     if (ms !== null && Number.isFinite(ms)) {
       hasWallClockTimestamps = true;
       if (lastActivityMs === null || ms > lastActivityMs) lastActivityMs = ms;
+      if (isVerified) {
+        hasVerifiedTimestamps = true;
+        if (lastVerifiedActivityMs === null || ms > lastVerifiedActivityMs) lastVerifiedActivityMs = ms;
+      }
       if (sessionKey && (sessionTimestamps[sessionKey] === undefined || ms > sessionTimestamps[sessionKey])) {
         sessionTimestamps[sessionKey] = ms;
       }
@@ -200,7 +286,8 @@ function extractRealAppActivity(input) {
       ignoredSyntheticCount++;
       return;
     }
-    var ms = entryWallClockMs(e);
+    var vms = entryVerifiedWallClockMs(e);
+    var ms = vms !== null ? vms : entryWallClockMs(e);
     if (planFloorMs !== null && ms !== null && ms < planFloorMs) {
       ignoredSyntheticCount++;
       return;
@@ -219,7 +306,7 @@ function extractRealAppActivity(input) {
       var sk = mSet[1] + '_' + mSet[2];
       realSetsCount++;
       sessionSetCounts[sk] = (sessionSetCounts[sk] || 0) + 1;
-      recordTimestamp(sk, ms);
+      recordTimestamp(sk, ms, vms !== null);
 
       // Comparable exposures for resistance progression (never cardio, never before plan.updatedAt)
       if (inPlanPid && !cardioPidSet.has(pid) && e.exerciseType !== 'cardio') {
@@ -237,7 +324,7 @@ function extractRealAppActivity(input) {
       var psk = mPost[1] + '_' + mPost[2];
       realPostSessionsCount++;
       postSessions.push({ w: Number(mPost[1]), d: Number(mPost[2]), sk: psk, p: e });
-      recordTimestamp(psk, ms);
+      recordTimestamp(psk, ms, vms !== null);
       return;
     }
   });
@@ -268,7 +355,7 @@ function extractRealAppActivity(input) {
     var sKey = w + '_' + d;
     realStartsCount++;
     sessionSetCounts[sKey] = (sessionSetCounts[sKey] || 0) + 1;
-    recordTimestamp(sKey, ms);
+    recordTimestamp(sKey, ms, true);
   });
 
   // Evaluate done_{w}_{d} sessions only when backed by real training sets/starts in that session
@@ -280,10 +367,11 @@ function extractRealAppActivity(input) {
     if (e.autoClosed === true && e.skipped === true) return;
     var dsk = mDone[1] + '_' + mDone[2];
     if (!sessionSetCounts[dsk]) return; // Administrative/empty done_ marker without sets/starts does not count
-    var ms = entryWallClockMs(e);
+    var vms = entryVerifiedWallClockMs(e);
+    var ms = vms !== null ? vms : entryWallClockMs(e);
     if (planFloorMs !== null && ms !== null && ms < planFloorMs) return;
     realDoneSessionsCount++;
-    recordTimestamp(dsk, ms);
+    recordTimestamp(dsk, ms, vms !== null);
   });
 
   // Evaluate athlete consumption receipts
@@ -300,7 +388,7 @@ function extractRealAppActivity(input) {
     }
     if (typeof rc.ackAt === 'string' && rc.ackAt.trim() !== '') {
       realReceiptsCount++;
-      recordTimestamp(null, ms);
+      recordTimestamp(null, ms, true);
     }
   });
 
@@ -317,13 +405,14 @@ function extractRealAppActivity(input) {
   realSessionKeys.sort();
 
   var windowSessionsCount = 0;
-  if (hasWallClockTimestamps) {
+  if (hasVerifiedTimestamps) {
     realSessionKeys.forEach(function(sk) {
       var sms = sessionTimestamps[sk];
       if (sms !== undefined && sms >= windowStartMs && sms <= nowMs + 86400000) windowSessionsCount++;
     });
   } else {
-    windowSessionsCount = realSessionKeys.length;
+    // FAIL-CLOSED: Without verified wall-clock timestamps, NO sessions can be counted toward the rolling window.
+    windowSessionsCount = 0;
   }
 
   var comparableCount = Object.keys(perPidComparable).filter(function(pid) {
@@ -344,7 +433,9 @@ function extractRealAppActivity(input) {
     exercisesWithTwoExposures: comparableCount,
     recentPain: recentPain,
     hasWallClockTimestamps: hasWallClockTimestamps,
+    hasVerifiedTimestamps: hasVerifiedTimestamps,
     lastActivityMs: lastActivityMs,
+    lastVerifiedActivityMs: lastVerifiedActivityMs,
     lastActivityAt: lastActivityMs !== null ? new Date(lastActivityMs).toISOString() : null,
     ignoredSyntheticCount: ignoredSyntheticCount
   };
@@ -442,6 +533,7 @@ function evaluateClientEligibility(input) {
   }
 
   var onboardingMs = parseWallClockMs(client.onboardedAt) || parseWallClockMs(client.createdAt) ||
+    parseWallClockMs(input.clientCreateTime) ||
     parseWallClockMs(plan.activatedAt) || parseWallClockMs(plan.createdAt) || null;
   var isNewClient = client.isNewClient === true ||
     (onboardingMs !== null && onboardingMs <= nowMs && (nowMs - onboardingMs) <= newClientWindowDays * 86400000);
@@ -459,7 +551,8 @@ function evaluateClientEligibility(input) {
     };
   }
 
-  if (activity.hasWallClockTimestamps && activity.lastActivityMs !== null && (nowMs - activity.lastActivityMs) > inactiveDays * 86400000) {
+  // CONFIRMED INACTIVITY: Last activity has verified timestamps and is older than inactive window (default 28 days)
+  if (!isNewClient && activity.hasVerifiedTimestamps && activity.lastVerifiedActivityMs !== null && (nowMs - activity.lastVerifiedActivityMs) > inactiveDays * 86400000) {
     return {
       clientId: clientId, coachId: planCheck.coachId, planId: activePlanId,
       eligible: false, priority: null, priorityRank: null,
@@ -471,18 +564,20 @@ function evaluateClientEligibility(input) {
   }
 
   var priority, category, reason;
-  if (activity.windowSessionsCount >= recurrentSessionsMin) {
+  // FAIL-CLOSED: A client without verifiable timestamps never receives recurrent priority (PRIORITY_A).
+  if (activity.hasVerifiedTimestamps && activity.windowSessionsCount >= recurrentSessionsMin) {
     priority = 'PRIORITY_A';
     category = 'RECURRENT_ACTIVE';
     reason = 'ELIGIBLE_PRIORITY_A';
-  } else if (isNewClient && activity.windowSessionsCount >= 1) {
+  } else if (isNewClient && (activity.windowSessionsCount >= 1 || (activity.hasWallClockTimestamps && activity.lastActivityMs !== null && (nowMs - activity.lastActivityMs) <= newClientWindowDays * 86400000))) {
     priority = 'PRIORITY_B';
     category = 'NEW_CLIENT_ACTIVE';
     reason = 'ELIGIBLE_PRIORITY_B';
   } else {
+    // Occasional active or unverified timeline: NEVER receives recurrent priority by default
     priority = 'PRIORITY_C';
     category = 'OCCASIONAL_ACTIVE';
-    reason = 'ELIGIBLE_PRIORITY_C';
+    reason = activity.hasVerifiedTimestamps ? 'ELIGIBLE_PRIORITY_C' : 'UNVERIFIED_TIMELINE_PRIORITY_C';
   }
 
   var existingRecords = (meso && meso.progressionApplications) || {};

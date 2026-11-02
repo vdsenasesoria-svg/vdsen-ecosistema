@@ -66,7 +66,8 @@ function _webTx(tx) {
     set: function(ref, data, opts) { return opts ? tx.set(ref, data, opts) : tx.set(ref, data); } };
 }
 
-async function materialize(db, clientId, requestedPlanId, clock) {
+async function materialize(db, clientId, requestedPlanId, clock, opts) {
+  opts = opts || {};
   return db.runTransaction(async function(tx) {
     var clientRef = db.collection('clients').doc(clientId);
     var clientSnap = await tx.get(clientRef), client = _data(clientSnap);
@@ -86,6 +87,31 @@ async function materialize(db, clientId, requestedPlanId, clock) {
     var authority = shadow.selectLogAuthority(meso, root, requestedPlanId);
     if (!authority) return { status: 'SOURCE_INVALID' };
     var cleanEntries = eligibility.sanitizeClientEntries(authority.entries || {}, plan, requestedPlanId);
+
+    // Enforce full client eligibility evaluation when requested (sweep and individual trigger)
+    if (opts.enforceActiveEligibility === true) {
+      var clientEval = eligibility.evaluateClientEligibility({
+        clientId: clientId,
+        client: client,
+        clientCreateTime: clientSnap && clientSnap.createTime,
+        plan: plan,
+        requestedPlanId: requestedPlanId,
+        meso: meso,
+        root: root,
+        entries: cleanEntries,
+        receipts: (meso && meso.consumptionReceipts) || null,
+        releaseDoc: { schema: RELEASE_SCHEMA, enabled: true, expiresAt: _now(clock) },
+        coachDoc: coachData,
+        now: _now(clock)
+      });
+      if (!clientEval.eligible) {
+        var ineligStatus = clientEval.reason === 'PLAN_SUSPENDED_OR_REVOKED' || clientEval.reason === 'NEEDS_PLAN_PREP'
+          ? 'SOURCE_INVALID'
+          : (clientEval.reason || 'NOT_ELIGIBLE');
+        return { status: ineligStatus, eligible: false, reason: clientEval.reason, created: [], applied: [], consumed: [] };
+      }
+    }
+
     var existingRecords = (meso && meso.progressionApplications) || {};
     var hasWork = Object.keys(cleanEntries).some(function(k) { return /^progrec_\d+_\d+$/.test(k); }) || Object.keys(existingRecords).length > 0;
     var decisionTimes = {};
@@ -212,8 +238,13 @@ async function consumePending(db, clientId, planId, clock) {
 async function processProgression(input) {
   input = input || {};
   if (!input.enabled) return { status: 'DISARMED', writes: 0 };
-  var m = await materialize(input.db, input.clientId, input.planId, input.clock);
-  if (['PLAN_MISMATCH', 'SOURCE_INVALID', 'OUT_OF_CANARY', 'OUT_OF_ALLOWLIST'].indexOf(m.status) >= 0 || !input.numericApplyEnabled) return Object.assign({}, m, { applied: [], consumed: [] });
+  var m = await materialize(input.db, input.clientId, input.planId, input.clock, input);
+  var terminalStatuses = [
+    'PLAN_MISMATCH', 'SOURCE_INVALID', 'OUT_OF_CANARY', 'OUT_OF_ALLOWLIST',
+    'INACTIVE_CLIENT', 'NO_VERIFIABLE_APP_USAGE', 'AWAITING_FIRST_ACTIVITY',
+    'NEW_CLIENT_AWAITING_FIRST_ACTIVITY', 'NO_TEMPORAL_EVIDENCE', 'SAFETY_HOLD', 'NOT_ELIGIBLE'
+  ];
+  if (terminalStatuses.indexOf(m.status) >= 0 || !input.numericApplyEnabled) return Object.assign({}, m, { applied: [], consumed: [] });
   var hasPending = !(m.summary && m.summary.counts && m.summary.counts.PENDING === 0);
   var applied = hasPending ? await applyPending(input.db, input.clientId, input.planId, input.clock) : [];
   var hasApplied = !(m.summary && m.summary.counts && m.summary.counts.APPLIED === 0) || applied.some(function(a) { return a && a.written; });
