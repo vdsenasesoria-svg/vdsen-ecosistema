@@ -170,23 +170,25 @@ test('T685.E1 cohort selection & execution on emulator: recurrent (PRIORITY_A) a
 test('T685.E2 new client onboarding on emulator: 0 activity -> first real set + start marker (PRIORITY_B) -> second exposure -> PENDING -> APPLIED -> CONSUMED', { timeout: 90000 }, async () => {
   const coach = await signedIn(), athlete = await signedIn();
   const planId = 'plan-' + athlete.uid;
-  const plan = makePlanDoc(athlete.uid, coach.uid, { createdAt: '2026-10-10T00:00:00.000Z', updatedAt: '2026-10-10T00:00:00.000Z' });
-  const clientDoc = { coachId: coach.uid, activePlanId: planId, createdAt: '2026-10-10T00:00:00.000Z', onboardedAt: '2026-10-10T00:00:00.000Z' };
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const plan = makePlanDoc(athlete.uid, coach.uid, { createdAt: new Date(nowMs - 2 * DAY_MS).toISOString(), updatedAt: new Date(nowMs - 2 * DAY_MS).toISOString() });
+  const clientDoc = { coachId: coach.uid, activePlanId: planId, createdAt: new Date(nowMs - 2 * DAY_MS).toISOString(), onboardedAt: new Date(nowMs - 2 * DAY_MS).toISOString() };
 
   await db.doc('coaches/' + coach.uid).set({ role: 'coach', autoApplyCanary: { enabled: true, clientIds: [athlete.uid], prescriptionExerciseIds: [] } });
-  await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: [athlete.uid] });
+  await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(nowMs + 36e5).toISOString(), clientIds: [athlete.uid] });
   await db.doc('clients/' + athlete.uid).set(clientDoc);
   await db.doc('plans/' + planId).set(plan);
   await db.doc('logs/' + athlete.uid).set({ planId, entries: {}, updatedAt: 1 });
   await db.doc('logs/' + athlete.uid + '/mesos/' + planId).set({ planId, entries: {}, updatedAt: 1 });
 
   // Step 1: Account just created -> awaiting first activity
-  let ev = eligibility.evaluateClientEligibility({ clientId: athlete.uid, client: clientDoc, plan, entries: {}, now: T_NOW_ISO });
+  let ev = eligibility.evaluateClientEligibility({ clientId: athlete.uid, client: clientDoc, plan, entries: {}, now: nowIso });
   assert.equal(ev.eligible, false);
   assert.equal(ev.reason, 'NEW_CLIENT_AWAITING_FIRST_ACTIVITY');
 
   // Step 2: Athlete logs first real working set via authenticated client SDK + immutable start marker
-  const t1 = T_NOW - 3 * DAY_MS;
+  const t1 = nowMs - 5000;
   const firstEntries = {};
   [0, 1, 2].forEach(s => {
     firstEntries['log_1_0_0_s' + s] = { done: true, carga: '100', reps: '10', unit: 'KG', rir: 1, rir_real: 3, prescriptionExerciseId: PID, ts: t1 + s * 1000 };
@@ -198,12 +200,12 @@ test('T685.E2 new client onboarding on emulator: 0 activity -> first real set + 
   const startsSnap1 = await db.collection('logs').doc(athlete.uid).collection('starts').get();
   const startsMap1 = {};
   startsSnap1.docs.forEach(d => { startsMap1[d.id] = d.data(); });
-  ev = eligibility.evaluateClientEligibility({ clientId: athlete.uid, client: clientDoc, plan, entries: firstEntries, starts: startsMap1, now: T_NOW_ISO });
+  ev = eligibility.evaluateClientEligibility({ clientId: athlete.uid, client: clientDoc, plan, entries: firstEntries, starts: startsMap1, now: nowIso });
   assert.equal(ev.eligible, true);
   assert.equal(ev.priority, 'PRIORITY_B');
 
   // Step 3: Athlete logs second session -> becomes PRIORITY_A, motor materializes & applies -> athlete acknowledges -> server consumes
-  const fullEntries = makeRecurrentLogs(t1, T_NOW - 1 * DAY_MS);
+  const fullEntries = makeRecurrentLogs(t1, nowMs);
   await setDoc(doc(athlete.db, 'logs', athlete.uid, 'mesos', planId), { planId, entries: fullEntries, updatedAt: 3 }, { merge: true });
   await setDoc(doc(athlete.db, 'logs', athlete.uid), { planId, entries: fullEntries, updatedAt: 3 }, { merge: true });
   await setDoc(doc(athlete.db, 'logs', athlete.uid, 'starts', planId + '_1_2_0'), { planId, week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: serverTimestamp() });
@@ -211,12 +213,12 @@ test('T685.E2 new client onboarding on emulator: 0 activity -> first real set + 
   const startsSnap2 = await db.collection('logs').doc(athlete.uid).collection('starts').get();
   const startsMap2 = {};
   startsSnap2.docs.forEach(d => { startsMap2[d.id] = d.data(); });
-  ev = eligibility.evaluateClientEligibility({ clientId: athlete.uid, client: clientDoc, plan, entries: fullEntries, starts: startsMap2, now: T_NOW_ISO });
+  ev = eligibility.evaluateClientEligibility({ clientId: athlete.uid, client: clientDoc, plan, entries: fullEntries, starts: startsMap2, now: nowIso });
   assert.equal(ev.eligible, true);
   assert.equal(ev.priority, 'PRIORITY_A');
   assert.equal(ev.readyForMotorProgression, true);
 
-  const appliedOut = await executor.processProgression({ db, clientId: athlete.uid, planId, enabled: true, numericApplyEnabled: true, clock: () => new Date().toISOString() });
+  const appliedOut = await executor.processProgression({ db, clientId: athlete.uid, planId, enabled: true, numericApplyEnabled: true, clock: () => nowIso });
   assert.equal(appliedOut.status, 'MATERIALIZED');
   assert.deepEqual(appliedOut.applied.map(x => [x.written, x.reason]), [[true, null]]);
 
@@ -228,8 +230,8 @@ test('T685.E2 new client onboarding on emulator: 0 activity -> first real set + 
 
   // Athlete logs first set of target exposure (week 2, day 0) and writes receipt
   const targetKey = 'log_' + ovl.target.week + '_' + ovl.target.dayIndex + '_0_s0';
-  await setDoc(doc(athlete.db, 'logs', athlete.uid, 'mesos', planId), { planId, entries: { [targetKey]: { done: true, carga: '100', reps: '12', unit: 'KG', rir: 1, rir_real: 2, prescriptionExerciseId: PID, ts: T_NOW } } }, { merge: true });
-  await setDoc(doc(athlete.db, 'logs', athlete.uid), { planId, entries: { [targetKey]: { done: true, carga: '100', reps: '12', unit: 'KG', rir: 1, rir_real: 2, prescriptionExerciseId: PID, ts: T_NOW } } }, { merge: true });
+  await setDoc(doc(athlete.db, 'logs', athlete.uid, 'mesos', planId), { planId, entries: { [targetKey]: { done: true, carga: '100', reps: '12', unit: 'KG', rir: 1, rir_real: 2, prescriptionExerciseId: PID, ts: nowMs } } }, { merge: true });
+  await setDoc(doc(athlete.db, 'logs', athlete.uid), { planId, entries: { [targetKey]: { done: true, carga: '100', reps: '12', unit: 'KG', rir: 1, rir_real: 2, prescriptionExerciseId: PID, ts: nowMs } } }, { merge: true });
 
   await setDoc(doc(athlete.db, 'logs', athlete.uid, 'starts', planId + '_' + ovl.target.week + '_' + ovl.target.dayIndex + '_0'),
     { planId, week: ovl.target.week, dayIndex: ovl.target.dayIndex, exerciseIndex: 0, setKey: targetKey, at: serverTimestamp() });
@@ -237,12 +239,12 @@ test('T685.E2 new client onboarding on emulator: 0 activity -> first real set + 
   const ack = await runTransaction(athlete.db, tx => consumer.recordConsumptionReceiptTransaction(
     tx,
     { meso: doc(athlete.db, 'logs', athlete.uid, 'mesos', planId), root: doc(athlete.db, 'logs', athlete.uid) },
-    { recordKey: rec.key, clientId: athlete.uid, now: T_NOW_ISO, shown: { provenance: 'CANONICAL_OVERLAY', overlayKey: ovl.key, dimension: ovl.dimension, appliedValue: ovl.appliedValue } },
+    { recordKey: rec.key, clientId: athlete.uid, now: nowIso, shown: { provenance: 'CANONICAL_OVERLAY', overlayKey: ovl.key, dimension: ovl.dimension, appliedValue: ovl.appliedValue } },
     { isCurrent: () => true, canonicalOverlayRead: true }
   ));
   assert.equal(ack.written, true);
 
-  const consumedOut = await executor.processProgression({ db, clientId: athlete.uid, planId, enabled: true, numericApplyEnabled: true, clock: () => new Date().toISOString() });
+  const consumedOut = await executor.processProgression({ db, clientId: athlete.uid, planId, enabled: true, numericApplyEnabled: true, clock: () => nowIso });
   assert.deepEqual(consumedOut.consumed.map(x => [x.written, x.reason]), [[true, null]]);
   const mesoFinal = (await db.doc('logs/' + athlete.uid + '/mesos/' + planId).get()).data();
   assert.equal(mesoFinal.progressionApplications[rec.key].state, 'CONSUMED');
