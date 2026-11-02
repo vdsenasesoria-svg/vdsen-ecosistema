@@ -57,6 +57,14 @@ async function fixture(o) {
   await db.doc('plans/' + planId).set(planDoc(athlete.uid, coach.uid, o.rirTarget, o.exerciseId));
   await db.doc('logs/' + athlete.uid).set({ planId, entries: logs });
   await db.doc('logs/' + athlete.uid + '/mesos/' + planId).set({ planId, entries: logs });
+  // T685.2: accredited App Cliente start markers for the executed sessions
+  const nowIso = new Date().toISOString();
+  await db.doc('logs/' + athlete.uid + '/starts/' + planId + '_1_0_0').set({
+    planId, week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: nowIso
+  });
+  await db.doc('logs/' + athlete.uid + '/starts/' + planId + '_1_2_0').set({
+    planId, week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: nowIso
+  });
   return { athlete, coach, planId, logs };
 }
 const run = (f, o) => executor.processProgression(Object.assign({ db, clientId: f.athlete.uid, planId: f.planId, enabled: true, numericApplyEnabled: true,

@@ -112,7 +112,7 @@ test('T685.E1 cohort selection & execution on emulator: recurrent (PRIORITY_A) a
   await db.doc('releaseControl/autonomousProgression').set({
     schema: 'vdsen-autonomous-release-v1',
     enabled: true,
-    expiresAt: '2026-10-20T00:00:00.000Z',
+    expiresAt: new Date(Date.now() + 36e5).toISOString(),
     clientIds: [recurrent.uid, newIdle.uid, noPlan.uid, importedOnly.uid, inactive.uid]
   });
 
@@ -122,6 +122,12 @@ test('T685.E1 cohort selection & execution on emulator: recurrent (PRIORITY_A) a
   await db.doc('plans/' + pRec).set(makePlanDoc(recurrent.uid, coach.uid));
   await db.doc('logs/' + recurrent.uid).set({ planId: pRec, entries: recLogs, updatedAt: 2 });
   await db.doc('logs/' + recurrent.uid + '/mesos/' + pRec).set({ planId: pRec, entries: recLogs, updatedAt: 2 });
+  await db.doc('logs/' + recurrent.uid + '/starts/' + pRec + '_1_0_0').set({
+    planId: pRec, week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: new Date(T_NOW - 4 * DAY_MS).toISOString()
+  });
+  await db.doc('logs/' + recurrent.uid + '/starts/' + pRec + '_1_2_0').set({
+    planId: pRec, week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: new Date(T_NOW - 2 * DAY_MS).toISOString()
+  });
 
   // 2) Brand-new client with active plan but 0 training interactions
   await db.doc('clients/' + newIdle.uid).set({ coachId: coach.uid, activePlanId: pNew, createdAt: '2026-10-14T00:00:00.000Z' });
@@ -189,7 +195,10 @@ test('T685.E2 new client onboarding on emulator: 0 activity -> first real set + 
   await setDoc(doc(athlete.db, 'logs', athlete.uid), { planId, entries: firstEntries, updatedAt: 2 }, { merge: true });
   await setDoc(doc(athlete.db, 'logs', athlete.uid, 'starts', planId + '_1_0_0'), { planId, week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: serverTimestamp() });
 
-  ev = eligibility.evaluateClientEligibility({ clientId: athlete.uid, client: clientDoc, plan, entries: firstEntries, now: T_NOW_ISO });
+  const startsSnap1 = await db.collection('logs').doc(athlete.uid).collection('starts').get();
+  const startsMap1 = {};
+  startsSnap1.docs.forEach(d => { startsMap1[d.id] = d.data(); });
+  ev = eligibility.evaluateClientEligibility({ clientId: athlete.uid, client: clientDoc, plan, entries: firstEntries, starts: startsMap1, now: T_NOW_ISO });
   assert.equal(ev.eligible, true);
   assert.equal(ev.priority, 'PRIORITY_B');
 
@@ -197,8 +206,12 @@ test('T685.E2 new client onboarding on emulator: 0 activity -> first real set + 
   const fullEntries = makeRecurrentLogs(t1, T_NOW - 1 * DAY_MS);
   await setDoc(doc(athlete.db, 'logs', athlete.uid, 'mesos', planId), { planId, entries: fullEntries, updatedAt: 3 }, { merge: true });
   await setDoc(doc(athlete.db, 'logs', athlete.uid), { planId, entries: fullEntries, updatedAt: 3 }, { merge: true });
+  await setDoc(doc(athlete.db, 'logs', athlete.uid, 'starts', planId + '_1_2_0'), { planId, week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: serverTimestamp() });
 
-  ev = eligibility.evaluateClientEligibility({ clientId: athlete.uid, client: clientDoc, plan, entries: fullEntries, now: T_NOW_ISO });
+  const startsSnap2 = await db.collection('logs').doc(athlete.uid).collection('starts').get();
+  const startsMap2 = {};
+  startsSnap2.docs.forEach(d => { startsMap2[d.id] = d.data(); });
+  ev = eligibility.evaluateClientEligibility({ clientId: athlete.uid, client: clientDoc, plan, entries: fullEntries, starts: startsMap2, now: T_NOW_ISO });
   assert.equal(ev.eligible, true);
   assert.equal(ev.priority, 'PRIORITY_A');
   assert.equal(ev.readyForMotorProgression, true);
@@ -242,7 +255,7 @@ test('T685.E3 plan suspension, draft status, or client deactivation immediately 
   const logs = makeRecurrentLogs();
 
   await db.doc('coaches/' + coach.uid).set({ role: 'coach', autoApplyCanary: { enabled: true, clientIds: [athlete.uid], prescriptionExerciseIds: [] } });
-  await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: '2026-10-20T00:00:00.000Z', clientIds: [athlete.uid] });
+  await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: [athlete.uid] });
   await db.doc('clients/' + athlete.uid).set({ coachId: coach.uid, activePlanId: planId });
   await db.doc('plans/' + planId).set(makePlanDoc(athlete.uid, coach.uid, { status: 'suspended' }));
   await db.doc('logs/' + athlete.uid).set({ planId, entries: logs, updatedAt: 2 });
