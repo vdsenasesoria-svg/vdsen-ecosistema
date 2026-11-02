@@ -218,7 +218,7 @@ test('T685.E2 new client onboarding on emulator: 0 activity -> first real set + 
   assert.equal(ev.priority, 'PRIORITY_A');
   assert.equal(ev.readyForMotorProgression, true);
 
-  const appliedOut = await executor.processProgression({ db, clientId: athlete.uid, planId, enabled: true, numericApplyEnabled: true, clock: () => nowIso });
+  const appliedOut = await executor.processProgression({ db, clientId: athlete.uid, planId, enabled: true, numericApplyEnabled: true, clock: () => new Date().toISOString() });
   assert.equal(appliedOut.status, 'MATERIALIZED');
   assert.deepEqual(appliedOut.applied.map(x => [x.written, x.reason]), [[true, null]]);
 
@@ -230,8 +230,11 @@ test('T685.E2 new client onboarding on emulator: 0 activity -> first real set + 
 
   // Athlete logs first set of target exposure (week 2, day 0) and writes receipt
   const targetKey = 'log_' + ovl.target.week + '_' + ovl.target.dayIndex + '_0_s0';
-  await setDoc(doc(athlete.db, 'logs', athlete.uid, 'mesos', planId), { planId, entries: { [targetKey]: { done: true, carga: '100', reps: '12', unit: 'KG', rir: 1, rir_real: 2, prescriptionExerciseId: PID, ts: nowMs } } }, { merge: true });
-  await setDoc(doc(athlete.db, 'logs', athlete.uid), { planId, entries: { [targetKey]: { done: true, carga: '100', reps: '12', unit: 'KG', rir: 1, rir_real: 2, prescriptionExerciseId: PID, ts: nowMs } } }, { merge: true });
+  const targetEntries = Object.assign({}, fullEntries, {
+    [targetKey]: { done: true, carga: '100', reps: '12', unit: 'KG', rir: 1, rir_real: 2, prescriptionExerciseId: PID, ts: Date.now() }
+  });
+  await setDoc(doc(athlete.db, 'logs', athlete.uid, 'mesos', planId), { planId, entries: targetEntries, updatedAt: 4 }, { merge: true });
+  await setDoc(doc(athlete.db, 'logs', athlete.uid), { planId, entries: targetEntries, updatedAt: 4 }, { merge: true });
 
   await setDoc(doc(athlete.db, 'logs', athlete.uid, 'starts', planId + '_' + ovl.target.week + '_' + ovl.target.dayIndex + '_0'),
     { planId, week: ovl.target.week, dayIndex: ovl.target.dayIndex, exerciseIndex: 0, setKey: targetKey, at: serverTimestamp() });
@@ -239,12 +242,12 @@ test('T685.E2 new client onboarding on emulator: 0 activity -> first real set + 
   const ack = await runTransaction(athlete.db, tx => consumer.recordConsumptionReceiptTransaction(
     tx,
     { meso: doc(athlete.db, 'logs', athlete.uid, 'mesos', planId), root: doc(athlete.db, 'logs', athlete.uid) },
-    { recordKey: rec.key, clientId: athlete.uid, now: nowIso, shown: { provenance: 'CANONICAL_OVERLAY', overlayKey: ovl.key, dimension: ovl.dimension, appliedValue: ovl.appliedValue } },
+    { recordKey: rec.key, clientId: athlete.uid, now: new Date().toISOString(), shown: { provenance: 'CANONICAL_OVERLAY', overlayKey: ovl.key, dimension: ovl.dimension, appliedValue: ovl.appliedValue } },
     { isCurrent: () => true, canonicalOverlayRead: true }
   ));
   assert.equal(ack.written, true);
 
-  const consumedOut = await executor.processProgression({ db, clientId: athlete.uid, planId, enabled: true, numericApplyEnabled: true, clock: () => nowIso });
+  const consumedOut = await executor.processProgression({ db, clientId: athlete.uid, planId, enabled: true, numericApplyEnabled: true, clock: () => new Date().toISOString() });
   assert.deepEqual(consumedOut.consumed.map(x => [x.written, x.reason]), [[true, null]]);
   const mesoFinal = (await db.doc('logs/' + athlete.uid + '/mesos/' + planId).get()).data();
   assert.equal(mesoFinal.progressionApplications[rec.key].state, 'CONSUMED');

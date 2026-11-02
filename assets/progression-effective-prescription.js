@@ -20,7 +20,10 @@
     if (req) { try { return req('./progression-magnitude-policy.js'); } catch (e) { /* fall through */ } }
     return root && root.VDSEN_MAGNITUDE_POLICY || null;
   }
-  function _time(v) { var t = typeof v === 'string' ? Date.parse(v) : NaN; return Number.isFinite(t) ? t : null; }
+  function _time(v) {
+    if (typeof v === 'string') { var t = Date.parse(v); return Number.isFinite(t) ? t : null; }
+    return _ms(v);
+  }
   function _num(v) { var n = typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN); return Number.isFinite(n) ? n : null; }
   function _kind(x) { var p = _policy(); return p && p.explicitSetKind ? p.explicitSetKind(x) : null; }
 
