@@ -146,9 +146,10 @@ function makeRecurrentStarts(planId, t1, t2) {
   return starts;
 }
 
-function makeFakeDb(seedDocs, failingClients) {
+function makeFakeDb(seedDocs, failingClients, failingStartsClients) {
   var docs = new Map(Object.entries(seedDocs || {}));
   var failSet = new Set(failingClients || []);
+  var failStartsSet = new Set(failingStartsClients || []);
   var stats = { gets: 0, queries: 0, sets: 0, txRuns: 0, pathsRead: [] };
 
   function makeRef(docPath) {
@@ -177,30 +178,67 @@ function makeFakeDb(seedDocs, failingClients) {
   }
 
   function makeCollection(colPath) {
+    function makeQuery(filterFn, orderField, orderDir, limitCount) {
+      var queryObj = {
+        where: function(field, op, expected) {
+          var newFilter = function(v) {
+            if (filterFn && !filterFn(v)) return false;
+            var actual = field.split('.').reduce(function(o, p) { return o ? o[p] : undefined; }, v);
+            if (op === '==') return actual === expected;
+            return true;
+          };
+          return makeQuery(newFilter, orderField, orderDir, limitCount);
+        },
+        orderBy: function(field, dir) {
+          return makeQuery(filterFn, field, dir || 'asc', limitCount);
+        },
+        limit: function(n) {
+          return makeQuery(filterFn, orderField, orderDir, n);
+        },
+        get: async function() {
+          stats.queries++;
+          stats.pathsRead.push('QUERY:' + colPath + (orderField ? ':ORDER:' + orderField : ''));
+          for (var fc of failSet) {
+            if (colPath.indexOf(fc) >= 0) throw new Error('SIMULATED_DB_FAILURE_' + fc);
+          }
+          for (var fsc of failStartsSet) {
+            if (colPath.indexOf(fsc) >= 0 && colPath.indexOf('starts') >= 0) throw new Error('SIMULATED_STARTS_FAILURE_' + fsc);
+          }
+          var out = [];
+          for (let [k, v] of docs.entries()) {
+            if (k.indexOf(colPath + '/') === 0 && k.slice(colPath.length + 1).indexOf('/') < 0) {
+              if (!filterFn || filterFn(v)) {
+                let snapCopy = structuredClone(v);
+                out.push({ id: k.split('/').pop(), data: function() { return structuredClone(snapCopy); }, _raw: v });
+              }
+            }
+          }
+          if (orderField) {
+            out.sort(function(a, b) {
+              var valA = a._raw && a._raw[orderField];
+              var valB = b._raw && b._raw[orderField];
+              var msA = typeof valA === 'string' ? Date.parse(valA) : (typeof valA === 'number' ? valA : 0);
+              var msB = typeof valB === 'string' ? Date.parse(valB) : (typeof valB === 'number' ? valB : 0);
+              return orderDir === 'desc' ? msB - msA : msA - msB;
+            });
+          }
+          if (typeof limitCount === 'number' && limitCount > 0) {
+            out = out.slice(0, limitCount);
+          }
+          return { docs: out };
+        }
+      };
+      return queryObj;
+    }
+
+    var baseQuery = makeQuery(null, null, null, null);
     return {
       path: colPath,
       doc: function(id) { return makeRef(colPath + '/' + id); },
-      where: function(field, op, expected) {
-        var queryObj = {
-          limit: function() { return queryObj; },
-          get: async function() {
-            stats.queries++;
-            stats.pathsRead.push('QUERY:' + colPath + ':' + field);
-            var out = [];
-            for (let [k, v] of docs.entries()) {
-              if (k.indexOf(colPath + '/') === 0 && k.slice(colPath.length + 1).indexOf('/') < 0) {
-                var actual = field.split('.').reduce(function(o, p) { return o ? o[p] : undefined; }, v);
-                if (op === '==' && actual === expected) {
-                  let snapCopy = structuredClone(v);
-                  out.push({ id: k.split('/').pop(), data: function() { return structuredClone(snapCopy); } });
-                }
-              }
-            }
-            return { docs: out };
-          }
-        };
-        return queryObj;
-      }
+      where: baseQuery.where,
+      orderBy: baseQuery.orderBy,
+      limit: baseQuery.limit,
+      get: baseQuery.get
     };
   }
 
@@ -1122,4 +1160,126 @@ test('T685.2: Cierre de autoridad temporal y elegibilidad real (10 pruebas espec
   var finalMeso10 = db10.docs.get('logs/' + uid10 + '/mesos/' + p10);
   assert.equal(finalMeso10.progressionApplications[rec10.key].state, 'CONSUMED', 'Prueba 10: record state is CONSUMED');
   assert.equal(finalMeso10.nextExposureOverlays[ovl10.key].status, 'CONSUMED', 'Prueba 10: overlay state is CONSUMED');
+});
+
+test('T685.3: Cierre final de elegibilidad antes del merge (3 pruebas focalizadas)', async () => {
+  // PRUEBA 1 (Corrección 1 - Selección temporal de marcadores):
+  // Cliente con 60 marcadores históricos antiguos (>60 días) y 2 sesiones recientes válidas.
+  // Con orderBy('at', 'desc').limit(50), las sesiones recientes se recuperan primero y no quedan desplazadas por históricos.
+  var uidP1 = 'client-p1', planP1 = 'plan-active-1';
+  var seedDocsP1 = {
+    ['clients/' + uidP1]: { coachId: 'coach-1', activePlanId: planP1, createdAt: '2026-01-01T00:00:00.000Z' },
+    'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: '2026-10-20T00:00:00.000Z', clientIds: [uidP1] },
+    'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: [uidP1], prescriptionExerciseIds: [] } },
+    ['plans/' + planP1]: makePlan({ clientId: uidP1, id: planP1 }),
+    ['logs/' + uidP1]: { planId: planP1, entries: {}, updatedAt: 1 },
+    ['logs/' + uidP1 + '/mesos/' + planP1]: { planId: planP1, entries: {}, updatedAt: 1 }
+  };
+  var entriesP1 = {};
+  for (var hi = 0; hi < 60; hi++) {
+    var histAt = NOW_MS - (60 + hi) * DAY_MS;
+    var histKey = 'log_0_0_0_s' + hi;
+    entriesP1[histKey] = { done: true, carga: '80', reps: '10', unit: 'KG', rir: 2, rir_real: 2, prescriptionExerciseId: 'pid-press', ts: histAt };
+    seedDocsP1['logs/' + uidP1 + '/starts/' + planP1 + '_0_0_' + hi] = {
+      planId: planP1, week: 0, dayIndex: 0, exerciseIndex: hi, setKey: histKey, at: new Date(histAt).toISOString()
+    };
+  }
+  var tRecent1 = NOW_MS - 4 * DAY_MS;
+  var tRecent2 = NOW_MS - 2 * DAY_MS;
+  entriesP1['log_1_0_0_s0'] = { done: true, carga: '100', reps: '10', unit: 'KG', rir: 2, rir_real: 2, prescriptionExerciseId: 'pid-press', ts: tRecent1 };
+  entriesP1['log_1_2_0_s0'] = { done: true, carga: '100', reps: '10', unit: 'KG', rir: 2, rir_real: 2, prescriptionExerciseId: 'pid-press', ts: tRecent2 };
+  entriesP1.progrec_1_2 = {
+    calculatedAt: new Date(tRecent2 + 10000).toISOString(),
+    recommendations: [
+      {
+        prescriptionExerciseId: 'pid-press',
+        exerciseId: 'ex-press',
+        exerciseName: 'Press banca',
+        action: 'increase_reps',
+        newReps: 11
+      }
+    ]
+  };
+  seedDocsP1['logs/' + uidP1 + '/starts/' + planP1 + '_1_0_0'] = {
+    planId: planP1, week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: new Date(tRecent1).toISOString()
+  };
+  seedDocsP1['logs/' + uidP1 + '/starts/' + planP1 + '_1_2_0'] = {
+    planId: planP1, week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: new Date(tRecent2).toISOString()
+  };
+  seedDocsP1['logs/' + uidP1].entries = entriesP1;
+  seedDocsP1['logs/' + uidP1 + '/mesos/' + planP1].entries = entriesP1;
+
+  var dbP1 = makeFakeDb(seedDocsP1);
+  var sweepResP1 = await sweep.runSweep({ db: dbP1, enabled: true, numericApplyEnabled: false, clock: () => NOW_ISO });
+  assert.equal(sweepResP1.status, 'SWEPT', 'Prueba 1: sweep completado');
+  assert.equal(sweepResP1.processed, 1, 'Prueba 1: 1 cliente procesado');
+  assert.equal(sweepResP1.results[0].status, 'MATERIALIZED', 'Prueba 1: cliente activo con >50 históricos se materializó correctamente');
+
+  // PRUEBA 2 (Corrección 2 - Consistencia transaccional y fail-closed ante errores de lectura):
+  var uidFail = 'client-fail-starts';
+  var seedDocsFail = {
+    ['clients/' + uidFail]: { coachId: 'coach-1', activePlanId: planP1, createdAt: '2026-01-01T00:00:00.000Z' },
+    'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: '2026-10-20T00:00:00.000Z', clientIds: [uidFail] },
+    'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: [uidFail], prescriptionExerciseIds: [] } },
+    ['plans/' + planP1]: makePlan({ clientId: uidFail, id: planP1 }),
+    ['logs/' + uidFail]: { planId: planP1, entries: entriesP1, updatedAt: 1 },
+    ['logs/' + uidFail + '/mesos/' + planP1]: { planId: planP1, entries: entriesP1, updatedAt: 1 }
+  };
+  var dbFail = makeFakeDb(seedDocsFail, [], [uidFail]);
+
+  // A) Ejecución transaccional individual (processProgression)
+  var stepFail = await executor.processProgression({
+    db: dbFail, clientId: uidFail, planId: planP1, enabled: true, numericApplyEnabled: true,
+    clock: () => NOW_ISO, enforceActiveEligibility: true
+  });
+  assert.equal(stepFail.status, 'READ_FAILED', 'Prueba 2: status es READ_FAILED');
+  assert.equal(stepFail.reason, 'STARTS_READ_FAILED', 'Prueba 2: reason es STARTS_READ_FAILED (no se disfraza de inactividad)');
+  assert.equal(stepFail.eligible, false, 'Prueba 2: eligible es false');
+  assert.equal(stepFail.applied.length, 0, 'Prueba 2: 0 applied');
+  assert.equal(stepFail.consumed.length, 0, 'Prueba 2: 0 consumed');
+
+  // B) Ejecución en sweep
+  var sweepFail = await sweep.runSweep({ db: dbFail, enabled: true, numericApplyEnabled: false, clock: () => NOW_ISO });
+  assert.equal(sweepFail.results[0].status, 'STARTS_READ_FAILED', 'Prueba 2 Sweep: status es STARTS_READ_FAILED');
+  assert.notEqual(sweepFail.results[0].status, 'INACTIVE_CLIENT', 'Prueba 2 Sweep: no se enmascara como INACTIVE_CLIENT');
+  assert.notEqual(sweepFail.results[0].status, 'NEEDS_VERIFIED_ACTIVITY', 'Prueba 2 Sweep: no se enmascara como NEEDS_VERIFIED_ACTIVITY');
+
+  // PRUEBA 3 (Corrección 3 - Rechazo estricto de marcadores residuales e inválidos):
+  var validEntries = {
+    log_1_0_0_s0: { done: true, carga: '100', reps: '10', unit: 'KG', rir: 2, rir_real: 2, prescriptionExerciseId: 'pid-press', ts: tRecent1 }
+  };
+  var validMarker = {
+    planId: planP1, week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: new Date(tRecent1).toISOString()
+  };
+
+  // 3a: Marcador con ID que no coincide exactamente con planId_w_d_e
+  var resIdMismatch = eligibility.validateStartMarker('plan-active-1_1_0_999', validMarker, planP1, validEntries);
+  assert.equal(resIdMismatch.valid, false, 'Prueba 3a: ID mismatch rechazado');
+  assert.equal(resIdMismatch.reason, 'ID_MISMATCH', 'Prueba 3a: reason ID_MISMATCH');
+
+  // 3b: Marcador residual sin working set referenciado en entries (serie eliminada por usuario)
+  var resResidual = eligibility.validateStartMarker('plan-active-1_1_0_0', validMarker, planP1, {});
+  assert.equal(resResidual.valid, false, 'Prueba 3b: marcador residual sin serie rechazado');
+  assert.equal(resResidual.reason, 'WORKING_SET_NOT_FOUND', 'Prueba 3b: reason WORKING_SET_NOT_FOUND');
+
+  // 3c: Marcador con serie referenciada pero no completada (done: false)
+  var notDoneEntries = {
+    log_1_0_0_s0: { done: false, carga: '100', reps: '10', unit: 'KG', rir: 2, rir_real: 2, prescriptionExerciseId: 'pid-press', ts: tRecent1 }
+  };
+  var resNotDone = eligibility.validateStartMarker('plan-active-1_1_0_0', validMarker, planP1, notDoneEntries);
+  assert.equal(resNotDone.valid, false, 'Prueba 3c: serie no completada rechazada');
+  assert.equal(resNotDone.reason, 'WORKING_SET_NOT_DONE', 'Prueba 3c: reason WORKING_SET_NOT_DONE');
+
+  // 3d: Marcador con serie referenciada sintética / no-cliente
+  var syntheticEntries = {
+    log_1_0_0_s0: { done: true, synthetic: true, carga: '100', reps: '10', unit: 'KG', rir: 2, rir_real: 2, prescriptionExerciseId: 'pid-press', ts: tRecent1 }
+  };
+  var resSynthetic = eligibility.validateStartMarker('plan-active-1_1_0_0', validMarker, planP1, syntheticEntries);
+  assert.equal(resSynthetic.valid, false, 'Prueba 3d: serie sintética rechazada');
+  assert.equal(resSynthetic.reason, 'SYNTHETIC_OR_NON_CLIENT', 'Prueba 3d: reason SYNTHETIC_OR_NON_CLIENT');
+
+  // 3e: Marcador canónico válido con serie real completada
+  var resOk = eligibility.validateStartMarker('plan-active-1_1_0_0', validMarker, planP1, validEntries);
+  assert.equal(resOk.valid, true, 'Prueba 3e: marcador canónico válido aceptado');
+  assert.equal(resOk.sessionKey, '1_0', 'Prueba 3e: sessionKey 1_0');
 });

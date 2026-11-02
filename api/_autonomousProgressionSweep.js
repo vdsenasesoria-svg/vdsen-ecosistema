@@ -65,19 +65,27 @@ async function runSweep(input) {
       var receipts = (meso && meso.consumptionReceipts) || null;
       var cleanEntries = eligibility.sanitizeClientEntries(rawEntries, plan, client.activePlanId);
 
-      // Bounded read of active plan start markers (immutable request.time authority)
+      // Bounded read of start markers ordered chronologically (immutable request.time authority)
       var starts = {};
       try {
         var startsCol = input.db.collection('logs').doc(cid).collection('starts');
-        var sq = startsCol.where('planId', '==', client.activePlanId);
-        if (typeof sq.limit === 'function') sq = sq.limit(50);
+        var sq = startsCol.orderBy('at', 'desc').limit(50);
         var startsSnap = await sq.get();
         if (startsSnap && Array.isArray(startsSnap.docs)) {
           startsSnap.docs.forEach(function(d) {
             starts[d.id] = typeof d.data === 'function' ? d.data() : d.data;
           });
         }
-      } catch (_) {}
+      } catch (readErr) {
+        evaluations.push({
+          clientId: cid,
+          eligible: false,
+          status: 'READ_FAILED',
+          reason: 'STARTS_READ_FAILED',
+          error: readErr && readErr.message
+        });
+        continue;
+      }
 
       var ev = eligibility.evaluateClientEligibility({
         clientId: cid,

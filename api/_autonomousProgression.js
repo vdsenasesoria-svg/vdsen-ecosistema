@@ -94,15 +94,24 @@ async function materialize(db, clientId, requestedPlanId, clock, opts) {
       if (Object.keys(starts).length === 0) {
         try {
           var startsCol = db.collection('logs').doc(clientId).collection('starts');
-          var sq = startsCol.where('planId', '==', requestedPlanId);
-          if (typeof sq.limit === 'function') sq = sq.limit(50);
-          var startsSnap = typeof tx.get === 'function' && !tx._fake ? await tx.get(sq).catch(function() { return sq.get(); }) : await sq.get();
+          var sq = startsCol.orderBy('at', 'desc').limit(50);
+          var startsSnap = await tx.get(sq);
           if (startsSnap && Array.isArray(startsSnap.docs)) {
             startsSnap.docs.forEach(function(d) {
               starts[d.id] = typeof d.data === 'function' ? d.data() : d.data;
             });
           }
-        } catch (_) {}
+        } catch (readErr) {
+          return {
+            status: 'READ_FAILED',
+            eligible: false,
+            reason: 'STARTS_READ_FAILED',
+            error: readErr && readErr.message,
+            created: [],
+            applied: [],
+            consumed: []
+          };
+        }
       }
 
       var clientEval = eligibility.evaluateClientEligibility({
@@ -259,7 +268,8 @@ async function processProgression(input) {
     'PLAN_MISMATCH', 'SOURCE_INVALID', 'OUT_OF_CANARY', 'OUT_OF_ALLOWLIST',
     'INACTIVE_CLIENT', 'NO_VERIFIABLE_APP_USAGE', 'AWAITING_FIRST_ACTIVITY',
     'NEW_CLIENT_AWAITING_FIRST_ACTIVITY', 'NEEDS_VERIFIED_ACTIVITY',
-    'NO_TEMPORAL_EVIDENCE', 'SAFETY_HOLD', 'NOT_ELIGIBLE'
+    'NO_TEMPORAL_EVIDENCE', 'SAFETY_HOLD', 'NOT_ELIGIBLE',
+    'READ_FAILED', 'STARTS_READ_FAILED'
   ];
   if (terminalStatuses.indexOf(m.status) >= 0 || !input.numericApplyEnabled) return Object.assign({}, m, { applied: [], consumed: [] });
   var hasPending = !(m.summary && m.summary.counts && m.summary.counts.PENDING === 0);

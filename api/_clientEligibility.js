@@ -208,17 +208,12 @@ function validateStartMarker(skId, st, activePlanId, entries) {
   }
   if (isSyntheticOrNonClientEntry(st, activePlanId)) return { valid: false, reason: 'SYNTHETIC_OR_NON_CLIENT' };
   var w = Number(st.week), d = Number(st.dayIndex), e = Number(st.exerciseIndex);
-  var mStart = /^(.+)_(\d+)_(\d+)_(\d+)$/.exec(skId);
-  if ((!Number.isInteger(w) || !Number.isInteger(d) || !Number.isInteger(e)) && mStart) {
-    if (activePlanId && mStart[1] !== activePlanId) return { valid: false, reason: 'PLAN_MISMATCH' };
-    w = Number(mStart[2]); d = Number(mStart[3]); e = Number(mStart[4]);
-  }
   if (!Number.isInteger(w) || w < 0 || !Number.isInteger(d) || d < 0 || !Number.isInteger(e) || e < 0) {
     return { valid: false, reason: 'INVALID_INDICES' };
   }
   var expectedId = planId + '_' + w + '_' + d + '_' + e;
-  if (skId && skId !== expectedId) {
-    if (skId.indexOf(planId) !== 0) return { valid: false, reason: 'ID_MISMATCH' };
+  if (typeof skId !== 'string' || skId !== expectedId) {
+    return { valid: false, reason: 'ID_MISMATCH' };
   }
   var expectedPrefix = 'log_' + w + '_' + d + '_' + e + '_';
   if (typeof st.setKey !== 'string' || st.setKey.indexOf(expectedPrefix) !== 0 || !/^log_\d+_\d+_\d+_s\d+$/.test(st.setKey)) {
@@ -228,12 +223,19 @@ function validateStartMarker(skId, st, activePlanId, entries) {
   if (atMs === null) {
     return { valid: false, reason: 'NO_VALID_TIMESTAMP' };
   }
-  // If entries map contains entries, check that the referenced working set exists and is done
-  if (entries && typeof entries === 'object' && Object.keys(entries).length > 0) {
-    var ws = entries[st.setKey];
-    if (!ws || ws.done !== true) {
-      return { valid: false, reason: 'WORKING_SET_NOT_DONE' };
-    }
+  // Working set verification: must always exist in entries, be completed, and non-synthetic
+  if (!entries || typeof entries !== 'object') {
+    return { valid: false, reason: 'WORKING_SET_NOT_FOUND' };
+  }
+  var ws = entries[st.setKey];
+  if (!ws || typeof ws !== 'object') {
+    return { valid: false, reason: 'WORKING_SET_NOT_FOUND' };
+  }
+  if (ws.done !== true) {
+    return { valid: false, reason: 'WORKING_SET_NOT_DONE' };
+  }
+  if (isSyntheticOrNonClientEntry(ws, activePlanId)) {
+    return { valid: false, reason: 'SYNTHETIC_OR_NON_CLIENT' };
   }
   return {
     valid: true,
