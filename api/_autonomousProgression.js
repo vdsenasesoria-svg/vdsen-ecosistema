@@ -55,7 +55,9 @@ function _refs(db, clientId, planId, coachId) {
     coach: coachId ? db.collection('coaches').doc(coachId) : null,
     // T603: database-stamped records (their `at` is forced to request.time by firestore.rules): exposure start markers and Coach decision records.
     start: function(pid, week, dayIndex, exIdx) { return db.collection('logs').doc(clientId).collection('starts').doc(pid + '_' + week + '_' + dayIndex + '_' + exIdx); },
-    decision: function(id) { return db.collection('clients').doc(clientId).collection('decisions').doc(id); }
+    decision: function(id) { return db.collection('clients').doc(clientId).collection('decisions').doc(id); },
+    // T689: authoritative plan activation record
+    activation: function(targetPlanId) { return db.collection('clients').doc(clientId).collection('plan_activations').doc(targetPlanId); }
   };
 }
 
@@ -287,20 +289,50 @@ async function consumePending(db, clientId, planId, clock) {
         if (!effective.pidExposureStarted(entries, rec.prescriptionExerciseId, tgt.week, tgt.dayIndex)) {
           return { written: false, reason: 'PLAN_MISMATCH' };
         }
-        // T688: Look for plan replacement timestamp.
+        // T688 / T689: Look for plan replacement timestamp.
         // An authoritative plan replacement timestamp marks when the new plan was ACTIVATED
         // (or the old plan SUPERSEDED), never when the new plan document was originally drafted/created.
         // Equating creation (createTime / createdAt) to activation is false: a plan created earlier can
         // legitimately be activated after an exposure has already started under the previous plan.
         var newPlanSnap = await tx.get(db.collection('plans').doc(client.activePlanId));
+        if (!newPlanSnap || !newPlanSnap.exists) {
+          // T689: Missing new plan in Firestore fails closed, even if the client retains an activePlanActivatedAt.
+          return { written: false, reason: 'PLAN_MISMATCH' };
+        }
         var newPlanDoc = _data(newPlanSnap);
-        var candidateVal = client.activePlanActivatedAt ||
-                           client.planActivatedAt ||
-                           (newPlanDoc && newPlanDoc.activatedAt) ||
-                           (planDoc && planDoc.supersededAt) ||
-                           client.activePlanUpdatedAt ||
-                           client.planChangedAt || null;
-        var replacementMs = eligibility.parseWallClockMs(candidateVal);
+        if (!newPlanDoc || typeof newPlanDoc !== 'object') {
+          return { written: false, reason: 'PLAN_MISMATCH' };
+        }
+        // T689: Check authorization and tenant consistency
+        if ((newPlanDoc.clientId && newPlanDoc.clientId !== clientId) ||
+            (newPlanDoc.coachId && client.coachId && newPlanDoc.coachId !== client.coachId) ||
+            newPlanDoc.status === 'revoked' || newPlanDoc.active === false) {
+          return { written: false, reason: 'PLAN_MISMATCH' };
+        }
+
+        // T689: Look up authoritative immutable plan activation record if available
+        var replacementMs = null;
+        if (typeof refs.activation === 'function') {
+          var actSnap = await tx.get(refs.activation(client.activePlanId));
+          if (actSnap && actSnap.exists) {
+            var actDoc = _data(actSnap);
+            if (actDoc && typeof actDoc === 'object') {
+              if (actDoc.clientId && actDoc.clientId !== clientId) return { written: false, reason: 'PLAN_MISMATCH' };
+              if (actDoc.newPlanId && actDoc.newPlanId !== client.activePlanId) return { written: false, reason: 'PLAN_MISMATCH' };
+              if (actDoc.previousPlanId !== undefined && actDoc.previousPlanId !== planId) return { written: false, reason: 'PLAN_MISMATCH' };
+              replacementMs = eligibility.parseWallClockMs(actDoc.at);
+            }
+          }
+        }
+        if (replacementMs === null) {
+          var candidateVal = client.activePlanActivatedAt ||
+                             client.planActivatedAt ||
+                             (newPlanDoc && newPlanDoc.activatedAt) ||
+                             (planDoc && planDoc.supersededAt) ||
+                             client.activePlanUpdatedAt ||
+                             client.planChangedAt || null;
+          replacementMs = eligibility.parseWallClockMs(candidateVal);
+        }
         // If there is no reliable replacement timestamp, we cannot establish chronology; fail closed without guessing dates.
         if (!Number.isFinite(replacementMs)) {
           return { written: false, reason: 'PLAN_MISMATCH' };
