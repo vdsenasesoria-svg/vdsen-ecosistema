@@ -11931,9 +11931,10 @@ async function _doSaveLogs() {
     const errEl = document.getElementById('saveErrBadge');
     if (errEl) errEl.style.display = 'none';
     // Indicador breve de guardado exitoso
+    var _hasSavedEntries = Object.keys(_safeEntries).length > 0;
     if (_rootWrite && _rootWrite.state === 'queued') {   // T596: held on the device; the server-side follow-ups wait for the real confirmation
       _renderSyncBadge();
-      _rootWrite.done.then(function() { try { _maybeConsumeOverlays(_uidAtStart); } catch(_ce2) {} try { _scheduleTrustedProgression(_uidAtStart, _payload.planId); } catch(_pe2) {} }, function() { /* reported by _deferredWriteFailed */ });
+      _rootWrite.done.then(function() { try { _maybeConsumeOverlays(_uidAtStart); } catch(_ce2) {} if (_hasSavedEntries) { try { _scheduleTrustedProgression(_uidAtStart, _payload.planId); } catch(_pe2) {} } }, function() { /* reported by _deferredWriteFailed */ });
       return true;
     }
     _showSaveOk();
@@ -11941,7 +11942,7 @@ async function _doSaveLogs() {
     // The trusted executor is notified only after Firestore confirms the
     // pending write. It receives no evidence payload and re-reads the
     // canonical documents itself; a disabled endpoint is an intentional no-op.
-    try { _scheduleTrustedProgression(_uidAtStart, _payload.planId); } catch(_pe) {}
+    if (_hasSavedEntries) { try { _scheduleTrustedProgression(_uidAtStart, _payload.planId); } catch(_pe) {} }
     return true;
   } catch(e) {
     if (!USER || USER.uid !== _uidAtStart) return false;
@@ -12120,10 +12121,12 @@ function _refreshTrustedProgression(uid, planId) {
 function _lifecycleEnabled() { var e = window.VDSEN_EFFECTIVE_PRESCRIPTION; return !!(e && e.NUMERIC_APPLY_ENABLED === true); }
 function _captureLifecycleState(uid, planId, planData, clientData, mesoSnap) {
   LIFECYCLE_STATE = { uid: uid, planId: planId, planDoc: null, candidatePlanDoc: planData || null, records: {}, overlays: {}, receipts: {}, interventions: Array.isArray(clientData && clientData.coachInterventions) ? clientData.coachInterventions : [], consumeBusy: {} };
-  // T570-R: capture is read-only and always on; the trusted executor is the only writer of overlays.
-  // A returning athlete also recovers any evidence whose post-save notification was lost (tab closed / offline).
-  if (typeof setTimeout === 'function' && typeof _scheduleTrustedProgression === 'function') setTimeout(function() { try { _scheduleTrustedProgression(uid, planId); } catch(_e) {} }, 1500);
   var m = (mesoSnap && typeof mesoSnap.exists === 'function' && mesoSnap.exists()) ? mesoSnap.data() : null;
+  // T570-R / T685: capture is read-only; only schedule startup recovery when the client has a pending transport intent or recoverable progression evidence.
+  var hasRecoverableEvidence = !!(typeof _trustedProgressionIntent === 'function' && _trustedProgressionIntent(uid, planId, false)) ||
+    !!(m && m.planId === planId && (Object.keys(m.entries || {}).some(function(k) { return /^progrec_\d+_\d+$/.test(k); }) ||
+      Object.keys(m.progressionApplications || {}).some(function(k) { var r = m.progressionApplications[k]; return r && (r.state === 'PENDING' || (r.state === 'APPLIED' && m.consumptionReceipts && m.consumptionReceipts[k])); })));
+  if (hasRecoverableEvidence && typeof setTimeout === 'function' && typeof _scheduleTrustedProgression === 'function') setTimeout(function() { try { _scheduleTrustedProgression(uid, planId); } catch(_e) {} }, 1500);
   if (!m || m.planId !== planId) return;
   // T570-R.2: a cache-served snapshot is never authority for a prescription change; only a server-confirmed read may show an overlay.
   if (mesoSnap.metadata && mesoSnap.metadata.fromCache === true) return;
