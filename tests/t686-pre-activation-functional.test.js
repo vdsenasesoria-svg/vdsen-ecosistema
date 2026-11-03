@@ -403,7 +403,6 @@ test('T686 — CAMBIO 1: consumePending succeeds for replaced plan when exposure
   var updatedMeso = db._docs.get('logs/' + clientId + '/mesos/' + oldPlanId);
   assert.equal(updatedMeso.progressionApplications[key].state, 'CONSUMED');
 });
-
 test('T686 — CAMBIO 1: consumePending refuses replaced plan when target exposure was NOT started', async () => {
   var clientId = 'client-c-3', oldPlanId = 'plan-old', newPlanId = 'plan-new', coachId = 'coach-1', pid = 'pid-press';
   var key = 'v1_0123456789abcdef';
@@ -742,5 +741,210 @@ test('T686 — ISOLATION & IDEMPOTENCY: Replay of consumePending is idempotent a
   // Client 2's meso document must remain completely untouched
   var c2Meso = db._docs.get('logs/' + clientId2 + '/mesos/plan-other');
   assert.deepEqual(c2Meso.progressionApplications, {});
+});
+
+test('T686.1 — ITEM 1: plan.active === false treated as explicit deactivation, blocking applyPending and consumePending', async () => {
+  var clientId = 'client-deact-1', planId = 'plan-deact-1', coachId = 'coach-1', pid = 'pid-press';
+  var key = 'v1_0123456789abcdef';
+  var planDoc = {
+    clientId: clientId,
+    coachId: coachId,
+    active: false, // Explicitly false!
+    status: 'active', // Even if status string is active, active === false takes precedence
+    weeks: 4,
+    days: [{ dayIndex: 2, exercises: [{ prescriptionExerciseId: pid }] }]
+  };
+
+  assert.equal(eligibility.isPlanSuspendedOrRevoked(planDoc), true);
+
+  var rec = {
+    key: key, revision: 2, clientId: clientId, planId: planId, prescriptionExerciseId: pid,
+    state: 'APPLIED', lifecycle: { overlayKey: 'ovl_' + key },
+    source: { week: 1, dayIndex: 0, calculatedAt: '2026-10-01T00:00:00.000Z' },
+    nextExposure: { week: 1, dayIndex: 2 }
+  };
+  var ovl = {
+    schema: 'vdsen-next-exposure-overlay-v1', key: 'ovl_' + key, sourceRecordKey: key,
+    clientId: clientId, planId: planId, prescriptionExerciseId: pid, dimension: 'REPS',
+    status: 'APPLIED', appliedValue: 11, previousValue: 10, target: { week: 1, dayIndex: 2 }
+  };
+  var receipt = {
+    recordKey: key, overlayKey: 'ovl_' + key, dimension: 'REPS', appliedValue: 11,
+    provenance: 'CANONICAL_OVERLAY', ackAt: NOW_ISO
+  };
+  var seed = {
+    ['clients/' + clientId]: { uid: clientId, activePlanId: planId, coachId: coachId, status: 'active' },
+    ['coaches/' + coachId]: { uid: coachId, autoApplyCanary: { enabled: true, clientIds: [clientId], prescriptionExerciseIds: [] } },
+    ['plans/' + planId]: planDoc,
+    ['releaseControl/autonomousProgression']: { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: '2026-11-01T00:00:00.000Z', clientIds: [clientId] },
+    ['logs/' + clientId + '/starts/' + planId + '_1_2_0']: { planId: planId, week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: new Date(NOW_MS - 1000).toISOString() },
+    ['logs/' + clientId + '/mesos/' + planId]: {
+      planId: planId, progressionApplications: { [key]: rec }, nextExposureOverlays: { ['ovl_' + key]: ovl },
+      consumptionReceipts: { [key]: receipt },
+      entries: { 'log_1_2_0_s0': { done: true, prescriptionExerciseId: pid, carga: '100', reps: '11', unit: 'KG', sts: NOW_MS - 1000 } }
+    }
+  };
+  var db = makeFakeDb(seed);
+  var res = await executor.consumePending(db, clientId, planId, () => NOW_ISO);
+  assert.equal(res.length, 1);
+  assert.equal(res[0].written, false);
+  assert.equal(res[0].reason, 'PLAN_MISMATCH');
+});
+
+test('T686.1 — ITEM 2: Replaced plan consumption blocked when exposure only has done: true but lacks canonical startMarker', async () => {
+  var clientId = 'client-nostart-1', oldPlanId = 'plan-old-ns', newPlanId = 'plan-new-ns', coachId = 'coach-1', pid = 'pid-press';
+  var key = 'v1_0123456789abcdef';
+  var rec = {
+    key: key, revision: 2, clientId: clientId, planId: oldPlanId, prescriptionExerciseId: pid,
+    state: 'APPLIED', lifecycle: { overlayKey: 'ovl_' + key },
+    source: { week: 1, dayIndex: 0, calculatedAt: '2026-10-01T00:00:00.000Z' },
+    nextExposure: { week: 1, dayIndex: 2 }
+  };
+  var ovl = {
+    schema: 'vdsen-next-exposure-overlay-v1', key: 'ovl_' + key, sourceRecordKey: key,
+    clientId: clientId, planId: oldPlanId, prescriptionExerciseId: pid, dimension: 'REPS',
+    status: 'APPLIED', appliedValue: 11, previousValue: 10, target: { week: 1, dayIndex: 2 }
+  };
+  var receipt = {
+    recordKey: key, overlayKey: 'ovl_' + key, dimension: 'REPS', appliedValue: 11,
+    provenance: 'CANONICAL_OVERLAY', ackAt: NOW_ISO
+  };
+  var oldPlanDoc = {
+    clientId: clientId, coachId: coachId, status: 'active', weeks: 4, updatedAt: '2026-10-01T00:00:00.000Z',
+    days: [
+      { dayIndex: 0, exercises: [{ prescriptionExerciseId: pid }] },
+      { dayIndex: 2, exercises: [{ prescriptionExerciseId: pid }] }
+    ]
+  };
+  var seed = {
+    ['clients/' + clientId]: { uid: clientId, activePlanId: newPlanId, coachId: coachId, status: 'active' },
+    ['coaches/' + coachId]: { uid: coachId, autoApplyCanary: { enabled: true, clientIds: [clientId], prescriptionExerciseIds: [] } },
+    ['plans/' + oldPlanId]: oldPlanDoc,
+    ['plans/' + newPlanId]: { clientId: clientId, coachId: coachId, status: 'active', weeks: 4, createdAt: '2026-10-10T00:00:00.000Z' },
+    ['releaseControl/autonomousProgression']: { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: '2026-11-01T00:00:00.000Z', clientIds: [clientId] },
+    // Notice: NO startMarker in logs/{clientId}/starts/ !
+    ['logs/' + clientId + '/mesos/' + oldPlanId]: {
+      planId: oldPlanId, progressionApplications: { [key]: rec }, nextExposureOverlays: { ['ovl_' + key]: ovl },
+      consumptionReceipts: { [key]: receipt },
+      entries: {
+        // done: true exists in device entries, but without canonical startMarker, it lacks chronological authority
+        'log_1_2_0_s0': { done: true, prescriptionExerciseId: pid, carga: '100', reps: '11', unit: 'KG', sts: NOW_MS - 1000 }
+      }
+    }
+  };
+  var db = makeFakeDb(seed);
+  var res = await executor.consumePending(db, clientId, oldPlanId, () => NOW_ISO);
+  assert.equal(res.length, 1);
+  assert.equal(res[0].written, false);
+  assert.equal(res[0].reason, 'PLAN_MISMATCH');
+});
+
+test('T686.1 — ITEM 2: Replaced plan consumption blocked when canonical startMarker is POSTERIOR to plan replacement', async () => {
+  var clientId = 'client-post-1', oldPlanId = 'plan-old-post', newPlanId = 'plan-new-post', coachId = 'coach-1', pid = 'pid-press';
+  var key = 'v1_0123456789abcdef';
+  var replacementTime = '2026-10-10T12:00:00.000Z';
+  var exposureStartTime = '2026-10-12T12:00:00.000Z'; // Exposure started 2 days AFTER plan replacement!
+
+  var rec = {
+    key: key, revision: 2, clientId: clientId, planId: oldPlanId, prescriptionExerciseId: pid,
+    state: 'APPLIED', lifecycle: { overlayKey: 'ovl_' + key },
+    source: { week: 1, dayIndex: 0, calculatedAt: '2026-10-01T00:00:00.000Z' },
+    nextExposure: { week: 1, dayIndex: 2 }
+  };
+  var ovl = {
+    schema: 'vdsen-next-exposure-overlay-v1', key: 'ovl_' + key, sourceRecordKey: key,
+    clientId: clientId, planId: oldPlanId, prescriptionExerciseId: pid, dimension: 'REPS',
+    status: 'APPLIED', appliedValue: 11, previousValue: 10, target: { week: 1, dayIndex: 2 }
+  };
+  var receipt = {
+    recordKey: key, overlayKey: 'ovl_' + key, dimension: 'REPS', appliedValue: 11,
+    provenance: 'CANONICAL_OVERLAY', ackAt: NOW_ISO
+  };
+  var oldPlanDoc = {
+    clientId: clientId, coachId: coachId, status: 'active', weeks: 4, updatedAt: '2026-10-01T00:00:00.000Z',
+    days: [
+      { dayIndex: 0, exercises: [{ prescriptionExerciseId: pid }] },
+      { dayIndex: 2, exercises: [{ prescriptionExerciseId: pid }] }
+    ]
+  };
+  var seed = {
+    ['clients/' + clientId]: {
+      uid: clientId, activePlanId: newPlanId, coachId: coachId, status: 'active',
+      planChangedAt: replacementTime // Authoritative replacement timestamp
+    },
+    ['coaches/' + coachId]: { uid: coachId, autoApplyCanary: { enabled: true, clientIds: [clientId], prescriptionExerciseIds: [] } },
+    ['plans/' + oldPlanId]: oldPlanDoc,
+    ['plans/' + newPlanId]: { clientId: clientId, coachId: coachId, status: 'active', weeks: 4, createdAt: replacementTime },
+    ['releaseControl/autonomousProgression']: { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: '2026-11-01T00:00:00.000Z', clientIds: [clientId] },
+    ['logs/' + clientId + '/starts/' + oldPlanId + '_1_2_0']: {
+      planId: oldPlanId, week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0',
+      at: exposureStartTime // Stamped AFTER replacement!
+    },
+    ['logs/' + clientId + '/mesos/' + oldPlanId]: {
+      planId: oldPlanId, progressionApplications: { [key]: rec }, nextExposureOverlays: { ['ovl_' + key]: ovl },
+      consumptionReceipts: { [key]: receipt },
+      entries: { 'log_1_2_0_s0': { done: true, prescriptionExerciseId: pid, carga: '100', reps: '11', unit: 'KG', sts: Date.parse(exposureStartTime) } }
+    }
+  };
+  var db = makeFakeDb(seed);
+  var res = await executor.consumePending(db, clientId, oldPlanId, () => NOW_ISO);
+  assert.equal(res.length, 1);
+  assert.equal(res[0].written, false);
+  assert.equal(res[0].reason, 'PLAN_MISMATCH');
+});
+
+test('T686.1 — ITEM 2: Replaced plan consumption SUCCEEDS when canonical startMarker is PRIOR to plan replacement', async () => {
+  var clientId = 'client-prior-1', oldPlanId = 'plan-old-prior', newPlanId = 'plan-new-prior', coachId = 'coach-1', pid = 'pid-press';
+  var key = 'v1_0123456789abcdef';
+  var exposureStartTime = '2026-10-08T12:00:00.000Z'; // Exposure started on October 8
+  var replacementTime = '2026-10-10T12:00:00.000Z';   // Plan was replaced on October 10
+
+  var rec = {
+    key: key, revision: 2, clientId: clientId, planId: oldPlanId, prescriptionExerciseId: pid,
+    state: 'APPLIED', lifecycle: { overlayKey: 'ovl_' + key },
+    source: { week: 1, dayIndex: 0, calculatedAt: '2026-10-01T00:00:00.000Z' },
+    nextExposure: { week: 1, dayIndex: 2 }
+  };
+  var ovl = {
+    schema: 'vdsen-next-exposure-overlay-v1', key: 'ovl_' + key, sourceRecordKey: key,
+    clientId: clientId, planId: oldPlanId, prescriptionExerciseId: pid, dimension: 'REPS',
+    status: 'APPLIED', appliedValue: 11, previousValue: 10, target: { week: 1, dayIndex: 2 }
+  };
+  var receipt = {
+    recordKey: key, overlayKey: 'ovl_' + key, dimension: 'REPS', appliedValue: 11,
+    provenance: 'CANONICAL_OVERLAY', ackAt: NOW_ISO
+  };
+  var oldPlanDoc = {
+    clientId: clientId, coachId: coachId, status: 'active', weeks: 4, updatedAt: '2026-10-01T00:00:00.000Z',
+    days: [
+      { dayIndex: 0, exercises: [{ prescriptionExerciseId: pid }] },
+      { dayIndex: 2, exercises: [{ prescriptionExerciseId: pid }] }
+    ]
+  };
+  var seed = {
+    ['clients/' + clientId]: {
+      uid: clientId, activePlanId: newPlanId, coachId: coachId, status: 'active',
+      activePlanActivatedAt: replacementTime // Authoritative replacement timestamp
+    },
+    ['coaches/' + coachId]: { uid: coachId, autoApplyCanary: { enabled: true, clientIds: [clientId], prescriptionExerciseIds: [] } },
+    ['plans/' + oldPlanId]: oldPlanDoc,
+    ['plans/' + newPlanId]: { clientId: clientId, coachId: coachId, status: 'active', weeks: 4, createdAt: replacementTime },
+    ['releaseControl/autonomousProgression']: { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: '2026-11-01T00:00:00.000Z', clientIds: [clientId] },
+    ['logs/' + clientId + '/starts/' + oldPlanId + '_1_2_0']: {
+      planId: oldPlanId, week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0',
+      at: exposureStartTime // Stamped BEFORE replacement!
+    },
+    ['logs/' + clientId + '/mesos/' + oldPlanId]: {
+      planId: oldPlanId, progressionApplications: { [key]: rec }, nextExposureOverlays: { ['ovl_' + key]: ovl },
+      consumptionReceipts: { [key]: receipt },
+      entries: { 'log_1_2_0_s0': { done: true, prescriptionExerciseId: pid, carga: '100', reps: '11', unit: 'KG', sts: Date.parse(exposureStartTime) } }
+    }
+  };
+  var db = makeFakeDb(seed);
+  var res = await executor.consumePending(db, clientId, oldPlanId, () => NOW_ISO);
+  assert.equal(res.length, 1);
+  assert.equal(res[0].written, true);
+  var updatedMeso = db._docs.get('logs/' + clientId + '/mesos/' + oldPlanId);
+  assert.equal(updatedMeso.progressionApplications[key].state, 'CONSUMED');
 });
 

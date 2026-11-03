@@ -73,7 +73,7 @@ function isClientStatusValid(client) {
 
 function isPlanSuspendedOrRevoked(plan) {
   if (!plan || typeof plan !== 'object') return true;
-  if (plan.suspended === true || plan.revoked === true ||
+  if (plan.active === false || plan.suspended === true || plan.revoked === true ||
       plan.archived === true || plan.inactive === true || plan.deleted === true ||
       plan.draft === true) return true;
   if (typeof plan.status === 'string') {
