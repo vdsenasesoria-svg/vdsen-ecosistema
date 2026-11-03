@@ -12013,7 +12013,13 @@ function _scheduleTrustedProgression(uid, planId, recovering) {
         if (!res.ok) { retry = http === 401 || http === 403 || http === 408 || http === 429 || http >= 500; terminal = !retry; record(http === 401 || http === 403 ? 'AUTH' : http === 503 ? 'RUNTIME' : http >= 500 ? 'SERVER' : 'REQUEST', http, id); return null; }
         stage = 'RESPONSE_INVALID';
         return Promise.resolve().then(function() { return res.json(); }).then(function(body) {
-          var status = body && body.status, allowed = ['DISARMED', 'OUT_OF_ALLOWLIST', 'OUT_OF_CANARY', 'PLAN_MISMATCH', 'SOURCE_INVALID', 'NO_CHANGE', 'MATERIALIZED'];
+          var status = body && body.status, allowed = [
+            'DISARMED', 'OUT_OF_ALLOWLIST', 'OUT_OF_CANARY', 'PLAN_MISMATCH', 'SOURCE_INVALID',
+            'NO_CHANGE', 'MATERIALIZED', 'INACTIVE_CLIENT', 'NO_VERIFIABLE_APP_USAGE',
+            'AWAITING_FIRST_ACTIVITY', 'NEW_CLIENT_AWAITING_FIRST_ACTIVITY',
+            'NEEDS_VERIFIED_ACTIVITY', 'NO_TEMPORAL_EVIDENCE', 'SAFETY_HOLD', 'NOT_ELIGIBLE',
+            'READ_FAILED', 'STARTS_READ_FAILED'
+          ];
           if (allowed.indexOf(status) < 0) { record('RESPONSE_INVALID', http, id); return null; }
           terminal = true; retry = false;
           record(status === 'NO_CHANGE' || status === 'MATERIALIZED' ? 'OK' : 'ENGINE_BLOCKED', http, id, status);
