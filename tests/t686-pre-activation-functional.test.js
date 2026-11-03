@@ -367,7 +367,7 @@ test('T686 — CAMBIO 1: consumePending succeeds for replaced plan when exposure
   };
   var seed = {
     // Client now has activePlanId = newPlanId!
-    ['clients/' + clientId]: { uid: clientId, activePlanId: newPlanId, coachId: coachId, status: 'active' },
+    ['clients/' + clientId]: { uid: clientId, activePlanId: newPlanId, coachId: coachId, status: 'active', activePlanActivatedAt: NOW_ISO },
     ['coaches/' + coachId]: { uid: coachId, autoApplyCanary: { enabled: true, clientIds: [clientId], prescriptionExerciseIds: [] } },
     ['plans/' + oldPlanId]: oldPlanDoc,
     ['releaseControl/autonomousProgression']: {
