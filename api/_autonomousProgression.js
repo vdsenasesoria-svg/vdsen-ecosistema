@@ -287,25 +287,26 @@ async function consumePending(db, clientId, planId, clock) {
         if (!effective.pidExposureStarted(entries, rec.prescriptionExerciseId, tgt.week, tgt.dayIndex)) {
           return { written: false, reason: 'PLAN_MISMATCH' };
         }
-        // T687: Look for plan replacement timestamp.
-        // Server snapshot metadata (createTime) takes precedence when available.
+        // T688: Look for plan replacement timestamp.
+        // An authoritative plan replacement timestamp marks when the new plan was ACTIVATED
+        // (or the old plan SUPERSEDED), never when the new plan document was originally drafted/created.
+        // Equating creation (createTime / createdAt) to activation is false: a plan created earlier can
+        // legitimately be activated after an exposure has already started under the previous plan.
         var newPlanSnap = await tx.get(db.collection('plans').doc(client.activePlanId));
         var newPlanDoc = _data(newPlanSnap);
-        var replacementMs = null;
-        if (newPlanSnap && newPlanSnap.createTime && typeof newPlanSnap.createTime.toMillis === 'function') {
-          var snapMs = newPlanSnap.createTime.toMillis();
-          if (Number.isFinite(snapMs) && snapMs >= 946684800000) replacementMs = snapMs;
-        }
-        if (replacementMs === null) {
-          var candidateVal = client.activePlanActivatedAt || client.planActivatedAt || (newPlanDoc && newPlanDoc.activatedAt) || (planDoc && planDoc.supersededAt) || client.activePlanUpdatedAt || client.planChangedAt || (newPlanDoc && newPlanDoc.createdAt) || null;
-          replacementMs = eligibility.parseWallClockMs(candidateVal);
-        }
+        var candidateVal = client.activePlanActivatedAt ||
+                           client.planActivatedAt ||
+                           (newPlanDoc && newPlanDoc.activatedAt) ||
+                           (planDoc && planDoc.supersededAt) ||
+                           client.activePlanUpdatedAt ||
+                           client.planChangedAt || null;
+        var replacementMs = eligibility.parseWallClockMs(candidateVal);
         // If there is no reliable replacement timestamp, we cannot establish chronology; fail closed without guessing dates.
         if (!Number.isFinite(replacementMs)) {
           return { written: false, reason: 'PLAN_MISMATCH' };
         }
         if (startAtMs > replacementMs) {
-          // Canonical proof demonstrates the exposure started AFTER the plan was substituted.
+          // Canonical proof demonstrates the exposure started AFTER the plan was activated/substituted.
           return { written: false, reason: 'PLAN_MISMATCH' };
         }
       } else {
