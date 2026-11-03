@@ -54,20 +54,79 @@ function classify(plan, entries) {
 async function main(argv, deps) {
   deps = deps || {}; const out = deps.log || console.log, request = deps.http || get, token = (deps.token || defaultToken)();
   const detail = argv.includes('--detail'), showCohorts = argv.includes('--cohorts');
+  let releaseDoc = deps.releaseDoc || null;
+  if (!releaseDoc && !deps.skipRemoteReleaseDoc) {
+    try { const relRes = await request('releaseControl/autonomousProgression', token); if (relRes && relRes.status === 200) releaseDoc = doc(relRes.body); } catch (_) {}
+  }
+  const coachDocs = Object.assign({}, deps.coachDocs || {});
   const clients = await listClients(token, deps.list), counts = { clientes: 0, NO_ACTIVE_PLAN: 0, NEEDS_PLAN_PREP: 0, SAFETY_HOLD: 0, NEEDS_EVIDENCE: 0, ELIGIBLE: 0 }, rows = [], evaluations = [];
+  const uidToRedacted = new Map();
   for (const c of clients) {
-    counts.clientes++; let r, pDoc = null, rd = null;
+    counts.clientes++; let r, pDoc = null, rd = null, startsMap = {};
     const redactedId = detail ? String(c.uid).slice(0, 6) + '…' : '#' + rows.length;
+    uidToRedacted.set(c.uid, redactedId);
     if (!c.planId) r = { state: 'NO_ACTIVE_PLAN' };
-    else { const p = await request('plans/' + c.planId, token); const root = p.status === 200 ? await request('logs/' + c.uid, token) : null; rd = root && root.status === 200 ? doc(root.body) : null; pDoc = p.status === 200 ? doc(p.body) : null; r = p.status === 200 ? classify(pDoc, rd && rd.entries) : { state: 'NO_ACTIVE_PLAN' }; }
-    counts[r.state]++; rows.push(Object.assign({ who: redactedId }, r));
-    evaluations.push(eligibility.evaluateClientEligibility({ clientId: redactedId, client: { activePlanId: c.planId, coachId: c.coachId || 'coach-assigned', createdAt: c.createdAt, onboardedAt: c.onboardedAt, status: c.status }, plan: pDoc, entries: (rd && rd.entries) || {}, now: deps.now }));
+    else {
+      const p = await request('plans/' + c.planId, token);
+      const root = p.status === 200 ? await request('logs/' + c.uid, token) : null;
+      rd = root && root.status === 200 ? doc(root.body) : null;
+      pDoc = p.status === 200 ? doc(p.body) : null;
+      r = p.status === 200 ? classify(pDoc, rd && rd.entries) : { state: 'NO_ACTIVE_PLAN' };
+      if (deps.starts && deps.starts[c.uid]) {
+        startsMap = deps.starts[c.uid];
+      } else if (deps.getStarts) {
+        startsMap = await deps.getStarts(c.uid);
+      } else if (p.status === 200) {
+        try {
+          const sRes = await request('logs/' + c.uid + '/starts', token);
+          if (sRes && sRes.status === 200 && sRes.body && Array.isArray(sRes.body.documents)) {
+            sRes.body.documents.forEach((sd) => {
+              const sid = sd.name.split('/').pop();
+              const sf = doc(sd);
+              if (sf) startsMap[sid] = sf;
+            });
+          }
+        } catch (_) {}
+      }
+      if (c.coachId && !coachDocs[c.coachId] && !deps.skipRemoteCoachDoc) {
+        try {
+          const cRes = await request('coaches/' + c.coachId, token);
+          if (cRes && cRes.status === 200) coachDocs[c.coachId] = doc(cRes.body);
+        } catch (_) {}
+      }
+    }
+    counts[r.state]++;
+    const ev = eligibility.evaluateClientEligibility({
+      clientId: c.uid,
+      client: { uid: c.uid, activePlanId: c.planId, coachId: c.coachId || 'coach-assigned', createdAt: c.createdAt, onboardedAt: c.onboardedAt, status: c.status },
+      plan: pDoc,
+      entries: (rd && rd.entries) || {},
+      starts: startsMap,
+      releaseDoc: releaseDoc,
+      coachDoc: coachDocs[c.coachId] || null,
+      now: deps.now
+    });
+    evaluations.push(ev);
+    rows.push(Object.assign({ who: redactedId, technicalState: r.state, eligible: ev.eligible, priority: ev.priority, authorized: ev.authorized }, r));
   }
   const cohorts = eligibility.planCohortActivation(evaluations);
+  const redactId = (id) => uidToRedacted.get(id) || (detail ? String(id).slice(0, 6) + '…' : '#' + rows.length);
+  const safeStages = {
+    stage1_firstEligibleClient: (cohorts.stages.stage1_firstEligibleClient || []).map(redactId),
+    stage2_reducedActiveGroup: (cohorts.stages.stage2_reducedActiveGroup || []).map(redactId),
+    stage3_fullWindowCohort: (cohorts.stages.stage3_fullWindowCohort || []).map(redactId)
+  };
+  const safeWindows = (cohorts.windows || []).map((w) => Object.assign({}, w, {
+    clientIds: (w.clientIds || []).map(redactId)
+  }));
+  const safeCohorts = Object.assign({}, cohorts, {
+    stages: safeStages,
+    windows: safeWindows
+  });
   out('ELEGIBILIDAD TÉCNICA (solo lectura; elegible ≠ activado) ' + JSON.stringify(counts));
-  if (detail) rows.forEach((r) => out('  ' + JSON.stringify(r)));
-  if (showCohorts) out('COHORTES PRIORIZADAS ' + JSON.stringify({ capacityAnalysis: cohorts.capacityAnalysis, stages: cohorts.stages }));
-  return { counts, rows, cohorts };
+  if (detail) rows.forEach((row) => out('  ' + JSON.stringify(row)));
+  if (showCohorts) out('COHORTES PRIORIZADAS ' + JSON.stringify({ capacityAnalysis: safeCohorts.capacityAnalysis, stages: safeCohorts.stages }));
+  return { counts, rows, cohorts: safeCohorts, rawCohorts: cohorts };
 }
 
 module.exports = { classify, main, evaluateClientEligibility: eligibility.evaluateClientEligibility, planCohortActivation: eligibility.planCohortActivation };

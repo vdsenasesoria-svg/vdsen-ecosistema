@@ -197,14 +197,18 @@ async function applyPending(db, clientId, planId, clock) {
       if (!client || client.activePlanId !== planId || !eligibility.isClientStatusValid(client)) return { written: false, reason: 'PLAN_MISMATCH' };
       var refs = _refs(db, clientId, planId, client.coachId);
       if (!(await _releaseGate(db, tx, clientId, clock))) return { written: false, reason: 'OUT_OF_ALLOWLIST' };
+      var planDoc = _data(await tx.get(refs.plan));
+      if (!planDoc || (planDoc.clientId && planDoc.clientId !== clientId) || (planDoc.coachId && planDoc.coachId !== client.coachId)) {
+        return { written: false, reason: 'PLAN_MISMATCH' };
+      }
+      if (!eligibility.isPlanStatusValid(planDoc, client)) return { written: false, reason: 'PLAN_MISMATCH' };
+      var coachDoc = refs.coach ? _data(await tx.get(refs.coach)) : null;
       // T582: a verified equipment increment is used when available; otherwise the LOAD target is advisory (never a guessed machine increment).
       var equipmentResolution = null;
       var pre = _data(await tx.get(refs.meso)), precord = pre && pre.progressionApplications && pre.progressionApplications[key];
       if (precord && precord.magnitude && (precord.magnitude.candidates || []).some(function(c) { return c && c.dimension === 'LOAD'; })) {
         // Increments come only from verified, already-configured sources (coach equipmentIncrements config + the catalog's canonical equipment
         // identity). Nothing is inferred from the equipment type or the exercise name; no data => BLOCKED_EQUIPMENT_DATA for LOAD only.
-        var coachDoc = refs.coach ? _data(await tx.get(refs.coach)) : null, planDoc = _data(await tx.get(refs.plan));
-        if (!eligibility.isPlanStatusValid(planDoc, client)) return { written: false, reason: 'PLAN_MISMATCH' };
         var pex = null;
         ((planDoc && planDoc.days) || []).forEach(function(d) { (d.exercises || []).forEach(function(e) { if (!pex && e.prescriptionExerciseId === precord.prescriptionExerciseId) pex = e; }); });
         // Identity of the prescribed exercise: the plan's own exerciseId, else the Coach's EXPLICIT link for this exact prescriptionExerciseId
@@ -243,13 +247,33 @@ async function consumePending(db, clientId, planId, clock) {
   for (var i = 0; i < keys.length; i++) {
     var key = keys[i];
     var r = await db.runTransaction(async function(tx) {
-      var client = _data(await tx.get(db.collection('clients').doc(clientId)));
-      if (!client || client.activePlanId !== planId || !eligibility.isClientStatusValid(client)) return { written: false, reason: 'PLAN_MISMATCH' };
+      var clientSnap = await tx.get(db.collection('clients').doc(clientId)), client = _data(clientSnap);
+      if (!client || !eligibility.isClientStatusValid(client)) return { written: false, reason: 'PLAN_MISMATCH' };
       var refs = _refs(db, clientId, planId, client.coachId);
       if (!(await _releaseGate(db, tx, clientId, clock))) return { written: false, reason: 'OUT_OF_ALLOWLIST' };
+      var planDoc = _data(await tx.get(refs.plan));
+      if (!planDoc || (planDoc.clientId && planDoc.clientId !== clientId) || (planDoc.coachId && planDoc.coachId !== client.coachId)) {
+        return { written: false, reason: 'PLAN_MISMATCH' };
+      }
+      if (eligibility.isPlanSuspendedOrRevoked(planDoc)) {
+        return { written: false, reason: 'PLAN_MISMATCH' };
+      }
       var coachData = refs.coach ? _data(await tx.get(refs.coach)) : null;
       var m = _data(await tx.get(refs.meso)), rec = m && m.progressionApplications && m.progressionApplications[key];
       if (!rec || !consumer.inCanaryScope(coachData && coachData.autoApplyCanary, clientId, rec.prescriptionExerciseId)) return { written: false, reason: 'OUT_OF_CANARY_SCOPE' };
+      var rootDoc = refs.root ? _data(await tx.get(refs.root)) : null;
+      var authDoc = shadow.selectLogAuthority ? shadow.selectLogAuthority(m, rootDoc, planId) : m;
+      var entries = (authDoc && authDoc.entries) || (m && m.entries) || {};
+      var tgt = rec.nextExposure || {};
+      if (client.activePlanId !== planId) {
+        // T532 test 7: a started old exposure still consumes coherently inside its own plan.
+        // But if the exposure was not started legitimately before the plan was replaced, refuse.
+        if (!effective.pidExposureStarted(entries, rec.prescriptionExerciseId, tgt.week, tgt.dayIndex)) {
+          return { written: false, reason: 'PLAN_MISMATCH' };
+        }
+      } else {
+        if (!eligibility.isPlanStatusValid(planDoc, client)) return { written: false, reason: 'PLAN_MISMATCH' };
+      }
       return consumer.consumeOverlayTransaction(_webTx(tx), refs, { recordKey: key, clientId: clientId, actorId: 'trusted-progressor', now: _now(clock) },
         { isCurrent: function() { return true; }, trustedServerNumericApply: true });
     });

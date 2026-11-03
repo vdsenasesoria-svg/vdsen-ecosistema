@@ -71,6 +71,18 @@ function isClientStatusValid(client) {
   return true;
 }
 
+function isPlanSuspendedOrRevoked(plan) {
+  if (!plan || typeof plan !== 'object') return true;
+  if (plan.suspended === true || plan.revoked === true ||
+      plan.archived === true || plan.inactive === true || plan.deleted === true ||
+      plan.draft === true) return true;
+  if (typeof plan.status === 'string') {
+    var st = plan.status.trim().toLowerCase();
+    if (st === 'draft' || SUSPENDED_STATUSES.indexOf(st) >= 0) return true;
+  }
+  return false;
+}
+
 function isPlanStatusValid(plan, client) {
   if (client !== undefined && !isClientStatusValid(client)) return false;
   if (!plan || typeof plan !== 'object') return false;
@@ -798,6 +810,8 @@ module.exports = {
   releaseUnexpired: releaseUnexpired,
   isClientStatusValid: isClientStatusValid,
   isPlanStatusValid: isPlanStatusValid,
+  isPlanSuspendedOrRevoked: isPlanSuspendedOrRevoked,
+  SUSPENDED_STATUSES: SUSPENDED_STATUSES,
   validateActivePlan: validateActivePlan,
   isSyntheticOrNonClientEntry: isSyntheticOrNonClientEntry,
   sanitizeClientEntries: sanitizeClientEntries,
