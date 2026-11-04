@@ -310,52 +310,62 @@ async function consumePending(db, clientId, planId, clock) {
           return { written: false, reason: 'PLAN_MISMATCH' };
         }
 
-        // T689 / T692: Look up authoritative immutable plan activation record if available
+        // T689 / T692 / T693: Authoritative immutable plan activation record verification
         var replacementMs = null;
-        if (typeof refs.activation === 'function') {
-          var actSnap = await tx.get(refs.activation(client.activePlanId)).catch(function() { return null; });
-          if (actSnap && actSnap.exists) {
-            var actDoc = _data(actSnap);
-            if (actDoc && typeof actDoc === 'object') {
-              if (actDoc.clientId && actDoc.clientId !== clientId) return { written: false, reason: 'PLAN_MISMATCH' };
-              if (actDoc.newPlanId && actDoc.newPlanId !== client.activePlanId) return { written: false, reason: 'PLAN_MISMATCH' };
-              if (actDoc.previousPlanId !== undefined && actDoc.previousPlanId !== planId) return { written: false, reason: 'PLAN_MISMATCH' };
-              replacementMs = eligibility.parseWallClockMs(actDoc.at);
-            }
+        var actDoc = null;
+
+        // 1. Direct authoritative lookup via pinned activeActivationId (eliminates loose newPlanId query)
+        if (client.activeActivationId && db && typeof db.collection === 'function') {
+          var actRef = db.collection('clients').doc(clientId).collection('plan_activations').doc(client.activeActivationId);
+          var actSnap = await tx.get(actRef).catch(function() { return null; });
+          if (!actSnap || !actSnap.exists) {
+            // Contradictory: activeActivationId is pinned on client but record is missing -> fail closed
+            return { written: false, reason: 'PLAN_MISMATCH' };
+          }
+          actDoc = _data(actSnap);
+        } else if (typeof refs.activation === 'function') {
+          // 2. Compatibility fallback: keyed by planId
+          var actSnapLegacy = await tx.get(refs.activation(client.activePlanId)).catch(function() { return null; });
+          if (actSnapLegacy && actSnapLegacy.exists) {
+            actDoc = _data(actSnapLegacy);
           }
         }
-        // T692: Query activation records if not keyed strictly by planId (e.g. reactivations with unique IDs)
-        if (replacementMs === null && db && typeof db.collection === 'function') {
-          try {
-            var actQuery = db.collection('clients').doc(clientId).collection('plan_activations')
-              .where('newPlanId', '==', client.activePlanId);
-            var actSnaps = await tx.get(actQuery);
-            if (actSnaps && !actSnaps.empty) {
-              var matchingDocs = [];
-              actSnaps.forEach(function(d) {
-                var docData = _data(d);
-                if (docData && typeof docData === 'object' && docData.clientId === clientId &&
-                    (!docData.previousPlanId || docData.previousPlanId === planId)) {
-                  matchingDocs.push(docData);
-                }
-              });
-              if (matchingDocs.length > 0) {
-                matchingDocs.sort(function(a, b) {
-                  var msA = eligibility.parseWallClockMs(a.at) || 0;
-                  var msB = eligibility.parseWallClockMs(b.at) || 0;
-                  return msB - msA;
-                });
-                var latestAct = matchingDocs[0];
-                if (latestAct.coachId && client.coachId && latestAct.coachId !== client.coachId) {
-                  return { written: false, reason: 'PLAN_MISMATCH' };
-                }
-                replacementMs = eligibility.parseWallClockMs(latestAct.at);
-              }
-            }
-          } catch (_qErr) {
-            // fallback if query in tx is unsupported
+
+        // 3. Strict validation of authoritative activation record
+        if (actDoc) {
+          if (!actDoc || typeof actDoc !== 'object') {
+            return { written: false, reason: 'PLAN_MISMATCH' };
+          }
+          if (actDoc.clientId && actDoc.clientId !== clientId) {
+            return { written: false, reason: 'PLAN_MISMATCH' };
+          }
+          if (actDoc.coachId && client.coachId && actDoc.coachId !== client.coachId) {
+            return { written: false, reason: 'PLAN_MISMATCH' };
+          }
+          if (actDoc.newPlanId && actDoc.newPlanId !== client.activePlanId) {
+            return { written: false, reason: 'PLAN_MISMATCH' };
+          }
+          if (actDoc.previousPlanId !== undefined && actDoc.previousPlanId !== planId) {
+            return { written: false, reason: 'PLAN_MISMATCH' };
+          }
+          // Verify active/valid state of the new plan
+          var newPlanRef = db.collection('plans').doc(client.activePlanId);
+          var newPlanSnap = await tx.get(newPlanRef).catch(function() { return null; });
+          if (!newPlanSnap || !newPlanSnap.exists) {
+            return { written: false, reason: 'PLAN_MISMATCH' };
+          }
+          var newPlanData = _data(newPlanSnap);
+          if (!newPlanData || (newPlanData.status !== 'active' && newPlanData.status !== 'draft_approved')) {
+            return { written: false, reason: 'PLAN_NOT_ACTIVE' };
+          }
+          // Verify authoritative temporal provenance
+          replacementMs = eligibility.parseWallClockMs(actDoc.at);
+          if (replacementMs === null || isNaN(replacementMs) || replacementMs <= 0) {
+            return { written: false, reason: 'ACTIVATION_TIMESTAMP_INVALID' };
           }
         }
+
+        // 4. Fallback for un-migrated legacy clients without plan_activations
         if (replacementMs === null) {
           var candidateVal = client.activePlanActivatedAt ||
                              client.planActivatedAt ||

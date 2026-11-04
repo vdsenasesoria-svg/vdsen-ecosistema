@@ -156,12 +156,30 @@ function makeMockDb(initialState) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. CONEXIÓN DE ACTIVACIÓN REAL DESDE APP COACH (T692.1)
+// 1. CONEXIÓN DE ACTIVACIÓN REAL DESDE APP COACH (T692.1 / T693)
 // ─────────────────────────────────────────────────────────────────────────────
 
-test('T692.1A: _assignPlanTxn writes plan_activations audit record with authoritative server metadata', async () => {
+test('T693.1A: legacy rules compatibility — normal assignment continues without touching plan_activations by default', async () => {
   const h = harness(base(), { selected: 'cl1' });
   h.opts = { selected: 'cl1' };
+  // Default: authoritative activations disabled (safe default for legacy rules)
+  const TEMPLATE = {
+    name: 'Fuerza Legacy',
+    weeks: 4,
+    days: [{ label: 'D1', exercises: [{ exerciseName: 'Press Banca', prescriptionExerciseId: PID_BENCH, sets: [{ repsTarget: 8, load: 80, rirTarget: 2 }] }] }]
+  };
+  await h.ctx._applyTemplateToClient(TEMPLATE, 'cl1', null);
+
+  const actKeys = Object.keys(h.st.data).filter(k => k.startsWith('clients/cl1/plan_activations/'));
+  assert.equal(actKeys.length, 0, 'no plan_activations written in legacy mode');
+  assert.ok(h.st.data['clients/cl1'].activePlanId, 'client activePlanId updated cleanly');
+  assert.equal(h.st.data['clients/cl1'].activeActivationId, undefined, 'no activeActivationId in legacy mode');
+});
+
+test('T692.1A: _assignPlanTxn writes plan_activations audit record and pins activeActivationId when enabled', async () => {
+  const h = harness(base(), { selected: 'cl1' });
+  h.opts = { selected: 'cl1' };
+  h.ctx.window.VDSEN_AUTHORITATIVE_ACTIVATIONS_ENABLED = true;
   const TEMPLATE = {
     name: 'Fuerza 4d',
     weeks: 4,
@@ -178,23 +196,32 @@ test('T692.1A: _assignPlanTxn writes plan_activations audit record with authorit
   assert.equal(act.previousPlanId, 'p0', 'properly links previous plan');
   assert.ok(act.at, 'contains authoritative activation timestamp');
   assert.equal(h.st.data['clients/cl1'].activePlanId, act.newPlanId, 'client activePlanId updated atomically');
+  assert.equal(h.st.data['clients/cl1'].activeActivationId, act.id, 'client activeActivationId pinned to activation record');
 });
 
-test('T692.1B: multiple plan re-activations write distinct activation records without ID collision', async () => {
+test('T692.1B: multiple plan re-activations write distinct activation records without ID collision and update pointer', async () => {
   const h = harness(base(), { selected: 'cl1' });
   h.opts = { selected: 'cl1' };
+  h.ctx.window.VDSEN_AUTHORITATIVE_ACTIVATIONS_ENABLED = true;
   const T1 = { name: 'Plan A', weeks: 4, days: [{ label: 'D1', exercises: [{ exerciseName: 'Sentadilla', prescriptionExerciseId: PID_SQUAT, sets: [] }] }] };
   const T2 = { name: 'Plan B', weeks: 4, days: [{ label: 'D1', exercises: [{ exerciseName: 'Remo', prescriptionExerciseId: PID_ROW, sets: [] }] }] };
 
   await h.ctx._applyTemplateToClient(T1, 'cl1', null);
+  const act1 = h.st.data['clients/cl1'].activeActivationId;
   await h.ctx._applyTemplateToClient(T2, 'cl1', null);
+  const act2 = h.st.data['clients/cl1'].activeActivationId;
   await h.ctx._applyTemplateToClient(T1, 'cl1', null); // reactivate Plan A (new plan doc, distinct activation)
+  const act3 = h.st.data['clients/cl1'].activeActivationId;
 
   const actKeys = Object.keys(h.st.data).filter(k => k.startsWith('clients/cl1/plan_activations/'));
   assert.equal(actKeys.length, 3, 'every activation creates an immutable, distinct record');
   const ids = actKeys.map(k => h.st.data[k].id);
   const uniqueIds = new Set(ids);
   assert.equal(uniqueIds.size, 3, 'all activation keys are unique (no collisions)');
+  assert.ok(act1 && act2 && act3, 'all three activations produced IDs');
+  assert.notEqual(act1, act2);
+  assert.notEqual(act2, act3);
+  assert.equal(h.st.data['clients/cl1'].activeActivationId, act3, 'client activeActivationId points to latest reactivation');
 });
 
 const fx = require('./fixtures/t583-real-client-capture.json');
