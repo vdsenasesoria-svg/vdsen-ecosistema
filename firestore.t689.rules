@@ -102,7 +102,8 @@ service cloud.firestore {
           && request.resource.data.keys().hasAll(['id', 'clientId', 'coachId', 'newPlanId', 'at'])
           && request.resource.data.id == activationId && request.resource.data.clientId == clientId
           && request.resource.data.coachId == request.auth.uid
-          && request.resource.data.at == request.time;
+          && request.resource.data.at == request.time
+          && (!('previousPlanId' in request.resource.data) || request.resource.data.previousPlanId is string || request.resource.data.previousPlanId == null);
       }
     }
     match /exercises/{exerciseId} {

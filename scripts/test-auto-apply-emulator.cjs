@@ -46,7 +46,8 @@ const SUITES = [
   { name: 'pilot stop', file: path.join('tests', 't587-pilot-stop-emulator.cjs') },
   { name: 'temporal rules', file: path.join('tests', 't603-temporal-rules-emulator.cjs') },
   { name: 'canary expiry', file: path.join('tests', 't657-canary-expiry-emulator.cjs') },
-  { name: 'active client eligibility', file: path.join('tests', 't685-active-client-emulator.cjs') }
+  { name: 'active client eligibility', file: path.join('tests', 't685-active-client-emulator.cjs') },
+  { name: 'real autonomous integration', file: path.join('tests', 't692-real-autonomous-emulator.cjs') }
 ].filter(x => fs.existsSync(path.join(__dirname, '..', x.file)));
 const ONLY = process.env.VDSEN_EMU_ONLY;   // e.g. "rules" to run a single suite (used for RED demonstrations)
 const isWin = process.platform === 'win32';
@@ -133,8 +134,7 @@ async function startEmulator(jar) {
   const out = fs.openSync(path.join(runtime, 'firestore-stdout.log'), 'w');
   const err = fs.openSync(path.join(runtime, 'firestore-stderr.log'), 'w');
   emulator = spawn('java', [...JAVA_LOCALE_ARGS, '-jar', jar, '--host', '127.0.0.1', '--port', String(port),
-    '--project_id', PROJECT, '--rules', path.join(repo, 'firestore.t603.rules'),   // T603: candidate = deployed rules + additive start-marker / decision-record blocks (see tests/t603-temporal-security.test.js)
-   
+    '--project_id', PROJECT, '--rules', path.join(repo, fs.existsSync(path.join(repo, 'firestore.t689.rules')) ? 'firestore.t689.rules' : 'firestore.t603.rules'),
     '--single_project_mode'], { cwd: repo, stdio: ['ignore', out, err], windowsHide: true });
   let exited = false;
   emulator.once('exit', () => { exited = true; });
@@ -198,7 +198,7 @@ async function main() {
     const r = spawnSync(process.execPath, ['--test', suite.file], { cwd: repo, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
     process.stdout.write(r.stdout || ''); process.stderr.write(r.stderr || '');
     const num = re => { const m = (r.stdout || '').match(re); return m ? Number(m[1]) : 0; };
-    const p = num(/^# pass (\d+)/m), f = num(/^# fail (\d+)/m);
+    const p = num(/^(?:#|ℹ)\s*pass\s+(\d+)/m), f = num(/^(?:#|ℹ)\s*fail\s+(\d+)/m);
     console.log('[suite] ' + suite.name + ': pass=' + p + ' fail=' + f);
     pass += p; fail += f; if (r.status !== 0) status = r.status === null ? 1 : r.status;
   }

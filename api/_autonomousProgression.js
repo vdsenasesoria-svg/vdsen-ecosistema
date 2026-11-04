@@ -310,10 +310,10 @@ async function consumePending(db, clientId, planId, clock) {
           return { written: false, reason: 'PLAN_MISMATCH' };
         }
 
-        // T689: Look up authoritative immutable plan activation record if available
+        // T689 / T692: Look up authoritative immutable plan activation record if available
         var replacementMs = null;
         if (typeof refs.activation === 'function') {
-          var actSnap = await tx.get(refs.activation(client.activePlanId));
+          var actSnap = await tx.get(refs.activation(client.activePlanId)).catch(function() { return null; });
           if (actSnap && actSnap.exists) {
             var actDoc = _data(actSnap);
             if (actDoc && typeof actDoc === 'object') {
@@ -322,6 +322,38 @@ async function consumePending(db, clientId, planId, clock) {
               if (actDoc.previousPlanId !== undefined && actDoc.previousPlanId !== planId) return { written: false, reason: 'PLAN_MISMATCH' };
               replacementMs = eligibility.parseWallClockMs(actDoc.at);
             }
+          }
+        }
+        // T692: Query activation records if not keyed strictly by planId (e.g. reactivations with unique IDs)
+        if (replacementMs === null && db && typeof db.collection === 'function') {
+          try {
+            var actQuery = db.collection('clients').doc(clientId).collection('plan_activations')
+              .where('newPlanId', '==', client.activePlanId);
+            var actSnaps = await tx.get(actQuery);
+            if (actSnaps && !actSnaps.empty) {
+              var matchingDocs = [];
+              actSnaps.forEach(function(d) {
+                var docData = _data(d);
+                if (docData && typeof docData === 'object' && docData.clientId === clientId &&
+                    (!docData.previousPlanId || docData.previousPlanId === planId)) {
+                  matchingDocs.push(docData);
+                }
+              });
+              if (matchingDocs.length > 0) {
+                matchingDocs.sort(function(a, b) {
+                  var msA = eligibility.parseWallClockMs(a.at) || 0;
+                  var msB = eligibility.parseWallClockMs(b.at) || 0;
+                  return msB - msA;
+                });
+                var latestAct = matchingDocs[0];
+                if (latestAct.coachId && client.coachId && latestAct.coachId !== client.coachId) {
+                  return { written: false, reason: 'PLAN_MISMATCH' };
+                }
+                replacementMs = eligibility.parseWallClockMs(latestAct.at);
+              }
+            }
+          } catch (_qErr) {
+            // fallback if query in tx is unsupported
           }
         }
         if (replacementMs === null) {

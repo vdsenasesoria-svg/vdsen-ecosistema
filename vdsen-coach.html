@@ -7176,6 +7176,21 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         const prevSnap = curActive ? await tx.get(doc(db, 'plans', curActive)) : null;
         tx.set(planRef, o.buildPlanDoc(planId, nowIso));
         tx.update(cRef, { activePlanId: planId });
+        if (typeof tx.set === 'function') {
+          try {
+            const _actId = 'act_' + o.clientId + '_' + planId + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+            const _actRef = doc(db, 'clients/' + o.clientId + '/plan_activations', _actId);
+            const _actDoc = {
+              id: _actId,
+              clientId: o.clientId,
+              coachId: currentCoach.uid,
+              newPlanId: planId,
+              at: typeof serverTimestamp === 'function' ? serverTimestamp() : nowIso
+            };
+            if (curActive) _actDoc.previousPlanId = curActive;
+            tx.set(_actRef, _actDoc);
+          } catch (_eAct) { /* optional subcollection */ }
+        }
         if (prevSnap && prevSnap.exists() && prevSnap.data().coachId === currentCoach.uid) {
           const pd = prevSnap.data();
           tx.set(doc(db, 'plans_backup', curActive + '__replaced_by__' + planId), _planBackupDoc(pd, cur, curActive, nowIso, currentCoach.uid));
@@ -11248,6 +11263,22 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         clientUpdate.supplementsRaw = deleteField();
       }
       // NO: farmacologia, pharmacoPlan, ni ningún campo PED
+
+      if (typeof t.set === 'function') {
+        try {
+          const _actId = 'act_' + clientId + '_' + planId + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+          const _actRef = doc(db, 'clients/' + clientId + '/plan_activations', _actId);
+          const _actDoc = {
+            id: _actId,
+            clientId: clientId,
+            coachId: coachId,
+            newPlanId: planId,
+            at: typeof serverTimestamp === 'function' ? serverTimestamp() : new Date().toISOString()
+          };
+          if (clientData.activePlanId) _actDoc.previousPlanId = clientData.activePlanId;
+          t.set(_actRef, _actDoc);
+        } catch (_eAct) { /* optional subcollection */ }
+      }
 
       t.update(clientRef, clientUpdate);
     });
