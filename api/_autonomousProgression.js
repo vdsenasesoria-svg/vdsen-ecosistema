@@ -322,7 +322,11 @@ async function consumePending(db, clientId, planId, clock) {
             // Contradictory: activeActivationId is pinned on client but record is missing -> fail closed
             return { written: false, reason: 'PLAN_MISMATCH' };
           }
-          actDoc = _data(actSnap);
+          var parsedAct = _data(actSnap);
+          // T694: Detect obsolete/stale activeActivationId from a prior plan assignment if mode changed to legacy
+          if (parsedAct && parsedAct.newPlanId === client.activePlanId) {
+            actDoc = parsedAct;
+          }
         } else if (typeof refs.activation === 'function') {
           // 2. Compatibility fallback: keyed by planId
           var actSnapLegacy = await tx.get(refs.activation(client.activePlanId)).catch(function() { return null; });

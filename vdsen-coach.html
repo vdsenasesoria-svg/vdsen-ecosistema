@@ -7202,6 +7202,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           tx.update(cRef, { activePlanId: planId, activeActivationId: _actId });
         } else {
           tx.update(cRef, { activePlanId: planId });
+          if (cur.activeActivationId) {
+            tx.update(cRef, { activeActivationId: typeof deleteField === 'function' ? deleteField() : null });
+          }
         }
         if (prevSnap && prevSnap.exists() && prevSnap.data().coachId === currentCoach.uid) {
           const pd = prevSnap.data();
@@ -11291,6 +11294,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         if (clientData.activePlanId) _actDoc.previousPlanId = clientData.activePlanId;
         t.set(_actRef, _actDoc);
         clientUpdate.activeActivationId = _actId;
+      } else if (clientData && clientData.activeActivationId) {
+        clientUpdate.activeActivationId = typeof deleteField === 'function' ? deleteField() : null;
       }
 
       t.update(clientRef, clientUpdate);

@@ -224,6 +224,132 @@ test('T692.1B: multiple plan re-activations write distinct activation records wi
   assert.equal(h.st.data['clients/cl1'].activeActivationId, act3, 'client activeActivationId points to latest reactivation');
 });
 
+test('T694.1A: mode switch from authoritative to legacy cleans up activeActivationId from client document', async () => {
+  const h = harness(base(), { selected: 'cl1' });
+  h.opts = { selected: 'cl1' };
+
+  // Step 1: Assign with authoritative mode enabled
+  h.ctx.window.VDSEN_AUTHORITATIVE_ACTIVATIONS_ENABLED = true;
+  const T1 = { name: 'Plan Auth', weeks: 4, days: [{ label: 'D1', exercises: [{ exerciseName: 'Sentadilla', prescriptionExerciseId: PID_SQUAT, sets: [] }] }] };
+  await h.ctx._applyTemplateToClient(T1, 'cl1', null);
+  const actId = h.st.data['clients/cl1'].activeActivationId;
+  assert.ok(actId, 'activeActivationId exists after authoritative activation');
+
+  // Step 2: Assign with authoritative mode disabled (legacy)
+  h.ctx.window.VDSEN_AUTHORITATIVE_ACTIVATIONS_ENABLED = false;
+  const T2 = { name: 'Plan Legacy', weeks: 4, days: [{ label: 'D1', exercises: [{ exerciseName: 'Remo', prescriptionExerciseId: PID_ROW, sets: [] }] }] };
+  await h.ctx._applyTemplateToClient(T2, 'cl1', null);
+
+  // Verify: activePlanId was updated, and activeActivationId was cleared (null or deleted)
+  assert.ok(h.st.data['clients/cl1'].activePlanId, 'activePlanId updated');
+  assert.ok(!h.st.data['clients/cl1'].activeActivationId, 'stale activeActivationId was cleared when switching to legacy mode');
+});
+
+test('T694.1B: consumePending safely ignores stale activeActivationId that references an earlier plan and falls back to legacy replacement timestamp', async () => {
+  const clientId = 'c-stale-1', coachId = 'coach-1', oldPlanId = 'plan-old', newPlanId = 'plan-new';
+  const key1 = 'v1_stale_11111111';
+  const ovlKey = 'ovl_' + key1;
+
+  const store = {
+    ['clients/' + clientId]: {
+      uid: clientId, coachId: coachId, activePlanId: newPlanId, activeActivationId: 'act_old', status: 'active'
+    },
+    // Stale activation record pointing to oldPlanId rather than newPlanId
+    ['clients/' + clientId + '/plan_activations/act_old']: {
+      id: 'act_old', clientId: clientId, coachId: coachId, newPlanId: oldPlanId, at: '2026-10-10T10:00:00.000Z'
+    },
+    ['coaches/' + coachId]: { uid: coachId, autoApplyCanary: { enabled: true, clientIds: [clientId], prescriptionExerciseIds: [] } },
+    ['plans/' + oldPlanId]: { id: oldPlanId, clientId, coachId, status: 'superseded', updatedAt: '2026-10-01T00:00:00.000Z', supersededAt: '2026-10-15T12:00:00.000Z', weeks: 4, days: [{ dayIndex: 0, exercises: [{ prescriptionExerciseId: PID_SQUAT, sets: [] }] }] },
+    ['plans/' + newPlanId]: { id: newPlanId, clientId, coachId, status: 'active', weeks: 4, days: [] },
+    ['releaseControl/autonomousProgression']: { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: '2026-10-27T12:00:00.000Z', clientIds: [clientId] },
+    ['logs/' + clientId]: { planId: oldPlanId, entries: { 'log_2_0_0_s0': { done: true, reps: 8, carga: 100, unit: 'KG', prescriptionExerciseId: PID_SQUAT } } },
+    ['logs/' + clientId + '/mesos/' + oldPlanId]: {
+      planId: oldPlanId,
+      entries: { 'log_2_0_0_s0': { done: true, reps: 8, carga: 100, unit: 'KG', prescriptionExerciseId: PID_SQUAT } },
+      progressionApplications: {
+        [key1]: {
+          key: key1, clientId: clientId, planId: oldPlanId, prescriptionExerciseId: PID_SQUAT, state: 'APPLIED',
+          source: { week: 1, dayIndex: 0, calculatedAt: '2026-10-10T10:00:00.000Z' }, nextExposure: { week: 2, dayIndex: 0 },
+          lifecycle: { overlayKey: ovlKey }
+        }
+      },
+      nextExposureOverlays: {
+        [ovlKey]: {
+          schema: 'vdsen-next-exposure-overlay-v1', key: ovlKey, status: 'APPLIED', sourceRecordKey: key1, clientId: clientId,
+          planId: oldPlanId, prescriptionExerciseId: PID_SQUAT, dimension: 'LOAD', appliedValue: 102.5, unit: 'KG',
+          target: { week: 2, dayIndex: 0 }, source: { week: 1, dayIndex: 0, calculatedAt: '2026-10-10T10:00:00.000Z' }, values: { load: 102.5 }
+        }
+      },
+      consumptionReceipts: {
+        [key1]: {
+          recordKey: key1, overlayKey: ovlKey, dimension: 'LOAD', appliedValue: 102.5, provenance: 'CANONICAL_OVERLAY', at: '2026-10-15T11:05:00.000Z'
+        }
+      }
+    },
+    ['logs/' + clientId + '/starts/' + oldPlanId + '_2_0_0']: {
+      planId: oldPlanId, week: 2, dayIndex: 0, exerciseIndex: 0, setKey: 'log_2_0_0_s0', at: '2026-10-15T11:00:00.000Z'
+    }
+  };
+
+  const db = makeMockDb(store);
+  const consumeRes = await autonomous.consumePending(db, clientId, oldPlanId, CLOCK_FN);
+  assert.equal(consumeRes.length, 1);
+  assert.equal(consumeRes[0].written, true, 'consumed successfully despite stale activeActivationId pointing to previous plan');
+});
+
+test('T694.1C: consumePending fails closed with PLAN_REPLACEMENT_AMBIGUOUS if activeActivationId is stale AND legacy replacement timestamp is missing', async () => {
+  const clientId = 'c-stale-2', coachId = 'coach-1', oldPlanId = 'plan-old', newPlanId = 'plan-new';
+  const key1 = 'v1_stale_22222222';
+  const ovlKey = 'ovl_' + key1;
+
+  const store = {
+    ['clients/' + clientId]: {
+      uid: clientId, coachId: coachId, activePlanId: newPlanId, activeActivationId: 'act_old', status: 'active'
+    },
+    ['clients/' + clientId + '/plan_activations/act_old']: {
+      id: 'act_old', clientId: clientId, coachId: coachId, newPlanId: oldPlanId, at: '2026-10-10T10:00:00.000Z'
+    },
+    ['coaches/' + coachId]: { uid: coachId, autoApplyCanary: { enabled: true, clientIds: [clientId], prescriptionExerciseIds: [] } },
+    // Old plan WITHOUT supersededAt or candidate replacement timestamps
+    ['plans/' + oldPlanId]: { id: oldPlanId, clientId, coachId, status: 'superseded', updatedAt: '2026-10-01T00:00:00.000Z', weeks: 4, days: [{ dayIndex: 0, exercises: [{ prescriptionExerciseId: PID_SQUAT, sets: [] }] }] },
+    ['plans/' + newPlanId]: { id: newPlanId, clientId, coachId, status: 'active', weeks: 4, days: [] },
+    ['releaseControl/autonomousProgression']: { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: '2026-10-27T12:00:00.000Z', clientIds: [clientId] },
+    ['logs/' + clientId]: { planId: oldPlanId, entries: { 'log_2_0_0_s0': { done: true, reps: 8, carga: 100, unit: 'KG', prescriptionExerciseId: PID_SQUAT } } },
+    ['logs/' + clientId + '/mesos/' + oldPlanId]: {
+      planId: oldPlanId,
+      entries: { 'log_2_0_0_s0': { done: true, reps: 8, carga: 100, unit: 'KG', prescriptionExerciseId: PID_SQUAT } },
+      progressionApplications: {
+        [key1]: {
+          key: key1, clientId: clientId, planId: oldPlanId, prescriptionExerciseId: PID_SQUAT, state: 'APPLIED',
+          source: { week: 1, dayIndex: 0, calculatedAt: '2026-10-10T10:00:00.000Z' }, nextExposure: { week: 2, dayIndex: 0 },
+          lifecycle: { overlayKey: ovlKey }
+        }
+      },
+      nextExposureOverlays: {
+        [ovlKey]: {
+          schema: 'vdsen-next-exposure-overlay-v1', key: ovlKey, status: 'APPLIED', sourceRecordKey: key1, clientId: clientId,
+          planId: oldPlanId, prescriptionExerciseId: PID_SQUAT, dimension: 'LOAD', appliedValue: 102.5, unit: 'KG',
+          target: { week: 2, dayIndex: 0 }, source: { week: 1, dayIndex: 0, calculatedAt: '2026-10-10T10:00:00.000Z' }, values: { load: 102.5 }
+        }
+      },
+      consumptionReceipts: {
+        [key1]: {
+          recordKey: key1, overlayKey: ovlKey, dimension: 'LOAD', appliedValue: 102.5, provenance: 'CANONICAL_OVERLAY', at: '2026-10-15T11:05:00.000Z'
+        }
+      }
+    },
+    ['logs/' + clientId + '/starts/' + oldPlanId + '_2_0_0']: {
+      planId: oldPlanId, week: 2, dayIndex: 0, exerciseIndex: 0, setKey: 'log_2_0_0_s0', at: '2026-10-15T11:00:00.000Z'
+    }
+  };
+
+  const db = makeMockDb(store);
+  const consumeRes = await autonomous.consumePending(db, clientId, oldPlanId, CLOCK_FN);
+  assert.equal(consumeRes.length, 1);
+  assert.equal(consumeRes[0].written, false);
+  assert.equal(consumeRes[0].reason, 'PLAN_MISMATCH');
+});
+
 const fx = require('./fixtures/t583-real-client-capture.json');
 const sA = fx.scenarios.A;
 

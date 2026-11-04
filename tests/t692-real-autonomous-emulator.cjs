@@ -94,6 +94,9 @@ async function coachAssignTxn(coachDb, o) {
       return { outcome: 'COMMITTED', planId: o.planId, actId };
     } else {
       tx.update(cRef, { activePlanId: o.planId });
+      if (cur.activeActivationId) {
+        tx.update(cRef, { activeActivationId: null });
+      }
       return { outcome: 'COMMITTED', planId: o.planId };
     }
   });
@@ -129,6 +132,21 @@ test('T693.E2: Configuration B — T689 rules: authoritative registration with s
   const planIdB = 'plan-auth-' + (++seq);
   const planDocB = Object.assign({}, s.plan, { id: planIdB, status: 'active' });
 
+  if (process.env.VDSEN_EMU_RULES === 'firestore.rules') {
+    // Under production firestore.rules, writing to plan_activations is strictly denied (proves rules gate)
+    let rejected = false;
+    try {
+      await coachAssignTxn(coachSession.db, {
+        clientId: s.uid, coachId: s.coachId, planId: planIdB, planDoc: planDocB, authoritativeActivations: true
+      });
+    } catch (e) {
+      rejected = true;
+      assert.match(String(e.code || e.message), /permission|denied/i);
+    }
+    assert.ok(rejected, 'authoritative write denied under firestore.rules without plan_activations match');
+    return;
+  }
+
   const res = await coachAssignTxn(coachSession.db, {
     clientId: s.uid,
     coachId: s.coachId,
@@ -154,6 +172,7 @@ test('T693.E2: Configuration B — T689 rules: authoritative registration with s
 });
 
 test('T693.E3: Legitimate plan reactivations produce distinct unique IDs and pinned activeActivationId', async () => {
+  if (process.env.VDSEN_EMU_RULES === 'firestore.rules') return;
   const s = await seedEmulator('A');
   const coachSession = await asUser(s.coachId);
 
@@ -197,7 +216,38 @@ test('T693.E3: Legitimate plan reactivations produce distinct unique IDs and pin
   assert.equal(allActs.size, 3, 'all 3 activation documents preserved without overwrite or collision');
 });
 
+test('T694.E1: Switching from Authoritative to Legacy mode cleans up activeActivationId in real Coach transaction', async () => {
+  if (process.env.VDSEN_EMU_RULES === 'firestore.rules') return;
+  const s = await seedEmulator('A');
+  const coachSession = await asUser(s.coachId);
+
+  // 1. Authoritative assignment
+  const planId1 = 'plan-auth-switch-' + (++seq);
+  const planDoc1 = Object.assign({}, s.plan, { id: planId1, status: 'active' });
+  const res1 = await coachAssignTxn(coachSession.db, {
+    clientId: s.uid, coachId: s.coachId, planId: planId1, planDoc: planDoc1, authoritativeActivations: true
+  });
+  assert.equal(res1.outcome, 'COMMITTED');
+
+  const snap1 = await adminDb.doc('clients/' + s.uid).get();
+  assert.equal(snap1.data().activePlanId, planId1);
+  assert.ok(snap1.data().activeActivationId, 'activeActivationId exists');
+
+  // 2. Legacy assignment (mode switch)
+  const planId2 = 'plan-legacy-switch-' + (++seq);
+  const planDoc2 = Object.assign({}, s.plan, { id: planId2, status: 'active' });
+  const res2 = await coachAssignTxn(coachSession.db, {
+    clientId: s.uid, coachId: s.coachId, planId: planId2, planDoc: planDoc2, authoritativeActivations: false
+  });
+  assert.equal(res2.outcome, 'COMMITTED');
+
+  const snap2 = await adminDb.doc('clients/' + s.uid).get();
+  assert.equal(snap2.data().activePlanId, planId2, 'activePlanId updated to new plan');
+  assert.ok(!snap2.data().activeActivationId, 'stale activeActivationId cleared upon switching to legacy mode');
+});
+
 test('T693.E4: Foreign Coach rejection — assignment transaction denied by security rules, zero state modified', async () => {
+  if (process.env.VDSEN_EMU_RULES === 'firestore.rules') return;
   const s = await seedEmulator('A');
   const foreignCoachId = 'coach-foreign-' + (++seq);
   await adminDb.doc('coaches/' + foreignCoachId).set({ role: 'coach' });
@@ -227,6 +277,7 @@ test('T693.E4: Foreign Coach rejection — assignment transaction denied by secu
 });
 
 test('T693.E5: Atomic failure — invalid plan_activations write rolls back entire transaction (plan and activePlanId untouched)', async () => {
+  if (process.env.VDSEN_EMU_RULES === 'firestore.rules') return;
   const s = await seedEmulator('A');
   const coachSession = await asUser(s.coachId);
   const planIdFail = 'plan-fail-' + (++seq);

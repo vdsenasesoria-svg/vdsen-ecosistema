@@ -133,8 +133,9 @@ async function startEmulator(jar) {
   port = await freePort();
   const out = fs.openSync(path.join(runtime, 'firestore-stdout.log'), 'w');
   const err = fs.openSync(path.join(runtime, 'firestore-stderr.log'), 'w');
+  const rulesFile = process.env.VDSEN_EMU_RULES || (fs.existsSync(path.join(repo, 'firestore.t689.rules')) ? 'firestore.t689.rules' : 'firestore.t603.rules');
   emulator = spawn('java', [...JAVA_LOCALE_ARGS, '-jar', jar, '--host', '127.0.0.1', '--port', String(port),
-    '--project_id', PROJECT, '--rules', path.join(repo, fs.existsSync(path.join(repo, 'firestore.t689.rules')) ? 'firestore.t689.rules' : 'firestore.t603.rules'),
+    '--project_id', PROJECT, '--rules', path.join(repo, rulesFile),
     '--single_project_mode'], { cwd: repo, stdio: ['ignore', out, err], windowsHide: true });
   let exited = false;
   emulator.once('exit', () => { exited = true; });
@@ -191,8 +192,9 @@ async function main() {
   });
   for (const key of ['GOOGLE_APPLICATION_CREDENTIALS', 'FIREBASE_CONFIG', 'GOOGLE_CLOUD_PROJECT',
     'FIREBASE_AUTH_EMULATOR_HOST', 'FIRESTORE_PREFER_REST']) delete env[key];
+  const rulesFile = process.env.VDSEN_EMU_RULES || (fs.existsSync(path.join(repo, 'firestore.t689.rules')) ? 'firestore.t689.rules' : 'firestore.t603.rules');
   console.log('[t476] project=' + PROJECT + ' emulator=127.0.0.1:' + port +
-    ' rules=firestore.rules jar=' + JAR_NAME + ' sha256=' + JAR_SHA256);
+    ' rules=' + rulesFile + ' jar=' + JAR_NAME + ' sha256=' + JAR_SHA256);
   let pass = 0, fail = 0, status = 0;
   for (const suite of SUITES.filter(x => !ONLY || x.name.includes(ONLY))) {
     const r = spawnSync(process.execPath, ['--test', suite.file], { cwd: repo, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
