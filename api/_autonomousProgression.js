@@ -266,28 +266,47 @@ async function consumePending(db, clientId, planId, clock) {
       var entries = (authDoc && authDoc.entries) || (m && m.entries) || {};
       var tgt = rec.nextExposure || {};
       if (client.activePlanId !== planId) {
-        // T532 test 7 / T686.1: For a replaced plan, consumption is only allowed if there is CANONICAL
+        // T532 test 7 / T686.1 / T687: For a replaced plan, consumption is only allowed if there is CANONICAL
         // temporal evidence that the exposure started before the plan substitution occurred.
         // A simple device-level entry with `done: true` does NOT constitute chronological proof.
         var tday = (Array.isArray(planDoc.days) ? planDoc.days : []).filter(function(d) { return d.dayIndex === tgt.dayIndex; })[0];
         var exIdx = ((tday && tday.exercises) || []).map(function(e) { return e.prescriptionExerciseId; }).indexOf(rec.prescriptionExerciseId);
-        var startMarker = (exIdx >= 0 && typeof refs.start === 'function') ? _data(await tx.get(refs.start(planId, tgt.week, tgt.dayIndex, exIdx))) : null;
-        var startAtMs = (startMarker && typeof startMarker.at === 'string') ? Date.parse(startMarker.at) : null;
+        var startMarkerSnap = (exIdx >= 0 && typeof refs.start === 'function') ? await tx.get(refs.start(planId, tgt.week, tgt.dayIndex, exIdx)) : null;
+        var startMarker = _data(startMarkerSnap);
+        // T687: Support Firestore Timestamp, objects with toMillis(), seconds/nanoseconds, ISO strings, and numbers via parseWallClockMs.
+        var startAtMs = startMarker ? eligibility.parseWallClockMs(startMarker.at) : null;
         if (!Number.isFinite(startAtMs)) {
           // Without an immutable start marker (where rules force request.time), we have no canonical server timestamp.
           // Device-level done: true entries fail closed.
           return { written: false, reason: 'PLAN_MISMATCH' };
         }
+        // Marker structural consistency: verify planId, week, dayIndex, exerciseIndex match target
+        if (startMarker.planId !== planId || Number(startMarker.week) !== tgt.week || Number(startMarker.dayIndex) !== tgt.dayIndex || Number(startMarker.exerciseIndex) !== exIdx) {
+          return { written: false, reason: 'PLAN_MISMATCH' };
+        }
         if (!effective.pidExposureStarted(entries, rec.prescriptionExerciseId, tgt.week, tgt.dayIndex)) {
           return { written: false, reason: 'PLAN_MISMATCH' };
         }
-        // Look for authoritative plan replacement timestamp in client or replacement plan document
+        // T688: Look for plan replacement timestamp.
+        // An authoritative plan replacement timestamp marks when the new plan was ACTIVATED
+        // (or the old plan SUPERSEDED), never when the new plan document was originally drafted/created.
+        // Equating creation (createTime / createdAt) to activation is false: a plan created earlier can
+        // legitimately be activated after an exposure has already started under the previous plan.
         var newPlanSnap = await tx.get(db.collection('plans').doc(client.activePlanId));
         var newPlanDoc = _data(newPlanSnap);
-        var replacementIso = client.activePlanActivatedAt || client.planActivatedAt || client.activePlanUpdatedAt || client.planChangedAt || (newPlanDoc && (newPlanDoc.activatedAt || newPlanDoc.createdAt)) || null;
-        var replacementMs = (typeof replacementIso === 'string') ? Date.parse(replacementIso) : null;
-        if (Number.isFinite(replacementMs) && startAtMs > replacementMs) {
-          // Canonical proof demonstrates the exposure started AFTER the plan was substituted.
+        var candidateVal = client.activePlanActivatedAt ||
+                           client.planActivatedAt ||
+                           (newPlanDoc && newPlanDoc.activatedAt) ||
+                           (planDoc && planDoc.supersededAt) ||
+                           client.activePlanUpdatedAt ||
+                           client.planChangedAt || null;
+        var replacementMs = eligibility.parseWallClockMs(candidateVal);
+        // If there is no reliable replacement timestamp, we cannot establish chronology; fail closed without guessing dates.
+        if (!Number.isFinite(replacementMs)) {
+          return { written: false, reason: 'PLAN_MISMATCH' };
+        }
+        if (startAtMs > replacementMs) {
+          // Canonical proof demonstrates the exposure started AFTER the plan was activated/substituted.
           return { written: false, reason: 'PLAN_MISMATCH' };
         }
       } else {
