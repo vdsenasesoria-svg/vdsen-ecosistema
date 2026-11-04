@@ -6,7 +6,8 @@ const R = require('../scripts/pilot/ayrton-runtime.cjs'), G = require('../script
 const makeHandler = require('../api/autonomous-progression-trigger.js').makeHandler;
 // Identity only; every document, deployment and adapter below is isolated in memory. No network or credentials.
 const UID = 'z82EDPvsCaabfMN3eGAP3rpxeMt1';
-const w = () => ({ schema: 'vdsen-ayrton-window-v1', uid: UID, coachId: 'test-coach', planId: 'test-plan',
+const PID = '831ccbbe-ab09-4669-a0ef-4c652ca84b7a';
+const w = () => ({ schema: 'vdsen-ayrton-window-v1', mode: 'STAGE1_SHADOW', pid: PID, uid: UID, coachId: 'test-coach', planId: 'test-plan',
   runtimeSha: 'a'.repeat(40), deployment: 'dpl_pilot', operationId: 'isolated-window-01', expiresAt: new Date(Date.now() + 3600e3).toISOString().replace(/\.\d{3}Z$/, 'Z') });
 const snapshot = () => ({ uid: UID, coachId: 'test-coach', client: { coachId: 'test-coach', activePlanId: 'test-plan' }, release: { enabled: false, clientIds: [UID] }, coach: { autoApplyCanary: { enabled: false, clientIds: [UID] } } });
 const base = { deployment: 'dpl_off', runtimeSha: R.T671 };
@@ -43,10 +44,10 @@ test('T673 windows accept only Ayrton with a fixed unexpired bounded TTL and no 
 });
 test('T673 effective flags require the exact deployment/project/team/SHA, READY production and no CRON', () => {
   const d = { id: 'dpl_pilot', projectId: P.PROJECT, teamId: P.TEAM, sha: 'a'.repeat(40), state: 'READY', target: 'production' };
-  const ww = w(), p = { schema: 'vdsen-progression-runtime-v1', processingEnabled: true, numericApplyEnabled: true, cronConfigured: false,
+  const ww = w(), p = { schema: 'vdsen-progression-runtime-v1', processingEnabled: true, numericApplyEnabled: false, cronConfigured: false,
     pilotWindow: { uidHash: require('node:crypto').createHash('sha256').update(UID).digest('hex'), planHash: require('node:crypto').createHash('sha256').update(ww.planId).digest('hex'), expiresAt: ww.expiresAt, operationId: ww.operationId } };
   P.effectiveGate(ww, d, p);
-  for (const patch of [{ processingEnabled: false }, { numericApplyEnabled: false }, { cronConfigured: true }, { pilotWindow: null }]) assert.throws(() => P.effectiveGate(ww, d, { ...p, ...patch }));
+  for (const patch of [{ processingEnabled: false }, { numericApplyEnabled: true }, { cronConfigured: true }, { pilotWindow: null }]) assert.throws(() => P.effectiveGate(ww, d, { ...p, ...patch }));
   for (const patch of [{ sha: 'b'.repeat(40) }, { id: 'dpl_other' }, { teamId: 'other' }, { state: 'BUILDING' }]) assert.throws(() => P.effectiveGate(ww, { ...d, ...patch }, p));
 });
 test('T673 authenticated GET runtime probe has no Firestore, executor, sweep or training side effects', async () => {
@@ -122,7 +123,8 @@ test('T673 strict wrapper brackets one atomic commit, verifies readback, repeats
   const W = require('../scripts/pilot/ayrton-window.cjs');
   const file = require('node:path').join(require('node:os').tmpdir(), 't673-window-' + require('node:crypto').randomUUID() + '.json');
   const ww = w(); fs.writeFileSync(file, JSON.stringify(ww));
-  const documents = { ['clients/' + UID]: { coachId: ww.coachId, activePlanId: ww.planId }, ['plans/' + ww.planId]: {},
+  const documents = { ['clients/' + UID]: { coachId: ww.coachId, activePlanId: ww.planId },
+    ['plans/' + ww.planId]: { days: [{ exercises: [{ prescriptionExerciseId: PID }] }] },
     ['coaches/' + ww.coachId]: { unrelated: 'preserved' } }; let commits = 0, probes = 0;
   const enc = x => typeof x === 'string' ? { stringValue: x } : typeof x === 'boolean' ? { booleanValue: x } : Array.isArray(x) ? { arrayValue: { values: x.map(enc) } } : { mapValue: { fields: Object.fromEntries(Object.entries(x).map(([k,v]) => [k, enc(v)])) } };
   const http = async (method, p, token, body) => {
@@ -160,7 +162,7 @@ test('T673 runtime evidence uses the authenticated exact deployment URL, require
   const deps = { idToken: 'isolated-token', assertLegacyRetired: async () => true, deployment: async () => d, currentApp: async () => ww.deployment,
     fetch: async (url, init) => { gets++; assert.equal(new URL(url).hostname, d.url); assert.equal(init.redirect, 'error');
       assert.equal(init.headers.authorization, 'Bearer isolated-token');
-      return { status: 200, json: async () => ({ schema: 'vdsen-progression-runtime-v1', processingEnabled: true, numericApplyEnabled: true, cronConfigured: false,
+      return { status: 200, json: async () => ({ schema: 'vdsen-progression-runtime-v1', processingEnabled: true, numericApplyEnabled: false, cronConfigured: false,
         pilotWindow: { uidHash: require('node:crypto').createHash('sha256').update(UID).digest('hex'), planHash: require('node:crypto').createHash('sha256').update(ww.planId).digest('hex'), expiresAt: ww.expiresAt, operationId: ww.operationId } }) }; } };
   await W.runtimeEvidence(ww, deps); assert.equal(gets, 1);
   await assert.rejects(() => W.runtimeEvidence(ww, { ...deps, currentApp: async () => 'dpl_changed' }), /ALIAS_CHANGED/);
@@ -172,4 +174,128 @@ test('T673 a legacy armed runtime must be retired; permissions and transport err
   assert.equal(await check({}, async () => { throw Error('API GET deployment failed: HTTP 404'); }), true);
   await assert.rejects(() => check({}, async () => ({ id: P.LEGACY_ARMED_DEPLOYMENT })), /STILL_EXISTS/);
   for (const message of ['HTTP 403', 'HTTP 500', 'timeout']) await assert.rejects(() => check({}, async () => { throw Error(message); }), /UNVERIFIED/);
+});
+test('T696 STAGE1_SHADOW requires explicit single PID, enforces numericApplyEnabled=false, and verifies shadow arming', async () => {
+  const PID = '831ccbbe-ab09-4669-a0ef-4c652ca84b7a';
+  const shadowWindow = () => ({
+    schema: 'vdsen-ayrton-window-v1',
+    mode: 'STAGE1_SHADOW',
+    pid: PID,
+    uid: UID,
+    coachId: 'test-coach',
+    planId: 'test-plan',
+    runtimeSha: 'a'.repeat(40),
+    deployment: 'dpl_pilot',
+    operationId: 'shadow-window-01',
+    expiresAt: new Date(Date.now() + 3600e3).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+  });
+
+  // 1. windowSpec in STAGE1_SHADOW
+  P.windowSpec(shadowWindow());
+  assert.throws(() => P.windowSpec({ ...shadowWindow(), pid: undefined }), /INVALID_PID/);
+  assert.throws(() => P.windowSpec({ ...shadowWindow(), pid: 'invalid/chars' }), /INVALID_PID/);
+  assert.throws(() => P.windowSpec({ ...shadowWindow(), mode: 'UNKNOWN_MODE' }), /ONLY_STAGE1_SHADOW_ACCEPTED/);
+
+  // 2. effectiveGate in STAGE1_SHADOW
+  const d = { id: 'dpl_pilot', projectId: P.PROJECT, teamId: P.TEAM, sha: 'a'.repeat(40), state: 'READY', target: 'production' };
+  const probeShadow = {
+    schema: 'vdsen-progression-runtime-v1',
+    processingEnabled: true,
+    numericApplyEnabled: false, // Must be false in shadow!
+    cronConfigured: false,
+    pilotWindow: {
+      uidHash: require('node:crypto').createHash('sha256').update(UID).digest('hex'),
+      planHash: require('node:crypto').createHash('sha256').update('test-plan').digest('hex'),
+      expiresAt: shadowWindow().expiresAt,
+      operationId: shadowWindow().operationId,
+    },
+  };
+  assert.equal(P.effectiveGate(shadowWindow(), d, probeShadow), true);
+
+  // In STAGE1_SHADOW, numericApplyEnabled=true is strictly rejected
+  assert.throws(() => P.effectiveGate(shadowWindow(), d, { ...probeShadow, numericApplyEnabled: true }), /EFFECTIVE_NUMERIC_MUST_BE_OFF_IN_SHADOW/);
+  assert.throws(() => P.effectiveGate(shadowWindow(), d, { ...probeShadow, processingEnabled: false }), /EFFECTIVE_GLOBAL_OFF/);
+  assert.throws(() => P.effectiveGate(shadowWindow(), d, { ...probeShadow, cronConfigured: true }), /CRON_NOT_ALLOWED/);
+
+  // 3. stateGate in STAGE1_SHADOW
+  const st = snapshot();
+  st.coach.autoApplyCanary = { enabled: true, clientIds: [UID], prescriptionExerciseIds: [PID] };
+  assert.equal(P.stateGate(shadowWindow(), st, 'enable'), true);
+  // Mismatched PID in canary is rejected
+  const badCanary = { ...st, coach: { autoApplyCanary: { enabled: true, clientIds: [UID], prescriptionExerciseIds: ['other-pid'] } } };
+  assert.throws(() => P.stateGate(shadowWindow(), badCanary, 'enable'), /CANARY_SINGLE_PID_MISMATCH/);
+
+  // 4. arm in STAGE1_SHADOW
+  let stagedArgs = null;
+  const h = harness({
+    stage: async w => {
+      stagedArgs = w;
+      return { id: 'dpl_pilot', url: 'isolated.vercel.app', projectId: P.PROJECT, teamId: P.TEAM, sha: 'a'.repeat(40), state: 'READY', target: 'production', envNames: G.KNOWN_FLAGS };
+    },
+  });
+  const rep = await R.arm(shadowWindow(), base, h.io);
+  assert.equal(rep.status, 'RUNTIME_READY_FENCES_CLOSED_NOT_ACTIVATED');
+  assert.equal(rep.mode, 'STAGE1_SHADOW');
+  assert.equal(rep.pid, PID);
+});
+
+test('T696 rejection of APPLY mode and disarmed numeric execution before creating any deployment', async () => {
+  // 1. windowSpec rejects APPLY, undefined, or any non-STAGE1_SHADOW mode
+  assert.throws(() => P.windowSpec({ ...w(), mode: 'APPLY' }), /ONLY_STAGE1_SHADOW_ACCEPTED/);
+  const withoutMode = { ...w() };
+  delete withoutMode.mode;
+  assert.throws(() => P.windowSpec(withoutMode), /ONLY_STAGE1_SHADOW_ACCEPTED/);
+
+  // 2. invocation rejects INPUT_MODE === 'APPLY'
+  const validEnv = {
+    GITHUB_ACTIONS: 'true',
+    GITHUB_REPOSITORY: 'vdsenasesoria-svg/vdsen-ecosistema',
+    GITHUB_REF: 'refs/heads/codex/client-app-next',
+    GITHUB_WORKFLOW_REF: 'vdsenasesoria-svg/vdsen-ecosistema/.github/workflows/vdsen-ayrton-runtime.yml@refs/heads/codex/client-app-next',
+    AYRTON_RUNTIME_RELEASE_ENABLED: 'true',
+    GITHUB_RUN_ATTEMPT: '1',
+  };
+  assert.throws(() => R.invocation({ ...validEnv, INPUT_MODE: 'APPLY' }), /ONLY_STAGE1_SHADOW_ACCEPTED/);
+  // Valid shadow invocation passes
+  R.invocation({ ...validEnv, INPUT_MODE: 'STAGE1_SHADOW' });
+  R.invocation({ ...validEnv }); // Default STAGE1_SHADOW
+
+  // 3. buildDeployArgs rejects APPLY or missing mode before any deployment
+  assert.throws(() => R.buildDeployArgs({ ...w(), mode: 'APPLY' }, 'dpl_off', '/tmp/dest'), /ONLY_STAGE1_SHADOW_ACCEPTED/);
+  assert.throws(() => R.buildDeployArgs(withoutMode, 'dpl_off', '/tmp/dest'), /ONLY_STAGE1_SHADOW_ACCEPTED/);
+
+  // 4. arm rejects APPLY and missing mode immediately; zero deployment calls occur
+  const hApply = harness();
+  await assert.rejects(() => R.arm({ ...w(), mode: 'APPLY' }, base, hApply.io), /ONLY_STAGE1_SHADOW_ACCEPTED/);
+  assert.equal(hApply.calls.length, 0, 'ZERO calls to stage/promote allowed on APPLY mode');
+
+  const hNoMode = harness();
+  await assert.rejects(() => R.arm(withoutMode, base, hNoMode.io), /ONLY_STAGE1_SHADOW_ACCEPTED/);
+  assert.equal(hNoMode.calls.length, 0, 'ZERO calls to stage/promote allowed without STAGE1_SHADOW');
+});
+
+test('T696 effective deploy arguments for STAGE1_SHADOW enforce numericApplyEnabled=false and enabled=true', () => {
+  const dest = '/tmp/runner/vdsen-ayrton-123';
+  const args = R.buildDeployArgs(w(), 'dpl_production_baseline', dest);
+
+  // Must include autonomous progression enabled
+  const envIdx = args.indexOf('AUTONOMOUS_PROGRESSION_ENABLED=true');
+  assert.ok(envIdx > 0 && args[envIdx - 1] === '--env', 'AUTONOMOUS_PROGRESSION_ENABLED=true must be set via --env');
+
+  // Must include numeric apply disabled (false)
+  const numIdx = args.indexOf('AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED=false');
+  assert.ok(numIdx > 0 && args[numIdx - 1] === '--env', 'AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED=false must be set via --env');
+
+  // Must NOT include numeric apply true anywhere
+  assert.ok(!args.includes('AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED=true'), 'numeric apply must never be true in deploy args');
+  assert.ok(!args.some(a => String(a).includes('AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED=true')));
+
+  // Must NOT include CRON_SECRET anywhere
+  assert.ok(!args.some(a => String(a).includes('CRON_SECRET')));
+
+  // Window metadata must include hashes and operation
+  const pilotWinIdx = args.findIndex(a => typeof a === 'string' && a.startsWith('VDSEN_PILOT_WINDOW='));
+  assert.ok(pilotWinIdx > 0 && args[pilotWinIdx - 1] === '--env');
+  const winData = JSON.parse(args[pilotWinIdx].replace('VDSEN_PILOT_WINDOW=', ''));
+  assert.equal(winData.operationId, 'isolated-window-01');
 });
