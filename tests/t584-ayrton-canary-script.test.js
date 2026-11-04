@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const S = require('../scripts/pilot/ayrton-canary.cjs');
+const consumer = require('../assets/progression-application-consumer.js');
 
 const UID = 'Ab12Cd34Ef56Gh78Ij90Kl12Mn34';   // synthetic value with the format of a Firebase UID; the script never looks one up and no real UID is stored in the repository
 const enc = (v) => v === null || v === undefined ? { nullValue: null } : typeof v === 'boolean' ? { booleanValue: v } : typeof v === 'number' ? { integerValue: String(v) } : typeof v === 'string' ? { stringValue: v }
@@ -107,4 +108,78 @@ test('T657-B --ttl-hours is validated (1..168), defaults to 24 h and sets expire
   const st = baseState(); await run(['--uid', UID, '--mode', 'enable', '--confirm', '--ttl-hours', '2'], st); assert.equal(st['releaseControl/autonomousProgression'].expiresAt, '2026-11-01T12:00:00Z');
   const noCoach = baseState(); delete noCoach['coaches/coach-abc-123456']; const h = fakeHttp(noCoach);
   await assert.rejects(() => main(['--uid', UID, '--mode', 'enable', '--confirm'], h, []), /No existe coaches/); assert.ok(h.calls.every((c) => c.method === 'GET'));
+});
+
+test('T694-P1 canary scope enforcement for single-PID: authorized UID + authorized PID allowed; other PID blocked; other UID blocked', async () => {
+  const state = baseState();
+  const { r } = await runH(['--uid', UID, '--mode', 'enable', '--confirm', '--pid', 'p1'], state);
+  assert.equal(r.wrote, 2);
+  const canary = state['coaches/coach-abc-123456'].autoApplyCanary;
+  assert.deepEqual(canary, { enabled: true, clientIds: [UID], prescriptionExerciseIds: ['p1'] });
+
+  // consumer.inCanaryScope checks:
+  // 1. UID autorizado + PID autorizado: permitido
+  assert.equal(consumer.inCanaryScope(canary, UID, 'p1'), true, 'authorized UID + authorized PID must be allowed');
+  // 2. UID autorizado + otro PID: bloqueado
+  assert.equal(consumer.inCanaryScope(canary, UID, 'p2'), false, 'authorized UID + other PID must be blocked');
+  // 3. Otro UID: bloqueado
+  const otherUid = 'Zz99Yy88Xx77Ww66Vv55Uu44Tt33';
+  assert.equal(consumer.inCanaryScope(canary, otherUid, 'p1'), false, 'other UID must be blocked even with matching PID');
+  assert.equal(consumer.inCanaryScope(canary, otherUid, 'p2'), false, 'other UID must be blocked');
+});
+
+test('T694-P2 non-existent or foreign PID is rejected before writing anything', async () => {
+  const state = baseState();
+  const before = JSON.stringify(state);
+  // PID that is not in the client active plan
+  await assert.rejects(
+    () => run(['--uid', UID, '--mode', 'enable', '--confirm', '--pid', 'p999'], state),
+    /no pertenece al plan activo/
+  );
+  assert.equal(JSON.stringify(state), before, 'state must be unmodified on non-existent PID');
+
+  // Invalid PID format
+  await assert.rejects(
+    () => run(['--uid', UID, '--mode', 'enable', '--confirm', '--pid', 'bad pid with spaces!'], state),
+    /PID inválido/
+  );
+  assert.equal(JSON.stringify(state), before, 'state must be unmodified on invalid PID format');
+});
+
+test('T694-P3 idempotent retry without duplicate writes (unchanged: true, wrote: 0)', async () => {
+  const state = baseState();
+  // First execution: writes 2 docs
+  const first = await run(['--uid', UID, '--mode', 'enable', '--confirm', '--pid', 'p1'], state);
+  assert.equal(first.r.wrote, 2);
+  assert.equal(first.r.unchanged, undefined);
+
+  // Second execution with identical arguments and same state/time
+  const second = await run(['--uid', UID, '--mode', 'enable', '--confirm', '--pid', 'p1'], state);
+  assert.equal(second.r.wrote, 0, 'no documents written on retry');
+  assert.equal(second.r.unchanged, true, 'reported as unchanged');
+  // Ensure no COMMIT calls occurred during the second run
+  const commitCalls = second.http.calls.filter((c) => c.method === 'COMMIT');
+  assert.equal(commitCalls.length, 0, 'zero COMMIT calls on unchanged retry');
+});
+
+test('T694-P4 stop OFF functional: disables both fences and closes consumer scope', async () => {
+  const state = baseState();
+  // Enable first
+  await run(['--uid', UID, '--mode', 'enable', '--confirm', '--pid', 'p1'], state);
+  assert.equal(state['releaseControl/autonomousProgression'].enabled, true);
+  assert.equal(state['coaches/coach-abc-123456'].autoApplyCanary.enabled, true);
+  assert.equal(consumer.inCanaryScope(state['coaches/coach-abc-123456'].autoApplyCanary, UID, 'p1'), true);
+
+  // Now stop
+  const stopRes = await run(['--uid', UID, '--mode', 'stop', '--confirm'], state);
+  assert.equal(stopRes.r.wrote, 2);
+  const rel = state['releaseControl/autonomousProgression'];
+  const canary = state['coaches/coach-abc-123456'].autoApplyCanary;
+  assert.equal(rel.enabled, false);
+  assert.equal(canary.enabled, false);
+
+  // When stop is applied, inCanaryScope MUST return false for all PIDs and UIDs
+  assert.equal(consumer.inCanaryScope(canary, UID, 'p1'), false, 'scope closed for authorized PID');
+  assert.equal(consumer.inCanaryScope(canary, UID, 'p2'), false, 'scope closed for other PID');
+  assert.equal(consumer.inCanaryScope(canary, 'otherUid', 'p1'), false, 'scope closed for other UID');
 });
