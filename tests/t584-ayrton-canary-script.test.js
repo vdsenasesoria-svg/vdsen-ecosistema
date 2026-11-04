@@ -235,3 +235,35 @@ test('T694-P6 blocking accidental renewal of expiresAt on already active window;
   assert.equal(state['releaseControl/autonomousProgression'].enabled, true);
   assert.equal(state['releaseControl/autonomousProgression'].expiresAt, '2026-11-02T12:00:00Z', 'new window established after stop');
 });
+
+test('T694-P7 enable + --expires-at without --pid is strictly rejected with zero writes in Stage 1; stop works without PID', async () => {
+  const state = baseState(), before = JSON.stringify(state);
+  const expiry = '2026-11-02T10:00:00Z';
+
+  // 1. Dry run enable + --expires-at without --pid: rejected
+  await assert.rejects(
+    () => run(['--uid', UID, '--mode', 'enable', '--expires-at', expiry], state),
+    /--pid obligatorio para enable/
+  );
+  assert.equal(JSON.stringify(state), before, 'state must be untouched');
+
+  // 2. Confirmed enable + --expires-at without --pid: rejected with zero writes
+  await assert.rejects(
+    () => run(['--uid', UID, '--mode', 'enable', '--confirm', '--expires-at', expiry], state),
+    /--pid obligatorio para enable/
+  );
+  assert.equal(JSON.stringify(state), before, 'state must remain untouched on rejected confirm');
+
+  // 3. Confirmed enable + --expires-at WITH valid --pid: succeeds and writes exactly 1 PID
+  const ok = await run(['--uid', UID, '--mode', 'enable', '--confirm', '--expires-at', expiry, '--pid', 'p1'], state);
+  assert.equal(ok.r.wrote, 2);
+  const canary = state['coaches/coach-abc-123456'].autoApplyCanary;
+  assert.deepEqual(canary, { enabled: true, clientIds: [UID], prescriptionExerciseIds: ['p1'] });
+  assert.equal(state['releaseControl/autonomousProgression'].expiresAt, expiry);
+
+  // 4. Stop works completely without PID
+  const stopped = await run(['--uid', UID, '--mode', 'stop', '--confirm'], state);
+  assert.equal(stopped.r.wrote, 2);
+  assert.equal(state['releaseControl/autonomousProgression'].enabled, false);
+  assert.equal(state['coaches/coach-abc-123456'].autoApplyCanary.enabled, false);
+});

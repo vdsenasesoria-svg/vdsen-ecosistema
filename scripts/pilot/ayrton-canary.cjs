@@ -64,12 +64,14 @@ function planWrites(mode, uid, state, opts) {
   if (enabled && !opts.replace && foreign(canary && canary.clientIds)) refusals.push('El canario del Coach ya lista a otros clientes; usa --replace solo si quieres sustituirlo por este único atleta.');
 
   const targetPids = opts.prescriptionExerciseIds || (opts.pid ? [opts.pid] : []);
-  if (enabled && (opts.pidRequired || opts.pid || (opts.prescriptionExerciseIds && opts.prescriptionExerciseIds.length))) {
-    if (!targetPids.length || targetPids.length !== 1 || typeof targetPids[0] !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(targetPids[0])) {
-      throw new Error('--pid obligatorio para enable: debe especificarse exactamente un PID.');
-    }
-    if (Array.isArray(opts.allowedPids) && !opts.allowedPids.includes(targetPids[0])) {
-      refusals.push('El PID "' + targetPids[0] + '" no pertenece al plan activo del atleta.');
+  if (enabled && !opts.legacyProtocol) {
+    if (opts.pidRequired || targetPids.length > 0) {
+      if (!targetPids.length || targetPids.length !== 1 || typeof targetPids[0] !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(targetPids[0])) {
+        throw new Error('--pid obligatorio para enable: debe especificarse exactamente un PID.');
+      }
+      if (Array.isArray(opts.allowedPids) && !opts.allowedPids.includes(targetPids[0])) {
+        refusals.push('El PID "' + targetPids[0] + '" no pertenece al plan activo del atleta.');
+      }
     }
   }
 
@@ -132,12 +134,16 @@ async function main(argv, deps) {
   const plan = cdoc.activePlanId ? decDoc((await request('GET', 'plans/' + cdoc.activePlanId, tk)).body) || {} : {};
   const exs = (plan.days || []).flatMap((d) => d.exercises || []);
   const planPids = exs.map((e) => e.prescriptionExerciseId).filter(Boolean);
-  const hasExpiresAt = argv.includes('--expires-at');
+  const isLegacyProtocol = flag('legacy-window-protocol') || deps.legacyProtocol === true;
   if (mode === 'enable') {
-    if (!targetPid && !hasExpiresAt) {
-      throw new Error('--pid obligatorio para enable: debe especificarse exactamente un PID del plan activo.');
-    }
-    if (targetPid) {
+    if (!isLegacyProtocol) {
+      if (!targetPid || typeof targetPid !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(targetPid)) {
+        throw new Error('--pid obligatorio para enable: debe especificarse exactamente un PID del plan activo.');
+      }
+      if (!planPids.includes(targetPid)) {
+        throw new Error('El PID "' + targetPid + '" no pertenece al plan activo (' + cdoc.activePlanId + ') del atleta; no se escribe nada.');
+      }
+    } else if (targetPid) {
       if (typeof targetPid !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(targetPid)) {
         throw new Error('PID inválido: debe ser un identificador válido.');
       }
@@ -159,7 +165,16 @@ async function main(argv, deps) {
   if (mode === 'status') return { mode, wrote: 0, pids: planPids };
   if (deps.authorize) await deps.authorize({ uid, mode, client: cdoc, release: rel, coach, coachId: cdoc.coachId, confirm, pid: targetPid,
     barrierVersions: { release: relRes.body && relRes.body.updateTime || null, coach: coachRes.body && coachRes.body.updateTime || null } });
-  const { writes, refusals, unchanged } = planWrites(mode, uid, { release: rel, coach, coachId: cdoc.coachId }, { replace, ttlHours: arg('ttl-hours'), expiresAt: arg('expires-at'), pid: targetPid, allowedPids: planPids, pidRequired: mode === 'enable' && !hasExpiresAt, now: deps.now });
+  const { writes, refusals, unchanged } = planWrites(mode, uid, { release: rel, coach, coachId: cdoc.coachId }, {
+    replace,
+    ttlHours: arg('ttl-hours'),
+    expiresAt: arg('expires-at'),
+    pid: targetPid,
+    allowedPids: planPids,
+    pidRequired: mode === 'enable' && !isLegacyProtocol,
+    legacyProtocol: isLegacyProtocol,
+    now: deps.now
+  });
   if (refusals.length) { refusals.forEach((r) => out('RECHAZADO: ' + r)); return { mode, wrote: 0, refused: true }; }
   if (unchanged) { out('Sin cambios: las dos barreras ya coinciden; no se amplía la caducidad.'); return { mode, wrote: 0, unchanged: true }; }
   writes.forEach((w) => out((confirm ? 'ESCRIBE ' : 'SIMULACIÓN ') + w.path + ' campos=' + w.mask.join(',') + ' -> ' + JSON.stringify(w.fields)));

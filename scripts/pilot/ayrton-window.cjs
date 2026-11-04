@@ -34,7 +34,7 @@ async function runtimeEvidence(w, deps = {}) {
   return { deployment: w.deployment, runtimeSha: w.runtimeSha, flags: { processingEnabled: true, numericApplyEnabled: true, cronConfigured: false }, capturedAt: new Date().toISOString() };
 }
 async function main(argv, deps = {}) {
-  const arg = n => argv[argv.indexOf('--' + n) + 1];
+  const arg = n => { const i = argv.indexOf('--' + n); return i >= 0 ? argv[i + 1] : undefined; };
   assert.ok(argv.includes('--window'), 'Explicit immutable window file required');
   const w = JSON.parse(fs.readFileSync(arg('window'), 'utf8')), mode = arg('mode');
   assert.ok(['enable', 'stop'].includes(mode)); P.windowSpec(w, Date.now(), mode === 'stop');
@@ -54,8 +54,17 @@ async function main(argv, deps = {}) {
     record('FENCES_AFTER', readback); return { release, coach };
   };
   let result;
-  try { result = await C.main(['--uid', w.uid, '--mode', mode, '--expires-at', w.expiresAt, ...(argv.includes('--confirm') ? ['--confirm'] : [])], {
+  const targetPid = arg('pid') || w.pid || w.prescriptionExerciseId;
+  const canaryArgs = [
+    '--uid', w.uid,
+    '--mode', mode,
+    '--expires-at', w.expiresAt,
+    ...(targetPid ? ['--pid', targetPid] : ['--legacy-window-protocol']),
+    ...(argv.includes('--confirm') ? ['--confirm'] : [])
+  ];
+  try { result = await C.main(canaryArgs, {
     ...deps,
+    legacyProtocol: !targetPid,
     authorize: async snapshot => {
       inspected = snapshot; P.stateGate(w, snapshot, mode);
       record('FENCES_BEFORE', { versions: snapshot.barrierVersions, releaseEnabled: snapshot.release && snapshot.release.enabled, coachEnabled: snapshot.coach.autoApplyCanary && snapshot.coach.autoApplyCanary.enabled });
