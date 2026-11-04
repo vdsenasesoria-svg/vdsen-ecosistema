@@ -55,8 +55,8 @@ async function main(argv, deps = {}) {
     record('FENCES_AFTER', readback); return { release, coach };
   };
   let result;
-  const targetPid = arg('pid') || w.pid || w.prescriptionExerciseId;
-  if (w.mode === 'STAGE1_SHADOW') {
+  const targetPid = mode === 'stop' ? undefined : (arg('pid') || w.pid || w.prescriptionExerciseId);
+  if (w.mode === 'STAGE1_SHADOW' && mode !== 'stop') {
     assert.ok(targetPid, 'STAGE1_SHADOW requires an explicit single PID (--pid)');
     assert.equal(targetPid, '831ccbbe-ab09-4669-a0ef-4c652ca84b7a', 'ONLY_AUTHORIZED_PID');
   }

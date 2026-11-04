@@ -21,14 +21,38 @@ function invocation(env) {
   assert.equal(env.GITHUB_WORKFLOW_REF, 'vdsenasesoria-svg/vdsen-ecosistema/.github/workflows/vdsen-ayrton-runtime.yml@refs/heads/codex/client-app-next');
   assert.equal(env.AYRTON_RUNTIME_RELEASE_ENABLED, 'true', 'PILOT_LANE_DISARMED');
   assert.equal(env.GITHUB_RUN_ATTEMPT, '1', 'NO_JOB_RERUNS');
+  assert.equal(env.INPUT_MODE || 'STAGE1_SHADOW', 'STAGE1_SHADOW', 'ONLY_STAGE1_SHADOW_ACCEPTED');
+  if (env.INPUT_MODE !== undefined && env.INPUT_MODE !== '') {
+    assert.equal(env.INPUT_MODE, 'STAGE1_SHADOW', 'ONLY_STAGE1_SHADOW_ACCEPTED');
+  }
+}
+function buildDeployArgs(w, productionDeployment, dest) {
+  assert.ok(w, 'PILOT_WINDOW_REQUIRED');
+  assert.equal(w.mode, 'STAGE1_SHADOW', 'ONLY_STAGE1_SHADOW_ACCEPTED');
+  return [
+    'deploy', dest, '--prod', '--skip-domain', '--yes', '--json',
+    '-m', 'githubCommitSha=' + w.runtimeSha,
+    '-m', 'vdsenPilotOperation=' + w.operationId,
+    '-m', 'vdsenPilotBaseline=' + productionDeployment,
+    '--env', 'AUTONOMOUS_PROGRESSION_ENABLED=true',
+    '--env', 'AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED=false',
+    '--env', 'VDSEN_PILOT_WINDOW=' + JSON.stringify({
+      uidHash: require('node:crypto').createHash('sha256').update(w.uid).digest('hex'),
+      planHash: require('node:crypto').createHash('sha256').update(w.planId).digest('hex'),
+      expiresAt: w.expiresAt,
+      operationId: w.operationId,
+    }),
+  ];
 }
 // Dependency boundary is used for isolated simulations. Production CLI always constructs its own adapters.
 async function arm(w, baseline, io) {
+  assert.ok(w, 'PILOT_WINDOW_REQUIRED');
+  assert.equal(w.mode, 'STAGE1_SHADOW', 'ONLY_STAGE1_SHADOW_ACCEPTED');
   P.windowSpec(w);
   assert.ok(baseline.runtimeSha === T671 || (baseline.runtimeSha && baseline.runtimeSha.length === 40), 'OFF_BASELINE_RELEASE_REQUIRED_FIRST');
   assert.notEqual(w.runtimeSha, LEGACY_T671_SHA, 'PILOT_PROBE_RUNTIME_REQUIRED');
   const report = { schema: 'vdsen-ayrton-runtime-release-v1', operationId: w.operationId, runtimeSha: w.runtimeSha,
-    mode: w.mode || 'STAGE1_SHADOW', pid: w.pid || w.prescriptionExerciseId || null,
+    mode: 'STAGE1_SHADOW', pid: w.pid || w.prescriptionExerciseId || null,
     baseline, staged: null, status: 'PREPARING', promotionAttempted: false, productionMutations: 0 };
   const save = () => io.save(report);
   const fenceEvidence = snapshot => ({ readAt: new Date().toISOString(), releaseEnabled: snapshot.release && snapshot.release.enabled,
@@ -134,13 +158,7 @@ function adapters(s) {
       const root = path.resolve(process.env.RUNNER_TEMP), dest = path.resolve(root, 'vdsen-ayrton-' + process.env.GITHUB_RUN_ID);
       assert.ok(dest.startsWith(root + path.sep) && dest !== root, 'UNSAFE_EXPORT_PATH');
       A.exportCandidateTree(w.runtimeSha, dest); A.verifyExportedTree(w.runtimeSha, dest, A.servedSurface());
-      const isShadow = w.mode === 'STAGE1_SHADOW';
-      const args = ['deploy', dest, '--prod', '--skip-domain', '--yes', '--json', '-m', 'githubCommitSha=' + w.runtimeSha,
-        '-m', 'vdsenPilotOperation=' + w.operationId, '-m', 'vdsenPilotBaseline=' + s.production_deployment,
-        '--env', 'AUTONOMOUS_PROGRESSION_ENABLED=true',
-        '--env', 'AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED=' + (isShadow ? 'false' : 'true'),
-        '--env', 'VDSEN_PILOT_WINDOW=' + JSON.stringify({ uidHash: require('node:crypto').createHash('sha256').update(w.uid).digest('hex'),
-          planHash: require('node:crypto').createHash('sha256').update(w.planId).digest('hex'), expiresAt: w.expiresAt, operationId: w.operationId })];
+      const args = buildDeployArgs(w, s.production_deployment, dest);
       const r = await A.runVercelCli(args, dest, { VERCEL_ORG_ID: P.TEAM, VERCEL_PROJECT_ID: P.PROJECT });
       assert.equal(r.code, 0, 'DEPLOY_UNCERTAIN_NO_RETRY');
       const url = (String(r.out) + '\n' + String(r.err)).match(/https:\/\/([A-Za-z0-9.-]+\.vercel\.app)/);
@@ -161,9 +179,10 @@ async function main(argv) {
   if (argv[0] === 'restore') return restore(JSON.parse(fs.readFileSync(FILE, 'utf8')), io);
   assert.equal(argv[0], 'arm');
   const w = JSON.parse(fs.readFileSync(process.env.PILOT_WINDOW_FILE, 'utf8'));
+  assert.equal(w.mode, 'STAGE1_SHADOW', 'ONLY_STAGE1_SHADOW_ACCEPTED');
   return arm(w, { runtimeSha: s.runtime_sha, deployment: s.production_deployment, officialReleaseRun: String(s.app_release.source_release_run) }, io);
 }
-module.exports = { arm, restore, closed, invocation, T671, OFF_BASELINE_SHA, LEGACY_T671_SHA };
+module.exports = { arm, restore, closed, invocation, buildDeployArgs, T671, OFF_BASELINE_SHA, LEGACY_T671_SHA };
 if (require.main === module) main(process.argv.slice(2)).then(r => console.log(JSON.stringify({ status: r.status }))).catch(() => {
   console.error('PILOT_RUNTIME_STOPPED: review the redacted checkpoint; do not repeat deployment.'); process.exitCode = 1;
 });

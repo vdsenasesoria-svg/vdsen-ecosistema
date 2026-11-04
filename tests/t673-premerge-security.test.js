@@ -4,7 +4,7 @@ const R = require('../scripts/pilot/ayrton-runtime.cjs'), P = require('../script
 const C = require('../scripts/pilot/ayrton-canary.cjs'), T = require('../api/autonomous-progression-trigger');
 const G = require('../scripts/release/numeric-guard.cjs'), B = require('../scripts/pilot/off-baseline.cjs');
 const UID = 'z82EDPvsCaabfMN3eGAP3rpxeMt1', hash = x => crypto.createHash('sha256').update(x).digest('hex');
-const window = () => ({ schema: 'vdsen-ayrton-window-v1', uid: UID, coachId: 'test-coach', planId: 'test-plan', runtimeSha: 'a'.repeat(40),
+const window = () => ({ schema: 'vdsen-ayrton-window-v1', mode: 'STAGE1_SHADOW', pid: '831ccbbe-ab09-4669-a0ef-4c652ca84b7a', uid: UID, coachId: 'test-coach', planId: 'test-plan', runtimeSha: 'a'.repeat(40),
   deployment: 'dpl_pilot', operationId: 'premerge-isolated-01', expiresAt: new Date(Date.now() + 3600e3).toISOString().replace(/\.\d{3}Z$/, 'Z') });
 test('T673 review: no rollback when a staged read resolves to the unchanged baseline or another actor moved traffic', async () => {
   for (const current of ['dpl_off', 'dpl_concurrent']) {

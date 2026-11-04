@@ -16,16 +16,12 @@ const exactPid = pid => {
 const sameUid = (x, uid) => x && Array.isArray(x.clientIds) && x.clientIds.length === 1 && x.clientIds[0] === uid;
 function windowSpec(w, now = Date.now(), allowExpired = false) {
   assert.equal(w.schema, 'vdsen-ayrton-window-v1'); exactUid(w.uid);
+  assert.equal(w.mode, 'STAGE1_SHADOW', 'ONLY_STAGE1_SHADOW_ACCEPTED');
   assert.match(w.runtimeSha || '', /^[a-f0-9]{40}$/); assert.match(w.deployment || '', /^dpl_[A-Za-z0-9]+$/);
   assert.match(w.operationId || '', /^[a-zA-Z0-9-]{8,80}$/);
   for (const key of ['coachId', 'planId']) assert.match(w[key] || '', /^[a-zA-Z0-9_-]{1,128}$/);
-  if (w.mode !== undefined) {
-    assert.ok(['STAGE1_SHADOW', 'APPLY'].includes(w.mode), 'INVALID_PILOT_MODE');
-  }
   const pid = w.pid || w.prescriptionExerciseId;
-  if (w.mode === 'STAGE1_SHADOW' || pid !== undefined) {
-    exactPid(pid);
-  }
+  exactPid(pid);
   assert.match(w.expiresAt || '', /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
   const exp = Date.parse(w.expiresAt); assert.ok(Number.isFinite(exp), 'EXPIRY_INVALID');
   assert.equal(new Date(exp).toISOString(), w.expiresAt.replace('Z', '.000Z'), 'EXPIRY_INVALID');
@@ -59,11 +55,7 @@ function effectiveGate(w, deployment, probe, now = Date.now()) {
   assert.equal(deployment.state, 'READY'); assert.equal(deployment.target, 'production');
   assert.equal(probe.schema, 'vdsen-progression-runtime-v1');
   assert.equal(probe.processingEnabled, true, 'EFFECTIVE_GLOBAL_OFF');
-  if (w.mode === 'STAGE1_SHADOW') {
-    assert.equal(probe.numericApplyEnabled, false, 'EFFECTIVE_NUMERIC_MUST_BE_OFF_IN_SHADOW');
-  } else {
-    assert.equal(probe.numericApplyEnabled, true, 'EFFECTIVE_NUMERIC_OFF');
-  }
+  assert.equal(probe.numericApplyEnabled, false, 'EFFECTIVE_NUMERIC_MUST_BE_OFF_IN_SHADOW');
   assert.equal(probe.cronConfigured, false, 'CRON_NOT_ALLOWED');
   assert.deepEqual(probe.pilotWindow, { uidHash: UID_HASH, planHash: hash(w.planId), expiresAt: w.expiresAt, operationId: w.operationId }, 'IMMUTABLE_RUNTIME_WINDOW_MISMATCH');
   return true;

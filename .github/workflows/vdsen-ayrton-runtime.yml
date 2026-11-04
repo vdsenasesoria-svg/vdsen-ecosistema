@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Pilot execution mode (STAGE1_SHADOW or APPLY)
+        description: Pilot execution mode (STAGE1_SHADOW only; numeric APPLY blocked)
         default: 'STAGE1_SHADOW'
         type: string
       prescription_exercise_id:
