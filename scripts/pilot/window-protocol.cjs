@@ -9,12 +9,23 @@ const PROJECT = 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN', TEAM = 'team_VZc5H7Q1DBIJ3g0
 const LEGACY_ARMED_DEPLOYMENT = 'dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K';
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const exactUid = uid => { C.validateUid(uid); assert.equal(hash(uid), UID_HASH, 'ONLY_AYRTON'); return uid; };
+const exactPid = pid => {
+  assert.ok(typeof pid === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(pid), 'INVALID_PID');
+  return pid;
+};
 const sameUid = (x, uid) => x && Array.isArray(x.clientIds) && x.clientIds.length === 1 && x.clientIds[0] === uid;
 function windowSpec(w, now = Date.now(), allowExpired = false) {
   assert.equal(w.schema, 'vdsen-ayrton-window-v1'); exactUid(w.uid);
   assert.match(w.runtimeSha || '', /^[a-f0-9]{40}$/); assert.match(w.deployment || '', /^dpl_[A-Za-z0-9]+$/);
   assert.match(w.operationId || '', /^[a-zA-Z0-9-]{8,80}$/);
   for (const key of ['coachId', 'planId']) assert.match(w[key] || '', /^[a-zA-Z0-9_-]{1,128}$/);
+  if (w.mode !== undefined) {
+    assert.ok(['STAGE1_SHADOW', 'APPLY'].includes(w.mode), 'INVALID_PILOT_MODE');
+  }
+  const pid = w.pid || w.prescriptionExerciseId;
+  if (w.mode === 'STAGE1_SHADOW' || pid !== undefined) {
+    exactPid(pid);
+  }
   assert.match(w.expiresAt || '', /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
   const exp = Date.parse(w.expiresAt); assert.ok(Number.isFinite(exp), 'EXPIRY_INVALID');
   assert.equal(new Date(exp).toISOString(), w.expiresAt.replace('Z', '.000Z'), 'EXPIRY_INVALID');
@@ -27,6 +38,13 @@ function stateGate(w, s, mode, now = Date.now()) {
   assert.equal(s.coachId, w.coachId, 'COACH_CHANGED');
   for (const fence of [s.release, s.coach.autoApplyCanary]) {
     if (fence) assert.ok(sameUid(fence, w.uid), 'FOREIGN_OR_MALFORMED_SCOPE');
+  }
+  const targetPid = w.pid || w.prescriptionExerciseId;
+  if (w.mode === 'STAGE1_SHADOW' && mode !== 'stop' && s.coach && s.coach.autoApplyCanary && s.coach.autoApplyCanary.enabled === true) {
+    const canaryPids = s.coach.autoApplyCanary.prescriptionExerciseIds;
+    if (Array.isArray(canaryPids) && canaryPids.length > 0) {
+      assert.deepEqual(canaryPids, [targetPid], 'CANARY_SINGLE_PID_MISMATCH');
+    }
   }
   if (mode === 'enable' && s.release && s.release.enabled === true && Date.parse(s.release.expiresAt) > now) {
     assert.equal(s.release.expiresAt, w.expiresAt, 'ACTIVE_WINDOW_NO_RENEWAL');
@@ -41,7 +59,11 @@ function effectiveGate(w, deployment, probe, now = Date.now()) {
   assert.equal(deployment.state, 'READY'); assert.equal(deployment.target, 'production');
   assert.equal(probe.schema, 'vdsen-progression-runtime-v1');
   assert.equal(probe.processingEnabled, true, 'EFFECTIVE_GLOBAL_OFF');
-  assert.equal(probe.numericApplyEnabled, true, 'EFFECTIVE_NUMERIC_OFF');
+  if (w.mode === 'STAGE1_SHADOW') {
+    assert.equal(probe.numericApplyEnabled, false, 'EFFECTIVE_NUMERIC_MUST_BE_OFF_IN_SHADOW');
+  } else {
+    assert.equal(probe.numericApplyEnabled, true, 'EFFECTIVE_NUMERIC_OFF');
+  }
   assert.equal(probe.cronConfigured, false, 'CRON_NOT_ALLOWED');
   assert.deepEqual(probe.pilotWindow, { uidHash: UID_HASH, planHash: hash(w.planId), expiresAt: w.expiresAt, operationId: w.operationId }, 'IMMUTABLE_RUNTIME_WINDOW_MISMATCH');
   return true;

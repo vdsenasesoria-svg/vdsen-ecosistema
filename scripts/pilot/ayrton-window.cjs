@@ -31,7 +31,8 @@ async function runtimeEvidence(w, deps = {}) {
   P.effectiveGate(w, { id: d.id || d.uid, projectId: d.projectId, teamId: d.teamId || d.ownerId,
     sha: d.meta && d.meta.githubCommitSha, state: d.readyState, target: d.target }, probe);
   assert.equal(await (deps.currentApp || A.currentApp)(s), w.deployment, 'ALIAS_CHANGED');
-  return { deployment: w.deployment, runtimeSha: w.runtimeSha, flags: { processingEnabled: true, numericApplyEnabled: true, cronConfigured: false }, capturedAt: new Date().toISOString() };
+  const isShadow = w.mode === 'STAGE1_SHADOW';
+  return { deployment: w.deployment, runtimeSha: w.runtimeSha, flags: { processingEnabled: true, numericApplyEnabled: !isShadow, cronConfigured: false }, capturedAt: new Date().toISOString() };
 }
 async function main(argv, deps = {}) {
   const arg = n => { const i = argv.indexOf('--' + n); return i >= 0 ? argv[i + 1] : undefined; };
@@ -55,6 +56,10 @@ async function main(argv, deps = {}) {
   };
   let result;
   const targetPid = arg('pid') || w.pid || w.prescriptionExerciseId;
+  if (w.mode === 'STAGE1_SHADOW') {
+    assert.ok(targetPid, 'STAGE1_SHADOW requires an explicit single PID (--pid)');
+    assert.equal(targetPid, '831ccbbe-ab09-4669-a0ef-4c652ca84b7a', 'ONLY_AUTHORIZED_PID');
+  }
   const canaryArgs = [
     '--uid', w.uid,
     '--mode', mode,

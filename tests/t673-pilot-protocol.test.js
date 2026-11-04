@@ -173,3 +173,66 @@ test('T673 a legacy armed runtime must be retired; permissions and transport err
   await assert.rejects(() => check({}, async () => ({ id: P.LEGACY_ARMED_DEPLOYMENT })), /STILL_EXISTS/);
   for (const message of ['HTTP 403', 'HTTP 500', 'timeout']) await assert.rejects(() => check({}, async () => { throw Error(message); }), /UNVERIFIED/);
 });
+test('T696 STAGE1_SHADOW requires explicit single PID, enforces numericApplyEnabled=false, and verifies shadow arming', async () => {
+  const PID = '831ccbbe-ab09-4669-a0ef-4c652ca84b7a';
+  const shadowWindow = () => ({
+    schema: 'vdsen-ayrton-window-v1',
+    mode: 'STAGE1_SHADOW',
+    pid: PID,
+    uid: UID,
+    coachId: 'test-coach',
+    planId: 'test-plan',
+    runtimeSha: 'a'.repeat(40),
+    deployment: 'dpl_pilot',
+    operationId: 'shadow-window-01',
+    expiresAt: new Date(Date.now() + 3600e3).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+  });
+
+  // 1. windowSpec in STAGE1_SHADOW
+  P.windowSpec(shadowWindow());
+  assert.throws(() => P.windowSpec({ ...shadowWindow(), pid: undefined }), /INVALID_PID/);
+  assert.throws(() => P.windowSpec({ ...shadowWindow(), pid: 'invalid/chars' }), /INVALID_PID/);
+  assert.throws(() => P.windowSpec({ ...shadowWindow(), mode: 'UNKNOWN_MODE' }), /INVALID_PILOT_MODE/);
+
+  // 2. effectiveGate in STAGE1_SHADOW
+  const d = { id: 'dpl_pilot', projectId: P.PROJECT, teamId: P.TEAM, sha: 'a'.repeat(40), state: 'READY', target: 'production' };
+  const probeShadow = {
+    schema: 'vdsen-progression-runtime-v1',
+    processingEnabled: true,
+    numericApplyEnabled: false, // Must be false in shadow!
+    cronConfigured: false,
+    pilotWindow: {
+      uidHash: require('node:crypto').createHash('sha256').update(UID).digest('hex'),
+      planHash: require('node:crypto').createHash('sha256').update('test-plan').digest('hex'),
+      expiresAt: shadowWindow().expiresAt,
+      operationId: shadowWindow().operationId,
+    },
+  };
+  assert.equal(P.effectiveGate(shadowWindow(), d, probeShadow), true);
+
+  // In STAGE1_SHADOW, numericApplyEnabled=true is strictly rejected
+  assert.throws(() => P.effectiveGate(shadowWindow(), d, { ...probeShadow, numericApplyEnabled: true }), /EFFECTIVE_NUMERIC_MUST_BE_OFF_IN_SHADOW/);
+  assert.throws(() => P.effectiveGate(shadowWindow(), d, { ...probeShadow, processingEnabled: false }), /EFFECTIVE_GLOBAL_OFF/);
+  assert.throws(() => P.effectiveGate(shadowWindow(), d, { ...probeShadow, cronConfigured: true }), /CRON_NOT_ALLOWED/);
+
+  // 3. stateGate in STAGE1_SHADOW
+  const st = snapshot();
+  st.coach.autoApplyCanary = { enabled: true, clientIds: [UID], prescriptionExerciseIds: [PID] };
+  assert.equal(P.stateGate(shadowWindow(), st, 'enable'), true);
+  // Mismatched PID in canary is rejected
+  const badCanary = { ...st, coach: { autoApplyCanary: { enabled: true, clientIds: [UID], prescriptionExerciseIds: ['other-pid'] } } };
+  assert.throws(() => P.stateGate(shadowWindow(), badCanary, 'enable'), /CANARY_SINGLE_PID_MISMATCH/);
+
+  // 4. arm in STAGE1_SHADOW
+  let stagedArgs = null;
+  const h = harness({
+    stage: async w => {
+      stagedArgs = w;
+      return { id: 'dpl_pilot', url: 'isolated.vercel.app', projectId: P.PROJECT, teamId: P.TEAM, sha: 'a'.repeat(40), state: 'READY', target: 'production', envNames: G.KNOWN_FLAGS };
+    },
+  });
+  const rep = await R.arm(shadowWindow(), base, h.io);
+  assert.equal(rep.status, 'RUNTIME_READY_FENCES_CLOSED_NOT_ACTIVATED');
+  assert.equal(rep.mode, 'STAGE1_SHADOW');
+  assert.equal(rep.pid, PID);
+});

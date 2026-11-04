@@ -25,9 +25,10 @@ function invocation(env) {
 // Dependency boundary is used for isolated simulations. Production CLI always constructs its own adapters.
 async function arm(w, baseline, io) {
   P.windowSpec(w);
-  assert.equal(baseline.runtimeSha, T671, 'OFF_T671_RELEASE_REQUIRED_FIRST');
+  assert.ok(baseline.runtimeSha === T671 || (baseline.runtimeSha && baseline.runtimeSha.length === 40), 'OFF_BASELINE_RELEASE_REQUIRED_FIRST');
   assert.notEqual(w.runtimeSha, LEGACY_T671_SHA, 'PILOT_PROBE_RUNTIME_REQUIRED');
   const report = { schema: 'vdsen-ayrton-runtime-release-v1', operationId: w.operationId, runtimeSha: w.runtimeSha,
+    mode: w.mode || 'STAGE1_SHADOW', pid: w.pid || w.prescriptionExerciseId || null,
     baseline, staged: null, status: 'PREPARING', promotionAttempted: false, productionMutations: 0 };
   const save = () => io.save(report);
   const fenceEvidence = snapshot => ({ readAt: new Date().toISOString(), releaseEnabled: snapshot.release && snapshot.release.enabled,
@@ -71,7 +72,7 @@ async function arm(w, baseline, io) {
 }
 async function restore(report, io) {
   assert.equal(report.schema, 'vdsen-ayrton-runtime-release-v1');
-  assert.equal(report.baseline.runtimeSha, T671); assert.ok(report.staged && report.staged.id);
+  assert.ok(report.baseline && report.baseline.runtimeSha); assert.ok(report.staged && report.staged.id);
   await io.validateBaseline(report.baseline);
   const current = await io.current();
   assert.ok([report.baseline.deployment, report.staged.id].includes(current), 'FOREIGN_ALIAS_NO_OVERWRITE');
@@ -101,8 +102,9 @@ function adapters(s) {
       return git('rev-parse', sha + '^{tree}');
     },
     validateBaseline: async b => {
-      assert.equal(s.runtime_sha, T671); assert.equal(s.production_deployment, b.deployment);
+      assert.equal(s.runtime_sha, b.runtimeSha, 'BASELINE_RUNTIME_MISMATCH'); assert.equal(s.production_deployment, b.deployment);
       assert.equal(s.app_release.deployment, b.deployment); assert.match(String(s.app_release.source_release_run), /^[1-9][0-9]+$/);
+      assert.equal(s.numeric_apply_enabled, false, 'BASELINE_MUST_BE_OFF');
       const d = await A.deployment(s, b.deployment); assert.equal(d.readyState, 'READY');
       assert.equal(d.id || d.uid, b.deployment);
       assert.equal(d.projectId, P.PROJECT); assert.equal(d.teamId || d.ownerId, P.TEAM);
@@ -132,9 +134,11 @@ function adapters(s) {
       const root = path.resolve(process.env.RUNNER_TEMP), dest = path.resolve(root, 'vdsen-ayrton-' + process.env.GITHUB_RUN_ID);
       assert.ok(dest.startsWith(root + path.sep) && dest !== root, 'UNSAFE_EXPORT_PATH');
       A.exportCandidateTree(w.runtimeSha, dest); A.verifyExportedTree(w.runtimeSha, dest, A.servedSurface());
+      const isShadow = w.mode === 'STAGE1_SHADOW';
       const args = ['deploy', dest, '--prod', '--skip-domain', '--yes', '--json', '-m', 'githubCommitSha=' + w.runtimeSha,
         '-m', 'vdsenPilotOperation=' + w.operationId, '-m', 'vdsenPilotBaseline=' + s.production_deployment,
-        ...G.KNOWN_FLAGS.flatMap(key => ['--env', key + '=true']),
+        '--env', 'AUTONOMOUS_PROGRESSION_ENABLED=true',
+        '--env', 'AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED=' + (isShadow ? 'false' : 'true'),
         '--env', 'VDSEN_PILOT_WINDOW=' + JSON.stringify({ uidHash: require('node:crypto').createHash('sha256').update(w.uid).digest('hex'),
           planHash: require('node:crypto').createHash('sha256').update(w.planId).digest('hex'), expiresAt: w.expiresAt, operationId: w.operationId })];
       const r = await A.runVercelCli(args, dest, { VERCEL_ORG_ID: P.TEAM, VERCEL_PROJECT_ID: P.PROJECT });
