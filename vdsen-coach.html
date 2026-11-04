@@ -7150,6 +7150,16 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     // ambiguous (network / timeout): the commit may or may not have happened — never claim either; the retry recognises an already-assigned plan
     return '⚠️ No se pudo confirmar la asignación del plan (' + ((e && (e.code || e.message)) || 'error') + '). Puede que SÍ se haya guardado: reintenta, es seguro. Si ya estaba asignado se reconocerá y NO se duplicará.';
   }
+  function _isAuthoritativeActivationEnabled(opts, clientData) {
+    if (opts && typeof opts.authoritativeActivations === 'boolean') return opts.authoritativeActivations;
+    if (typeof window !== 'undefined') {
+      if (typeof window.VDSEN_AUTHORITATIVE_ACTIVATIONS_ENABLED === 'boolean') return window.VDSEN_AUTHORITATIVE_ACTIVATIONS_ENABLED;
+      if (typeof window.VDSEN_PLAN_ACTIVATIONS_ENABLED === 'boolean') return window.VDSEN_PLAN_ACTIVATIONS_ENABLED;
+    }
+    if (clientData && typeof clientData.authoritativePlanActivations === 'boolean') return clientData.authoritativePlanActivations;
+    if (clientData && typeof clientData.planActivationsEnabled === 'boolean') return clientData.planActivationsEnabled;
+    return false;
+  }
   // o = { kind, sourceKey, clientId, expectedPrevPlanId, buildPlanDoc(planId, nowIso) } -> { planId, outcome: 'COMMITTED' | 'ALREADY_ASSIGNED', prevPlanId }
   async function _assignPlanTxn(o) {
     if (!currentCoach) throw _assignErr('NOT_OWNER', 'Sin sesión de coach');
@@ -7174,8 +7184,28 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         if (curActive === planId) { outcome = 'ALREADY_ASSIGNED'; return; }
         if (o.expectedPrevPlanId !== undefined && curActive !== (o.expectedPrevPlanId || null)) throw _assignErr('CONFLICT', 'El plan activo cambió');
         const prevSnap = curActive ? await tx.get(doc(db, 'plans', curActive)) : null;
+        const _authoritative = _isAuthoritativeActivationEnabled(o, cur);
         tx.set(planRef, o.buildPlanDoc(planId, nowIso));
-        tx.update(cRef, { activePlanId: planId });
+        if (_authoritative) {
+          if (typeof serverTimestamp !== 'function') throw _assignErr('SERVER_TIMESTAMP_UNAVAILABLE', 'Marca temporal de servidor no disponible');
+          const _actId = 'act_' + o.clientId + '_' + planId + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+          const _actRef = doc(db, 'clients/' + o.clientId + '/plan_activations', _actId);
+          const _actDoc = {
+            id: _actId,
+            clientId: o.clientId,
+            coachId: currentCoach.uid,
+            newPlanId: planId,
+            at: serverTimestamp()
+          };
+          if (curActive) _actDoc.previousPlanId = curActive;
+          tx.set(_actRef, _actDoc);
+          tx.update(cRef, { activePlanId: planId, activeActivationId: _actId });
+        } else {
+          tx.update(cRef, { activePlanId: planId });
+          if (cur.activeActivationId) {
+            tx.update(cRef, { activeActivationId: typeof deleteField === 'function' ? deleteField() : null });
+          }
+        }
         if (prevSnap && prevSnap.exists() && prevSnap.data().coachId === currentCoach.uid) {
           const pd = prevSnap.data();
           tx.set(doc(db, 'plans_backup', curActive + '__replaced_by__' + planId), _planBackupDoc(pd, cur, curActive, nowIso, currentCoach.uid));
@@ -11248,6 +11278,25 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         clientUpdate.supplementsRaw = deleteField();
       }
       // NO: farmacologia, pharmacoPlan, ni ningún campo PED
+
+      var _authoritative = typeof _isAuthoritativeActivationEnabled === 'function' ? _isAuthoritativeActivationEnabled(null, clientData) : false;
+      if (_authoritative) {
+        if (typeof serverTimestamp !== 'function') throw new Error('SERVER_TIMESTAMP_UNAVAILABLE');
+        const _actId = 'act_' + clientId + '_' + planId + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+        const _actRef = doc(db, 'clients/' + clientId + '/plan_activations', _actId);
+        const _actDoc = {
+          id: _actId,
+          clientId: clientId,
+          coachId: coachId,
+          newPlanId: planId,
+          at: serverTimestamp()
+        };
+        if (clientData.activePlanId) _actDoc.previousPlanId = clientData.activePlanId;
+        t.set(_actRef, _actDoc);
+        clientUpdate.activeActivationId = _actId;
+      } else if (clientData && clientData.activeActivationId) {
+        clientUpdate.activeActivationId = typeof deleteField === 'function' ? deleteField() : null;
+      }
 
       t.update(clientRef, clientUpdate);
     });

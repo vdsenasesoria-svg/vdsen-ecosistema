@@ -66,7 +66,7 @@ function harness(init, opts) {
     __dom: {}, serverTimestamp: () => 'TS' });
   ctx.window = Object.assign(ctx.window || {}, { _importedPlan: null });
   const fns = ['rirSchemeForWeeks', '_fnv', '_journalRead', '_journalWrite', '_journalFresh', '_assignOpKey', '_assignPeekPlanId', '_assignPlanId', '_assignJournalClear', '_importSourceKey', '_readActivePlanId', '_readActivePlanIdStrict',
-    '_planBackupDoc', '_assignFailMessage', '_assignPlanTxn', '_supersedePlan', '_assignErr', 'backupPlanIfExists', '_restampPrescriptionIds', '_parseTemplateExercise', 'saveImportedPlan', 'saveManualPlan', '_applyTemplateToClient', 'applyTemplate', 'duplicatePlan', 'duplicatePlanToClient'];
+    '_planBackupDoc', '_assignFailMessage', '_isAuthoritativeActivationEnabled', '_assignPlanTxn', '_supersedePlan', '_assignErr', 'backupPlanIfExists', '_restampPrescriptionIds', '_parseTemplateExercise', 'saveImportedPlan', 'saveManualPlan', '_applyTemplateToClient', 'applyTemplate', 'duplicatePlan', 'duplicatePlanToClient'];
   vm.runInContext(["const _ASSIGN_JOURNAL = 'vdsen_assign_journal_v1';", 'let _savingImportedPlan = false; let _savingManualPlan = false; let manualPlan = null; let activeMPDay = 0;'].concat(fns.map(fnSrc)).concat([
     'this.saveImportedPlan = saveImportedPlan; this.saveManualPlan = saveManualPlan; this._applyTemplateToClient = _applyTemplateToClient; this.applyTemplate = applyTemplate; this.duplicatePlan = duplicatePlan; this.duplicatePlanToClient = duplicatePlanToClient;',
     'this._supersedePlan = _supersedePlan; this._assignPlanTxn = _assignPlanTxn; this._assignPlanId = _assignPlanId; this._assignOpKey = _assignOpKey; this._journalRead = _journalRead; this.setManualPlan = (p) => { manualPlan = p; };']).join('\n'), ctx);

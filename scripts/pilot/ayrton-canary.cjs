@@ -36,7 +36,11 @@ const releaseDoc = (uid, enabled, expiresAt) => {
   if (typeof expiresAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(expiresAt)) throw new Error('expiresAt obligatorio (ISO-8601 UTC).');
   return { schema: RELEASE_SCHEMA, enabled: !!enabled, clientIds: [validateUid(uid)], expiresAt };
 };
-const canaryField = (uid, enabled) => ({ enabled: !!enabled, clientIds: [validateUid(uid)], prescriptionExerciseIds: [] });
+const canaryField = (uid, enabled, pids) => ({
+  enabled: !!enabled,
+  clientIds: [validateUid(uid)],
+  prescriptionExerciseIds: Array.isArray(pids) ? pids : (typeof pids === 'string' && pids ? [pids] : [])
+});
 
 // Firestore REST codec (valores simples)
 const enc = (v) => v === null || v === undefined ? { nullValue: null } : typeof v === 'boolean' ? { booleanValue: v } : typeof v === 'number' ? { integerValue: String(v) } : typeof v === 'string' ? { stringValue: v }
@@ -51,19 +55,47 @@ function planWrites(mode, uid, state, opts) {
   if (mode !== 'enable' && mode !== 'stop') throw new Error('modo desconocido: ' + mode);
   const enabled = mode === 'enable', writes = [], refusals = [];
   const now = opts.now instanceof Date ? opts.now : new Date(), ttl = validateTtlHours(opts.ttlHours);
-  const expiresAt = enabled ? (opts.expiresAt || iso(new Date(now.getTime() + ttl * 3600 * 1000))) : iso(now);
-  if (enabled && (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(expiresAt) || !Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= now.getTime() || Date.parse(expiresAt) - now.getTime() > MAX_TTL_HOURS * 3600e3)) throw new Error('expiresAt inválido o caducado; no se renueva automáticamente.');
-  if (enabled && new Date(Date.parse(expiresAt)).toISOString() !== expiresAt.replace('Z', '.000Z')) throw new Error('expiresAt inválido: fecha UTC inexistente.');
   const foreign = (ids) => Array.isArray(ids) && ids.some((x) => x !== uid);
   const rel = state.release, canary = state.coach && state.coach.autoApplyCanary;
+  const sameScope = (x) => x && Array.isArray(x.clientIds) && x.clientIds.length === 1 && x.clientIds[0] === uid;
+  const samePids = (x, y) => Array.isArray(x) && Array.isArray(y) && x.length === y.length && x.every((v, i) => v === y[i]);
+
   if (enabled && !opts.replace && foreign(rel && rel.clientIds)) refusals.push('La allowlist de la release ya lista a otros clientes; usa --replace solo si quieres sustituirla por este único atleta.');
   if (enabled && !opts.replace && foreign(canary && canary.clientIds)) refusals.push('El canario del Coach ya lista a otros clientes; usa --replace solo si quieres sustituirlo por este único atleta.');
+
+  const targetPids = opts.prescriptionExerciseIds || (opts.pid ? [opts.pid] : []);
+  if (enabled && !opts.legacyProtocol) {
+    if (opts.pidRequired || targetPids.length > 0) {
+      if (!targetPids.length || targetPids.length !== 1 || typeof targetPids[0] !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(targetPids[0])) {
+        throw new Error('--pid obligatorio para enable: debe especificarse exactamente un PID.');
+      }
+      if (Array.isArray(opts.allowedPids) && !opts.allowedPids.includes(targetPids[0])) {
+        refusals.push('El PID "' + targetPids[0] + '" no pertenece al plan activo del atleta.');
+      }
+    }
+  }
+
+  // Comprobar si ya existe una ventana habilitada y vigente para este atleta
+  const existingActive = !!(enabled && rel && rel.enabled === true && sameScope(rel) && typeof rel.expiresAt === 'string' && Date.parse(rel.expiresAt) > now.getTime());
+
+  // Impedir renovaciones accidentales de expiresAt cuando ya existe una ventana habilitada
+  if (enabled && existingActive) {
+    if ((opts.expiresAt && opts.expiresAt !== rel.expiresAt) || (opts.ttlHours !== undefined && opts.ttlHours !== null)) {
+      refusals.push('Ya existe una ventana de release activa hasta ' + rel.expiresAt + '; no se permite renovar o ampliar la caducidad mientras esté habilitada. Ejecuta --mode stop primero.');
+    }
+  }
+
   if (refusals.length) return { writes: [], refusals };
+
+  const expiresAt = enabled ? (existingActive ? rel.expiresAt : (opts.expiresAt || iso(new Date(now.getTime() + ttl * 3600 * 1000)))) : iso(now);
+  if (enabled && (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(expiresAt) || !Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= now.getTime() || Date.parse(expiresAt) - now.getTime() > MAX_TTL_HOURS * 3600e3)) throw new Error('expiresAt inválido o caducado; no se renueva automáticamente.');
+  if (enabled && new Date(Date.parse(expiresAt)).toISOString() !== expiresAt.replace('Z', '.000Z')) throw new Error('expiresAt inválido: fecha UTC inexistente.');
+
   writes.push({ path: RELEASE_PATH, mask: ['schema', 'enabled', 'clientIds', 'expiresAt'], fields: releaseDoc(uid, enabled, expiresAt) });
-  writes.push({ path: 'coaches/' + state.coachId, mask: ['autoApplyCanary'], fields: { autoApplyCanary: canaryField(uid, enabled) } });
-  const sameScope = (x) => x && Array.isArray(x.clientIds) && x.clientIds.length === 1 && x.clientIds[0] === uid;
+  writes.push({ path: 'coaches/' + state.coachId, mask: ['autoApplyCanary'], fields: { autoApplyCanary: canaryField(uid, enabled, targetPids) } });
+
   if (sameScope(rel) && sameScope(canary) && rel.enabled === enabled && canary.enabled === enabled &&
-      (!enabled || (rel.schema === RELEASE_SCHEMA && rel.expiresAt === expiresAt && Array.isArray(canary.prescriptionExerciseIds) && canary.prescriptionExerciseIds.length === 0))) return { writes: [], refusals, unchanged: true };
+      (!enabled || (rel.schema === RELEASE_SCHEMA && rel.expiresAt === expiresAt && samePids(canary.prescriptionExerciseIds, targetPids)))) return { writes: [], refusals, unchanged: true };
   return { writes, refusals };
 }
 
@@ -86,6 +118,12 @@ async function main(argv, deps) {
   deps = deps || {}; const out = deps.log || console.log, request = deps.http || http, token = deps.token || defaultToken;
   const arg = (n) => { const i = argv.indexOf('--' + n); return i >= 0 ? argv[i + 1] : undefined; }, flag = (n) => argv.includes('--' + n);
   const uid = validateUid(arg('uid')), mode = arg('mode') || 'status', confirm = flag('confirm'), replace = flag('replace');
+  const pidFlags = argv.filter((a) => a === '--pid');
+  if (pidFlags.length > 1) throw new Error('Múltiples PIDs no permitidos: debe especificarse exactamente un PID.');
+  const targetPid = arg('pid');
+  if (targetPid && (targetPid.includes(',') || targetPid.includes(' ') || targetPid.includes(';'))) {
+    throw new Error('Múltiples PIDs no permitidos: debe especificarse exactamente un único PID.');
+  }
   const tk = token();
   const client = await request('GET', 'clients/' + uid, tk); if (client.status !== 200) throw new Error('No existe clients/<uid> (HTTP ' + client.status + '): el UID no corresponde a una cuenta Cliente; no se escribe nada.');
   const cdoc = decDoc(client.body); if (!cdoc.coachId || (mode !== 'stop' && !cdoc.activePlanId)) throw new Error('El cliente no tiene coachId o activePlanId: no se puede activar.');
@@ -95,13 +133,48 @@ async function main(argv, deps) {
   const coach = decDoc(coachRes.body) || {}, rel = decDoc(relRes.body);
   const plan = cdoc.activePlanId ? decDoc((await request('GET', 'plans/' + cdoc.activePlanId, tk)).body) || {} : {};
   const exs = (plan.days || []).flatMap((d) => d.exercises || []);
-  out('Atleta: coachId=' + cdoc.coachId.slice(0, 6) + '… activePlanId=' + String(cdoc.activePlanId || '(ausente)').slice(0, 6) + '… ejercicios=' + exs.length + ' con prescriptionExerciseId=' + exs.filter((e) => e.prescriptionExerciseId).length);
+  const planPids = exs.map((e) => e.prescriptionExerciseId).filter(Boolean);
+  const isLegacyProtocol = flag('legacy-window-protocol') || deps.legacyProtocol === true;
+  if (mode === 'enable') {
+    if (!isLegacyProtocol) {
+      if (!targetPid || typeof targetPid !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(targetPid)) {
+        throw new Error('--pid obligatorio para enable: debe especificarse exactamente un PID del plan activo.');
+      }
+      if (!planPids.includes(targetPid)) {
+        throw new Error('El PID "' + targetPid + '" no pertenece al plan activo (' + cdoc.activePlanId + ') del atleta; no se escribe nada.');
+      }
+    } else if (targetPid) {
+      if (typeof targetPid !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(targetPid)) {
+        throw new Error('PID inválido: debe ser un identificador válido.');
+      }
+      if (!planPids.includes(targetPid)) {
+        throw new Error('El PID "' + targetPid + '" no pertenece al plan activo (' + cdoc.activePlanId + ') del atleta; no se escribe nada.');
+      }
+    }
+  } else if (targetPid) {
+    if (typeof targetPid !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(targetPid)) {
+      throw new Error('PID inválido: debe ser un identificador válido.');
+    }
+    if (!planPids.includes(targetPid)) {
+      throw new Error('El PID "' + targetPid + '" no pertenece al plan activo (' + cdoc.activePlanId + ') del atleta; no se escribe nada.');
+    }
+  }
+  out('Atleta: coachId=' + cdoc.coachId.slice(0, 6) + '… activePlanId=' + String(cdoc.activePlanId || '(ausente)').slice(0, 6) + '… ejercicios=' + exs.length + ' con prescriptionExerciseId=' + planPids.length + (targetPid ? ' [PID canario=' + targetPid + ']' : ''));
   out('Allowlist release: ' + (rel ? 'enabled=' + rel.enabled + ' clientIds=' + (rel.clientIds || []).length + ' incluye_atleta=' + (rel.clientIds || []).includes(uid) + ' expiresAt=' + (rel.expiresAt || '(ausente)') : '(ausente)'));
-  out('Canario del Coach: ' + (coach.autoApplyCanary ? 'enabled=' + coach.autoApplyCanary.enabled + ' clientIds=' + (coach.autoApplyCanary.clientIds || []).length + ' incluye_atleta=' + (coach.autoApplyCanary.clientIds || []).includes(uid) : '(ausente)'));
-  if (mode === 'status') return { mode, wrote: 0 };
-  if (deps.authorize) await deps.authorize({ uid, mode, client: cdoc, release: rel, coach, coachId: cdoc.coachId, confirm,
+  out('Canario del Coach: ' + (coach.autoApplyCanary ? 'enabled=' + coach.autoApplyCanary.enabled + ' clientIds=' + (coach.autoApplyCanary.clientIds || []).length + ' incluye_atleta=' + (coach.autoApplyCanary.clientIds || []).includes(uid) + ' pids=' + (coach.autoApplyCanary.prescriptionExerciseIds || []).join(',') : '(ausente)'));
+  if (mode === 'status') return { mode, wrote: 0, pids: planPids };
+  if (deps.authorize) await deps.authorize({ uid, mode, client: cdoc, release: rel, coach, coachId: cdoc.coachId, confirm, pid: targetPid,
     barrierVersions: { release: relRes.body && relRes.body.updateTime || null, coach: coachRes.body && coachRes.body.updateTime || null } });
-  const { writes, refusals, unchanged } = planWrites(mode, uid, { release: rel, coach, coachId: cdoc.coachId }, { replace, ttlHours: arg('ttl-hours'), expiresAt: arg('expires-at'), now: deps.now });
+  const { writes, refusals, unchanged } = planWrites(mode, uid, { release: rel, coach, coachId: cdoc.coachId }, {
+    replace,
+    ttlHours: arg('ttl-hours'),
+    expiresAt: arg('expires-at'),
+    pid: targetPid,
+    allowedPids: planPids,
+    pidRequired: mode === 'enable' && !isLegacyProtocol,
+    legacyProtocol: isLegacyProtocol,
+    now: deps.now
+  });
   if (refusals.length) { refusals.forEach((r) => out('RECHAZADO: ' + r)); return { mode, wrote: 0, refused: true }; }
   if (unchanged) { out('Sin cambios: las dos barreras ya coinciden; no se amplía la caducidad.'); return { mode, wrote: 0, unchanged: true }; }
   writes.forEach((w) => out((confirm ? 'ESCRIBE ' : 'SIMULACIÓN ') + w.path + ' campos=' + w.mask.join(',') + ' -> ' + JSON.stringify(w.fields)));
