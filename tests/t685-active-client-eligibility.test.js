@@ -749,7 +749,23 @@ test('T685.13 Scenario 13: Safe error recovery in sweep, browser startup/empty-s
     'logs/client-ok/starts/plan-ok_1_2_0': { planId: 'plan-ok', week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: new Date(NOW_MS - 2 * DAY_MS).toISOString() }
   }, ['plan-broken']);
 
-  var sweepRes = await sweep.runSweep({ db: db, enabled: true, numericApplyEnabled: true, clock: function() { return NOW_ISO; } });
+  // General fleet behavior is tested in memory, with per-call synthetic fences.
+  // Restore both documents before returning so other clients retain their original scope.
+  const fleetExecutor = { ...executor, processProgression: async function(input) {
+    const release = structuredClone(db.docs.get('releaseControl/autonomousProgression'));
+    const coach = structuredClone(db.docs.get('coaches/coach-1'));
+    try {
+      db.docs.set('releaseControl/autonomousProgression', { ...release, clientIds: [input.clientId] });
+      db.docs.set('coaches/coach-1', { ...coach, autoApplyCanary: { ...coach.autoApplyCanary, clientIds: [input.clientId] } });
+      return await syntheticMotor(db, input.clientId, input.planId).processProgression(input);
+    } finally {
+      db.docs.set('releaseControl/autonomousProgression', release);
+      db.docs.set('coaches/coach-1', coach);
+      db.docs.delete('releaseControl/numericPilot');
+    }
+  } };
+  const fleetSweep = require('./helpers/t699-synthetic-executor.js').createSyntheticSweep(fleetExecutor);
+  var sweepRes = await fleetSweep.runSweep({ db: db, enabled: true, numericApplyEnabled: true, clock: function() { return NOW_ISO; } });
   assert.equal(sweepRes.status, 'SWEPT');
   assert.equal(sweepRes.processed, 3);
   assert.deepEqual(sweepRes.results, [
@@ -758,6 +774,9 @@ test('T685.13 Scenario 13: Safe error recovery in sweep, browser startup/empty-s
     { clientId: 'client-inactive', status: 'INACTIVE_CLIENT' }
   ]);
   assert.equal(Object.values(db.docs.get('logs/client-ok/mesos/plan-ok').nextExposureOverlays).length, 1);
+  assert.deepEqual(db.docs.get('releaseControl/autonomousProgression').clientIds, ['client-broken', 'client-ok', 'client-inactive']);
+  assert.deepEqual(db.docs.get('coaches/coach-1').autoApplyCanary.clientIds, ['client-broken', 'client-ok', 'client-inactive']);
+  assert.equal(db.docs.has('releaseControl/numericPilot'), false);
 
   // 13b) Browser _captureLifecycleState does not schedule trigger on empty new-client meso snapshot, only when recoverable evidence exists
   var html = fs.readFileSync(path.join(__dirname, '..', 'vdsen-cliente.html'), 'utf8');

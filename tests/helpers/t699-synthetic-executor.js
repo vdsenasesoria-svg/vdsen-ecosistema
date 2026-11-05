@@ -23,4 +23,14 @@ instance.require = function(id) {
 instance._compile(fs.readFileSync(filename, 'utf8'), filename);
 return instance.exports;
 }
-module.exports = { createSyntheticExecutor };
+function createSyntheticSweep(executor) {
+  const file = require.resolve('../../api/_autonomousProgressionSweep');
+  const instance = new Module(file, module);
+  instance.filename = file;
+  instance.paths = Module._nodeModulePaths(require('node:path').dirname(file));
+  const originalRequire = instance.require.bind(instance);
+  instance.require = id => id === './_autonomousProgression' ? executor : originalRequire(id);
+  instance._compile(fs.readFileSync(file, 'utf8'), file);
+  return instance.exports;
+}
+module.exports = { createSyntheticExecutor, createSyntheticSweep };
