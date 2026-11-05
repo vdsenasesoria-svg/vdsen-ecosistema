@@ -10915,8 +10915,7 @@ function adjCarga(key, delta) {
   var v = (parseFloat(el.value) || 0) + delta;
   if (v < 0) v = 0;
   el.value = v % 1 === 0 ? v : v.toFixed(1);
-  bcProgHint(key);
-  try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
+  try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) { bcProgHint(key); }
 }
 window.adjCarga = adjCarga;
 
@@ -10926,8 +10925,7 @@ function adjReps(key, delta) {
   var v = Math.round((parseFloat(el.value) || 0) + delta);
   if (v < 0) v = 0;
   el.value = v;
-  bcProgHint(key);
-  try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
+  try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) { bcProgHint(key); }
 }
 window.adjReps = adjReps;
 

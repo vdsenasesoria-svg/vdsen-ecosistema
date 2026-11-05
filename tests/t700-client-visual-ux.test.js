@@ -37,13 +37,9 @@ test('T700.2 Steppers de carga y repeticiones: no abren teclado virtual (sin el.
   assert.ok(!adjRepsSrc.includes('.focus('), 'adjReps no llama a .focus(), previniendo teclado virtual en móviles');
   assert.ok(!adjCargaSrc.includes('.focus('), 'adjCarga no llama a .focus(), previniendo teclado virtual en móviles');
 
-  // Verificar que disparan input event para persistencia de borradores
+  // Verificar que disparan input event para persistencia de borradores y disparo limpio de oninput
   assert.ok(adjRepsSrc.includes("dispatchEvent(new Event('input'"), 'adjReps emite input event');
   assert.ok(adjCargaSrc.includes("dispatchEvent(new Event('input'"), 'adjCarga emite input event');
-
-  // Verificar que llaman a bcProgHint para refrescar cálculos e1RM
-  assert.ok(adjRepsSrc.includes('bcProgHint(key)'), 'adjReps actualiza cálculo de progresión');
-  assert.ok(adjCargaSrc.includes('bcProgHint(key)'), 'adjCarga actualiza cálculo de progresión');
 });
 
 test('T700.3 Funcionalidad de adjReps y adjCarga (incremento, decremento, clamping)', () => {
@@ -128,4 +124,70 @@ test('T700.8 Tokens de diseño y alineación escritorio/móvil', () => {
   // Desktop centering
   assert.ok(CLIENT.includes('.hdr { max-width: 960px; margin-inline: auto; width: 100%; }') || CLIENT.includes('.hdr{max-width:960px;margin-inline:auto;width:100%}'), 'header centrado en escritorio');
   assert.ok(CLIENT.includes('.bnav { max-width: 960px; margin-inline: auto;') || CLIENT.includes('.bnav{max-width:960px;margin-inline:auto;'), 'bnav centrado en escritorio');
+});
+
+test('T700.9 Ruta de eventos y eliminación de doble ejecución de bcProgHint', () => {
+  let bcCalls = 0;
+  const inputEl = {
+    id: 'reps_log_1_0_0_s0',
+    value: '8',
+    oninput: function() { bcCalls++; },
+    dispatchEvent: function(event) {
+      if (this.oninput) this.oninput(event);
+    }
+  };
+
+  const sandbox = {
+    document: {
+      getElementById: (id) => inputEl
+    },
+    Math,
+    parseFloat,
+    Event: class { constructor(type, opts) { this.type = type; this.bubbles = opts && opts.bubbles; } },
+    bcProgHint: () => { bcCalls++; }
+  };
+
+  const src = extractFunction(CLIENT, 'function adjReps(key, delta) {');
+  vm.createContext(sandbox);
+  vm.runInContext(src, sandbox);
+
+  // Ejecución de adjReps: el evento input dispara oninput exactamente una vez
+  sandbox.adjReps('log_1_0_0_s0', 1);
+  assert.equal(inputEl.value, 9);
+  assert.equal(bcCalls, 1, 'bcProgHint se ejecuta exactamente una sola vez por interacción, sin duplicación');
+
+  // Segunda pulsación
+  sandbox.adjReps('log_1_0_0_s0', 1);
+  assert.equal(inputEl.value, 10);
+  assert.equal(bcCalls, 2, 'segunda interacción ejecuta exactamente una vez más');
+});
+
+test('T700.10 adjCarga: ruta de eventos única para carga y actualización de borradores', () => {
+  let bcCalls = 0;
+  const inputEl = {
+    id: 'carga_log_1_0_0_s0',
+    value: '80',
+    oninput: function() { bcCalls++; },
+    dispatchEvent: function(event) {
+      if (this.oninput) this.oninput(event);
+    }
+  };
+
+  const sandbox = {
+    document: {
+      getElementById: (id) => inputEl
+    },
+    Math,
+    parseFloat,
+    Event: class { constructor(type, opts) { this.type = type; this.bubbles = opts && opts.bubbles; } },
+    bcProgHint: () => { bcCalls++; }
+  };
+
+  const src = extractFunction(CLIENT, 'function adjCarga(key, delta) {');
+  vm.createContext(sandbox);
+  vm.runInContext(src, sandbox);
+
+  sandbox.adjCarga('log_1_0_0_s0', 2.5);
+  assert.equal(inputEl.value, '82.5');
+  assert.equal(bcCalls, 1, 'adjCarga ejecuta el cálculo exactamente una sola vez');
 });
