@@ -1406,9 +1406,14 @@ html.rc-open{overflow:hidden}
 /* ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
    T700 · PREMIUM EDITORIAL ATHLETIC SYSTEM (LAYOUT & CONTROLS)
    ═════════════════════════════════════════════════════════════════════════════════════════════════════════════ */
-.active-set-context{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:0 0 10px;margin-bottom:10px;border-bottom:1px solid var(--rule)}
-.active-set-ex-idx{font-family:var(--font-num);font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--accent)}
-.active-set-ex-title{font-family:var(--font-display);font-size:15px;font-weight:800;letter-spacing:-.01em;color:var(--tx);text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
+.active-set-context{display:flex;flex-direction:column;gap:3px;padding:0 0 8px;margin-bottom:10px;border-bottom:1px solid var(--rule)}
+.active-set-ex-idx{font-family:var(--font-num);font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--accent);line-height:1.2}
+.active-set-ex-title{font-family:var(--font-display);font-size:15px;line-height:1.25;font-weight:800;letter-spacing:-.01em;color:var(--tx);text-transform:uppercase;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;overflow-wrap:break-word;text-align:left}
+@media (max-width:359px){
+  .active-set-context{gap:2px;padding-bottom:6px;margin-bottom:8px}
+  .active-set-ex-idx{font-size:10px}
+  .active-set-ex-title{font-size:14px;line-height:1.2}
+}
 .workout-set-current{border-left:3px solid var(--accent);background:var(--plate-hi);box-shadow:none;border-radius:var(--r-2)}
 .workout-set-saved{border-left:3px solid var(--grn);background:var(--plate);box-shadow:none;border-radius:var(--r-2)}
 
@@ -10911,7 +10916,7 @@ function adjCarga(key, delta) {
   if (v < 0) v = 0;
   el.value = v % 1 === 0 ? v : v.toFixed(1);
   bcProgHint(key);
-  el.focus({ preventScroll: true });
+  try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
 }
 window.adjCarga = adjCarga;
 
@@ -10922,7 +10927,7 @@ function adjReps(key, delta) {
   if (v < 0) v = 0;
   el.value = v;
   bcProgHint(key);
-  el.focus({ preventScroll: true });
+  try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
 }
 window.adjReps = adjReps;
 
