@@ -553,10 +553,9 @@ test('T687 — 9. Contratos PENDING -> APPLIED -> CONSUMED: full lifecycle adher
   };
 
   // Exercise the general lifecycle with an isolated synthetic authorization.
-  var syntheticExecutor = require('./helpers/t699-synthetic-executor.js');
   var window = { schema: 'vdsen-numeric-pilot-v1', mode: 'NUMERIC_APPLY', uid: clientId, planId, pid,
     runtimeSha: 'a'.repeat(40), operationId: 'synthetic-687', startsAt: '2026-11-03T11:00:00Z', expiresAt: '2026-11-03T13:00:00Z' };
-  syntheticExecutor.setSyntheticWindow(window);
+  var syntheticExecutor = require('./helpers/t699-synthetic-executor.js').createSyntheticExecutor(window);
   seed['coaches/' + coachId].autoApplyCanary.prescriptionExerciseIds = [pid];
   seed['releaseControl/autonomousProgression'].expiresAt = window.expiresAt;
   seed['releaseControl/numericPilot'] = { ...window, enabled: true };

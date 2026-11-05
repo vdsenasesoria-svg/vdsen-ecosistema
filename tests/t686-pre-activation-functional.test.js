@@ -5,7 +5,8 @@ const assert = require('node:assert/strict');
 
 // Isolated synthetic authorization allows these plan-validation tests to reach
 // the general engine. Production authority is covered separately by T699.
-const executor = require('./helpers/t699-synthetic-executor.js');
+const executor = require('../api/_autonomousProgression.js');
+const { createSyntheticExecutor } = require('./helpers/t699-synthetic-executor.js');
 const eligibility = require('../api/_clientEligibility.js');
 const fleetReport = require('../scripts/fleet/eligibility-report.cjs');
 const consumer = require('../assets/progression-application-consumer.js');
@@ -187,8 +188,8 @@ test('T686 — CAMBIO 1: Progression REPS blocked when plan is suspended before 
     }
   };
   var db = makeFakeDb(seed);
-  executor.setSyntheticWindow({ uid: clientId, planId });
-  var res = await executor.applyPending(db, clientId, planId, () => NOW_ISO);
+  var syntheticExecutor = createSyntheticExecutor({ uid: clientId, planId });
+  var res = await syntheticExecutor.applyPending(db, clientId, planId, () => NOW_ISO);
   assert.equal(res.length, 1);
   assert.equal(res[0].written, false);
   assert.equal(res[0].reason, 'PLAN_MISMATCH');
@@ -219,8 +220,8 @@ test('T686 — CAMBIO 1: Progression REST blocked when plan is revoked before ap
     }
   };
   var db = makeFakeDb(seed);
-  executor.setSyntheticWindow({ uid: clientId, planId });
-  var res = await executor.applyPending(db, clientId, planId, () => NOW_ISO);
+  var syntheticExecutor = createSyntheticExecutor({ uid: clientId, planId });
+  var res = await syntheticExecutor.applyPending(db, clientId, planId, () => NOW_ISO);
   assert.equal(res.length, 1);
   assert.equal(res[0].written, false);
   assert.equal(res[0].reason, 'PLAN_MISMATCH');
@@ -251,8 +252,8 @@ test('T686 — CAMBIO 1: Progression blocked when plan coachId or clientId does 
     }
   };
   var db = makeFakeDb(seed);
-  executor.setSyntheticWindow({ uid: clientId, planId });
-  var res = await executor.applyPending(db, clientId, planId, () => NOW_ISO);
+  var syntheticExecutor = createSyntheticExecutor({ uid: clientId, planId });
+  var res = await syntheticExecutor.applyPending(db, clientId, planId, () => NOW_ISO);
   assert.equal(res.length, 1);
   assert.equal(res[0].written, false);
   assert.equal(res[0].reason, 'PLAN_MISMATCH');
@@ -690,8 +691,8 @@ test('T686 — CAMBIO 1: Progression SETS blocked when plan is suspended before 
     }
   };
   var db = makeFakeDb(seed);
-  executor.setSyntheticWindow({ uid: clientId, planId });
-  var res = await executor.applyPending(db, clientId, planId, () => NOW_ISO);
+  var syntheticExecutor = createSyntheticExecutor({ uid: clientId, planId });
+  var res = await syntheticExecutor.applyPending(db, clientId, planId, () => NOW_ISO);
   assert.equal(res.length, 1);
   assert.equal(res[0].written, false);
   assert.equal(res[0].reason, 'PLAN_MISMATCH');

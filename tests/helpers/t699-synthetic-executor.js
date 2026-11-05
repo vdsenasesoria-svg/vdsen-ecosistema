@@ -3,11 +3,11 @@
 const Module = require('node:module');
 const fs = require('node:fs');
 const filename = require.resolve('../../api/_autonomousProgression');
+function createSyntheticExecutor(syntheticWindow) {
 const instance = new Module(filename, module);
 instance.filename = filename;
 instance.paths = Module._nodeModulePaths(require('node:path').dirname(filename));
 const originalRequire = instance.require.bind(instance);
-let syntheticWindow;
 instance.require = function(id) {
   if (id !== './_numericPilotContract.js') return originalRequire(id);
   return {
@@ -21,5 +21,6 @@ instance.require = function(id) {
   };
 };
 instance._compile(fs.readFileSync(filename, 'utf8'), filename);
-module.exports = instance.exports;
-module.exports.setSyntheticWindow = w => { syntheticWindow = w; };
+return instance.exports;
+}
+module.exports = { createSyntheticExecutor };
