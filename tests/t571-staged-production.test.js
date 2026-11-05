@@ -89,7 +89,7 @@ test('T571-1e the export genuinely round-trips real binary assets', () => {
   // candidate tree and verify every served path, which includes .jpg and .ttf files.
   const { execFileSync } = require('node:child_process');
   const os = require('node:os');
-  const sha = '8365410cf7f09427c79ead77aa4f769c16e9a803';
+  const sha = app.SAFE_OFF_BASELINE.runtimeSha;
   try { execFileSync('git', ['cat-file', '-e', sha + '^{commit}'], { stdio: 'ignore' }); }
   catch { return; } // commit not reachable in this checkout: skip rather than fail
   const paths = app.servedSurface();
