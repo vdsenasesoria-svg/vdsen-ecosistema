@@ -64,6 +64,52 @@ test('real contract in emulator: pending -> applied overlay -> effective prescri
     const afterStop = (await meso.get()).data();
     assert.equal(afterStop.progressionApplications[sc.rec.key].state, 'PENDING');
     assert.deepEqual(afterStop.nextExposureOverlays, {});
+    // Materialize from synthetic execution evidence containing two exercise IDs.
+    const other = 'synthetic-other-pid';
+    const expandedPlan = structuredClone(sc.plan);
+    expandedPlan.days.forEach(day => day.exercises.push({ ...day.exercises[0], prescriptionExerciseId: other }));
+    const evidence = structuredClone(sc.entries);
+    Object.entries(sc.entries).forEach(([key, entry]) => {
+      evidence[key.replace(/_0_s(\d+)$/, '_1_s$1')] = { ...entry, prescriptionExerciseId: other };
+    });
+    evidence.progrec_1_2 = { calculatedAt: '2026-09-27T12:00:00.000Z', recommendations: [C.PID, other].map(pid => ({
+      prescriptionExerciseId: pid, exerciseId: sc.exerciseId, exerciseName: 'X', action: 'increase_load', newLoad: 5, newReps: 10
+    })) };
+    await db.doc('plans/' + C.PLAN).set(expandedPlan);
+    await db.doc('logs/' + C.UID).set({ planId: C.PLAN, entries: evidence });
+    await meso.set({ planId: C.PLAN, entries: evidence, progressionApplications: {}, nextExposureOverlays: {} });
+    // STOP must block materialization as well as application.
+    assert.equal((await executor.materialize(db, C.UID, C.PLAN, () => new Date().toISOString())).status, 'OUT_OF_NUMERIC_PILOT');
+    assert.deepEqual((await meso.get()).data().progressionApplications, {});
+    await db.doc('releaseControl/numericPilot').set({ enabled: true }, { merge: true });
+    const materialized = await executor.materialize(db, C.UID, C.PLAN, () => new Date().toISOString());
+    assert.equal(materialized.status, 'MATERIALIZED', JSON.stringify(materialized));
+    const materializedRecords = Object.values((await meso.get()).data().progressionApplications);
+    assert.equal(materializedRecords.length, 1);
+    assert.equal(materializedRecords[0].prescriptionExerciseId, C.PID);
+    assert.equal((await executor.materialize(db, 'synthetic-foreign-user', C.PLAN, () => new Date().toISOString())).status, 'OUT_OF_NUMERIC_PILOT');
+    assert.equal((await executor.materialize(db, C.UID, 'synthetic-foreign-plan', () => new Date().toISOString())).status, 'OUT_OF_NUMERIC_PILOT');
+    assert.equal((await db.doc('logs/synthetic-foreign-user').get()).exists, false);
+    process.env.VDSEN_NUMERIC_PILOT_ENABLED = 'false';
+    assert.equal((await executor.materialize(db, C.UID, C.PLAN, () => new Date().toISOString())).status, 'OUT_OF_NUMERIC_PILOT');
+    assert.deepEqual(await executor.applyPending(db, C.UID, C.PLAN, () => new Date().toISOString()), []);
+    process.env.VDSEN_NUMERIC_PILOT_ENABLED = 'true';
+    // Abort after a staged transaction write; Firestore must commit neither document.
+    await db.doc('plans/' + C.PLAN).set(sc.plan);
+    await meso.set(pending);
+    const abortingDb = Object.create(db);
+    abortingDb.collection = name => db.collection(name);
+    abortingDb.runTransaction = fn => db.runTransaction(tx => {
+      let writes = 0;
+      return fn({ get: tx.get.bind(tx), set(ref, data, opts) {
+        if (++writes === 2) throw new Error('SYNTHETIC_ABORT_BEFORE_COMMIT');
+        return opts ? tx.set(ref, data, opts) : tx.set(ref, data);
+      } });
+    });
+    await assert.rejects(() => executor.applyPending(abortingDb, C.UID, C.PLAN, () => new Date().toISOString()), /SYNTHETIC_ABORT_BEFORE_COMMIT/);
+    const rolledBack = (await meso.get()).data();
+    assert.equal(rolledBack.progressionApplications[sc.rec.key].state, 'PENDING');
+    assert.deepEqual(rolledBack.nextExposureOverlays, {});
   } finally {
     previous.forEach(([k, v]) => { if (v === undefined) delete process.env[k]; else process.env[k] = v; });
   }

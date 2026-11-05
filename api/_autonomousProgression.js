@@ -71,6 +71,11 @@ function _webTx(tx) {
 
 async function materialize(db, clientId, requestedPlanId, clock, opts) {
   opts = opts || {};
+  // A configured numeric lane never falls back to the general/shadow scope.
+  var numericMode = process.env.VDSEN_NUMERIC_PILOT_WINDOW !== undefined || process.env.VDSEN_NUMERIC_PILOT_ENABLED === 'true' ||
+    process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED === 'true';
+  var numericWindow = numericMode ? numericPilot.runtimeAuthorization(process.env, Date.now()) : null;
+  if (numericMode && (!numericWindow || clientId !== numericWindow.uid || requestedPlanId !== numericWindow.planId)) return { status: 'OUT_OF_NUMERIC_PILOT' };
   return db.runTransaction(async function(tx) {
     var clientRef = db.collection('clients').doc(clientId);
     var clientSnap = await tx.get(clientRef), client = _data(clientSnap);
@@ -87,6 +92,16 @@ async function materialize(db, clientId, requestedPlanId, clock, opts) {
     var snaps = await Promise.all([tx.get(refs.plan), tx.get(refs.meso), tx.get(refs.root)]);
     var plan = _data(snaps[0]), meso = _data(snaps[1]), root = _data(snaps[2]);
     if (!plan || !root || !eligibility.isPlanStatusValid(plan, client) || (plan.clientId && plan.clientId !== clientId) || root.planId !== requestedPlanId || (meso && meso.planId !== requestedPlanId)) return { status: 'SOURCE_INVALID' };
+    if (numericMode) {
+      var freshWindow = numericPilot.runtimeAuthorization(process.env, Date.now());
+      var numericFence = _data(await tx.get(db.collection('releaseControl').doc('numericPilot')));
+      var releaseFence = _data(await tx.get(db.collection('releaseControl').doc('autonomousProgression')));
+      if (!freshWindow || JSON.stringify(freshWindow) !== JSON.stringify(numericWindow) || !numericFence || numericFence.enabled !== true ||
+          !releaseFence || !Array.isArray(releaseFence.clientIds) || releaseFence.clientIds.length !== 1 || releaseFence.clientIds[0] !== clientId ||
+          releaseFence.expiresAt !== freshWindow.expiresAt ||
+          ['schema', 'mode', 'uid', 'planId', 'pid', 'runtimeSha', 'operationId', 'startsAt', 'expiresAt'].some(function(k) { return numericFence[k] !== freshWindow[k]; }) ||
+          !numericPilot.scopeValid(coachData && coachData.autoApplyCanary, clientId, freshWindow.pid, plan)) return { status: 'OUT_OF_NUMERIC_PILOT' };
+    }
     var authority = shadow.selectLogAuthority(meso, root, requestedPlanId);
     if (!authority) return { status: 'SOURCE_INVALID' };
     var cleanEntries = eligibility.sanitizeClientEntries(authority.entries || {}, plan, requestedPlanId);
@@ -159,7 +174,8 @@ async function materialize(db, clientId, requestedPlanId, clock, opts) {
     // PID-level scope: a record for a PID outside the canary is never created.
     var createdBefore = out.created.length;
     out.created = out.created.filter(function(key) {
-      var inScope = consumer.inCanaryScope(coachData.autoApplyCanary, clientId, out.records[key].prescriptionExerciseId);
+      var pid = out.records[key].prescriptionExerciseId;
+      var inScope = consumer.inCanaryScope(coachData.autoApplyCanary, clientId, pid) && (!numericMode || pid === numericWindow.pid);
       if (!inScope) delete out.records[key];
       return inScope;
     });
@@ -427,7 +443,7 @@ async function processProgression(input) {
     'INACTIVE_CLIENT', 'NO_VERIFIABLE_APP_USAGE', 'AWAITING_FIRST_ACTIVITY',
     'NEW_CLIENT_AWAITING_FIRST_ACTIVITY', 'NEEDS_VERIFIED_ACTIVITY',
     'NO_TEMPORAL_EVIDENCE', 'SAFETY_HOLD', 'NOT_ELIGIBLE',
-    'READ_FAILED', 'STARTS_READ_FAILED'
+    'READ_FAILED', 'STARTS_READ_FAILED', 'OUT_OF_NUMERIC_PILOT'
   ];
   if (terminalStatuses.indexOf(m.status) >= 0 || !input.numericApplyEnabled) return Object.assign({}, m, { applied: [], consumed: [] });
   var hasPending = !(m.summary && m.summary.counts && m.summary.counts.PENDING === 0);
