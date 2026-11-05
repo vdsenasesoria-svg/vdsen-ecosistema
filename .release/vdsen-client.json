@@ -1,9 +1,9 @@
 {
-  "runtime_sha": "c3c1875425fe53981df512bdaa0dbe18d81de34d",
-  "production_deployment": "dpl_5gQbFsFXdJoyCdJy7WVgiKLb1pPP",
-  "rollback_deployment": "dpl_BDdGBRjtRotiv4nJJEDoZK57He9s",
-  "rollback_runtime_sha": "21dc0e2b211facfb0df9f3079c58488c2f86952c",
-  "target_deployment": "dpl_5gQbFsFXdJoyCdJy7WVgiKLb1pPP",
+  "runtime_sha": "353df8c12982cad7f4dc89b3622a6b63b3127b52",
+  "production_deployment": "dpl_AuykDuRaXejkbUzFNjFz6XocNPZt",
+  "rollback_deployment": "dpl_5gQbFsFXdJoyCdJy7WVgiKLb1pPP",
+  "rollback_runtime_sha": "c3c1875425fe53981df512bdaa0dbe18d81de34d",
+  "target_deployment": "dpl_AuykDuRaXejkbUzFNjFz6XocNPZt",
   "production_project": "prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN",
   "vercel_team": "team_VZc5H7Q1DBIJ3g0mwrSBz1o8",
   "production_origin": "https://vdsen-ecosistema.vercel.app",
@@ -41,19 +41,19 @@
     "preview_production_env_verified": true,
     "human_ux_approved": true
   },
-  "observation_source": "T683 rebaseline after official OFF release run 41358140659 (T682). Production serves dpl_5gQbFsFXdJoyCdJy7WVgiKLb1pPP (runtime c3c1875425fe53981df512bdaa0dbe18d81de34d), built as a staged production deployment with Numeric Guard DISARMED (AUTONOMOUS_PROGRESSION_ENABLED=PLAIN_FALSE, AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED=PLAIN_FALSE) and promoted at 2026-11-01T22:41:55Z after passing 26 exported-tree path checks and 25 public HTTP byte checks (artifact app-release-result-41358140659, digest sha256:a4b9f49187d8dd45c55260de59199f08fbbff9677ef0d985024abe853b23bdda). The deployment that actually served immediately before this promotion is dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K (runtime 21dc0e2b211facfb0df9f3079c58488c2f86952c, recorded truthfully in app_release.previous_deployment), which carried legacy armed server switches and is never an automatic rollback destination. The accredited safe OFF recovery deployment for distinct-SHA rollback is dpl_BDdGBRjtRotiv4nJJEDoZK57He9s (runtime 21dc0e2b211facfb0df9f3079c58488c2f86952c, official run 40688365774), pinned in rollback_deployment and app_release.safe_recovery_deployment; prior workflow rollback baseline dpl_4wyBNxUCNAMYHy5KwuaZ7SnnsoEw (b5f53af5843f466528a4b95e5a3e52d6c8c77fb1) remains in historical git provenance. Rules FE151 live (workflow run 40683175819).",
+  "observation_source": "T698 rebaseline after official OFF release run 41950979614 (T697). Production serves dpl_AuykDuRaXejkbUzFNjFz6XocNPZt (runtime 353df8c12982cad7f4dc89b3622a6b63b3127b52), built as a staged production deployment with Numeric Guard DISARMED (AUTONOMOUS_PROGRESSION_ENABLED=PLAIN_FALSE, AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED=PLAIN_FALSE) and promoted at 2026-11-05T01:51:27Z after passing 26 exported-tree path checks and 25 public HTTP byte checks (artifact app-release-result-41950979614, digest sha256:0a2e116db5faabc5daaa0c8c0c0d8199a4c899501df910de8f662a8f26b5a96f). The deployment that actually served immediately before this promotion is dpl_5gQbFsFXdJoyCdJy7WVgiKLb1pPP (runtime c3c1875425fe53981df512bdaa0dbe18d81de34d, recorded truthfully in app_release.previous_deployment). The accredited safe OFF recovery deployment for distinct-SHA rollback is dpl_5gQbFsFXdJoyCdJy7WVgiKLb1pPP (runtime c3c1875425fe53981df512bdaa0dbe18d81de34d, official run 41358140659), pinned in rollback_deployment and app_release.safe_recovery_deployment; prior safe OFF recovery baseline dpl_BDdGBRjtRotiv4nJJEDoZK57He9s (21dc0e2b211facfb0df9f3079c58488c2f86952c) remains in historical git provenance. Rules FE151 live (workflow run 40683175819).",
   "release_mode": "app_only",
   "app_release": {
-    "runtime_sha": "c3c1875425fe53981df512bdaa0dbe18d81de34d",
-    "deployment": "dpl_5gQbFsFXdJoyCdJy7WVgiKLb1pPP",
+    "runtime_sha": "353df8c12982cad7f4dc89b3622a6b63b3127b52",
+    "deployment": "dpl_AuykDuRaXejkbUzFNjFz6XocNPZt",
     "promotion_model": "staged_production",
-    "previous_deployment": "dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K",
-    "previous_runtime_sha": "21dc0e2b211facfb0df9f3079c58488c2f86952c",
-    "safe_recovery_deployment": "dpl_BDdGBRjtRotiv4nJJEDoZK57He9s",
-    "safe_recovery_runtime_sha": "21dc0e2b211facfb0df9f3079c58488c2f86952c",
+    "previous_deployment": "dpl_5gQbFsFXdJoyCdJy7WVgiKLb1pPP",
+    "previous_runtime_sha": "c3c1875425fe53981df512bdaa0dbe18d81de34d",
+    "safe_recovery_deployment": "dpl_5gQbFsFXdJoyCdJy7WVgiKLb1pPP",
+    "safe_recovery_runtime_sha": "c3c1875425fe53981df512bdaa0dbe18d81de34d",
     "verified_surfaces": 25,
-    "source_release_run": "41358140659",
-    "completed_at": "2026-11-01T22:41:55Z"
+    "source_release_run": "41950979614",
+    "completed_at": "2026-11-05T01:51:27Z"
   },
   "published_rules": {
     "sha256": "fe1517306bebd4bd529adfc51a406c5e97cac6b2dfd7fcae61c87318dd2e21e0",
