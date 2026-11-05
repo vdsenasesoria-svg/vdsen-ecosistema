@@ -47,7 +47,8 @@ const SUITES = [
   { name: 'temporal rules', file: path.join('tests', 't603-temporal-rules-emulator.cjs') },
   { name: 'canary expiry', file: path.join('tests', 't657-canary-expiry-emulator.cjs') },
   { name: 'active client eligibility', file: path.join('tests', 't685-active-client-emulator.cjs') },
-  { name: 'real autonomous integration', file: path.join('tests', 't692-real-autonomous-emulator.cjs') }
+  { name: 'real autonomous integration', file: path.join('tests', 't692-real-autonomous-emulator.cjs') },
+  { name: 'numeric pilot contract', file: path.join('tests', 't699-numeric-emulator.cjs') }
 ].filter(x => fs.existsSync(path.join(__dirname, '..', x.file)));
 const ONLY = process.env.VDSEN_EMU_ONLY;   // e.g. "rules" to run a single suite (used for RED demonstrations)
 const isWin = process.platform === 'win32';
