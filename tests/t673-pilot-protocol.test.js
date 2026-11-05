@@ -224,6 +224,10 @@ test('T696 STAGE1_SHADOW requires explicit single PID, enforces numericApplyEnab
   // Mismatched PID in canary is rejected
   const badCanary = { ...st, coach: { autoApplyCanary: { enabled: true, clientIds: [UID], prescriptionExerciseIds: ['other-pid'] } } };
   assert.throws(() => P.stateGate(shadowWindow(), badCanary, 'enable'), /CANARY_SINGLE_PID_MISMATCH/);
+  for (const pids of [[], undefined, [PID, 'other-pid']]) {
+    const invalid = { ...st, coach: { autoApplyCanary: { enabled: true, clientIds: [UID], prescriptionExerciseIds: pids } } };
+    assert.throws(() => P.stateGate(shadowWindow(), invalid, 'enable'), /CANARY_SINGLE_PID_MISMATCH/);
+  }
 
   // 4. arm in STAGE1_SHADOW
   let stagedArgs = null;
