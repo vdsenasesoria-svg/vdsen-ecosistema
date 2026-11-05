@@ -75,7 +75,17 @@ const overlays = async f => Object.values((await meso(f)).nextExposureOverlays |
 
 test('E01/E02 persisted evidence -> trusted executor materializes AND applies, no Coach session involved', { timeout: 60000 }, async () => {
   const f = await fixture(), before = (await meso(f)).entries;
-  const out = await run(f);
+  // This demo-only fixture gives the same motor an explicit, single-PID synthetic authority.
+  const start = Math.floor(Date.now() / 1000) * 1000;
+  const iso = n => new Date(n).toISOString().replace('.000Z', 'Z');
+  const window = { schema: 'vdsen-numeric-pilot-v1', mode: 'NUMERIC_APPLY', uid: f.athlete.uid, planId: f.planId, pid: PID,
+    runtimeSha: 'a'.repeat(40), operationId: 'synthetic-t570r-e01', startsAt: iso(start), expiresAt: iso(start + 3600000) };
+  await setRelease([f.athlete.uid], { expiresAt: window.expiresAt });
+  await db.doc('coaches/' + f.coach.uid).set({ autoApplyCanary: { enabled: true, clientIds: [f.athlete.uid], prescriptionExerciseIds: [PID] } }, { merge: true });
+  await db.doc('releaseControl/numericPilot').set({ ...window, enabled: true });
+  const isolated = require('./helpers/t699-synthetic-executor.js').createSyntheticExecutor(window);
+  const out = await isolated.processProgression({ db, clientId: f.athlete.uid, planId: f.planId, enabled: true, numericApplyEnabled: true,
+    clock: () => new Date().toISOString() });
   assert.equal(out.status, 'MATERIALIZED', JSON.stringify(out));
   assert.deepEqual(out.applied.map(a => [a.written, a.reason]), [[true, null]], JSON.stringify(out.applied));
   const [r] = await recs(f), [o] = await overlays(f);
