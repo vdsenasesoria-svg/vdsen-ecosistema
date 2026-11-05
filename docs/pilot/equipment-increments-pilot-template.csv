@@ -1,0 +1,6 @@
+equipmentId,name,scope,gymId,kind,unit,step,min,max,barWeight,smallestPlate,loads
+functional-dumbbells,Mancuernas,SHARED,,,,,,,,,
+functional-olympic-barbell,Barra olímpica,SHARED,,,,,,,,,
+functional-cable-station,Estación de Poleas,SHARED,,,,,,,,,
+sf-sd-eq-polea-alta,Polea alta,SHARED,,,,,,,,,
+sf-sd-eq-polea-baja,Polea baja,SHARED,,,,,,,,,

@@ -1,0 +1,77 @@
+[
+  {
+    "id": "C01",
+    "pass": true,
+    "note": "authenticated synthetic Client"
+  },
+  {
+    "id": "C02",
+    "pass": true,
+    "note": ""
+  },
+  {
+    "id": "C03",
+    "pass": true,
+    "note": "{\"home\":true,\"training\":true,\"nutrition\":true}"
+  },
+  {
+    "id": "C04",
+    "pass": true,
+    "note": "initial nutrition rendered"
+  },
+  {
+    "id": "C05",
+    "pass": true,
+    "note": "snapshot received while Nutrition hidden"
+  },
+  {
+    "id": "C06",
+    "pass": true,
+    "note": "internal model updated"
+  },
+  {
+    "id": "C07",
+    "pass": true,
+    "note": "renders 1->1"
+  },
+  {
+    "id": "C08",
+    "pass": true,
+    "note": "current hidden update rendered on entry"
+  },
+  {
+    "id": "C09",
+    "pass": true,
+    "note": "renders 2->3"
+  },
+  {
+    "id": "C10",
+    "pass": true,
+    "note": "nutrition and supplements current"
+  },
+  {
+    "id": "C11",
+    "pass": true,
+    "note": "before={\"active\":3,\"created\":3,\"unsubscribed\":0,\"maxActive\":3} after={\"active\":3,\"created\":3,\"unsubscribed\":0,\"maxActive\":3}"
+  },
+  {
+    "id": "C12",
+    "pass": true,
+    "note": "{\"name\":\"Atleta Beta\",\"active\":3}"
+  },
+  {
+    "id": "C13",
+    "pass": true,
+    "note": "plans, prescriptions and execution logs unchanged"
+  },
+  {
+    "id": "C14",
+    "pass": true,
+    "note": ""
+  },
+  {
+    "id": "C15",
+    "pass": true,
+    "note": "Firebase traffic local; demo project enforced"
+  }
+]

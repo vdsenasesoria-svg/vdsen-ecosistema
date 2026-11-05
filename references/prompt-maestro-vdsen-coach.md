@@ -430,6 +430,7 @@ Pide todo en una sola pregunta cuando el coach elige la opción 2 (o el módulo 
         {
           "exerciseName": "Press convergente de pecho",
           "alternatives": ["Press de pecho en máquina", "Press inclinado con mancuernas"],
+          "repsRange": {"min": 6, "max": 10},
           "technique": "superset-antagonist",
           "techniqueNote": "A1 con A2 sin descanso, descansar 90s al final de cada par completo",
           "sets": [
@@ -463,7 +464,8 @@ Pide todo en una sola pregunta cuando el coach elige la opción 2 (o el módulo 
 - `alternatives` 1–3, mismo patrón motor compatible.
 - `technique` uno de los 13 valores; `techniqueNote` vacío si `straight`, ejecutable si no.
 - `sets`: un objeto por serie.
-- `repsTarget` = máximo del rango aplicable por fibra.
+- `repsTarget` = máximo del rango aplicable por fibra (o el objetivo específico de esa serie dentro del rango).
+- `repsRange` (OPCIONAL, por ejercicio): `{"min":int,"max":int}` con el rango aplicable por fibra (A.4) cuando prescribes un RANGO (`min` < `max`); todo `repsTarget` queda dentro de `[min,max]`. Repeticiones fijas → **omítelo**. **Nunca inventes el mínimo**: sale de A.4. La app lo usa para progresar repeticiones dentro del rango.
 - `rirTarget` = semana 1 según nivel y perfil PED.
 - `load: 0` (la app la captura en la 1ª sesión).
 - `restSeconds`: según tabla A.11. En superseries: **0** en cada set de A1, descanso completo en cada set de A2.

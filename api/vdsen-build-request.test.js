@@ -326,6 +326,16 @@ test('T-B20: talla_cm faltante no se inventa en clientProfile', function() {
   return !r.rawRequest.clientProfile.base || r.rawRequest.clientProfile.base.talla_cm === undefined;
 });
 
+// T-B20b: a ficha with objetivo_mesociclo but no (optional) enfoque_actual uses the stated objective as focus; with neither, nothing is invented
+test('T-B20b: enfoque_actual cae al objetivo_mesociclo declarado; sin ninguno no se inventa', function() {
+  var base = { perfil: 'natural', nivel: 'intermedio', dias_semana: 4, grupos_prioritarios: 'pecho' };
+  var mk = function(extra) { return buildGenerationRequest({ clientId: 'uid', fichaDoc: { schemaVersion: '1.1', data: Object.assign({}, base, extra) }, mode: 'new_plan' }); };
+  var r1 = mk({ objetivo_mesociclo: 'fuerza' }), r2 = mk({}), r3 = mk({ objetivo_mesociclo: 'fuerza', enfoque_actual: 'hipertrofia' });
+  return r1.rawRequest.clientProfile.prioridades.enfoque_actual === 'fuerza' && r1.validation.errors.every(function(e) { return !/enfoque_actual/.test(e); }) &&
+         r2.rawRequest.clientProfile.prioridades.enfoque_actual === undefined &&
+         r3.rawRequest.clientProfile.prioridades.enfoque_actual === 'hipertrofia';
+});
+
 // T-B21: attachments is empty array (Phase B stub)
 test('T-B21: attachments=[] cuando no hay archivos', function() {
   var r = buildGenerationRequest({ clientId: 'uid', fichaDoc: FIXTURE_AYRTON_FICHA_DOC, mode: 'new_plan' });

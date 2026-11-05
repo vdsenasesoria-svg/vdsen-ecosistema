@@ -1,0 +1,285 @@
+{
+  "summary": {
+    "project": "vdsen-ecosistema-staging",
+    "checks": 54,
+    "failed": [],
+    "synthetic": true,
+    "viewports": [
+      "390 dark",
+      "320 dark",
+      "390 light"
+    ]
+  },
+  "results": [
+    {
+      "id": "390D_ICS_LABEL",
+      "pass": true,
+      "note": "Calidad de la serie (ICS)"
+    },
+    {
+      "id": "390D_ICS_HELPER_ASSOCIATED_AND_VISIBLE",
+      "pass": true,
+      "note": "¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente"
+    },
+    {
+      "id": "390D_ICS_PLACEHOLDER_AND_RANGE",
+      "pass": true,
+      "note": "1–10"
+    },
+    {
+      "id": "390D_REST_TIMER_RUNNING_AFTER_SAVE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_ALERT_DESCANSO_TERMINADO_SIGUIENTE_SERIE",
+      "pass": true,
+      "note": "[\"DESCANSO TERMINADO\",\"SIGUIENTE SERIE LISTA\"]"
+    },
+    {
+      "id": "390D_ALERT_ASSERTIVE_LIVE_REGION",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_ALERT_IN_VIEWPORT_NO_OVERFLOW",
+      "pass": true,
+      "note": "[8,382,58,144,390]"
+    },
+    {
+      "id": "390D_ALERT_HIGH_CONTRAST_NO_GRADIENT_NO_GLOW",
+      "pass": true,
+      "note": "contrast=16.7 fs=26"
+    },
+    {
+      "id": "390D_ALERT_DOES_NOT_BLOCK_TAPS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_TIMER_OVERLAY_CLOSED_AND_NEXT_SET_IN_VIEW",
+      "pass": true,
+      "note": "{\"top\":52,\"bottom\":611,\"H\":844,\"inView\":true}"
+    },
+    {
+      "id": "390D_NO_AUTO_SAVE_OF_NEXT_SET",
+      "pass": true,
+      "note": "{\"s1\":false,\"keys\":1}"
+    },
+    {
+      "id": "390D_ALERT_STAYS_VISIBLE_LONG_ENOUGH",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "MANUAL_NAVIGATION_RESPECTED_NO_YANK",
+      "pass": true,
+      "note": "EJ_ACTIVO=2"
+    },
+    {
+      "id": "MANUAL_NAVIGATION_STILL_SHOWS_REST_ALERT",
+      "pass": true,
+      "note": "no next-step claim"
+    },
+    {
+      "id": "CANCELLED_TIMER_NO_ALERT_NO_ADVANCE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "EXERCISE_BOUNDARY_ALERT_SIGUIENTE_EJERCICIO",
+      "pass": true,
+      "note": "SIGUIENTE EJERCICIO LISTO"
+    },
+    {
+      "id": "EXERCISE_BOUNDARY_OPENS_NEXT_EXERCISE",
+      "pass": true,
+      "note": "EJ_ACTIVO=1"
+    },
+    {
+      "id": "EXERCISE_BOUNDARY_NEXT_EXERCISE_FIRST_SET_IN_VIEW",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "SESSION_END_ALERT_SESION_LISTA_PARA_CERRAR",
+      "pass": true,
+      "note": "SESIÓN LISTA PARA CERRAR"
+    },
+    {
+      "id": "SESSION_NOT_AUTO_CLOSED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "NO_DUPLICATE_OR_EXTRA_WRITES",
+      "pass": true,
+      "note": "sets=13/13 keys=13"
+    },
+    {
+      "id": "NO_CANONICAL_ATHLETE_WRITES",
+      "pass": true,
+      "note": "updatedAt,currentWeek,exerciseUnits,entries,exerciseHistory,planId"
+    },
+    {
+      "id": "NUMERIC_APPLY_ENABLED_FALSE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "RELOAD_RESTORE_FINISHES_RESTS_WITHOUT_NAVIGATING",
+      "pass": true,
+      "note": "before=3 after=3 alert=true"
+    },
+    {
+      "id": "390D_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"sw\":390,\"W\":390}"
+    },
+    {
+      "id": "390D_NO_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_ICS_LABEL",
+      "pass": true,
+      "note": "Calidad de la serie (ICS)"
+    },
+    {
+      "id": "320D_ICS_HELPER_ASSOCIATED_AND_VISIBLE",
+      "pass": true,
+      "note": "¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente"
+    },
+    {
+      "id": "320D_ICS_PLACEHOLDER_AND_RANGE",
+      "pass": true,
+      "note": "1–10"
+    },
+    {
+      "id": "320D_REST_TIMER_RUNNING_AFTER_SAVE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_ALERT_DESCANSO_TERMINADO_SIGUIENTE_SERIE",
+      "pass": true,
+      "note": "[\"DESCANSO TERMINADO\",\"SIGUIENTE SERIE LISTA\"]"
+    },
+    {
+      "id": "320D_ALERT_ASSERTIVE_LIVE_REGION",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_ALERT_IN_VIEWPORT_NO_OVERFLOW",
+      "pass": true,
+      "note": "[8,312,58,144,320]"
+    },
+    {
+      "id": "320D_ALERT_HIGH_CONTRAST_NO_GRADIENT_NO_GLOW",
+      "pass": true,
+      "note": "contrast=16.7 fs=26"
+    },
+    {
+      "id": "320D_ALERT_DOES_NOT_BLOCK_TAPS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_TIMER_OVERLAY_CLOSED_AND_NEXT_SET_IN_VIEW",
+      "pass": true,
+      "note": "{\"top\":15,\"bottom\":583,\"H\":640,\"inView\":true}"
+    },
+    {
+      "id": "320D_NO_AUTO_SAVE_OF_NEXT_SET",
+      "pass": true,
+      "note": "{\"s1\":false,\"keys\":1}"
+    },
+    {
+      "id": "320D_ALERT_STAYS_VISIBLE_LONG_ENOUGH",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"sw\":320,\"W\":320}"
+    },
+    {
+      "id": "320D_NO_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_ICS_LABEL",
+      "pass": true,
+      "note": "Calidad de la serie (ICS)"
+    },
+    {
+      "id": "390L_ICS_HELPER_ASSOCIATED_AND_VISIBLE",
+      "pass": true,
+      "note": "¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente"
+    },
+    {
+      "id": "390L_ICS_PLACEHOLDER_AND_RANGE",
+      "pass": true,
+      "note": "1–10"
+    },
+    {
+      "id": "390L_REST_TIMER_RUNNING_AFTER_SAVE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_ALERT_DESCANSO_TERMINADO_SIGUIENTE_SERIE",
+      "pass": true,
+      "note": "[\"DESCANSO TERMINADO\",\"SIGUIENTE SERIE LISTA\"]"
+    },
+    {
+      "id": "390L_ALERT_ASSERTIVE_LIVE_REGION",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_ALERT_IN_VIEWPORT_NO_OVERFLOW",
+      "pass": true,
+      "note": "[8,382,58,144,390]"
+    },
+    {
+      "id": "390L_ALERT_HIGH_CONTRAST_NO_GRADIENT_NO_GLOW",
+      "pass": true,
+      "note": "contrast=16.7 fs=26"
+    },
+    {
+      "id": "390L_ALERT_DOES_NOT_BLOCK_TAPS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_TIMER_OVERLAY_CLOSED_AND_NEXT_SET_IN_VIEW",
+      "pass": true,
+      "note": "{\"top\":52,\"bottom\":611,\"H\":844,\"inView\":true}"
+    },
+    {
+      "id": "390L_NO_AUTO_SAVE_OF_NEXT_SET",
+      "pass": true,
+      "note": "{\"s1\":false,\"keys\":1}"
+    },
+    {
+      "id": "390L_ALERT_STAYS_VISIBLE_LONG_ENOUGH",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"sw\":390,\"W\":390}"
+    },
+    {
+      "id": "390L_NO_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    }
+  ]
+}

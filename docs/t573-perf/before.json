@@ -1,0 +1,27 @@
+{
+  "label": "before",
+  "loginToShellMs": 2147,
+  "tabs": {
+    "home": {
+      "medianMs": 46.7,
+      "domNodes": 1139
+    },
+    "training": {
+      "medianMs": 19,
+      "domNodes": 1139
+    },
+    "nutrition": {
+      "medianMs": 13.7,
+      "domNodes": 1340
+    },
+    "checkin": {
+      "medianMs": 21,
+      "domNodes": 1651
+    },
+    "profile": {
+      "medianMs": 14.1,
+      "domNodes": 1651
+    }
+  },
+  "heapMB": 12.2
+}

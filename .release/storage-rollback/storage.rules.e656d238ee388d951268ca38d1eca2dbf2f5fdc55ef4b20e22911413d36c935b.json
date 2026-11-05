@@ -1,0 +1,20 @@
+{
+  "schema": "vdsen-storage-rollback-v1",
+  "firebase_project": "vdsen-ecosistema",
+  "bucket": "vdsen-ecosistema.firebasestorage.app",
+  "release_name": "projects/vdsen-ecosistema/releases/firebase.storage/vdsen-ecosistema.firebasestorage.app",
+  "ruleset_name": "projects/vdsen-ecosistema/rulesets/6c3b63ba-79e4-4f49-8859-58ccde680e63",
+  "release_update_time": "2026-10-16T02:55:13.064118Z",
+  "rules_sha256": "e656d238ee388d951268ca38d1eca2dbf2f5fdc55ef4b20e22911413d36c935b",
+  "rules_bytes": 314,
+  "captured_at": "2026-10-16T11:41:17.029Z",
+  "provenance": {
+    "source": "firebase-rules-api-live-readback",
+    "repository": "vdsenasesoria-svg/vdsen-ecosistema",
+    "ref": "refs/heads/codex/client-app-next",
+    "run_id": "38895397679",
+    "run_attempt": "1",
+    "commit": "6b561b2177563bc02a993e539fb7514bee99ec5f",
+    "workflow": "VDSEN Storage Rules live readback (read-only)"
+  }
+}

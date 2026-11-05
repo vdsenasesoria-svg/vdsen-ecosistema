@@ -1,0 +1,131 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "release_id",
+    "operation",
+    "release_status",
+    "runtime_sha",
+    "production_deployment",
+    "previous_deployment",
+    "old_ruleset",
+    "new_ruleset",
+    "index_status",
+    "client_smoke",
+    "coach_smoke",
+    "security_smoke",
+    "write_smoke",
+    "rollback_status",
+    "main_unchanged",
+    "numeric_apply_enabled",
+    "timestamp",
+    "error"
+  ],
+  "properties": {
+    "release_id": {
+      "type": "string"
+    },
+    "operation": {
+      "enum": [
+        "release",
+        "rollback"
+      ]
+    },
+    "release_status": {
+      "enum": [
+        "PASS",
+        "PARTIAL",
+        "FAIL"
+      ]
+    },
+    "runtime_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "production_deployment": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "previous_deployment": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "old_ruleset": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "new_ruleset": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "index_status": {
+      "enum": [
+        "READY",
+        "GAP",
+        "FAIL"
+      ]
+    },
+    "client_smoke": {
+      "enum": [
+        "PASS",
+        "GAP",
+        "FAIL"
+      ]
+    },
+    "coach_smoke": {
+      "enum": [
+        "PASS",
+        "GAP",
+        "FAIL"
+      ]
+    },
+    "security_smoke": {
+      "enum": [
+        "PASS",
+        "GAP",
+        "FAIL"
+      ]
+    },
+    "write_smoke": {
+      "enum": [
+        "PASS",
+        "GAP",
+        "FAIL"
+      ]
+    },
+    "rollback_status": {
+      "enum": [
+        "NOT_NEEDED",
+        "PASS",
+        "FAIL",
+        "GAP"
+      ]
+    },
+    "main_unchanged": {
+      "type": "boolean"
+    },
+    "numeric_apply_enabled": {
+      "const": false
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VDSEN release result"
+}

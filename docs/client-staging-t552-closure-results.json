@@ -1,0 +1,150 @@
+{
+  "summary": {
+    "project": "vdsen-ecosistema-staging",
+    "checks": 28,
+    "failed": [],
+    "synthetic": true
+  },
+  "results": [
+    {
+      "id": "FIXTURE_32_DISTINCT_PIDS_DUPLICATE_NAME_AND_REST_0",
+      "pass": true,
+      "note": "pids=32"
+    },
+    {
+      "id": "FIXTURE_OTHER_COACH_CLIENT_CREATED",
+      "pass": true,
+      "note": "status 200"
+    },
+    {
+      "id": "A1_OWNER_CREATES_PLAN_FOR_OWN_CLIENT",
+      "pass": true,
+      "note": "status 200"
+    },
+    {
+      "id": "A2_OWNER_CANNOT_CREATE_FOR_OTHER_COACH_CLIENT_DENIED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "A3_OWNER_CANNOT_CREATE_FOR_NONEXISTENT_CLIENT_DENIED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "A4_OTHER_COACH_CANNOT_CREATE_FOR_OWNER_CLIENT_DENIED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "A5_OTHER_COACH_FORGED_COACHID_DENIED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "A6_ATHLETE_DENIED_FORGED_COACHID",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "A7_ATHLETE_DENIED_OWN_COACHID",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "A8_UNAUTHENTICATED_DENIED",
+      "pass": true,
+      "note": "status 403"
+    },
+    {
+      "id": "A9_OTHER_COACH_CONTROL_OWN_CLIENT_ALLOWED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "PLAN_A_STORED_PIDS_AND_RESTS_EXACT",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "ATHLETE_APP_PLAN_A_ACTIVE_EX0_PID_MATCHES",
+      "pass": true,
+      "note": "sets=3"
+    },
+    {
+      "id": "D0_CONTROL_SAME_PLAN_SAME_PID_WEEK2_SHOWS_REFERENCE_AND_REUSE",
+      "pass": true,
+      "note": "[\"S1 · 80 kg × 10 · RIR 3\",\"S2 · 80 kg × 9 · RIR 2\",\"S3 · 75 kg × 8 · RIR 1\"]"
+    },
+    {
+      "id": "C1_EXPORT_CONTAINS_ALL_32_PIDS_BYTE_FOR_BYTE_IN_ORDER",
+      "pass": true,
+      "note": "pids=32"
+    },
+    {
+      "id": "B1_EXPORT_KEEPS_REST_0_AND_60_90_150",
+      "pass": true,
+      "note": "[0,150,150,135,135,135,60,120]"
+    },
+    {
+      "id": "C2_EXPORT_DUPLICATE_NAMES_KEEP_DISTINCT_PIDS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "B2_IMPORT_PREVIEW_KEEPS_REST_0_AND_PIDS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "D1_COACH_IMPORTED_AND_ACTIVATED_PLAN_B_FOR_THE_SAME_ATHLETE",
+      "pass": true,
+      "note": "UCpigj6Vvsd7OGlWQaIb"
+    },
+    {
+      "id": "C3_SAVED_PLAN_B_PRESERVES_EVERY_PID_BYTE_FOR_BYTE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "B3_SAVED_PLAN_B_PRESERVES_REST_0_60_90_150",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "C4_UPDATE_PLAN_MODAL_KEEPS_PIDS_AND_REST_0",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "NO_COACH_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "D2_ATHLETE_APP_LOADED_PLAN_B_FRESH_WEEK_1_NO_PLAN_A_EVIDENCE",
+      "pass": true,
+      "note": "{\"plan\":\"UCpigj6Vvsd7OGlWQaIb\",\"week\":1,\"logs\":0}"
+    },
+    {
+      "id": "D3_SAME_PID_DIFFERENT_PLAN_WEEK2_NO_ULTIMA_SEMANA_NO_USAR",
+      "pass": true,
+      "note": "{\"plan\":\"UCpigj6Vvsd7OGlWQaIb\",\"week\":2,\"pid\":\"63160afa-5fb0-4ae8-829d-930c227ef6f4\",\"block\":false,\"use\":false,\"plainRows\":0,\"logs\":0}"
+    },
+    {
+      "id": "D4_PLAN_A_EVIDENCE_UNTOUCHED",
+      "pass": true,
+      "note": "3 sets"
+    },
+    {
+      "id": "D5_NO_EXECUTION_WRITTEN_FOR_PLAN_B",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "NO_ATHLETE_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    }
+  ]
+}

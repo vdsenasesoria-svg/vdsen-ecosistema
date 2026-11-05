@@ -36,9 +36,13 @@
 Claves en `entries`:
 - `log_{W}_{D}_{E}_s{S}` — set registrado `{ carga, reps, unit, done, rir, rir_real, ics, pump, ts }`
 - `done_{W}_{D}` — sesión completada (boolean)
+- `exnotepid_{W}_{PID}` (T549) — nota del alumno por semana `{ planId, prescriptionExerciseId, week, day, exerciseIndex, exerciseNameSnapshot, text, updatedAt }`; identidad = planId + PID + semana (NUNCA por nombre ni posición); semanas previas = historial de solo lectura. Espejo Coach-legible: `exnote_{W}_{D}_{E}` (string). `exnote_{D}_{E}` = legado sin semana, solo lectura.
+- Semana previa (T550/T551): referencia = misma planId + MISMO PID + EXACTAMENTE semana-1 (sin nombre/posición/índice, sin agregar semanas, sin otros planes). `ÚLTIMA SEMANA` = solo lectura (series estándar ejecutadas, RIR observado, sin nota); `USAR CARGA/REPS` = acción explícita por serie, solo carga+reps como borrador, nunca RIR/ICS/Pump/prescripción, nunca autoguarda.
 - `postsession_{W}_{D}` — check-in post-sesión `{ eimd, articular, patron, sleep, rpe }`
 - `progrec_{W}_{D}` — recomendaciones de progresión generadas `{ recommendations:[], deloadTriggers:[] }`
 - `ci_sem_{W}` — check-in semanal `{ peso, hrv, who5 }`
+- Express (T546): `exexpress_{W}_{D}_{E}` + `log_*` sintéticos. Valores prescritos NUNCA son observados: RIR/ICS/Pump sólo existen si el atleta los tocó (ausente ≠ 8/1). S1..S(n-1) = `express:true` sin observaciones; la última serie = `expressFinal:true` con las observaciones explícitas (serie representativa). `rir` = RIR prescrito; `rir_real` = observado.
+- `plans/{id}.updatedAt` (T546) = timestamp ISO-string de la ÚLTIMA REVISIÓN DE PRESCRIPCIÓN (campo de seguridad de progresión: sin él o no-string → `PLAN_TIMESTAMP_MISSING`, fail-closed; nunca fallback a `createdAt`). Todo plan nuevo lleva `createdAt`+`updatedAt` del mismo evento; una edición que cambia la prescripción lo actualiza; ejecución del atleta/lecturas/logs/materializador/activación nunca lo tocan.
 
 ## Algoritmo de progresión VDSEN v3.1
 
@@ -48,7 +52,7 @@ Claves en `entries`:
 - Articular: si/no + patrón afectado
 - Sleep: horas
 - RPE sesión: 1-10
-- Semana 6 = deload automático
+- Deload reactivo (no por calendario): se activa cuando `deloadTriggers.length >= 2` (WHO-5<52, RPE>9, sueño<6h, HRV descendente, energía baja). La última semana del mesociclo NO fuerza deload por sí sola.
 - Recomendaciones guardadas en `progrec_{W}_{D}` → coach las ve en panel de monitoreo
 
 ## Schemas JSON (Motor VDSEN)
@@ -65,6 +69,8 @@ El Motor VDSEN genera **1 solo bloque JSON** con `"schema": "vdsen-plan-v2"`. La
   "farmacologia":  { "protocolo", "compuestos": [...], "ancilares": [...], "biomarcadores_basales": [...], "monitoreo": [...], "pct": {...} }  // solo si perfil=PED
 }
 ```
+
+Campos de rendimiento (T544): `exerciseType` (fuerza|calistenia|cardio|estacion|circuito; alias legado `tipo`, gana `exerciseType`) y la prescripción por ejercicio (`duracionMin`, `fcZonaMin/Max`, `dosis`, `rpeTarget`, `estructura`, `timeCapMin`, `movimientos`…; set-level `dosis`, `rpeTarget`) pasan por una whitelist explícita en el Coach (`_perfCarryEx`/`_perfCarrySet`); cardio/circuito pueden llevar `sets: []`. Lo demás se descarta. Ver `docs/CLIENT_DESIGN_SYSTEM_V3.md`.
 
 Compatibilidad v1: si no hay `schema`, `_classifyBlocks()` cae a detección por shape (days[] → entrenamiento, tiers[] → suplementación, calorias → nutrición).
 
@@ -107,7 +113,7 @@ Secciones: `base` (datos personales/biométricos), `entrenamiento` (nivel/días/
 - Unidad KG/LB por ejercicio (toggle independiente por ejercicio)
 - Completar sesión → modal post-sesión (EIMD, dolor articular, sueño, RPE)
 - Algoritmo progresión: calcula recomendaciones por ejercicio y las guarda en logs
-- Semana 6 = deload automático
+- Deload reactivo por señales de fatiga acumuladas (no automático por semana fija — ver algoritmo de progresión arriba)
 - Tabs: Resumen, Entrenamiento, Nutrición, Check-in, Perfil
 - Logs guardados en `logs/{uid}` (por UID, no por email)
 
@@ -118,3 +124,9 @@ Secciones: `base` (datos personales/biométricos), `entrenamiento` (nivel/días/
 - URLs: https://vdsen-ecosistema.vercel.app/vdsen-coach.html
 - URLs amigables: /coach y /cliente
 - Push directo a main (sin PRs)
+
+## Estado del Client (cierre T557)
+
+- CLIENT TRAINING = FEATURE_COMPLETE (congelado: solo cambios por defecto real de producción, problema de uso concreto del Coach / atleta, o fase explícitamente autorizada). CLIENT NUTRITION / SUPPLEMENTS = DISPLAY_ONLY. AUTO-APPLY, EQUIPMENT INCREMENTS y el GENERATOR son fases / sistemas separados. Ver `docs/CLIENT_MODULE_STATUS.md`.
+- El cardio NUNCA se infiere por nombre de ejercicio: solo `exerciseType` / `tipo` explícito selecciona el renderer de cardio.
+- Modo detallado (un formulario por serie) y temporizador de descanso: activos por defecto; se apagan en Perfil.

@@ -6,6 +6,8 @@
 
 var VALID_NIVEL_MEDIO = ['fundamental', 'suplementario', 'asistencia_mayor', 'asistencia_secundario'];
 
+// T586: the VDSEN MEV/MRV muscle vocabulary (same keys as the structural policy, the athlete app and the Coach; parity enforced by tests).
+var MUSCLE_KEYS = ['pectoral','dorsal_ancho','trapecio_medio','delt_anterior','delt_lateral','delt_posterior','biceps','braquial','triceps','cuadriceps','isquios','gluteo_mayor','gluteo_medio','gastrocnemio','soleo','erectores','recto_abdominal','oblicuos','serrato'];
 var ERROR_CODES = {
   PLAN_NOT_OBJECT:            'PLAN_NOT_OBJECT',
   INVALID_SCHEMA:             'INVALID_SCHEMA',
@@ -17,6 +19,8 @@ var ERROR_CODES = {
   INVALID_VARIACION_VERTICAL: 'INVALID_VARIACION_VERTICAL',
   INVALID_SET:                'INVALID_SET',
   INVALID_LOAD:               'INVALID_LOAD',
+  INVALID_REPS_RANGE:         'INVALID_REPS_RANGE',
+  INVALID_MUSCLE_GROUP:       'INVALID_MUSCLE_GROUP',
   MISSING_NUTRITION:          'MISSING_NUTRITION',
   MISSING_SUPPLEMENTATION:    'MISSING_SUPPLEMENTATION'
 };
@@ -147,7 +151,9 @@ function validateVdsenPlan(normalized) {
     }
     for (var ei = 0; ei < day.exercises.length; ei++) {
       var ex = day.exercises[ei];
-      if (!Array.isArray(ex.sets) || ex.sets.length === 0) {
+      var sets = Array.isArray(ex.sets) ? ex.sets : [];
+      var exerciseType = String(ex.exerciseType || ex.tipo || '').toLowerCase().trim();
+      if (sets.length === 0 && exerciseType !== 'cardio') {
         return { ok: false, error: ERROR_CODES.EXERCISE_WITHOUT_SETS,
                  message: 'Ejercicio "' + (ex.exerciseName || '?') + '" no tiene series' };
       }
@@ -162,8 +168,29 @@ function validateVdsenPlan(normalized) {
                    message: 'variacion_vertical debe ser un objeto en "' + (ex.exerciseName || '?') + '"' };
         }
       }
-      for (var si = 0; si < ex.sets.length; si++) {
-        var s = ex.sets[si];
+      // T583: repsRange is OPTIONAL. When the Motor states one it must be a real range ({min,max} integers, min < max) and every set target must sit inside it.
+      // Fixed-rep prescriptions simply omit it; a missing range is never an error and is never invented.
+      var rr = ex.repsRange;
+      if (rr !== undefined && rr !== null) {
+        var rrOk = typeof rr === 'object' && !Array.isArray(rr) && Number.isInteger(rr.min) && Number.isInteger(rr.max) && rr.min >= 1 && rr.max <= 100 && rr.min < rr.max;
+        if (!rrOk) {
+          return { ok: false, error: ERROR_CODES.INVALID_REPS_RANGE,
+                   message: 'repsRange debe ser {min,max} enteros con min < max en "' + (ex.exerciseName || '?') + '"' };
+        }
+        for (var ri = 0; ri < sets.length; ri++) {
+          var rt = sets[ri] && sets[ri].repsTarget;
+          if (typeof rt === 'number' && (rt < rr.min || rt > rr.max)) {
+            return { ok: false, error: ERROR_CODES.INVALID_REPS_RANGE,
+                     message: 'repsTarget fuera de repsRange en "' + (ex.exerciseName || '?') + '" set ' + ri };
+          }
+        }
+      }
+      // T586: muscleGroup is OPTIONAL (declared priorities only). When present it must be one key of the VDSEN MEV/MRV vocabulary; absence is never an error and never inferred.
+      if (ex.muscleGroup !== undefined && ex.muscleGroup !== null && MUSCLE_KEYS.indexOf(ex.muscleGroup) < 0) {
+        return { ok: false, error: ERROR_CODES.INVALID_MUSCLE_GROUP, message: 'muscleGroup fuera del vocabulario VDSEN en "' + (ex.exerciseName || '?') + '"' };
+      }
+      for (var si = 0; si < sets.length; si++) {
+        var s = sets[si];
         if (!s || typeof s !== 'object') {
           return { ok: false, error: ERROR_CODES.INVALID_SET,
                    message: 'Set ' + si + ' inválido en "' + (ex.exerciseName || '?') + '"' };

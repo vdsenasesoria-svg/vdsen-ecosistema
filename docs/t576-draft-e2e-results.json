@@ -1,0 +1,37 @@
+{
+  "at": "2026-10-17T16:07:17.632Z",
+  "pass": 6,
+  "fail": 0,
+  "results": [
+    {
+      "id": "D01 unsaved carga/reps survive a tab switch",
+      "pass": true,
+      "note": "{\"c\":\"72.5\",\"r\":\"9\"}"
+    },
+    {
+      "id": "D02 ...and several consecutive switches",
+      "pass": true,
+      "note": "{\"c\":\"72.5\",\"r\":\"9\"}"
+    },
+    {
+      "id": "D03 SAVING persists exactly the typed values (draft layer never alters execution)",
+      "pass": true,
+      "note": "carga=72.5 reps=9"
+    },
+    {
+      "id": "D04 a SAVED set does not get its old draft back into the next set input",
+      "pass": true,
+      "note": "{\"c\":\"\",\"r\":\"\"}"
+    },
+    {
+      "id": "D05 logout drops every draft",
+      "pass": true,
+      "note": null
+    },
+    {
+      "id": "D06 no page errors",
+      "pass": true,
+      "note": null
+    }
+  ]
+}

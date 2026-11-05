@@ -20,6 +20,9 @@ var contracts    = require('./vdsen-contracts');
 var validateReq  = contracts.validateGenerationRequest;
 var validateResp = contracts.validateGenerationResponse;
 
+var vdsenAuth              = require('./_vdsenAuth');
+var authenticateCoachRequest = vdsenAuth.authenticateCoachRequest;
+
 // ─── Error codes ─────────────────────────────────────────────────────────────
 
 var ERR = {
@@ -108,10 +111,13 @@ function buildSystemPrompt() {
     '18. CRITICIDAD de campos por módulo: un módulo pasa a NEEDS_INPUT SOLO si le falta un campo marcado como REQUIRED para ese módulo. Los campos RECOMMENDED u OPTIONAL generan aviso pero NO bloquean el módulo. Ejemplo: para suplementación, "edad" es OPTIONAL — su ausencia NO pone el módulo en NEEDS_INPUT.',
     '19. moduleStatus READY significa que tienes suficiente información para generar ese módulo (todos los REQUIRED presentes). Si un módulo puede generarse razonablemente, debe ser READY aunque falten campos RECOMMENDED u OPTIONAL.',
     '20. NOMBRES DE CAMPO DENTRO DEL PLAN — usa EXACTAMENTE estos nombres en español (vdsen-plan-v2 canónico):',
-    '    entrenamiento.weeks | entrenamiento.daysPerWeek | entrenamiento.days[] con {dayIndex, label, exercises:[{exerciseName, technique, supersetGroup, sets:[{setIndex, repsTarget, rirTarget, load, restSeconds}]}]}',
+    '    entrenamiento.weeks | entrenamiento.daysPerWeek | entrenamiento.days[] con {dayIndex, label, exercises:[{exerciseName, technique, supersetGroup, repsRange?, sets:[{setIndex, repsTarget, rirTarget, load, restSeconds}]}]}',
     '    nutricion.calorias | nutricion.proteina | nutricion.carbos | nutricion.grasas | nutricion.comidas[] | nutricion.calculos | nutricion.monitoreo',
     '    suplementacion.tiers[] con {nombre, items:[{nombre, dosis, timing, nota}]}',
     '    NUNCA uses training/nutrition/supplementation como keys dentro del plan. NUNCA uses calories/protein/carbs/fats/meals/name/dose en lugar de los campos españoles listados.',
+    '21. repsRange (OPCIONAL, por ejercicio de fuerza): {"min":<int>,"max":<int>} con el rango de repeticiones aplicable por fibra (Compendio A.4) cuando prescribes un RANGO (min < max). max es el techo y cada repsTarget de serie queda dentro de [min,max] (puede ser distinto por serie). Repeticiones fijas => OMITE repsRange. NUNCA inventes el mínimo: sale de la metodología. repsTarget sigue siendo obligatorio en cada serie.',
+    '22. IDENTIFICADORES (OPCIONALES): prescriptionExerciseId NUNCA lo inventes ni lo generes; solo cópialo literalmente si el request trae el PID del MISMO ejercicio en el MISMO día y lo mantienes sin cambios (ejercicio nuevo, sustituido o movido de día => omítelo: la app lo asigna). exerciseId solo si el request incluye una lista de catálogo con ids y el ejercicio está en ella; si no, omítelo. Ninguno de los dos es requisito para la progresión.',
+    '23. PRIORIDAD MUSCULAR (OPCIONAL, declarada SOLO por el Coach/ficha, nunca inferida): entrenamiento.musclePriorities = {"PRIORITARIO":[<claves>],"NO_PRIORITARIO":[<claves>]} y, por ejercicio, muscleGroup = UNA clave (el músculo principal motor). Claves permitidas (exactas): pectoral, dorsal_ancho, trapecio_medio, delt_anterior, delt_lateral, delt_posterior, biceps, braquial, triceps, cuadriceps, isquios, gluteo_mayor, gluteo_medio, gastrocnemio, soleo, erectores, recto_abdominal, oblicuos, serrato. Un mismo músculo NO va en ambas listas. NO_PRIORITARIO NO significa mantenimiento: sigue progresando. Si el request no declara prioridades OMITE musclePriorities y muscleGroup; nunca los deduzcas del nombre del ejercicio. La prioridad solo regula cuánto volumen adicional admite un grupo; nunca cambia series, repeticiones, RIR ni descanso de la prescripción inicial.',
     '',
     'Los campos requestId, schema, generatedAt y model son administrados por el servidor.',
     'NO los reportes como faltantes ni generes warnings sobre su ausencia en la entrada.',
@@ -300,7 +306,7 @@ function buildErrorResponse(errorCode, requestId, details) {
 // Injectable OpenAI client factory — enables mock testing without network calls.
 // factory(apiKey) → { responses: { create: async (params) → rawResponse } }
 
-function createHandlerWithClient(openaiClientFactory) {
+function createHandlerWithClient(openaiClientFactory, authDeps) {
   return async function handler(req, res) {
     var startMs    = Date.now();
     var requestId  = null;
@@ -308,6 +314,20 @@ function createHandlerWithClient(openaiClientFactory) {
 
     if (req.method !== 'POST') {
       return res.status(405).json({ error: 'Method Not Allowed' });
+    }
+
+    // ── 0. Authenticate BEFORE reading/trusting the body or calling OpenAI ───
+    // Identity comes ONLY from the verified Firebase ID token's own uid --
+    // never from body.coachId/clientId/email, which are never used as proof
+    // of who the caller is anywhere in this file. Errors are generic on
+    // purpose: the client never learns whether the token was missing,
+    // malformed, invalid, or valid-but-not-a-coach beyond the 401/403 split.
+    var authHeader = req.headers && (req.headers['authorization'] || req.headers['Authorization']);
+    var authResult = await authenticateCoachRequest(authHeader, authDeps || {});
+    if (!authResult.ok) {
+      return res.status(authResult.status).json({
+        error: authResult.status === 403 ? 'FORBIDDEN' : 'UNAUTHORIZED'
+      });
     }
 
     var body = req.body || {};
@@ -439,14 +459,27 @@ function createHandlerWithClient(openaiClientFactory) {
 }
 
 // ─── Default Vercel handler ───────────────────────────────────────────────────
-// openai package loaded lazily so tests don't require it to be installed.
+// openai/firebase-admin packages loaded lazily so tests don't require either
+// to be installed -- only a real request through the default export touches
+// them at all.
 
 var _defaultFactory = function(apiKey) {
   var OpenAI = require('openai');
   return new OpenAI({ apiKey: apiKey });
 };
 
-var handler = createHandlerWithClient(_defaultFactory);
+var _defaultAuthDeps = {
+  verifyIdToken: function(token) {
+    var fbAdmin = require('./_firebaseAdmin');
+    return fbAdmin.verifyIdToken(token);
+  },
+  isAuthorizedCoach: function(uid) {
+    var fbAdmin = require('./_firebaseAdmin');
+    return fbAdmin.isAuthorizedCoach(uid);
+  }
+};
+
+var handler = createHandlerWithClient(_defaultFactory, _defaultAuthDeps);
 
 // ─── Exports ──────────────────────────────────────────────────────────────────
 

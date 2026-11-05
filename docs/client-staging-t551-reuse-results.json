@@ -1,0 +1,402 @@
+{
+  "summary": {
+    "project": "vdsen-ecosistema-staging",
+    "checks": 77,
+    "failed": [],
+    "synthetic": true,
+    "viewports": [
+      "390 dark",
+      "320 dark",
+      "360 dark",
+      "430 dark",
+      "390 light"
+    ]
+  },
+  "results": [
+    {
+      "id": "390D_ULTIMA_SEMANA_ROWS_EQUAL_FIREBASE_EVIDENCE",
+      "pass": true,
+      "note": "[\"S1 · 80 kg × 10 · RIR 3\",\"S2 · 80 kg × 9 · RIR 2\",\"S3 · 75 kg × 8 · RIR 1\"]"
+    },
+    {
+      "id": "390D_NO_NOTE_INSIDE_PERFORMANCE_BLOCK",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_T549_NOTE_HISTORY_OWNS_PREVIOUS_NOTE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_ONE_LAST_WEEK_PANEL_NO_OLD_CHIP",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_USE_BUTTON_PER_SET_SECONDARY_NO_LIME",
+      "pass": true,
+      "note": "{\"text\":\"USAR CARGA/REPSSEM 1 · S1 · 80 kg × 10\",\"h\":44,\"right\":359,\"W\":390,\"bg\":\"rgba(0, 0, 0, 0)\",\"bd\":\"rgba(244, 244, 240, 0.2)\"}"
+    },
+    {
+      "id": "390D_TU_EJECUCION_LABEL_PRESENT",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"sw\":390,\"W\":390}"
+    },
+    {
+      "id": "390D_COMPACT",
+      "pass": true,
+      "note": "blockHeight=130"
+    },
+    {
+      "id": "CONTROL_SAME_NAME_DIFFERENT_PID_NO_BLOCK_NO_BUTTON",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "CONTROL_AMBIGUOUS_PID_NO_BLOCK_NO_BUTTON",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "CONTROL_EXPRESS_ONLY_NO_BLOCK_NO_BUTTON",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "USE_FILLS_LOAD_AND_REPS_ONLY",
+      "pass": true,
+      "note": "{\"c\":\"80\",\"r\":\"10\",\"rir\":\"\",\"rirOn\":0,\"ics\":\"\"}"
+    },
+    {
+      "id": "USE_NEVER_COPIES_RIR_OR_ICS",
+      "pass": true,
+      "note": "{\"c\":\"80\",\"r\":\"10\",\"rir\":\"\",\"rirOn\":0,\"ics\":\"\"}"
+    },
+    {
+      "id": "NO_FIRESTORE_WRITE_BEFORE_EXPLICIT_SAVE",
+      "pass": true,
+      "note": "week2 keys=0 postWriteRequests=0"
+    },
+    {
+      "id": "COPIED_DRAFT_STAYS_EDITABLE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "EXPLICIT_SAVE_WRITES_ONLY_THE_NORMAL_CURRENT_WEEK_SET",
+      "pass": true,
+      "note": "[\"log_2_0_0_s0\"]"
+    },
+    {
+      "id": "PRIOR_WEEK_EVIDENCE_UNCHANGED_BY_REUSE_AND_SAVE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "PER_SET_MAPPING_S2_USES_PRIOR_S2",
+      "pass": true,
+      "note": "USAR CARGA/REPSSEM 1 · S2 · 80 kg × 9"
+    },
+    {
+      "id": "S2_DRAFT_80_X_9_RIR_EMPTY",
+      "pass": true,
+      "note": "{\"c\":\"80\",\"r\":\"9\",\"rir\":\"\",\"rirOn\":0,\"ics\":\"\"}"
+    },
+    {
+      "id": "S3_DRAFT_75_X_8",
+      "pass": true,
+      "note": "{\"c\":\"75\",\"r\":\"8\",\"rir\":\"\",\"rirOn\":0,\"ics\":\"\"}"
+    },
+    {
+      "id": "NO_PRIOR_S4_NO_BUTTON_EMPTY_DRAFT",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "HARD_RELOAD_PERSISTS_SAVED_CURRENT_EXECUTION",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "RELOAD_STILL_SHOWS_SINGLE_PREVIOUS_WEEK_BLOCK",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "NUMERIC_APPLY_ENABLED_FALSE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_NO_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_ULTIMA_SEMANA_ROWS_EQUAL_FIREBASE_EVIDENCE",
+      "pass": true,
+      "note": "[\"S1 · 80 kg × 10 · RIR 3\",\"S2 · 80 kg × 9 · RIR 2\",\"S3 · 75 kg × 8 · RIR 1\"]"
+    },
+    {
+      "id": "320D_NO_NOTE_INSIDE_PERFORMANCE_BLOCK",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_T549_NOTE_HISTORY_OWNS_PREVIOUS_NOTE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_ONE_LAST_WEEK_PANEL_NO_OLD_CHIP",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_USE_BUTTON_PER_SET_SECONDARY_NO_LIME",
+      "pass": true,
+      "note": "{\"text\":\"USAR CARGA/REPSSEM 1 · S1 · 80 kg × 10\",\"h\":51,\"right\":289,\"W\":320,\"bg\":\"rgba(0, 0, 0, 0)\",\"bd\":\"rgba(244, 244, 240, 0.2)\"}"
+    },
+    {
+      "id": "320D_TU_EJECUCION_LABEL_PRESENT",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"sw\":320,\"W\":320}"
+    },
+    {
+      "id": "320D_COMPACT",
+      "pass": true,
+      "note": "blockHeight=130"
+    },
+    {
+      "id": "320D_MANY_SETS_COLLAPSE_AND_NO_OVERFLOW",
+      "pass": true,
+      "note": "rows=11"
+    },
+    {
+      "id": "320D_COLLAPSE_SHOWS_6",
+      "pass": true,
+      "note": "visible=6"
+    },
+    {
+      "id": "320D_EXPAND_SHOWS_ALL",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_LONG_VALUES_NO_OVERFLOW",
+      "pass": true,
+      "note": "{\"sw\":320,\"W\":320}"
+    },
+    {
+      "id": "320D_NO_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "360D_ULTIMA_SEMANA_ROWS_EQUAL_FIREBASE_EVIDENCE",
+      "pass": true,
+      "note": "[\"S1 · 80 kg × 10 · RIR 3\",\"S2 · 80 kg × 9 · RIR 2\",\"S3 · 75 kg × 8 · RIR 1\"]"
+    },
+    {
+      "id": "360D_NO_NOTE_INSIDE_PERFORMANCE_BLOCK",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "360D_T549_NOTE_HISTORY_OWNS_PREVIOUS_NOTE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "360D_ONE_LAST_WEEK_PANEL_NO_OLD_CHIP",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "360D_USE_BUTTON_PER_SET_SECONDARY_NO_LIME",
+      "pass": true,
+      "note": "{\"text\":\"USAR CARGA/REPSSEM 1 · S1 · 80 kg × 10\",\"h\":44,\"right\":329,\"W\":360,\"bg\":\"rgba(0, 0, 0, 0)\",\"bd\":\"rgba(244, 244, 240, 0.2)\"}"
+    },
+    {
+      "id": "360D_TU_EJECUCION_LABEL_PRESENT",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "360D_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"sw\":360,\"W\":360}"
+    },
+    {
+      "id": "360D_COMPACT",
+      "pass": true,
+      "note": "blockHeight=130"
+    },
+    {
+      "id": "360D_MANY_SETS_COLLAPSE_AND_NO_OVERFLOW",
+      "pass": true,
+      "note": "rows=11"
+    },
+    {
+      "id": "360D_COLLAPSE_SHOWS_6",
+      "pass": true,
+      "note": "visible=6"
+    },
+    {
+      "id": "360D_EXPAND_SHOWS_ALL",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "360D_LONG_VALUES_NO_OVERFLOW",
+      "pass": true,
+      "note": "{\"sw\":360,\"W\":360}"
+    },
+    {
+      "id": "360D_NO_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "430D_ULTIMA_SEMANA_ROWS_EQUAL_FIREBASE_EVIDENCE",
+      "pass": true,
+      "note": "[\"S1 · 80 kg × 10 · RIR 3\",\"S2 · 80 kg × 9 · RIR 2\",\"S3 · 75 kg × 8 · RIR 1\"]"
+    },
+    {
+      "id": "430D_NO_NOTE_INSIDE_PERFORMANCE_BLOCK",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "430D_T549_NOTE_HISTORY_OWNS_PREVIOUS_NOTE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "430D_ONE_LAST_WEEK_PANEL_NO_OLD_CHIP",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "430D_USE_BUTTON_PER_SET_SECONDARY_NO_LIME",
+      "pass": true,
+      "note": "{\"text\":\"USAR CARGA/REPSSEM 1 · S1 · 80 kg × 10\",\"h\":44,\"right\":399,\"W\":430,\"bg\":\"rgba(0, 0, 0, 0)\",\"bd\":\"rgba(244, 244, 240, 0.2)\"}"
+    },
+    {
+      "id": "430D_TU_EJECUCION_LABEL_PRESENT",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "430D_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"sw\":430,\"W\":430}"
+    },
+    {
+      "id": "430D_COMPACT",
+      "pass": true,
+      "note": "blockHeight=130"
+    },
+    {
+      "id": "430D_MANY_SETS_COLLAPSE_AND_NO_OVERFLOW",
+      "pass": true,
+      "note": "rows=11"
+    },
+    {
+      "id": "430D_COLLAPSE_SHOWS_6",
+      "pass": true,
+      "note": "visible=6"
+    },
+    {
+      "id": "430D_EXPAND_SHOWS_ALL",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "430D_LONG_VALUES_NO_OVERFLOW",
+      "pass": true,
+      "note": "{\"sw\":430,\"W\":430}"
+    },
+    {
+      "id": "430D_NO_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_ULTIMA_SEMANA_ROWS_EQUAL_FIREBASE_EVIDENCE",
+      "pass": true,
+      "note": "[\"S1 · 80 kg × 10 · RIR 3\",\"S2 · 80 kg × 9 · RIR 2\",\"S3 · 75 kg × 8 · RIR 1\"]"
+    },
+    {
+      "id": "390L_NO_NOTE_INSIDE_PERFORMANCE_BLOCK",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_T549_NOTE_HISTORY_OWNS_PREVIOUS_NOTE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_ONE_LAST_WEEK_PANEL_NO_OLD_CHIP",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_USE_BUTTON_PER_SET_SECONDARY_NO_LIME",
+      "pass": true,
+      "note": "{\"text\":\"USAR CARGA/REPSSEM 1 · S1 · 80 kg × 10\",\"h\":44,\"right\":359,\"W\":390,\"bg\":\"rgba(0, 0, 0, 0)\",\"bd\":\"rgba(0, 0, 0, 0.24)\"}"
+    },
+    {
+      "id": "390L_TU_EJECUCION_LABEL_PRESENT",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"sw\":390,\"W\":390}"
+    },
+    {
+      "id": "390L_COMPACT",
+      "pass": true,
+      "note": "blockHeight=130"
+    },
+    {
+      "id": "390L_MANY_SETS_COLLAPSE_AND_NO_OVERFLOW",
+      "pass": true,
+      "note": "rows=11"
+    },
+    {
+      "id": "390L_COLLAPSE_SHOWS_6",
+      "pass": true,
+      "note": "visible=6"
+    },
+    {
+      "id": "390L_EXPAND_SHOWS_ALL",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_LONG_VALUES_NO_OVERFLOW",
+      "pass": true,
+      "note": "{\"sw\":390,\"W\":390}"
+    },
+    {
+      "id": "390L_NO_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    }
+  ]
+}

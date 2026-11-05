@@ -1,0 +1,115 @@
+{
+  "label": "after",
+  "at": "2026-10-17T16:08:31.514Z",
+  "screens": {
+    "320-s1-noplan-landing-scrOnboarding": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 320,
+      "innerWidth": 320
+    },
+    "320-s2-home": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 320,
+      "innerWidth": 320
+    },
+    "320-s3-set-filled": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 320,
+      "innerWidth": 320
+    },
+    "320-s3-set-saved": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 320,
+      "innerWidth": 320
+    },
+    "320-s4-offline": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 320,
+      "innerWidth": 320
+    },
+    "320-s5-keyboard-height": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 320,
+      "innerWidth": 320
+    },
+    "390-s1-noplan-landing-scrOnboarding": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 390,
+      "innerWidth": 390
+    },
+    "390-s2-home": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 390,
+      "innerWidth": 390
+    },
+    "390-s3-set-filled": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 390,
+      "innerWidth": 390
+    },
+    "390-s3-set-saved": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 390,
+      "innerWidth": 390
+    },
+    "390-s4-offline": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 390,
+      "innerWidth": 390
+    },
+    "390-s5-keyboard-height": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 390,
+      "innerWidth": 390
+    },
+    "430-s1-noplan-landing-scrOnboarding": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 430,
+      "innerWidth": 430
+    },
+    "430-s2-home": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 430,
+      "innerWidth": 430
+    },
+    "430-s3-set-filled": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 430,
+      "innerWidth": 430
+    },
+    "430-s3-set-saved": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 430,
+      "innerWidth": 430
+    },
+    "430-s4-offline": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 430,
+      "innerWidth": 430
+    },
+    "430-s5-keyboard-height": {
+      "overflow": [],
+      "smallTargets": [],
+      "scrollWidth": 430,
+      "innerWidth": 430
+    }
+  },
+  "noPlanLanding": "scrOnboarding"
+}

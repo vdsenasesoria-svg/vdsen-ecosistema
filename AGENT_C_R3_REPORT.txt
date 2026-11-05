@@ -1,0 +1,303 @@
+AGENT C — QA ROUND 3 REPORT
+Branch: claude/qa-post-t116
+Baseline: 755def3 (26 suites / 0 failures)
+Date: 2026-09-16
+
+════════════════════════════════════════════════════════════════════
+SECTION A — AUDIT ANSWERS (per focus area)
+════════════════════════════════════════════════════════════════════
+
+1. prescriptionExerciseId lifecycle
+─────────────────────────────────────
+CLIENT (vdsen-cliente.html):
+
+loadPlan maps exercises from plans/{activePlanId}.days to the in-memory
+PLAN.dias[] array. Each exercise retains its prescriptionExerciseId from
+Firestore (line 1463).
+
+LOG KEYS use POSITION INDEX (ei), NOT prescriptionExerciseId:
+  'log_' + CURRENT_WEEK + '_' + di + '_' + ei + '_s' + s   (line 425, 4498, …)
+
+prescriptionExerciseId IS stored INSIDE the log entry object as a value field
+(lines 5415, 7571). Cross-week lookups (_getPrevWeekData, _getExposures) use
+it for HIGH confidence matching, with positional fallback (LOW confidence) when
+the ID cannot be found.
+
+WITHIN-WEEK reads (done-status, current set data) are purely positional:
+  LOGS['log_' + CURRENT_WEEK + '_' + di + '_' + ei + '_s' + s]   (lines 3653, 4158…)
+
+COACH (vdsen-coach.html):
+
+_stampPrescriptionIds (line 8092): preserves existing IDs, generates new ones
+only for exercises that are missing one or that have a cross-plan duplicate.
+✓ Re-saving an unchanged exercise keeps its prescriptionExerciseId.
+✓ Reordering exercises via saveTrainingPlan preserves IDs (read from DOM
+  data-prescription-id attribute — line 16795).
+
+CRITICAL GAP: showUpdatePlanModal (line 17278–17315)
+The normalization block (lines 17281–17305) rebuilds each exercise object
+explicitly and does NOT include prescriptionExerciseId: ex.prescriptionExerciseId.
+After normalization all exercises lack an ID. _stampPrescriptionIds then
+assigns ALL-NEW IDs to every exercise in the plan. → See QA-R3-01.
+
+2. Active plan listener / plan change race
+───────────────────────────────────────────
+loadPlan calls _clearLiveListeners() as its FIRST statement (line 1344),
+which unsubscribes _liveUnsubClient, _liveUnsubPlan, _liveUnsubLogs,
+_waitUnsubClientDoc, and _waitUnsubActivePlan before creating any new
+subscriptions. No overlap window exists between old and new listeners.
+
+The "new activePlanId" path (line 1681–1691) calls location.reload()
+after a 1.5 s toast delay. The reload re-enters loadPlan which again
+calls _clearLiveListeners(). No race or dual-listener condition found. ✓
+
+3. Subscription cleanup on logout / reload
+───────────────────────────────────────────
+Logout path (line 1204–1205):
+  _clearLiveListeners();
+  await FB.signOut(FB.auth);
+
+_clearLiveListeners (lines 1336–1342) unsubscribes all five handles with
+try/catch guards and nulls each reference. All listeners are cleaned up
+before sign-out. Stale listeners cannot fire after re-login because
+_clearLiveListeners is also called at the top of every loadPlan. ✓
+
+4. updatedAt remaining gaps (final sweep)
+──────────────────────────────────────────
+saveTrainingPlan (line 16832):               updatedAt: new Date().toISOString()  ✓
+showUpdatePlanModal apply (line 17320):      updatedAt: new Date().toISOString()  ✓
+_applyAllModuloD (line 14868):               updatedAt: new Date().toISOString()  ✓
+saveManualPlan (line 9317):                  updatedAt: new Date().toISOString()  ✓
+saveImportedPlan (line 5080):               updatedAt: new Date().toISOString()  ✓
+
+duplicatePlan (line 17480):                  uses ...planData spread → stale     ✗
+duplicatePlanToClient (line 17994–18001):    uses ...planData spread → stale     ✗
+
+AI plan / autoGeneratePlan (line 8524–8560): createdAt + approvedAt only,
+                                              NO updatedAt field               ✗
+
+Template apply → _applyTemplateToClient (line 15276–15285): createdAt only    ✗
+Template quick-assign (line 17736–17739):    createdAt only                    ✗
+
+════════════════════════════════════════════════════════════════════
+SECTION B — FINDINGS
+════════════════════════════════════════════════════════════════════
+
+QA_R3_ID: QA-R3-01
+OWNER: COACH
+SEVERITY: high
+AREA: prescriptionExerciseId continuity — showUpdatePlanModal
+REPRO:
+  1. Client has a plan with exercises that already have prescriptionExerciseIds
+     (any plan saved via saveTrainingPlan or importPlan).
+  2. Client trains week N; log entries are written with the exercise's
+     prescriptionExerciseId stored inside each entry.
+  3. Coach opens "Actualizar plan en sitio" modal, pastes valid JSON for the
+     same exercises (or with minor edits), clicks "Aplicar actualización".
+  4. Inspect the updated plan in Firestore — all prescriptionExerciseIds are
+     new UUIDs, different from those in the week-N log entries.
+EXPECTED:
+  Exercises whose exerciseName (and position) has not changed should retain
+  their prescriptionExerciseId so that _getPrevWeekData can find week-N logs
+  as HIGH confidence matches in week N+1.
+ACTUAL:
+  showUpdatePlanModal normalizes exercise objects (lines 17281–17305) into a
+  new plain object that does NOT include prescriptionExerciseId. When
+  _stampPrescriptionIds runs on this output (line 17315), it sees every
+  exercise as "missing ID" and generates fresh UUIDs for all of them.
+  Result: _getPrevWeekData falls back to LOW confidence positional matching
+  with name guard for the entire meso after any "update in-place" operation.
+FILES: vdsen-coach.html:17281-17305, vdsen-coach.html:17315
+CONTRACT:
+  prescriptionExerciseId is the stable exercise identity across the meso.
+  Generating new IDs on every in-place update breaks the "HIGH confidence"
+  cross-week progression lookup that was added specifically to survive
+  exercise reorders.
+TEST_GAP:
+  tests/qa_r3_prescription_id.test.js — QA-R3-01a, QA-R3-01b, QA-R3-01c
+RECOMMENDATION:
+  In showUpdatePlanModal's normalization, pass prescriptionExerciseId through:
+    prescriptionExerciseId: ex.prescriptionExerciseId || undefined,
+  _stampPrescriptionIds will then preserve existing IDs and only generate
+  new ones for exercises that truly lack one (e.g. newly added exercises).
+  Since the modal already guards that days.length === curDays, positional
+  matching of old vs. new exercises is safe when the count is the same.
+
+────────────────────────────────────────────────────────────────────
+
+QA_R3_ID: QA-R3-02
+OWNER: COACH / CLIENT (shared)
+SEVERITY: medium
+AREA: updatedAt missing from template and AI-plan creation paths
+REPRO:
+  1. Coach applies a plan from a template (either "apply-to-client" path,
+     line 15276, or "quick-assign" path, line 17736).
+  2. Client app loads the new plan; _liveUnsubPlan fires with updatedAt = ''.
+     The listener guards `if (!updatedAt) return;` at line 1706 and exits.
+     FB._planLastUpdatedAt remains null.
+  3. Coach edits the template plan via saveTrainingPlan or _applyAllModuloD
+     (both write a fresh updatedAt). Listener fires:
+       — updatedAt is now populated
+       — FB._planLastUpdatedAt is null → sets baseline, returns
+       — Client does NOT reload. Coach's first edit is invisible to client
+         until the second write.
+  4. Coach makes a second edit; now updatedAt !== baseline → client reloads.
+EXPECTED:
+  The client app should react to the FIRST coach edit of a plan, not the
+  second.
+ACTUAL:
+  Template-created and AI-generated plans omit updatedAt from their addDoc
+  payload. The live listener baseline logic treats the first write that
+  adds updatedAt as "initialising the baseline" rather than a real change.
+  Same root cause affects both template paths and the AI-plan draftDoc.
+FILES:
+  vdsen-coach.html:15276-15285  (template apply-to-client, no updatedAt)
+  vdsen-coach.html:17736-17739  (template quick-assign, no updatedAt)
+  vdsen-coach.html:8524-8560    (AI plan draftDoc, no updatedAt)
+  vdsen-cliente.html:1701-1715  (live listener baseline logic)
+CONTRACT:
+  Any plan stored in Firestore with a live listener watching it should
+  trigger a client reload on the coach's FIRST edit, not the second.
+TEST_GAP:
+  tests/qa_r3_prescription_id.test.js — QA-R3-02a, QA-R3-02b, QA-R3-02c
+RECOMMENDATION:
+  Add updatedAt: new Date().toISOString() (or serverTimestamp()) to all
+  three creation payloads:
+    • lines 15276–15285  (_applyTemplateToClient / "apply-to-client")
+    • lines 17736–17739  (template quick-assign loop)
+    • lines 8524–8560    (AI plan draftDoc — add  updatedAt: serverTimestamp())
+
+────────────────────────────────────────────────────────────────────
+
+QA_R3_ID: QA-R3-03
+OWNER: COACH
+SEVERITY: low
+AREA: duplicatePlan / duplicatePlanToClient — stale updatedAt inherited
+REPRO:
+  1. Plan P (source) was created without updatedAt (e.g. from a template).
+  2. Coach uses duplicatePlan (line 17480) or duplicatePlanToClient
+     (line 17994) to copy P to client B.
+  3. New plan P2 is created with `{ ...planData, clientId: targetId,
+     createdAt: new Date().toISOString(), ... }`.
+     The spread carries planData.updatedAt as-is (undefined for template
+     plans, or a stale ISO string for edited plans).
+  4. Client B loads P2. If updatedAt is undefined, the live listener's
+     baseline is never set (same as QA-R3-02). If updatedAt is the stale
+     source value, coach's first edit after duplication sets a new
+     updatedAt that differs from the stale baseline → reload triggers.
+     Only problematic when source had no updatedAt.
+EXPECTED:
+  Duplicated plan has its own updatedAt timestamp (creation time), so the
+  live listener baseline starts clean.
+ACTUAL:
+  updatedAt is inherited from source or absent; behavior depends on the
+  source plan's history.
+FILES:
+  vdsen-coach.html:17480  (duplicatePlan — no explicit updatedAt override)
+  vdsen-coach.html:17994  (duplicatePlanToClient — no explicit updatedAt)
+CONTRACT:
+  A duplicated plan is a new prescription — its creation time should be
+  its own timestamp, independent of the source plan.
+TEST_GAP: covered implicitly by QA-R3-02c (same listener baseline logic)
+RECOMMENDATION:
+  Add `updatedAt: new Date().toISOString()` explicitly to both duplicatePlan
+  and duplicatePlanToClient payloads (after the spread, so it overrides any
+  stale value that comes from ...planData).
+
+────────────────────────────────────────────────────────────────────
+
+QA_R3_ID: QA-R3-04
+OWNER: CLIENT
+SEVERITY: medium
+AREA: Position-identity collision for within-week log reads after mid-week
+      plan reorder
+REPRO:
+  1. Client is in week 3. Day 0 has Exercise A (ei=0) and Exercise B (ei=1).
+     Client completes sets: log_3_0_0_s0 (A), log_3_0_1_s0 (B).
+  2. Coach reorders exercises via saveTrainingPlan (drag/↑↓ buttons), so
+     Exercise B is now ei=0 and Exercise A is now ei=1. Both prescriptionIds
+     are preserved (saveTrainingPlan reads from data-prescription-id).
+  3. updatedAt changes → client live listener triggers location.reload().
+  4. After reload, PLAN.dias[0][0] = Exercise B (new ei=0).
+     Client reads done status: LOGS['log_3_0_0_s0'] — finds Exercise A's
+     completed sets and displays them as Exercise B's progress.
+EXPECTED:
+  Within-week completed sets are displayed under the exercise they were
+  recorded for, regardless of current plan position.
+ACTUAL:
+  Done status and set display logic (lines 3653, 4158–4159) use purely
+  positional keys — the exercise at position ei reads log_W_D_ei_sN without
+  checking the entry's prescriptionExerciseId against the plan's exercise.
+FILES:
+  vdsen-cliente.html:3653   (done-count read by position)
+  vdsen-cliente.html:4158-4159 (prev-set done status by position)
+  vdsen-cliente.html:4498-4499 (save key by position)
+CONTRACT:
+  The within-week render should either (a) match entries to exercises by
+  prescriptionExerciseId, or (b) document that mid-week reorders are
+  disallowed/unsupported to prevent mis-display.
+TEST_GAP:
+  No existing test exercises mid-week reorder then re-reads done status.
+RECOMMENDATION:
+  Two options:
+  A. (Preferred) When loading a plan, build a lookup from prescriptionExerciseId
+     to the LOGS entries for the current week, and use it for within-week
+     done-status checks in addition to the existing positional key.
+  B. (Simpler safeguard) In saveTrainingPlan, if any exercise changed
+     position relative to the current plan, warn the coach that mid-week
+     reorders may misalign current-week progress display.
+
+────────────────────────────────────────────────────────────────────
+
+QA_R3_ID: QA-R3-05
+OWNER: CLIENT
+SEVERITY: low
+AREA: _waitUnsubActivePlan memory-leak path on rapid auth toggle
+REPRO:
+  1. User logs in. loadPlan runs, client doc exists, no activePlanId.
+     _waitUnsubActivePlan listener is registered (line 1388).
+  2. Before the listener fires, user clicks "Cerrar sesión".
+     _clearLiveListeners() nulls _waitUnsubActivePlan and calls its unsub. ✓
+  3. However: if the listener fires BETWEEN the moment the signOut call
+     resolves and the next loadPlan call, the listener's callback executes:
+       if (s.exists() && s.data().activePlanId) {
+         _waitUnsubActivePlan && _waitUnsubActivePlan();   // handle already null
+         loadPlan(USER);   // USER was set before signOut cleared it?
+       }
+     USER is set to `user` at line 1345 and is a module-level variable.
+     After signOut, USER is not cleared to null. If the Firestore SDK
+     delivers a cached snapshot synchronously after signOut, loadPlan(USER)
+     runs with a logged-out user object. Firebase Auth rejects subsequent
+     reads (Firestore rules require auth), so the request fails with
+     permission-denied and falls through to the catch block, which calls
+     showScreen('scrLogin'). Not a data-corruption risk, but it generates
+     a spurious error toast.
+EXPECTED:
+  No spurious error toast after logout.
+ACTUAL:
+  Race: snapshot callback from _waitUnsubActivePlan can fire one tick after
+  unsub() was called (Firestore SDK delivers buffered events), calling
+  loadPlan with a stale USER object and producing a permission-denied error.
+FILES:
+  vdsen-cliente.html:1204-1205  (logout sequence — USER not cleared)
+  vdsen-cliente.html:1388-1397  (_waitUnsubActivePlan callback)
+  vdsen-cliente.html:1344-1345  (loadPlan sets USER)
+CONTRACT:
+  Logout should be silent — no error toasts.
+TEST_GAP: No test for logout + buffered snapshot race.
+RECOMMENDATION:
+  Set USER = null immediately after _clearLiveListeners() on logout (before
+  signOut). Guard the _waitUnsubActivePlan callback:
+    if (!USER) return;
+  before calling loadPlan(USER). This is a two-line fix with no side effects.
+
+════════════════════════════════════════════════════════════════════
+SECTION C — TEST FILES ADDED
+════════════════════════════════════════════════════════════════════
+tests/qa_r3_prescription_id.test.js  (6 tests — all passing)
+  Covers QA-R3-01 (showUpdatePlanModal strips prescriptionExerciseId)
+  and QA-R3-02 (template plans omit updatedAt / live listener skip).
+
+════════════════════════════════════════════════════════════════════
+END OF REPORT
+════════════════════════════════════════════════════════════════════

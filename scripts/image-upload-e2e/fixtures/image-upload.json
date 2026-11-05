@@ -1,0 +1,64 @@
+{
+  "__note": "Synthetic Image Upload fixture. No real data. Every sentinel is unique to its owner so a cross-coach leak is detectable in the DOM and in select options.",
+  "coaches": {
+    "coachA000000000000000001": {
+      "displayName": "STG_COACHA_UID_SENTINEL",
+      "email": "coach.alfa@harness.invalid",
+      "sentinelEmail": "STG_COACHA_EMAIL_SENTINEL@harness.invalid",
+      "role": "coach",
+      "note": "STG_COACHA_NOTE_ONLY",
+      "template": "STG_COACHA_TEMPLATE_ONLY",
+      "compendio": "STG_COACHA_COMPENDIO_ONLY",
+      "createdAt": "2026-01-01T00:00:00Z"
+    },
+    "coachB000000000000000002": {
+      "displayName": "Coach Beta",
+      "email": "coach.beta@harness.invalid",
+      "role": "coach",
+      "sentinel": "STG_COACHB_ONLY",
+      "createdAt": "2026-01-02T00:00:00Z"
+    }
+  },
+  "creds": {
+    "coach.alfa@harness.invalid": { "uid": "coachA000000000000000001", "displayName": "STG_COACHA_UID_SENTINEL" },
+    "coach.beta@harness.invalid": { "uid": "coachB000000000000000002", "displayName": "Coach Beta" }
+  },
+  "clients": {
+    "clientC100000000000000001": {
+      "displayName": "Cliente Repetido",
+      "email": "c1@harness.invalid",
+      "coachId": "coachA000000000000000001",
+      "activePlanId": "planA1000000000000000001",
+      "phone": "+10000000001",
+      "sentinel": "STG_C1_ONLY",
+      "notes": "nota privada de C1 STG_C1_ONLY"
+    },
+    "clientB100000000000000001": {
+      "displayName": "Cliente Repetido",
+      "email": "b1@harness.invalid",
+      "coachId": "coachB000000000000000002",
+      "activePlanId": null,
+      "phone": "+10000000009",
+      "sentinel": "STG_COACHB_ONLY",
+      "notes": "propiedad de Coach Beta, MISMO nombre visible que C1"
+    }
+  },
+  "plans": {
+    "planA1000000000000000001": { "weeks": 4, "daysPerWeek": 3, "coachId": "coachA000000000000000001", "clientId": "clientC100000000000000001", "status": "active", "note": "STG_COACHA_PLAN_ONLY", "days": [] }
+  },
+  "plans_backup": {},
+  "logs_by_id": {},
+  "fichas_onboarding": {},
+  "exercises": [
+    { "exerciseId": "exA1", "name": "Ejercicio STG_COACHA_EXERCISE_ONLY", "coachId": "coachA000000000000000001", "muscleType": "pecho", "fatigueCost": 2, "resistanceCurve": "media" }
+  ],
+  "templateList": [
+    { "id": "tplA1", "name": "Plantilla STG_COACHA_TEMPLATE_ONLY", "coachId": "coachA000000000000000001" }
+  ],
+  "prospects": [
+    { "id": "prA1", "name": "Prospecto STG_COACHA_PROSPECT_ONLY", "coachId": "coachA000000000000000001" }
+  ],
+  "exerciseCatalog": [
+    { "exerciseId": "exA1", "name": "Ejercicio STG_COACHA_EXERCISE_ONLY", "coachId": "coachA000000000000000001" }
+  ]
+}

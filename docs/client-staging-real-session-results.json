@@ -1,0 +1,190 @@
+{
+  "summary": {
+    "project": "vdsen-ecosistema-staging",
+    "checks": 36,
+    "failed": [],
+    "kept": true
+  },
+  "results": [
+    {
+      "id": "NO_PRIOR_EXECUTION_EVIDENCE",
+      "pass": true,
+      "note": "keys=0"
+    },
+    {
+      "id": "REAL_PLAN_RUNTIME_7_32_80_32",
+      "pass": true,
+      "note": "{\"days\":7,\"e\":32,\"s\":80,\"pids\":32,\"label\":\"#1 — Pecho superior + dorsal + lateral\",\"numeric\":false}"
+    },
+    {
+      "id": "NUMERIC_APPLY_ENABLED_FALSE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "SESSION_DAY_5_EXERCISES_12_SETS",
+      "pass": true,
+      "note": "#1 — Pecho superior + dorsal + lateral"
+    },
+    {
+      "id": "EXPRESS_OFF_PER_SET_MODE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "HOME_CTA_STARTS_SESSION",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "NO_PRESCRIPTION_PREFILL_IN_INPUTS",
+      "pass": true,
+      "note": "{\"c\":\"\",\"r\":\"\",\"rir\":\"\"}"
+    },
+    {
+      "id": "A11Y_SET_INPUTS_LABELLED",
+      "pass": true,
+      "note": "[\"decimal\",\"numeric\",\"numeric\"]"
+    },
+    {
+      "id": "A11Y_TOUCH_TARGETS_44",
+      "pass": true,
+      "note": "[]"
+    },
+    {
+      "id": "A11Y_RIR_BUTTONS_ARIA_PRESSED_AND_LABELLED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "A11Y_REDUCED_MOTION_CONTRACT_PRESENT",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "REST_TIMER_STARTS_AND_COUNTS_DOWN",
+      "pass": true,
+      "note": "2:29 -> 2:27"
+    },
+    {
+      "id": "REST_TIMER_PRESCRIBED_DURATION",
+      "pass": true,
+      "note": "prescribed 150s, shows 2:29"
+    },
+    {
+      "id": "REST_TIMER_MINIMIZES_TO_PILL",
+      "pass": true,
+      "note": "{\"ov\":false,\"n\":\"2:27\",\"pill\":true,\"overlays\":1,\"pills\":1,\"end\":\"1790804193614\"}"
+    },
+    {
+      "id": "REST_TIMER_SURVIVES_TAB_NAVIGATION_NO_DUPLICATE",
+      "pass": true,
+      "note": "{\"ov\":false,\"n\":\"2:26\",\"pill\":true,\"overlays\":1,\"pills\":1,\"end\":\"1790804193614\"}"
+    },
+    {
+      "id": "REST_TIMER_RESTORES",
+      "pass": true,
+      "note": "{\"ov\":true,\"n\":\"2:26\",\"pill\":false,\"overlays\":1,\"pills\":1,\"end\":\"1790804193614\"}"
+    },
+    {
+      "id": "ALL_12_SETS_EXECUTED_IN_UI",
+      "pass": true,
+      "note": "sets=12"
+    },
+    {
+      "id": "NO_SET_PENDING",
+      "pass": true,
+      "note": "pending=0"
+    },
+    {
+      "id": "POSTSESSION_OPENS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "POSTSESSION_CLOSES",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "HOME_REFLECTS_COMPLETED_SESSION",
+      "pass": true,
+      "note": "1\nSESIONES"
+    },
+    {
+      "id": "SESSION_MARKED_DONE_IN_RUNTIME",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "FIRESTORE_12_SETS_MATCH_UI_LOAD_REPS_RIR_ICS_PUMP",
+      "pass": true,
+      "note": "ok=12 "
+    },
+    {
+      "id": "SET_RECORD_SHAPE",
+      "pass": true,
+      "note": "ts,prescriptionExerciseId,exerciseNameSnapshot,pump,rir,ics,carga,done,reps,rir_real,unit"
+    },
+    {
+      "id": "SESSION_CLOSURE_PERSISTED",
+      "pass": true,
+      "note": "progrec_1_0,done_1_0,engine_state,postsession_1_0"
+    },
+    {
+      "id": "NO_EXTRA_SET_KEYS_OUTSIDE_DAY",
+      "pass": true,
+      "note": "12 set keys"
+    },
+    {
+      "id": "NO_CANONICAL_FIELDS_WRITTEN_BY_ATHLETE",
+      "pass": true,
+      "note": "exerciseHistory,currentWeek,exerciseUnits,entries,planId,updatedAt"
+    },
+    {
+      "id": "PROGREC_IS_ADVISORY_EVIDENCE_ONLY",
+      "pass": true,
+      "note": "recs=5"
+    },
+    {
+      "id": "PLAN_DOC_UNCHANGED_BY_EXECUTION",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "HARD_RELOAD_KEEPS_SESSION_AND_VALUES",
+      "pass": true,
+      "note": "{\"done\":true,\"n\":12,\"l\":{\"carga\":\"62.5\",\"reps\":\"7\",\"unit\":\"KG\",\"done\":true,\"rir\":3,\"rir_real\":\"1\",\"ics\":7,\"pump\":2,\"ts\":1790804050739,\"prescriptionExerciseId\":\"63160afa-5fb0-4ae8-829d-930c227ef6f4\",\"exerciseNameSnapshot\":\"Press Convergente Inclinado\"}}"
+    },
+    {
+      "id": "LOGOUT_TO_LOGIN",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "RELOGIN_KEEPS_SESSION_AND_VALUES",
+      "pass": true,
+      "note": "{\"rir\":2,\"unit\":\"KG\",\"carga\":\"8\",\"ics\":8,\"pump\":1,\"rir_real\":\"1\",\"reps\":\"14\",\"ts\":1790804073123,\"done\":true,\"prescriptionExerciseId\":\"7e579a59-3598-4f59-85b2-c08d10d10294\",\"exerciseNameSnapshot\":\"Elevaciones laterales polea baja\"}"
+    },
+    {
+      "id": "DAY_VIEW_SHOWS_COMPLETED",
+      "pass": true,
+      "note": "5/5 ejercicios"
+    },
+    {
+      "id": "NO_DUPLICATE_SESSION_OR_LOG_AFTER_RELOGIN",
+      "pass": true,
+      "note": "16 vs 16"
+    },
+    {
+      "id": "PRESCRIPTION_NOT_LEAKED_INTO_EXECUTION",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "NO_UNCAUGHT_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    }
+  ]
+}

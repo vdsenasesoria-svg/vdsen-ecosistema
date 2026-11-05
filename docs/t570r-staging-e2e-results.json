@@ -1,0 +1,99 @@
+{
+  "project": "vdsen-ecosistema-staging",
+  "at": "2026-10-17T04:54:46.251Z",
+  "driver": "REST transactions with operator IAM identity (executor code under test is the production module)",
+  "pass": 18,
+  "fail": 0,
+  "results": [
+    {
+      "id": "STG00 release allowlist cannot be written by an athlete or a Coach (deployed rules)",
+      "pass": true,
+      "note": "403/403"
+    },
+    {
+      "id": "STG00b without the release allowlist the endpoint performs no canonical write",
+      "pass": true,
+      "note": "OUT_OF_ALLOWLIST"
+    },
+    {
+      "id": "STG01 athlete persists two comparable exposures through deployed rules",
+      "pass": true,
+      "note": "[200,200]"
+    },
+    {
+      "id": "STG02 authenticated endpoint materializes and applies (no Coach session)",
+      "pass": true,
+      "note": "{\"status\":\"MATERIALIZED\",\"created\":[\"v1_046daaf642b3a540\"],\"applied\":[{\"recordKey\":\"v1_046daaf642b3a540\",\"written\":true,\"reason\":null,\"blocked\":null}],\"consumed\":[]}"
+    },
+    {
+      "id": "STG03 endpoint without a token is rejected",
+      "pass": true,
+      "note": null
+    },
+    {
+      "id": "STG04 another athlete cannot trigger processing of a foreign plan",
+      "pass": true,
+      "note": "{\"status\":\"PLAN_MISMATCH\",\"created\":[],\"applied\":[],\"consumed\":[]}"
+    },
+    {
+      "id": "STG05 record APPLIED + overlay APPLIED exist, written by the trusted executor",
+      "pass": true,
+      "note": "{\"state\":\"APPLIED\",\"dim\":\"REPS\",\"prev\":10,\"applied\":12}"
+    },
+    {
+      "id": "STG06 client resolves the effective prescription for the next exposure",
+      "pass": true,
+      "note": "{\"prov\":\"CANONICAL_OVERLAY\",\"shown\":{\"label\":\"Autoajuste VDSEN\",\"text\":\"10 → 12 reps\"}}"
+    },
+    {
+      "id": "STG07 base plan untouched (immutable)",
+      "pass": true,
+      "note": null
+    },
+    {
+      "id": "STG08 athlete cannot forge overlays or APPLIED records",
+      "pass": true,
+      "note": "403/403"
+    },
+    {
+      "id": "STG09 next exposure: executed reps recorded independently; overlay not rewritten; still shown for the started exposure",
+      "pass": true,
+      "note": "11,11,11"
+    },
+    {
+      "id": "STG09b athlete appends the consumption receipt through deployed rules",
+      "pass": true,
+      "note": "200"
+    },
+    {
+      "id": "STG09c server performs APPLIED -> CONSUMED (no Monitor); prescription unchanged; one CONSUMED event",
+      "pass": true,
+      "note": "{\"consumed\":[{\"recordKey\":\"v1_046daaf642b3a540\",\"written\":true,\"reason\":null}],\"state\":\"CONSUMED\",\"ov\":\"CONSUMED\",\"events\":[\"PENDING\",\"APPLIED\",\"CONSUMED\"]}"
+    },
+    {
+      "id": "STG10 reprocessing is idempotent: still one record, one overlay, one APPLIED event",
+      "pass": true,
+      "note": "{\"recs\":1,\"ovs\":1}"
+    },
+    {
+      "id": "STG11 athlete B persists evidence without any notification",
+      "pass": true,
+      "note": null
+    },
+    {
+      "id": "STG12 nothing processed before the sweep",
+      "pass": true,
+      "note": null
+    },
+    {
+      "id": "STG13 cron sweep (GET + secret) recovers B without the browser; wrong secret rejected",
+      "pass": true,
+      "note": "sweep status 200"
+    },
+    {
+      "id": "STG14 canary disabled: OUT_OF_CANARY and zero writes",
+      "pass": true,
+      "note": "OUT_OF_CANARY"
+    }
+  ]
+}
