@@ -24,4 +24,13 @@ function scopeValid(scope, uid, pid, plan) {
       !plan || !Array.isArray(plan.days)) return false;
   return plan.days.some(function(day) { return day && Array.isArray(day.exercises) && day.exercises.some(function(ex) { return ex && ex.prescriptionExerciseId === PID; }); });
 }
-module.exports = { windowValid: windowValid, scopeValid: scopeValid, UID: UID, PLAN: PLAN, PID: PID };
+function runtimeAuthorization(env, now) {
+  if (env.AUTONOMOUS_PROGRESSION_ENABLED !== 'true' || env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED !== 'true' ||
+      env.VDSEN_NUMERIC_PILOT_ENABLED !== 'true' || env.CRON_SECRET) return null;
+  try {
+    var w = JSON.parse(env.VDSEN_NUMERIC_PILOT_WINDOW);
+    if (!windowValid(w, now) || env.VDSEN_NUMERIC_PILOT_RUNTIME_SHA !== w.runtimeSha) return null;
+    return w;
+  } catch (_) { return null; }
+}
+module.exports = { windowValid: windowValid, scopeValid: scopeValid, runtimeAuthorization: runtimeAuthorization, UID: UID, PLAN: PLAN, PID: PID };

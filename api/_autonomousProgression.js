@@ -13,6 +13,7 @@ var visualCatalog = require('../assets/exercise-visual-catalog.js');
 // require it is absent from the deployed function and applyPending throws MODULE_NOT_FOUND (hosted-only; see _functionBundleTrace.test.js).
 var effective = require('../assets/progression-effective-prescription.js');
 var eligibility = require('./_clientEligibility.js');
+var numericPilot = require('./_numericPilotContract.js');
 // T586: same reason for the structural / fatigue rules (loaded lazily by the magnitude policy through a literal require).
 require('../assets/progression-structural-policy.js');
 
@@ -180,6 +181,9 @@ async function materialize(db, clientId, requestedPlanId, clock, opts) {
 }
 
 async function applyPending(db, clientId, planId, clock) {
+  // A direct call must not bypass the independently authorized numeric lane.
+  var authorizedWindow = numericPilot.runtimeAuthorization(process.env, Date.now());
+  if (!authorizedWindow || clientId !== authorizedWindow.uid || planId !== authorizedWindow.planId) return [];
   var snap = await db.collection('logs').doc(clientId).collection('mesos').doc(planId).get();
   var meso = _data(snap);
   var clientDoc = _data(await db.collection('clients').doc(clientId).get());
@@ -208,6 +212,20 @@ async function applyPending(db, clientId, planId, clock) {
       // T582: a verified equipment increment is used when available; otherwise the LOAD target is advisory (never a guessed machine increment).
       var equipmentResolution = null;
       var pre = _data(await tx.get(refs.meso)), precord = pre && pre.progressionApplications && pre.progressionApplications[key];
+      // Re-read both fences and the canonical record in the same transaction as the write.
+      var numericFence = _data(await tx.get(db.collection('releaseControl').doc('numericPilot')));
+      var nw = numericPilot.runtimeAuthorization(process.env, Date.now());
+      var releaseFence = _data(await tx.get(db.collection('releaseControl').doc('autonomousProgression')));
+      if (!nw || JSON.stringify(nw) !== JSON.stringify(authorizedWindow) || !numericFence || numericFence.enabled !== true ||
+          !releaseFence || !Array.isArray(releaseFence.clientIds) || releaseFence.clientIds.length !== 1 || releaseFence.clientIds[0] !== nw.uid ||
+          releaseFence.expiresAt !== nw.expiresAt ||
+          numericFence.schema !== nw.schema || numericFence.mode !== nw.mode || numericFence.uid !== nw.uid ||
+          numericFence.planId !== nw.planId || numericFence.pid !== nw.pid || numericFence.runtimeSha !== nw.runtimeSha ||
+          numericFence.operationId !== nw.operationId || numericFence.startsAt !== nw.startsAt || numericFence.expiresAt !== nw.expiresAt ||
+          !precord || precord.state !== shadow.STATES.PENDING || precord.prescriptionExerciseId !== nw.pid ||
+          !numericPilot.scopeValid(coachDoc && coachDoc.autoApplyCanary, clientId, precord.prescriptionExerciseId, planDoc)) {
+        return { written: false, reason: 'NUMERIC_PILOT_NOT_AUTHORIZED' };
+      }
       if (precord && precord.magnitude && (precord.magnitude.candidates || []).some(function(c) { return c && c.dimension === 'LOAD'; })) {
         // Increments come only from verified, already-configured sources (coach equipmentIncrements config + the catalog's canonical equipment
         // identity). Nothing is inferred from the equipment type or the exercise name; no data => BLOCKED_EQUIPMENT_DATA for LOAD only.

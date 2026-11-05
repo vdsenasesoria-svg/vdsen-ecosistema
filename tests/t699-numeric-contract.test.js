@@ -24,3 +24,20 @@ test('numeric window binds identity and a strict 24-hour interval', () => {
     assert.equal(C.windowValid({ ...w, ...patch }, now), false);
   }
 });
+test('direct executor calls cannot apply without explicit numeric authorization', async () => {
+  const executor = require('../api/_autonomousProgression');
+  const db = new Proxy({}, { get() { throw new Error('database must not be touched'); } });
+  for (const auth of [undefined, {}, { enabled: true, numericApplyEnabled: false, window: w },
+    { enabled: true, numericApplyEnabled: true, window: w, runtimeSha: 'b'.repeat(40) }]) {
+    assert.deepEqual(await executor.applyPending(db, C.UID, C.PLAN, () => '2026-11-04T12:00:00Z', auth), []);
+  }
+});
+test('runtime authorization requires all independent switches, bound runtime and no cron', () => {
+  const env = { AUTONOMOUS_PROGRESSION_ENABLED: 'true', AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED: 'true',
+    VDSEN_NUMERIC_PILOT_ENABLED: 'true', VDSEN_NUMERIC_PILOT_RUNTIME_SHA: w.runtimeSha, VDSEN_NUMERIC_PILOT_WINDOW: JSON.stringify(w) };
+  assert.deepEqual(C.runtimeAuthorization(env, now), w);
+  for (const patch of [{ AUTONOMOUS_PROGRESSION_ENABLED: 'false' }, { AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED: 'false' },
+    { VDSEN_NUMERIC_PILOT_ENABLED: 'false' }, { VDSEN_NUMERIC_PILOT_RUNTIME_SHA: 'b'.repeat(40) }, { CRON_SECRET: 'configured' },
+    { VDSEN_NUMERIC_PILOT_WINDOW: '{' }]) assert.equal(C.runtimeAuthorization({ ...env, ...patch }, now), null);
+  assert.equal(C.runtimeAuthorization(env, Date.parse(w.expiresAt)), null);
+});
