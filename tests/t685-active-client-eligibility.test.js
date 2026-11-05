@@ -766,10 +766,10 @@ test('T685.13 Scenario 13: Safe error recovery in sweep, browser startup/empty-s
   ctx._captureLifecycleState('u1', 'p1', { days: [] }, {}, { exists: function() { return true; }, metadata: {}, data: function() { return { planId: 'p1', entries: { progrec_1_2: {} } }; } });
   assert.equal(scheduled, 1, 'returning client with progrec evidence schedules recovery');
 
-  // 13c) Pilot runtime OFF baseline aligns with T682/T683 canonical release
+  // 13c) Pilot runtime OFF baseline aligns with canonical release
   var releaseState = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.release', 'vdsen-client.json'), 'utf8'));
   assert.equal(pilotRuntime.T671, appLive.SAFE_OFF_BASELINE.runtimeSha);
-  assert.equal(pilotRuntime.OFF_BASELINE_SHA, 'c3c1875425fe53981df512bdaa0dbe18d81de34d');
+  assert.equal(pilotRuntime.OFF_BASELINE_SHA, '353df8c12982cad7f4dc89b3622a6b63b3127b52');
   assert.equal(pilotRuntime.T671, releaseState.runtime_sha);
   assert.equal(pilotRuntime.LEGACY_T671_SHA, 'a8cf462c78c4bd795cc9f485a82f64429c179f00');
 });

@@ -91,32 +91,9 @@ const SERVED = [
 //
 // A path moves OUT of this list only when it is genuinely deployed, at which point the manifest is
 // regenerated as part of an authorized release.
-const CANDIDATE_ONLY = [
-  // SRA is shipped only by this candidate. It must not be asserted against the
-  // frozen production manifest until an authorized release proves it live.
-  'assets/sra-context.js',
-  'assets/client-export/util.js',
-  'assets/client-export/security.js',
-  'assets/client-export/collect.js',
-  'assets/client-export/normalize.js',
-  'assets/client-export/derive.js',
-  'assets/client-export/media.js',
-  'assets/client-export/serialize.js',
-  'assets/client-export/zip.js',
-  'assets/client-export/firestore-io.js',
-  'assets/client-export/runner.js',
-  'assets/client-export/ui.js',
-  'assets/client-export/expediente-txt.js',
-
-  'assets/coach-image-upload/controller.js',
-  'assets/coach-image-upload/firebase-adapter.js',
-  'assets/coach-image-upload/mount.js',
-  'assets/coach-image-upload/paths.js',
-  'assets/coach-image-upload/photo-section.js',
-  'assets/coach-image-upload/process.js',
-  'assets/coach-image-upload/sniff.js',
-  'assets/coach-image-upload/validate.js',
-];
+// In T698, all previously candidate-only paths (SRA, client-export, coach-image-upload) were
+// deployed and verified live in official release 41950979614.
+const CANDIDATE_ONLY = [];
 
 const DEPLOYED = SERVED.filter((f) => !CANDIDATE_ONLY.includes(f));
 
