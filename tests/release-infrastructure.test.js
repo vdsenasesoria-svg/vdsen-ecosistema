@@ -514,15 +514,13 @@ test('candidate surface verification requires every registered path to exist in 
 test('product CI does not require a production deploy to carry a candidate-only served path', () => {
   // The point of the split: product work must not force production metadata to be falsified.
   const manifest = json(deployedProduct.MANIFEST);
-  assert.equal(Object.keys(manifest.files).length, 26, 'produccion sigue sirviendo 26 rutas');
-  assert.equal(deployedProduct.DEPLOYED.length, 26);
+  assert.equal(Object.keys(manifest.files).length, 47, 'produccion sirve 47 rutas');
+  assert.equal(deployedProduct.DEPLOYED.length, 47);
   // A registry path must be listed once: a duplicate silently inflates SERVED.length and the candidate count.
   assert.equal(new Set(deployedProduct.SERVED).size, deployedProduct.SERVED.length, 'SERVED no admite rutas duplicadas');
   assert.equal(new Set(deployedProduct.CANDIDATE_ONLY).size, deployedProduct.CANDIDATE_ONLY.length, 'CANDIDATE_ONLY no admite rutas duplicadas');
-  // The client export registers its browser assets as CANDIDATE-ONLY: the candidate intends to serve
-  // them, production does not yet, and the frozen manifest must stay honest about that difference.
-  // 12 client-export routes (including the expediente PDF) + 1 SRA + 8 Coach image-upload routes.
-  assert.equal(deployedProduct.CANDIDATE_ONLY.length, 21, 'el export aporta 12, SRA 1 y la subida de imagenes 8');
+  // All 21 previously candidate routes are now deployed in release 41950979614 (T698).
+  assert.equal(deployedProduct.CANDIDATE_ONLY.length, 0);
   for (const f of deployedProduct.CANDIDATE_ONLY) {
     // Explicit namespace allow-list. A candidate-only path may only come from a namespace that is
     // deliberately undeployed yet: the client export, SRA context and the Coach image upload.
