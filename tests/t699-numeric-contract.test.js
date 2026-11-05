@@ -27,10 +27,16 @@ test('numeric window binds identity and a strict 24-hour interval', () => {
 test('direct executor calls cannot apply without explicit numeric authorization', async () => {
   const executor = require('../api/_autonomousProgression');
   const db = new Proxy({}, { get() { throw new Error('database must not be touched'); } });
-  for (const auth of [undefined, {}, { enabled: true, numericApplyEnabled: false, window: w },
-    { enabled: true, numericApplyEnabled: true, window: w, runtimeSha: 'b'.repeat(40) }]) {
-    assert.deepEqual(await executor.applyPending(db, C.UID, C.PLAN, () => '2026-11-04T12:00:00Z', auth), []);
-  }
+  const keys = ['AUTONOMOUS_PROGRESSION_ENABLED', 'AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED', 'VDSEN_NUMERIC_PILOT_ENABLED',
+    'VDSEN_NUMERIC_PILOT_RUNTIME_SHA', 'VDSEN_NUMERIC_PILOT_WINDOW'];
+  const saved = keys.map(k => [k, process.env[k]]);
+  try {
+    keys.forEach(k => delete process.env[k]);
+    for (const auth of [undefined, {}, { enabled: true, numericApplyEnabled: false, window: w },
+      { enabled: true, numericApplyEnabled: true, window: w, runtimeSha: w.runtimeSha }]) {
+      assert.deepEqual(await executor.applyPending(db, C.UID, C.PLAN, () => '2026-11-04T12:00:00Z', auth), []);
+    }
+  } finally { saved.forEach(([k, v]) => { if (v === undefined) delete process.env[k]; else process.env[k] = v; }); }
 });
 test('runtime authorization requires all independent switches, bound runtime and no cron', () => {
   const env = { AUTONOMOUS_PROGRESSION_ENABLED: 'true', AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED: 'true',
