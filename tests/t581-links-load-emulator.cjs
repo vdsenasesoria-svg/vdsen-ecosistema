@@ -8,7 +8,7 @@ assert.ok(process.env.FIRESTORE_EMULATOR_HOST, 'Firestore emulator is required')
 const admin = require('firebase-admin');
 const app = admin.initializeApp({ projectId: process.env.GCLOUD_PROJECT || 'demo-vdsen-shadow' }, 't581-admin');
 const db = admin.firestore(app);
-const executor = require('../api/_autonomousProgression');
+const { createHistoricalFixture } = require('./helpers/t699-synthetic-executor');
 test.after(async () => { await app.delete(); });
 
 const T0 = Date.parse('2026-09-27T12:00:00.000Z');
@@ -32,11 +32,12 @@ async function seed(o) {
   await db.doc('plans/' + planId).set(plan);
   await db.doc('logs/' + uid).set({ planId, entries: logs });
   await db.doc('logs/' + uid + '/mesos/' + planId).set({ planId, entries: logs });
-  return { uid, planId, coachId, logs };
+  const scoped = await createHistoricalFixture(db, uid, planId, PID);
+  return { uid, planId, coachId, logs, ...scoped };
 }
 const run = async (s) => {
   await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.parse(clock()) + 36e5).toISOString(), clientIds: [s.uid] });
-  return executor.processProgression({ db, clientId: s.uid, planId: s.planId, enabled: true, numericApplyEnabled: true, clock });
+  return s.executor.processProgression({ db: s.db, clientId: s.uid, planId: s.planId, enabled: true, numericApplyEnabled: true, clock });
 };
 const meso = async (s) => (await db.doc('logs/' + s.uid + '/mesos/' + s.planId).get()).data();
 const overlays = (m) => Object.values((m && m.nextExposureOverlays) || {});

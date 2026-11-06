@@ -30,7 +30,11 @@ instance.require = function(id) {
       ? release.clientIds.includes(current.uid) : release.clientIds.length === 1 && release.clientIds[0] === current.uid) &&
     (options.historicalScope === true || release.expiresAt === current.expiresAt) &&
     ['schema', 'mode', 'uid', 'planId', 'pid', 'runtimeSha', 'operationId', 'startsAt', 'expiresAt'].every(k => fence[k] === current[k]) &&
-    record && record.state === 'PENDING' && record.prescriptionExerciseId === current.pid && synthetic.scopeValid(scope, uid, record.prescriptionExerciseId, plan));
+    record && record.state === 'PENDING' && (options.historicalPids || [current.pid]).includes(record.prescriptionExerciseId) &&
+    (options.historicalPids ? scope && scope.enabled === true && Array.isArray(scope.clientIds) && scope.clientIds.includes(uid) &&
+      Array.isArray(scope.prescriptionExerciseIds) && scope.prescriptionExerciseIds.includes(record.prescriptionExerciseId) && plan && Array.isArray(plan.days) &&
+      plan.days.some(d => Array.isArray(d.exercises) && d.exercises.some(e => e.prescriptionExerciseId === record.prescriptionExerciseId))
+      : synthetic.scopeValid(scope, uid, record.prescriptionExerciseId, plan)));
   return synthetic;
 };
 instance._compile(fs.readFileSync(filename, 'utf8'), filename);
@@ -51,16 +55,17 @@ function createSyntheticSweep(executor) {
 // isolated per fixture so historical multi-client tests cannot race on it.
 async function createHistoricalFixture(db, uid, planId, pid) {
   if (!/^127\.0\.0\.1:\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || '') || !/^demo-/.test(process.env.GCLOUD_PROJECT || '')) throw new Error('DEMO_EMULATOR_REQUIRED');
-  if (![uid, planId, pid].every(x => typeof x === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(x) && x !== '*')) throw new Error('SYNTHETIC_IDENTITY_INVALID');
+  const pids = Array.isArray(pid) ? pid.slice() : [pid];
+  if (!pids.length || new Set(pids).size !== pids.length || ![uid, planId, ...pids].every(x => typeof x === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(x) && x !== '*')) throw new Error('SYNTHETIC_IDENTITY_INVALID');
   const start = Math.floor(Date.now() / 1000) * 1000, iso = n => new Date(n).toISOString().replace('.000Z', 'Z');
-  const window = { schema: 'vdsen-numeric-pilot-v1', mode: 'NUMERIC_APPLY', uid, planId, pid,
+  const window = { schema: 'vdsen-numeric-pilot-v1', mode: 'NUMERIC_APPLY', uid, planId, pid: pids[0],
     runtimeSha: 'a'.repeat(40), operationId: 'synthetic-test-window', startsAt: iso(start - 1000), expiresAt: iso(start + 3600000) };
   const fenceId = 't699-synthetic-' + uid;
   await db.doc('releaseControl/' + fenceId).set({ ...window, enabled: true });
   const scopedDb = Object.create(db);
   scopedDb.collection = name => name === 'releaseControl' ? { doc: id => db.collection(name).doc(id === 'numericPilot' ? fenceId : id) } : db.collection(name);
   scopedDb.runTransaction = fn => db.runTransaction(fn);
-  return { db: scopedDb, executor: createSyntheticExecutor(window, { validateTime: true, historicalScope: true }) };
+  return { db: scopedDb, executor: createSyntheticExecutor(window, { validateTime: true, historicalScope: true, historicalPids: pids }) };
 }
 // Compose the unchanged request handler with an explicitly supplied test-only executor.
 // Authentication still goes through the handler's verifyIdToken dependency.

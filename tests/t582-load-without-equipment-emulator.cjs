@@ -13,6 +13,7 @@ assert.match(projectId, /^demo-/);
 const app = admin.initializeApp({ projectId }, 't582-admin');
 const db = admin.firestore(app);
 const executor = require('../api/_autonomousProgression');
+const { createHistoricalFixture } = require('./helpers/t699-synthetic-executor');
 const effective = require('../assets/progression-effective-prescription.js');
 const { importLikeCoach } = require('./helpers/coach-plan-import.js');
 test.after(async () => { await app.delete(); });
@@ -51,17 +52,19 @@ async function seed(o) {
     logs['progrec_' + last + '_0'] = { calculatedAt: new Date(T0 + last * 1e6 + 60000).toISOString(), recommendations: plan.days[0].exercises.map((ex, i) => make(pids[i], ex, i)) };
   }
   Object.assign(logs, o.extraLogs || {});
-  const coach = { autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: [] } };
+  const coach = { autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: pids.filter(p => typeof p === 'string' && p) } };
   if (o.increments) coach.equipmentIncrements = o.increments;
   await db.doc('clients/' + uid).set({ coachId, activePlanId: planId, coachInterventions: o.interventions || [] });
   await db.doc('coaches/' + coachId).set(coach);
   await db.doc('plans/' + planId).set(plan);
   await db.doc('logs/' + uid).set({ planId, entries: logs });
   await db.doc('logs/' + uid + '/mesos/' + planId).set({ planId, entries: logs });
-  return { uid, planId, coachId, plan, pids, logs, last };
+  const validPids = [...new Set(pids.filter(p => typeof p === 'string' && p))];
+  const scoped = validPids.length ? await createHistoricalFixture(db, uid, planId, validPids) : { db, executor };
+  return { uid, planId, coachId, plan, pids, logs, last, ...scoped };
 }
 const open = (ids) => db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.parse(clock()) + 36e5).toISOString(), clientIds: ids });
-const run = async (s, extra) => { const { keepAllowlist, ...rest } = extra || {}; if (!keepAllowlist) await open([s.uid]); return executor.processProgression(Object.assign({ db, clientId: s.uid, planId: s.planId, enabled: true, numericApplyEnabled: true, clock }, rest)); };
+const run = async (s, extra) => { const { keepAllowlist, ...rest } = extra || {}; if (!keepAllowlist) await open([s.uid]); return s.executor.processProgression(Object.assign({ db: s.db, clientId: s.uid, planId: s.planId, enabled: true, numericApplyEnabled: true, clock }, rest)); };
 const meso = async (s) => (await db.doc('logs/' + s.uid + '/mesos/' + s.planId).get()).data();
 const overlays = (m) => Object.values((m && m.nextExposureOverlays) || {});
 const records = (m) => Object.values((m && m.progressionApplications) || {});
