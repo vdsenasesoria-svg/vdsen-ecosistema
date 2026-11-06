@@ -3,12 +3,11 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: Operational action to perform (preflight-check | arm-fences | stop | audit-status)
+        description: Operational action to perform (preflight-check | stop | audit-status)
         default: 'preflight-check'
         type: choice
         options:
           - preflight-check
-          - arm-fences
           - stop
           - audit-status
       operation_id:

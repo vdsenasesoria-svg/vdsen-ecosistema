@@ -98,18 +98,40 @@ function createEmulatorIo(db) {
 }
 
 /**
+ * Resolves the Firestore REST base URL for the given project.
+ * Targets Firestore Emulator when FIRESTORE_EMULATOR_HOST is set;
+ * otherwise targets the production Google Cloud Firestore REST API.
+ * @param {string} projectId
+ * @returns {string}
+ */
+function getFirestoreRestBaseUrl(projectId) {
+  if (process.env.FIRESTORE_EMULATOR_HOST) {
+    return 'http://' + process.env.FIRESTORE_EMULATOR_HOST + '/v1/projects/' + projectId + '/databases/(default)/documents/';
+  }
+  return 'https://firestore.googleapis.com/v1/projects/' + projectId + '/databases/(default)/documents/';
+}
+
+/**
  * Captures live Firestore fences via REST API using Google OAuth2 access token.
  * @param {string} projectId
  * @param {string} token
  * @param {string} coachId
+ * @param {Function} [customFetcher]
  * @returns {Promise<object>} Captured fences
  */
-async function fetchFencesFromRest(projectId, token, coachId) {
+async function fetchFencesFromRest(projectId, token, coachId, customFetcher) {
+  const fetcher = customFetcher || globalThis.fetch;
+  const baseUrl = getFirestoreRestBaseUrl(projectId);
   const read = async (docPath) => {
-    const res = await canary.http('GET', 'projects/' + projectId + '/databases/(default)/documents/' + docPath, token);
+    const headers = {};
+    if (token) headers.authorization = 'Bearer ' + token;
+    const res = await fetcher(baseUrl + docPath, { method: 'GET', headers });
     if (res.status === 404) return null;
     if (res.status !== 200) throw new Error('FIRESTORE_REST_ERROR_' + res.status + '_ON_' + docPath);
-    return canary.decDoc(res.body);
+    const text = await res.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch (_) {}
+    return canary.decDoc(json);
   };
 
   const [releaseControl, numericPilot, coach] = await Promise.all([
@@ -123,32 +145,63 @@ async function fetchFencesFromRest(projectId, token, coachId) {
 
 /**
  * Executes STOP using Google OAuth2 access token via Firestore REST API.
+ * Uses real HTTP PATCH against Firestore Emulator or Production REST.
+ * Supports nested field paths (e.g. updateMask.fieldPaths=autoApplyCanary.enabled).
  * @param {string} projectId
  * @param {string} token
  * @param {object} opts
+ * @param {Function} [customFetcher]
  * @returns {Promise<object>} Stop report
  */
-async function executeStopRest(projectId, token, opts) {
+async function executeStopRest(projectId, token, opts, customFetcher) {
+  const fetcher = customFetcher || globalThis.fetch;
+  const baseUrl = getFirestoreRestBaseUrl(projectId);
+
   const io = {
     writeFence: async (docPath, fields, writeOpts) => {
-      // Use Firestore patch or documents:commit with preconditions
       const encVal = (v) => v === null || v === undefined ? { nullValue: null } : typeof v === 'boolean' ? { booleanValue: v } : typeof v === 'number' ? { integerValue: String(v) } : typeof v === 'string' ? { stringValue: v }
         : Array.isArray(v) ? { arrayValue: { values: v.map(encVal) } } : { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, encVal(x)])) } };
 
       const mask = writeOpts && writeOpts.mask ? writeOpts.mask : Object.keys(fields);
       const maskParams = mask.map(m => 'updateMask.fieldPaths=' + encodeURIComponent(m)).join('&');
-      const url = 'projects/' + projectId + '/databases/(default)/documents/' + docPath + (maskParams ? '?' + maskParams : '');
+      const url = baseUrl + docPath + (maskParams ? '?' + maskParams : '');
       const nested = unflattenFields(fields);
       const body = { fields: Object.fromEntries(Object.entries(nested).map(([k, v]) => [k, encVal(v)])) };
-      const res = await canary.http('PATCH', url, token, body);
-      if (res.status !== 200) throw new Error('WRITE_FENCE_FAILED_' + res.status + '_ON_' + docPath);
-      return canary.decDoc(res.body);
+      const headers = { 'content-type': 'application/json' };
+      if (token) headers.authorization = 'Bearer ' + token;
+
+      const res = await fetcher(url, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify(body)
+      });
+      if (res.status !== 200) {
+        const errText = await res.text();
+        throw new Error('WRITE_FENCE_FAILED_' + res.status + '_ON_' + docPath + ' [url=' + url + ']: ' + errText);
+      }
+      const text = await res.text();
+      let json = null;
+      try { json = JSON.parse(text); } catch (_) {}
+      return canary.decDoc(json);
     },
     readFence: async (docPath) => {
-      const res = await canary.http('GET', 'projects/' + projectId + '/databases/(default)/documents/' + docPath, token);
+      const url = baseUrl + docPath;
+      const headers = {};
+      if (token) headers.authorization = 'Bearer ' + token;
+
+      const res = await fetcher(url, {
+        method: 'GET',
+        headers
+      });
       if (res.status === 404) return null;
-      if (res.status !== 200) throw new Error('READ_FENCE_FAILED_' + res.status + '_ON_' + docPath);
-      return canary.decDoc(res.body);
+      if (res.status !== 200) {
+        const errText = await res.text();
+        throw new Error('READ_FENCE_FAILED_' + res.status + '_ON_' + docPath + ' [url=' + url + ']: ' + errText);
+      }
+      const text = await res.text();
+      let json = null;
+      try { json = JSON.parse(text); } catch (_) {}
+      return canary.decDoc(json);
     }
   };
 
@@ -271,7 +324,10 @@ async function executeAuditStatus(opts, io) {
     }
 
     try {
-      const res = await canary.http('GET', 'projects/' + projectId + '/databases/(default)/documents/' + docPath, token);
+      const baseUrl = getFirestoreRestBaseUrl(projectId);
+      const headers = {};
+      if (token) headers.authorization = 'Bearer ' + token;
+      const res = await fetch(baseUrl + docPath, { method: 'GET', headers });
       if (res.status === 404) {
         return {
           schema: 'vdsen-numeric-audit-consistency-v1',
@@ -304,7 +360,10 @@ async function executeAuditStatus(opts, io) {
           isConsistent: false
         };
       }
-      mesoData = canary.decDoc(res.body);
+      const text = await res.text();
+      let json = null;
+      try { json = JSON.parse(text); } catch (_) {}
+      mesoData = canary.decDoc(json);
     } catch (err) {
       return {
         schema: 'vdsen-numeric-audit-consistency-v1',
@@ -397,26 +456,29 @@ async function main() {
 
     let priorOperations = null;
     let priorOperationsSourceVerified = false;
-    let priorOperationsCoverageComplete = true;
+    let priorOperationsCoverageComplete = false;
 
     if (priorFile && fs.existsSync(priorFile)) {
-      const parsedPrior = JSON.parse(fs.readFileSync(priorFile, 'utf8'));
-      if (parsedPrior && parsedPrior.schema === 'vdsen-numeric-operation-ledger-v1') {
-        priorOperations = Array.isArray(parsedPrior.operations) ? parsedPrior.operations : [];
-        priorOperationsSourceVerified = parsedPrior.verifiedCoverage === true;
-        priorOperationsCoverageComplete = parsedPrior.complete !== false && !parsedPrior.hasMore;
-      } else if (Array.isArray(parsedPrior)) {
-        const isStructured = parsedPrior.every(p => p && typeof p === 'object' && typeof p.operationId === 'string');
-        if (isStructured) {
-          priorOperations = parsedPrior;
-          priorOperationsSourceVerified = true;
-          priorOperationsCoverageComplete = true;
-        } else {
-          priorOperations = parsedPrior;
+      try {
+        const parsedPrior = JSON.parse(fs.readFileSync(priorFile, 'utf8'));
+        if (parsedPrior && (parsedPrior.workflow_runs || parsedPrior.total_count !== undefined)) {
+          // GitHub Actions /runs response:
+          // Results from /runs do not attest operationId uniqueness and cannot authorize operations.
+          priorOperations = [];
           priorOperationsSourceVerified = false;
+          priorOperationsCoverageComplete = false;
+        } else if (parsedPrior && parsedPrior.schema === 'vdsen-numeric-operation-ledger-v1' && parsedPrior.verifiedCoverage === true) {
+          // Authoritative durable operations ledger with explicit verified coverage
+          priorOperations = Array.isArray(parsedPrior.operations) ? parsedPrior.operations : [];
+          priorOperationsSourceVerified = true;
+          priorOperationsCoverageComplete = parsedPrior.complete !== false && !parsedPrior.hasMore;
+        } else {
+          // Unverified source or arbitrary file without accredited durable provenance
+          priorOperations = Array.isArray(parsedPrior) ? parsedPrior : [];
+          priorOperationsSourceVerified = false;
+          priorOperationsCoverageComplete = false;
         }
-      } else {
-        // Raw workflow runs: name/title regex approximation is strictly forbidden
+      } catch (_) {
         priorOperations = [];
         priorOperationsSourceVerified = false;
         priorOperationsCoverageComplete = false;
@@ -550,6 +612,7 @@ module.exports = {
   executeStopRest,
   executeAuditStatus,
   createEmulatorIo,
+  getFirestoreRestBaseUrl,
   unflattenFields,
   runPreflight,
   attestRuntime,

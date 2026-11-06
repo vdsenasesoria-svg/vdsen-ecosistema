@@ -223,7 +223,7 @@ async function runPreflight(opts) {
       schema: 'vdsen-numeric-preflight-v1',
       decision: 'BLOCKED',
       reason: 'OPERATION_HISTORY_UNVERIFIED_SOURCE',
-      message: 'Prior operations history source is not verified or lacks accredited durable records. Name/title approximation is forbidden.',
+      message: 'Prior operations history source is not verified or lacks accredited durable records. GitHub Actions /runs results do not attest operationId uniqueness; name/title approximation is forbidden. Authoritative durable ledger required.',
       checks,
       evaluatedAt: new Date(now).toISOString()
     };
