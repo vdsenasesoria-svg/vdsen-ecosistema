@@ -1203,26 +1203,26 @@ button[role="switch"]::after{content:'';position:absolute;inset:-8px -6px}
   .tr-head{padding-top:18px}
 }
 /* ══════════════════════════════════════════════════════════════════════════════════════════════════════════════
-   VDSEN 3.0 · PREMIUM LAYER (T573)
-   Brand: Off-Black #0A0A0A · Hueso #F4F4F0 · Lima ácido #B7F400 · Gris #1E1E1E · Acero #2B2B2B · Detalle #D9E6FF
+   VDSEN 3.1 · EDITORIAL ATHLETIC SYSTEM (T700)
+   Brand: Off-Black #0A0A0A · Hueso #F4F4F0 · Lima ácido #C6FF00 · Gris #1E1E1E · Acero #2B2B2B · Detalle #D9E6FF
    Type: Inter (display + body) · IBM Plex Mono (technical data). Presentation only: no data, contract or behaviour changes.
    ══════════════════════════════════════════════════════════════════════════════════════════════════════════════ */
 :root{
-  --accent:#B7F400;--accent-fill:#B7F400;--accent-rgb:183,244,0;--on-accent:#0A0A0A;
+  --accent:#C6FF00;--accent-fill:#C6FF00;--accent-rgb:198,255,0;--on-accent:#0A0A0A;
   --gris:#1E1E1E;--acero:#2B2B2B;--detalle:#D9E6FF;
-  --surface:#141414;--surface2:#0F0F0F;--plate:#141414;--plate-hi:#1E1E1E;--plate-lo:#0D0D0D;
+  --surface:#101010;--surface2:#0A0A0A;--plate:#101010;--plate-hi:#161616;--plate-lo:#0A0A0A;
   --border:rgba(244,244,240,.08);--rule:rgba(244,244,240,.08);--rule-strong:#2B2B2B;
   --info:#D9E6FF;--st-review:#D9E6FF;--st-sync:#D9E6FF;
   --ink:#8E8E88;                       /* tertiary text >= 5.5:1 on #141414 (was 3.4:1) */
   --font-display:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
   --font-num:'IBM Plex Mono',ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
-  --r-1:12px;--r-2:16px;
-  --lift:0 1px 0 rgba(244,244,240,.04) inset,0 10px 28px -14px rgba(0,0,0,.8);
+  --r-1:2px;--r-2:4px;
+  --lift:none;
 }
 :root.light-mode{
   --surface:#FFFFFF;--plate:#FFFFFF;--plate-hi:#F6F6F2;--plate-lo:#ECECE8;
   --ink:#5E5E58;--rule-strong:rgba(0,0,0,.2);--info:#075F9C;--st-review:#075F9C;--st-sync:#075F9C;
-  --lift:0 1px 0 rgba(0,0,0,.05),0 10px 24px -16px rgba(0,0,0,.28);
+  --lift:none;
 }
 body{font-feature-settings:'cv11','ss01';letter-spacing:-.003em}
 .t-display,.today-session,.tr-title,.card-title,.hdr-user strong,.brand-word,.dc-lbl,.wk-num{letter-spacing:-.015em}
@@ -1231,16 +1231,16 @@ body{font-feature-settings:'cv11','ss01';letter-spacing:-.003em}
 /* numerics: IBM Plex Mono, tabular */
 .stat-val,.ro-v,.pw-v,.spec-v,.stat-lbl+*,.nut-num,.wk-num{font-family:var(--font-num);font-variant-numeric:tabular-nums;font-weight:600;letter-spacing:-.02em}
 /* surfaces */
-.card,.today-panel,.ci-card,.notice,.setpanel,.pw,.spec{border-radius:var(--r-2);background:linear-gradient(180deg,var(--plate-hi) 0%,var(--plate) 100%);border-color:var(--rule);box-shadow:var(--lift)}
+.card,.today-panel,.ci-card,.notice,.setpanel,.pw,.spec{border-radius:var(--r-2);background:var(--plate);border-color:var(--rule);box-shadow:none}
 .scroll{padding:14px 14px 104px}
 /* hero: today */
-.today-panel{padding:18px 16px 8px;border-left:1px solid var(--rule);background:radial-gradient(120% 90% at 100% 0%,rgba(var(--accent-rgb),.10) 0%,rgba(var(--accent-rgb),0) 55%),linear-gradient(180deg,var(--plate-hi),var(--plate));overflow:hidden}
+.today-panel{padding:18px 16px 8px;border-left:1px solid var(--rule);background:var(--plate);overflow:hidden}
 .today-panel::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent-fill)}
 .today-kicker{font-family:var(--font-num);font-weight:500;font-size:11px;letter-spacing:.12em;color:var(--mt)}
 .today-session{font-size:30px;line-height:1.04;font-weight:800;letter-spacing:-.025em;text-transform:none}
 .today-meta{font-family:var(--font-num);font-size:12px}
 .today-meta b{font-size:18px;font-weight:600}
-.today-action{min-height:58px;border-radius:14px;font-size:15px;font-weight:800;letter-spacing:.09em;transition:transform var(--dur-1) var(--ease),box-shadow var(--dur-2) var(--ease)}
+.today-action{min-height:58px;border-radius:var(--r-2);font-size:15px;font-weight:800;letter-spacing:.09em;transition:transform var(--dur-1) var(--ease)}
 .today-action:active,.btn:active,.nb:active,.xc:active,.dt:active{transform:scale(.975)}
 .day-chips{margin:16px -16px 0}
 .dc-lbl{font-size:14px;font-weight:700;letter-spacing:.04em}
@@ -1249,14 +1249,14 @@ body{font-feature-settings:'cv11','ss01';letter-spacing:-.003em}
 .stat{padding:14px 4px 12px}.stat:last-child{border-right:0}
 .stat-val{font-size:28px}
 .stat-lbl{font-size:10px;letter-spacing:.14em}
-.progress-bar{height:6px;border-radius:99px;background:var(--rule-strong);overflow:hidden}
-.pb-fill{border-radius:99px;background:var(--accent-fill);transition:width var(--dur-2) var(--ease)}
-.week-grid .wk{border-radius:12px}
+.progress-bar{height:6px;border-radius:var(--r-1);background:var(--rule-strong);overflow:hidden}
+.pb-fill{border-radius:var(--r-1);background:var(--accent-fill);transition:width var(--dur-2) var(--ease)}
+.week-grid .wk{border-radius:var(--r-1)}
 /* SRA: one compact, informational summary instead of one card per exercise */
 .sra-summary{border:1px solid var(--rule);border-radius:var(--r-2);background:var(--plate);padding:12px 14px;margin:0 0 12px}
 .sra-sum-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .sra-sum-h strong{font-size:14px;font-weight:700;letter-spacing:-.01em}
-.sra-sum-chip{font-family:var(--font-num);font-size:10px;letter-spacing:.1em;font-weight:600;padding:3px 8px;border-radius:99px;border:1px solid var(--detalle);color:var(--detalle)}
+.sra-sum-chip{font-family:var(--font-num);font-size:10px;letter-spacing:.1em;font-weight:600;padding:3px 8px;border-radius:var(--r-1);border:1px solid var(--detalle);color:var(--detalle)}
 .sra-summary>p{font-size:13px;color:var(--mt);margin-top:6px;line-height:1.45}
 .sra-summary>details{margin-top:8px}
 .sra-summary>details>summary{font-size:12px;color:var(--detalle);cursor:pointer;min-height:44px;display:flex;align-items:center}
@@ -1265,25 +1265,25 @@ body{font-feature-settings:'cv11','ss01';letter-spacing:-.003em}
 /* bottom navigation */
 .bnav{background:#0D0D0D;border-top:1px solid var(--rule);padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
 :root.light-mode .bnav{background:#FFFFFF}
-.nb{min-height:58px;border-radius:14px;position:relative;transition:background var(--dur-2) var(--ease),color var(--dur-1) var(--ease),transform var(--dur-1) var(--ease)}
+.nb{min-height:58px;border-radius:var(--r-2);position:relative;transition:background var(--dur-2) var(--ease),color var(--dur-1) var(--ease),transform var(--dur-1) var(--ease)}
 .nb.on{background:rgba(var(--accent-rgb),.12);color:var(--tx)}
 .nb.on::before{display:none}
 .nb.on .ico{color:var(--accent)}
 .nb-lbl{font-size:10px;letter-spacing:.06em}
 /* training: faster one-handed entry */
 .setpanel{padding:16px 14px}
-.setpanel input[type=text],.setpanel input[type=number],.setpanel input[type=tel],.setpanel input:not([type]){min-height:58px;border-radius:12px;font-family:var(--font-num);font-size:24px;font-weight:600;letter-spacing:-.02em;text-align:center;background:var(--input-bg);border:1px solid var(--acero)}
+.setpanel input[type=text],.setpanel input[type=number],.setpanel input[type=tel],.setpanel input:not([type]){min-height:58px;border-radius:var(--r-1);font-family:var(--font-num);font-size:24px;font-weight:600;letter-spacing:-.02em;text-align:center;background:var(--input-bg);border:1px solid var(--acero)}
 .setpanel input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.18);outline:none}
-.setpanel button{border-radius:12px}
+.setpanel button{border-radius:var(--r-1)}
 .setpanel .btn-mini,.setpanel .chipbtn{min-height:48px}
-.xc,.dt{border-radius:14px;transition:background var(--dur-2) var(--ease),transform var(--dur-1) var(--ease)}
+.xc,.dt{border-radius:var(--r-2);transition:background var(--dur-2) var(--ease),transform var(--dur-1) var(--ease)}
 .daytabs{gap:6px}
 /* forms and generic controls */
-.btn,button.btn{border-radius:12px;min-height:48px}
-input,select,textarea{border-radius:12px}
-.chip{border-radius:99px}
+.btn,button.btn{border-radius:var(--r-1);min-height:48px}
+input,select,textarea{border-radius:var(--r-1)}
+.chip{border-radius:var(--r-1)}
 /* save feedback */
-#saveOkBadge{border-radius:99px!important;font-family:var(--font-num)!important;letter-spacing:.06em!important}
+#saveOkBadge{border-radius:var(--r-1)!important;font-family:var(--font-num)!important;letter-spacing:.06em!important}
 /* header */
 .hdr{background:var(--bg)}
 :root.light-mode .hdr{background:var(--bg)}
@@ -1292,7 +1292,7 @@ input,select,textarea{border-radius:12px}
 #exPanel div[style*="opacity:.65"]{opacity:.86!important}
 :root.light-mode #exPanel div[style*="opacity:.65"]{opacity:1!important}
 :root.light-mode .sp-gl small,:root.light-mode .sp-gl .sp-opt{color:#555;opacity:1}
-button[onclick="guardarCI()"]{border-radius:14px!important;min-height:56px;font-size:15px!important;letter-spacing:.08em!important;text-transform:uppercase}
+button[onclick="guardarCI()"]{border-radius:var(--r-2)!important;min-height:56px;font-size:15px!important;letter-spacing:.08em!important;text-transform:uppercase}
 /* short viewports (on-screen keyboard open): the save button already flows with the form (never sticky); only the panel padding tightens */
 @media (max-height:560px){
   .setpanel{padding-bottom:12px}
@@ -1306,7 +1306,7 @@ button[onclick="guardarCI()"]{border-radius:14px!important;min-height:56px;font-
 .ro-cell .ro-v{font-size:21px}
 /* Issue 115 follow-up: #tabEntr has NO horizontal padding, so the old -14px bleed pushed the exercise strip 14px past both edges and the whole tab scrolled sideways (seen on a real phone). The strip keeps its own 14px inner padding and now fits the screen. */
 .xnav{border:0;gap:8px;padding:2px 14px 6px;margin:14px 0 0}
-.xc{width:104px;min-height:72px;border:1px solid var(--rule);border-radius:14px;background:var(--plate);border-bottom:1px solid var(--rule)}
+.xc{width:104px;min-height:72px;border:1px solid var(--rule);border-radius:var(--r-2);background:var(--plate);border-bottom:1px solid var(--rule)}
 .xc-n{color:var(--mt)}
 .spec{border-radius:var(--r-2);overflow:hidden}
 .spec-v{font-size:26px}
@@ -1314,7 +1314,7 @@ button[onclick="guardarCI()"]{border-radius:14px!important;min-height:56px;font-
 .nu-head{padding:18px 14px 6px}
 .nu-head .sec-kicker{font-size:12px;letter-spacing:.12em}
 .nu-goal{font-family:var(--font-num);font-size:12px}
-.meal{border:1px solid var(--rule);border-radius:var(--r-2);background:linear-gradient(180deg,var(--plate-hi),var(--plate));margin:0 0 12px;overflow:hidden;box-shadow:var(--lift)}
+.meal{border:1px solid var(--rule);border-radius:var(--r-2);background:var(--plate);margin:0 0 12px;overflow:hidden;box-shadow:none}
 .meal-h{padding:14px 14px 4px;border:0}
 .meal-no{font-family:var(--font-num);font-size:10.5px;font-weight:500;letter-spacing:.14em;color:var(--mt)}
 .meal-nm{font-size:19px;font-weight:800;letter-spacing:-.02em;text-transform:none;color:var(--tx)}
@@ -1322,9 +1322,9 @@ button[onclick="guardarCI()"]{border-radius:14px!important;min-height:56px;font-
 .fr{min-height:48px;align-items:center}
 .fr-name{font-size:15px;font-weight:500}
 .fr-qty{font-family:var(--font-num);font-size:16px;font-weight:600;letter-spacing:-.02em;color:var(--tx);white-space:nowrap}
-.meal-tot{margin:10px 0 14px;display:inline-flex;align-items:baseline;gap:6px;padding:6px 12px;border-radius:99px;background:rgba(var(--accent-rgb),.10);border:1px solid rgba(var(--accent-rgb),.35);color:var(--tx)}
-.nu-panel,.sup-blk{border-radius:var(--r-2);border:1px solid var(--rule);background:linear-gradient(180deg,var(--plate-hi),var(--plate));box-shadow:var(--lift)}
-.nutri-target{border-radius:12px}
+.meal-tot{margin:10px 0 14px;display:inline-flex;align-items:baseline;gap:6px;padding:6px 12px;border-radius:var(--r-1);background:rgba(var(--accent-rgb),.10);border:1px solid rgba(var(--accent-rgb),.35);color:var(--tx)}
+.nu-panel,.sup-blk{border-radius:var(--r-2);border:1px solid var(--rule);background:var(--plate);box-shadow:none}
+.nutri-target{border-radius:var(--r-1)}
 .nt-v{font-family:var(--font-num);font-weight:600}
 /* small phones */
 @media (max-width:359px){
@@ -1359,7 +1359,7 @@ button,.btn,.nb,.xc,.dt,.chip,a{-webkit-tap-highlight-color:transparent;touch-ac
 /* Inicio: title and CTA without ornament */
 .today-session{font-size:clamp(24px,7.2vw,29px);font-weight:800;font-style:normal;letter-spacing:-.02em}
 .today-action,.set-save-primary{box-shadow:none}
-.set-save-primary{border-radius:12px}
+.set-save-primary{border-radius:var(--r-2)}
 .pb-fill{background:var(--accent-fill)}
 .stat:last-child .stat-val{color:var(--accent)}
 :root.light-mode .stat:last-child .stat-val{color:#245500}
@@ -1389,7 +1389,7 @@ html.rc-open{overflow:hidden}
 #sessRecap .rc-sets{font-family:var(--font-num);font-size:12px;color:var(--accent);white-space:nowrap}
 #sessRecap .rc-data{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:3px;font-family:var(--font-num);font-size:14px}
 #sessRecap .rc-data b{font-weight:600}
-#sessRecap .rc-data em{font-style:normal;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mt);border:1px solid var(--rule-strong);border-radius:99px;padding:1px 7px;align-self:center}
+#sessRecap .rc-data em{font-style:normal;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mt);border:1px solid var(--rule-strong);border-radius:var(--r-1);padding:1px 7px;align-self:center}
 #sessRecap .rc-meta{display:flex;flex-wrap:wrap;gap:2px 12px;margin-top:3px;font-family:var(--font-num);font-size:12px;color:var(--mt)}
 #sessRecap .rc-rest i{font-style:normal;opacity:.85}
 #sessRecap .rc-note{margin-top:4px;font-size:12.5px;line-height:1.35;color:var(--ink);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
@@ -1397,11 +1397,30 @@ html.rc-open{overflow:hidden}
 #sessRecap .rc-acts{display:flex;align-items:center;gap:8px}
 #sessRecap .rc-page{font-family:var(--font-num);font-size:12px;color:var(--mt);min-width:34px;text-align:center}
 #sessRecap[data-capture="1"] .rc-foot{text-align:center;padding-top:4px}
-#sessRecap .rc-b{min-height:44px;min-width:44px;padding:0 14px;border-radius:12px;border:1px solid var(--rule-strong);background:var(--plate);color:var(--tx);font-family:var(--font-display);font-weight:700;font-size:13px;letter-spacing:.08em}
+#sessRecap .rc-b{min-height:44px;min-width:44px;padding:0 14px;border-radius:var(--r-1);border:1px solid var(--rule-strong);background:var(--plate);color:var(--tx);font-family:var(--font-display);font-weight:700;font-size:13px;letter-spacing:.08em}
 #sessRecap .rc-b:disabled{opacity:.35}
 #sessRecap .rc-cap{margin-left:auto}
 #sessRecap .rc-home{background:var(--accent-fill);color:var(--on-accent);border-color:transparent}
 @media (max-width:359px){#sessRecap .rc-wrap{padding-left:12px;padding-right:12px}#sessRecap .rc-data{font-size:13px}}
+
+/* ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
+   T700 · PREMIUM EDITORIAL ATHLETIC SYSTEM (LAYOUT & CONTROLS)
+   ═════════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+.active-set-context{display:flex;flex-direction:column;gap:3px;padding:0 0 8px;margin-bottom:10px;border-bottom:1px solid var(--rule)}
+.active-set-ex-idx{font-family:var(--font-num);font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--accent);line-height:1.2}
+.active-set-ex-title{font-family:var(--font-display);font-size:15px;line-height:1.25;font-weight:800;letter-spacing:-.01em;color:var(--tx);text-transform:uppercase;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;overflow-wrap:break-word;text-align:left}
+@media (max-width:359px){
+  .active-set-context{gap:2px;padding-bottom:6px;margin-bottom:8px}
+  .active-set-ex-idx{font-size:10px}
+  .active-set-ex-title{font-size:14px;line-height:1.2}
+}
+.workout-set-current{border-left:3px solid var(--accent);background:var(--plate-hi);box-shadow:none;border-radius:var(--r-2)}
+.workout-set-saved{border-left:3px solid var(--grn);background:var(--plate);box-shadow:none;border-radius:var(--r-2)}
+
+@media (min-width: 900px) {
+  .hdr { max-width: 960px; margin-inline: auto; width: 100%; }
+  .bnav { max-width: 960px; margin-inline: auto; left: 0; right: 0; }
+}
 </style>
 </head>
 <body>
@@ -6477,14 +6496,14 @@ function _buildSupersetPartnerHtml(ejercicios, di, ei) {
       : (p.ex.nombre || p.ex.exerciseName || ('Ej '+(p.idx+1)));
     return nm;
   }).join(' · ');
-  return '<div style="margin:0 0 14px;padding:14px 16px;background:linear-gradient(135deg,rgba(107,107,102,.22),rgba(107,107,102,.10));border:2px solid #6B6B66;border-radius:14px;box-shadow:0 4px 18px rgba(107,107,102,.22)">'+
+  return '<div style="margin:0 0 14px;padding:14px 16px;background:var(--plate-hi);border:1px solid var(--rule-strong);border-left:3px solid var(--accent);border-radius:var(--r-2);box-shadow:none">'+
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">'+
-      '<span style="font-size:22px;line-height:1">🔁</span>'+
-      '<span style="font-size:14px;font-weight:900;letter-spacing:1.5px;color:#fff;background:#6B6B66;padding:4px 12px;border-radius:8px">SUPERSERIE · GRUPO '+grp.toUpperCase()+'</span>'+
+      '<svg class="ico" aria-hidden="true" focusable="false" style="width:18px;height:18px;color:var(--accent)"><use href="#i-swap"/></svg>'+
+      '<span style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:var(--tx);background:var(--rule-strong);padding:4px 10px;border-radius:var(--r-1)">SUPERSERIE · GRUPO '+grp.toUpperCase()+'</span>'+
     '</div>'+
-    '<div style="font-size:13px;color:#fff;line-height:1.55;margin-bottom:10px;font-weight:600">Encadena <span style="color:#ffd6ee;font-weight:800">SIN DESCANSO</span> con:</div>'+
-    '<div style="font-size:15px;color:#fff;line-height:1.4;margin-bottom:6px;font-weight:800;padding:8px 12px;background:rgba(0,0,0,.25);border-left:3px solid #ffd6ee;border-radius:0 8px 8px 0">▸ '+partnerList+'</div>'+
-    '<div style="font-size:11px;color:rgba(255,255,255,.85);line-height:1.5">↓ El partner aparece abajo en esta misma pantalla. Registra ambos sets antes de descansar — el temporizador solo arranca al cerrar la pareja.</div>'+
+    '<div style="font-size:13px;color:var(--tx);line-height:1.55;margin-bottom:10px;font-weight:600">Encadena <span style="color:var(--accent);font-weight:800">SIN DESCANSO</span> con:</div>'+
+    '<div style="font-size:15px;color:var(--tx);line-height:1.4;margin-bottom:6px;font-weight:800;padding:8px 12px;background:var(--plate-lo);border-left:3px solid var(--accent);border-radius:var(--r-1)">▸ '+partnerList+'</div>'+
+    '<div style="font-size:11px;color:var(--mt);line-height:1.5">El partner aparece abajo en esta misma pantalla. Registra ambos sets antes de descansar — el temporizador solo arranca al cerrar la pareja.</div>'+
   '</div>';
 }
 
@@ -7248,17 +7267,18 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           _historyReferenceHtml+_seriesAuthorityHtml(_authority, s)+
           _setInstrHtml+
           setSpecBadges+
-          (setNote && SET_NOTE_LABELS[setNote] ? '<span style="color:var(--accent);font-weight:600">📌 '+getSetNoteBadge(setNote)+'</span>' : '')+
+          (setNote && SET_NOTE_LABELS[setNote] ? '<span style="color:var(--accent);font-weight:600">· '+getSetNoteBadge(setNote)+'</span>' : '')+
           _setNoteBlockHtml(_plainSetNote(ej, setNote) ? [_plainSetNote(ej, setNote)] : [])+
         '</div>'
       : '';
 
     if (saved.done) {
-      // ── SET COMPLETADO — SIEMPRE editable con botón ✏ ────────────────
+      // ── SET COMPLETADO — SIEMPRE editable con botón EDITAR ────────────────
       // Cualquier set guardado puede corregirse, aunque la sesión esté cerrada
-      // o sea un set previo. Tap ✏ → abre el set como activo con valores
+      // o sea un set previo. Tap EDITAR → abre el set como activo con valores
       // pre-cargados para corrección directa.
-      var pumpEmoji = saved.pump===1?'💪':saved.pump===2?'👍':saved.pump===3?'😐':'';
+      var pumpLabel = saved.pump===1?'PUMP ALTO':saved.pump===2?'PUMP MEDIO':saved.pump===3?'PUMP BAJO':'';
+      var _pumpSpan = pumpLabel ? ' · '+pumpLabel : '';
       var _cargaDisplay = isIsometric
         ? ((parseFloat(saved.carga)>0 ? saved.carga+' '+unit+' · ' : '')+saved.reps+' seg')
         : (isBodyweight
@@ -7270,11 +7290,11 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '<div style="flex:1;min-width:0">'+
           '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">'+(_techLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+(function(){ var _tl=(ej.technique||'').toLowerCase(); if (_isY3T&&_effectiveSets&&_effectiveSets[s]) { var _rt=_effectiveSets[s].repsTarget; var _isSST=_rt==='SST-PROTOCOL'; var _c=_isSST?'#FF8844':(_rt<=6?'#7ec0ff':(_y3tPhase==='s3'?'#FF8844':'#44BB88')); var _l=_isSST?'SST':(_rt<=6?'S1':(_y3tPhase==='s3'?'S3':'S2')); return ' <span style="font-size:9.5px;font-weight:900;color:'+_c+';background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">'+_l+'</span>'; } if (_tl==='fst7') { var _ft=(ej.sets||[]).length||7; return ' <span style="font-size:9.5px;font-weight:900;color:#cc44aa;background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">FST-7 · '+(s+1)+'/'+_ft+'</span>'; } if (_tl==='lengthened_partials') { return ' <span style="font-size:9.5px;font-weight:900;color:#22aadd;background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">PARCIALES</span>'; } return ''; })()+'</div>'+
           '<div style="font-size:17px;font-weight:800;color:var(--tx)">'+_cargaDisplay+'</div>'+
-          '<div style="font-size:11px;color:var(--mt)">RIR '+(saved.rir_real||'—')+' · ICS '+(saved.ics||'—')+' · '+pumpEmoji+'</div>'+
+          '<div style="font-size:11px;color:var(--mt)">RIR '+(saved.rir_real||'—')+' · ICS '+(saved.ics||'—')+_pumpSpan+'</div>'+
         '</div>'+
         '<button onclick="editSet(\''+key+'\')" title="Corregir esta serie" style="'+
-            'margin-left:auto;padding:6px 12px;border:1px solid rgba(107,107,102,.4);border-radius:8px;'+
-            'background:rgba(107,107,102,.08);color:var(--accent);font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0">✏ Corregir</button>'+
+            'margin-left:auto;padding:6px 12px;border:1px solid var(--rule-strong);border-radius:var(--r-1);'+
+            'background:transparent;color:var(--accent);font-family:var(--font-num);font-size:11px;letter-spacing:.08em;font-weight:700;cursor:pointer;flex-shrink:0">EDITAR</button>'+
       '</div>';
     } else if (s === activeSi) {
       // ── SET ACTIVO ───────────────────────────────────────────────────
@@ -7317,7 +7337,14 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           if (_snBadge) _setSubLabel = ' <span style="font-size:9.5px;font-weight:900;letter-spacing:.5px;color:var(--rir);background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px">'+_snBadge+'</span>';
         }
       }
+      var _exNumStr = ((ei + 1) < 10 ? '0' : '') + (ei + 1);
+      var _exTotalStr = ejercicios.length < 10 ? '0' + ejercicios.length : String(ejercicios.length);
+      var _activeSetContextHtml = '<div class="active-set-context">'+
+        '<div class="active-set-ex-idx">EJERCICIO '+_exNumStr+' / '+_exTotalStr+'</div>'+
+        '<div class="active-set-ex-title">'+_escHTml(nombre)+'</div>'+
+      '</div>';
       setsHtml += '<div id="setrow_'+key+'" class="workout-set workout-set-current" data-exname="'+_escHTml(nombre)+'" data-pending="1" style="padding:14px;margin-bottom:8px">'+
+        _activeSetContextHtml+
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
           '<div class="sp-hd-l" style="display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;flex:1 1 auto;min-width:0;font-size:11px;font-weight:800;letter-spacing:1.5px;color:var(--accent)">'+(_ejTechLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+_setSubLabel+_getZonaBadge(_psReps || repsTarget)+'</div>'+
           '<div class="pw-ex">TU EJECUCIÓN</div>'+
@@ -7333,23 +7360,28 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           var cargaPh    = isBodyweight ? '0' : unit;
           var repsLabel  = isIsometric ? 'SEGUNDOS' : 'REPS';
           var repsPh     = isIsometric ? 'seg' : 'reps';
-          var _stepHtml  = (!isBodyweight && !isIsometric)
+          var _stepCargaHtml = (!isBodyweight && !isIsometric)
             ? '<div class="stepper">'+
                 '<button type="button" onclick="adjCarga(\''+key+'\',-2.5)" aria-label="Restar 2.5 a la carga">−2.5</button>'+
                 '<button type="button" onclick="adjCarga(\''+key+'\',2.5)" aria-label="Sumar 2.5 a la carga">+2.5</button>'+
               '</div>'
             : '';
+          var _stepRepsHtml = '<div class="stepper">'+
+                '<button type="button" onclick="adjReps(\''+key+'\',-1)" aria-label="Restar 1 rep">−1</button>'+
+                '<button type="button" onclick="adjReps(\''+key+'\',1)" aria-label="Sumar 1 rep">+1</button>'+
+              '</div>';
           return '<div class="sp-fields">'+
             '<div class="sp-f">'+
               '<label class="sp-fl" for="carga_'+key+'">'+cargaLabel+'</label>'+
               '<input id="carga_'+key+'" type="number" value="'+(carga||'')+'" placeholder="'+cargaPh+'" step="0.5" inputmode="decimal" class="num-in"'+
               ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()">'+
-              _stepHtml+
+              _stepCargaHtml+
             '</div>'+
             '<div class="sp-f">'+
               '<label class="sp-fl'+(isIsometric?' hot':'')+'" for="reps_'+key+'">'+repsLabel+'</label>'+
               '<input id="reps_'+key+'" type="number" value="'+(reps||'')+'" placeholder="'+repsPh+'" inputmode="numeric" class="num-in"'+
               ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()">'+
+              _stepRepsHtml+
             '</div>'+
           '</div>';
         })()+
@@ -10883,10 +10915,19 @@ function adjCarga(key, delta) {
   var v = (parseFloat(el.value) || 0) + delta;
   if (v < 0) v = 0;
   el.value = v % 1 === 0 ? v : v.toFixed(1);
-  bcProgHint(key);
-  el.focus({ preventScroll: true });
+  try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) { bcProgHint(key); }
 }
 window.adjCarga = adjCarga;
+
+function adjReps(key, delta) {
+  var el = document.getElementById('reps_'+key);
+  if (!el) return;
+  var v = Math.round((parseFloat(el.value) || 0) + delta);
+  if (v < 0) v = 0;
+  el.value = v;
+  try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) { bcProgHint(key); }
+}
+window.adjReps = adjReps;
 
 function setRirReal(key, val) {
   if (navigator.vibrate) navigator.vibrate(12);
