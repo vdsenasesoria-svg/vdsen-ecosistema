@@ -159,6 +159,18 @@ function validateFences(fences, window, mode = 'preflight') {
  */
 async function runPreflight(opts) {
   opts = opts || {};
+  if (opts.ledgerDb && opts.priorOperations === undefined) {
+    try {
+      const ledger = require('./numeric-operations-ledger.cjs');
+      const ops = await ledger.fetchDurableOperations(opts.ledgerDb);
+      opts = {
+        ...opts,
+        priorOperations: ops,
+        priorOperationsSourceVerified: opts.isEmulator === true,
+        priorOperationsCoverageComplete: true
+      };
+    } catch (_) {}
+  }
   const now = opts.now || Date.now();
   const checks = [];
   const blockers = [];
