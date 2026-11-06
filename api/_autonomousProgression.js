@@ -179,7 +179,15 @@ async function materialize(db, clientId, requestedPlanId, clock, opts) {
       if (!inScope) delete out.records[key];
       return inScope;
     });
-    if (createdBefore && !out.created.length) out.changed = false;
+    if (numericMode) {
+      // A numeric pilot may neither create nor alter lifecycle records for other PIDs.
+      out.staled = out.staled.filter(function(key) {
+        var prior = existingRecords[key];
+        if (prior && prior.prescriptionExerciseId !== numericWindow.pid) { out.records[key] = prior; return false; }
+        return true;
+      });
+      out.changed = out.created.length > 0 || out.staled.length > 0;
+    } else if (createdBefore && !out.created.length) out.changed = false;
     var sessionMonitoring = out.created.length ? sra.sessionMonitoring({ clientId: clientId, planDoc: plan, entries: cleanEntries }) : null;
     out.created.forEach(function(key) {
       var record = out.records[key];

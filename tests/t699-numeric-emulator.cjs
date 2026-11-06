@@ -77,16 +77,18 @@ test('real contract in emulator: pending -> applied overlay -> effective prescri
     })) };
     await db.doc('plans/' + C.PLAN).set(expandedPlan);
     await db.doc('logs/' + C.UID).set({ planId: C.PLAN, entries: evidence });
-    await meso.set({ planId: C.PLAN, entries: evidence, progressionApplications: {}, nextExposureOverlays: {} });
+    const foreign = { ...structuredClone(sc.rec), key: 'synthetic-foreign-record', prescriptionExerciseId: other };
+    await meso.set({ planId: C.PLAN, entries: evidence, progressionApplications: { [foreign.key]: foreign }, nextExposureOverlays: {} });
     // STOP must block materialization as well as application.
     assert.equal((await executor.materialize(db, C.UID, C.PLAN, () => new Date().toISOString())).status, 'OUT_OF_NUMERIC_PILOT');
-    assert.deepEqual((await meso.get()).data().progressionApplications, {});
+    assert.deepEqual((await meso.get()).data().progressionApplications, { [foreign.key]: foreign });
     await db.doc('releaseControl/numericPilot').set({ enabled: true }, { merge: true });
     const materialized = await executor.materialize(db, C.UID, C.PLAN, () => new Date().toISOString());
     assert.equal(materialized.status, 'MATERIALIZED', JSON.stringify(materialized));
     const materializedRecords = Object.values((await meso.get()).data().progressionApplications);
-    assert.equal(materializedRecords.length, 1);
-    assert.equal(materializedRecords[0].prescriptionExerciseId, C.PID);
+    assert.equal(materializedRecords.length, 2);
+    assert.deepEqual((await meso.get()).data().progressionApplications[foreign.key], foreign, 'a foreign pending record must not be staled by numeric materialization');
+    assert.equal(materializedRecords.filter(r => r.prescriptionExerciseId === C.PID).length, 1);
     assert.equal((await executor.materialize(db, 'synthetic-foreign-user', C.PLAN, () => new Date().toISOString())).status, 'OUT_OF_NUMERIC_PILOT');
     assert.equal((await executor.materialize(db, C.UID, 'synthetic-foreign-plan', () => new Date().toISOString())).status, 'OUT_OF_NUMERIC_PILOT');
     assert.equal((await db.doc('logs/synthetic-foreign-user').get()).exists, false);
