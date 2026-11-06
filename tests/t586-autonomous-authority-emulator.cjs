@@ -12,6 +12,7 @@ assert.match(projectId, /^demo-/);
 const app = admin.initializeApp({ projectId }, 't586-authority-admin');
 const db = admin.firestore(app);
 const executor = require('../api/_autonomousProgression');
+const { createHistoricalFixture } = require('./helpers/t699-synthetic-executor');
 const effective = require('../assets/progression-effective-prescription.js');
 const { importLikeCoach } = require('./helpers/coach-plan-import.js');
 test.after(async () => { await app.delete(); });
@@ -31,9 +32,10 @@ async function client(spec) {
   const plan = Object.assign({ schema: 'vdsen-plan-v2', clientId: uid, coachId, status: 'active', createdAt: '2026-09-26T00:00:00.000Z', updatedAt: '2026-09-26T00:00:00.000Z', rirByWeek: RIR_BY_WEEK }, planCore);
   const pids = plan.days[0].exercises.map((e) => e.prescriptionExerciseId);
   await db.doc('clients/' + uid).set({ coachId, activePlanId: planId, coachInterventions: [] });
-  await db.doc('coaches/' + coachId).set({ autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: [] } });
+  await db.doc('coaches/' + coachId).set({ autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: pids } });
   await db.doc('plans/' + planId).set(plan);
-  const c = { uid, planId, coachId, plan, pids, unit, entries: {}, names: spec.exercises.map((e) => e.name), executed: {} };
+  const scoped = await createHistoricalFixture(db, uid, planId, pids);
+  const c = { uid, planId, coachId, plan, pids, unit, entries: {}, names: spec.exercises.map((e) => e.name), executed: {}, ...scoped };
   await persist(c);
   return c;
 }
@@ -82,7 +84,7 @@ async function ack(c, week) {
   });
   if (Object.keys(receipts).length) await db.doc('logs/' + c.uid + '/mesos/' + c.planId).set({ consumptionReceipts: receipts }, { merge: true });
 }
-const engine = (c, extra) => executor.processProgression(Object.assign({ db, clientId: c.uid, planId: c.planId, enabled: true, numericApplyEnabled: true, clock }, extra || {}));
+const engine = (c, extra) => c.executor.processProgression(Object.assign({ db: c.db, clientId: c.uid, planId: c.planId, enabled: true, numericApplyEnabled: true, clock }, extra || {}));
 async function cycle(c, week, o) { const t = await train(c, week, o); await ack(c, week); await engine(c); return t; }
 const dims = (m, week) => overlays(m).filter((x) => x.target.week === week).map((x) => x.dimension + ':' + x.previousValue + '->' + x.appliedValue).sort();
 const wk = (n) => ({ ex: [{ name: 'Ej', sets: n }] });
