@@ -38,9 +38,7 @@ function stateGate(w, s, mode, now = Date.now()) {
   const targetPid = w.pid || w.prescriptionExerciseId;
   if (w.mode === 'STAGE1_SHADOW' && mode !== 'stop' && s.coach && s.coach.autoApplyCanary && s.coach.autoApplyCanary.enabled === true) {
     const canaryPids = s.coach.autoApplyCanary.prescriptionExerciseIds;
-    if (Array.isArray(canaryPids) && canaryPids.length > 0) {
-      assert.deepEqual(canaryPids, [targetPid], 'CANARY_SINGLE_PID_MISMATCH');
-    }
+    assert.deepEqual(canaryPids, [targetPid], 'CANARY_SINGLE_PID_MISMATCH');
   }
   if (mode === 'enable' && s.release && s.release.enabled === true && Date.parse(s.release.expiresAt) > now) {
     assert.equal(s.release.expiresAt, w.expiresAt, 'ACTIVE_WINDOW_NO_RENEWAL');

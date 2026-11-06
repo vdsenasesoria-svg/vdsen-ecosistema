@@ -106,6 +106,7 @@ const waitFor = async (fn, ms) => { const t = Date.now(); let v; while (Date.now
 async function runCase(label, def) {
   const rec = { case: label, desc: def.desc, numericServer: NUMERIC, exercises: [] };
   const a = await L.seedAthlete(label, def.ex.map((e) => ({ name: e.name, muscleGroup: e.muscleGroup, repsRange: e.repsRange, sets: e.sets, w1: e.w1 })), { noWeek1: def.noWeek1, foreignW1Pid: def.foreignW1Pid, planExtra: def.planExtra });
+  await L.db.doc('coaches/' + a.coach.uid).set({ autoApplyCanary: { enabled: true, clientIds: [a.uid], prescriptionExerciseIds: a.pids } }, { merge: true });
   // a FRESH browser per session: a tab left behind keeps the Firestore persistence lease and stalls the next boot ("Cargando tu plan")
   let chrome = null, chromeB = null;
   const launch = async () => { chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=' + DBG, '--user-data-dir=' + fs.mkdtempSync(path.join(os.tmpdir(), 'vdsen-t599r-')), '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: 'ignore' }); await sleep(1800); };
@@ -190,7 +191,7 @@ async function runCase(label, def) {
 }
 
 (async () => {
-  const server = spawn(process.execPath, [path.join(SERVE_ROOT, 'scripts/e2e-client-chain/serve.cjs'), SERVE_ROOT, String(PORT)], { env: Object.assign({}, process.env, { E2E_NUMERIC: NUMERIC ? '1' : '0' }), stdio: 'ignore' });
+  const server = spawn(process.execPath, [path.join(SERVE_ROOT, 'scripts/e2e-client-chain/serve.cjs'), SERVE_ROOT, String(PORT)], { env: Object.assign({}, process.env, { E2E_NUMERIC: NUMERIC ? '1' : '0', E2E_HISTORICAL_FIXTURE: '1' }), stdio: 'ignore' });
   await sleep(2500);
   try {
     for (const label of Object.keys(CASES)) { if (ONLY.length && ONLY.indexOf(label) < 0) continue; console.log('CASE ' + label + ' — ' + CASES[label].desc + (NUMERIC ? ' [numeric sandbox ON]' : ' [numeric OFF]')); results.push(await runCase(label, CASES[label])); }

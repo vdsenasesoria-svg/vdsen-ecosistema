@@ -34,6 +34,16 @@ const NOW_ISO = '2026-10-15T12:00:00.000Z';
 const NOW_MS = Date.parse(NOW_ISO);
 const DAY_MS = 86400000;
 
+// Motor-only fixture authority: each scenario gets its own isolated module.
+function syntheticMotor(db, uid, planId) {
+  const window = { schema: 'vdsen-numeric-pilot-v1', mode: 'NUMERIC_APPLY', uid, planId, pid: 'pid-press',
+    runtimeSha: 'a'.repeat(40), operationId: 'synthetic-685', startsAt: '2026-10-15T11:00:00Z', expiresAt: '2026-10-15T13:00:00Z' };
+  db.docs.get('coaches/coach-1').autoApplyCanary.prescriptionExerciseIds = [window.pid];
+  db.docs.get('releaseControl/autonomousProgression').expiresAt = window.expiresAt;
+  db.docs.set('releaseControl/numericPilot', { ...window, enabled: true });
+  return require('./helpers/t699-synthetic-executor.js').createSyntheticExecutor(window);
+}
+
 function makePlan(overrides) {
   return Object.assign({
     id: 'plan-active-1',
@@ -614,7 +624,8 @@ test('T685.8 Scenario 8: Full motor integration — LOAD, REPS, REST, SETS (MEV/
       ['logs/' + uid + '/starts/' + planId + '_1_2_0']: { planId: planId, week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: new Date(NOW_MS - 2 * DAY_MS).toISOString() }
     });
 
-    var out = await executor.processProgression({ db: db, clientId: uid, planId: planId, enabled: true, numericApplyEnabled: true, clock: function() { return NOW_ISO; } });
+    var syntheticExecutor = syntheticMotor(db, uid, planId);
+    var out = await syntheticExecutor.processProgression({ db: db, clientId: uid, planId: planId, enabled: true, numericApplyEnabled: true, clock: function() { return NOW_ISO; } });
     assert.equal(out.status, 'MATERIALIZED', sc.name);
     assert.equal(out.applied.length, 1, sc.name + ' applies exactly 1 non-cardio record');
     assert.equal(out.applied[0].written, true, sc.name);
@@ -651,7 +662,7 @@ test('T685.8 Scenario 8: Full motor integration — LOAD, REPS, REST, SETS (MEV/
     db.docs.set('logs/' + uid + '/mesos/' + planId, meso);
     db.docs.set('logs/' + uid, { planId: planId, entries: meso.entries, updatedAt: 3 });
 
-    var consumedOut = await executor.processProgression({ db: db, clientId: uid, planId: planId, enabled: true, numericApplyEnabled: true, clock: function() { return NOW_ISO; } });
+    var consumedOut = await syntheticExecutor.processProgression({ db: db, clientId: uid, planId: planId, enabled: true, numericApplyEnabled: true, clock: function() { return NOW_ISO; } });
     assert.deepEqual(consumedOut.consumed.map(function(c) { return [c.written, c.reason]; }), [[true, null]], sc.name + ' CONSUMED');
     var finalMeso = db.docs.get('logs/' + uid + '/mesos/' + planId);
     assert.equal(finalMeso.progressionApplications[rec.key].state, 'CONSUMED', sc.name);
@@ -674,14 +685,15 @@ test('T685.9 Scenario 9, 10, 11 & 12: Idempotency, revocation, expiration, and r
   });
 
   // First run materializes and applies
-  var first = await executor.processProgression({ db: db, clientId: uid, planId: planId, enabled: true, numericApplyEnabled: true, clock: function() { return NOW_ISO; } });
+  var syntheticExecutor = syntheticMotor(db, uid, planId);
+  var first = await syntheticExecutor.processProgression({ db: db, clientId: uid, planId: planId, enabled: true, numericApplyEnabled: true, clock: function() { return NOW_ISO; } });
   assert.equal(first.status, 'MATERIALIZED');
   assert.equal(first.applied.length, 1);
 
   // Second run with no new evidence and no consumption receipt: NO_CHANGE, 0 writes, and applyPending is skipped because PENDING count is 0
   var setsBefore = db.stats.sets;
   var getsBefore = db.stats.gets;
-  var second = await executor.processProgression({ db: db, clientId: uid, planId: planId, enabled: true, numericApplyEnabled: true, clock: function() { return NOW_ISO; } });
+  var second = await syntheticExecutor.processProgression({ db: db, clientId: uid, planId: planId, enabled: true, numericApplyEnabled: true, clock: function() { return NOW_ISO; } });
   assert.equal(second.status, 'NO_CHANGE');
   assert.deepEqual(second.applied, []);
   assert.deepEqual(second.consumed, []);
@@ -737,7 +749,23 @@ test('T685.13 Scenario 13: Safe error recovery in sweep, browser startup/empty-s
     'logs/client-ok/starts/plan-ok_1_2_0': { planId: 'plan-ok', week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: new Date(NOW_MS - 2 * DAY_MS).toISOString() }
   }, ['plan-broken']);
 
-  var sweepRes = await sweep.runSweep({ db: db, enabled: true, numericApplyEnabled: true, clock: function() { return NOW_ISO; } });
+  // General fleet behavior is tested in memory, with per-call synthetic fences.
+  // Restore both documents before returning so other clients retain their original scope.
+  const fleetExecutor = { ...executor, processProgression: async function(input) {
+    const release = structuredClone(db.docs.get('releaseControl/autonomousProgression'));
+    const coach = structuredClone(db.docs.get('coaches/coach-1'));
+    try {
+      db.docs.set('releaseControl/autonomousProgression', { ...release, clientIds: [input.clientId] });
+      db.docs.set('coaches/coach-1', { ...coach, autoApplyCanary: { ...coach.autoApplyCanary, clientIds: [input.clientId] } });
+      return await syntheticMotor(db, input.clientId, input.planId).processProgression(input);
+    } finally {
+      db.docs.set('releaseControl/autonomousProgression', release);
+      db.docs.set('coaches/coach-1', coach);
+      db.docs.delete('releaseControl/numericPilot');
+    }
+  } };
+  const fleetSweep = require('./helpers/t699-synthetic-executor.js').createSyntheticSweep(fleetExecutor);
+  var sweepRes = await fleetSweep.runSweep({ db: db, enabled: true, numericApplyEnabled: true, clock: function() { return NOW_ISO; } });
   assert.equal(sweepRes.status, 'SWEPT');
   assert.equal(sweepRes.processed, 3);
   assert.deepEqual(sweepRes.results, [
@@ -746,6 +774,9 @@ test('T685.13 Scenario 13: Safe error recovery in sweep, browser startup/empty-s
     { clientId: 'client-inactive', status: 'INACTIVE_CLIENT' }
   ]);
   assert.equal(Object.values(db.docs.get('logs/client-ok/mesos/plan-ok').nextExposureOverlays).length, 1);
+  assert.deepEqual(db.docs.get('releaseControl/autonomousProgression').clientIds, ['client-broken', 'client-ok', 'client-inactive']);
+  assert.deepEqual(db.docs.get('coaches/coach-1').autoApplyCanary.clientIds, ['client-broken', 'client-ok', 'client-inactive']);
+  assert.equal(db.docs.has('releaseControl/numericPilot'), false);
 
   // 13b) Browser _captureLifecycleState does not schedule trigger on empty new-client meso snapshot, only when recoverable evidence exists
   var html = fs.readFileSync(path.join(__dirname, '..', 'vdsen-cliente.html'), 'utf8');
@@ -1131,7 +1162,8 @@ test('T685.2: Cierre de autoridad temporal y elegibilidad real (10 pruebas espec
     ['logs/' + uid10 + '/starts/' + p10 + '_1_0_0']: { planId: p10, week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: new Date(NOW_MS - 4 * DAY_MS).toISOString() },
     ['logs/' + uid10 + '/starts/' + p10 + '_1_2_0']: { planId: p10, week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: new Date(NOW_MS - 2 * DAY_MS).toISOString() }
   });
-  var step1 = await executor.processProgression({ db: db10, clientId: uid10, planId: p10, enabled: true, numericApplyEnabled: true, clock: () => NOW_ISO, enforceActiveEligibility: true });
+  var syntheticExecutor10 = syntheticMotor(db10, uid10, p10);
+  var step1 = await syntheticExecutor10.processProgression({ db: db10, clientId: uid10, planId: p10, enabled: true, numericApplyEnabled: true, clock: () => NOW_ISO, enforceActiveEligibility: true });
   assert.equal(step1.status, 'MATERIALIZED', 'Prueba 10: materialized');
   assert.equal(step1.applied[0].written, true, 'Prueba 10: applied');
   var meso10 = db10.docs.get('logs/' + uid10 + '/mesos/' + p10);
@@ -1155,7 +1187,7 @@ test('T685.2: Cierre de autoridad temporal y elegibilidad real (10 pruebas espec
     planId: p10, week: ovl10.target.week, dayIndex: ovl10.target.dayIndex, exerciseIndex: 0, setKey: nextSetKey, at: NOW_ISO
   });
 
-  var step2 = await executor.processProgression({ db: db10, clientId: uid10, planId: p10, enabled: true, numericApplyEnabled: true, clock: () => NOW_ISO, enforceActiveEligibility: true });
+  var step2 = await syntheticExecutor10.processProgression({ db: db10, clientId: uid10, planId: p10, enabled: true, numericApplyEnabled: true, clock: () => NOW_ISO, enforceActiveEligibility: true });
   assert.deepEqual(step2.consumed.map(x => [x.written, x.reason]), [[true, null]], 'Prueba 10: consumed');
   var finalMeso10 = db10.docs.get('logs/' + uid10 + '/mesos/' + p10);
   assert.equal(finalMeso10.progressionApplications[rec10.key].state, 'CONSUMED', 'Prueba 10: record state is CONSUMED');

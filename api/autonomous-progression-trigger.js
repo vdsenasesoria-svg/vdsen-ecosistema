@@ -48,7 +48,7 @@ function makeHandler(deps) {
         numericApplyEnabled: deps.numericApplyEnabled === true, cronConfigured: !!deps.cronSecret,
         pilotWindow: bound.valid ? { uidHash: bound.uidHash, planHash: bound.planHash, expiresAt: bound.expiresAt, operationId: bound.operationId } : null });
     }
-    if (req.method === 'GET' && deps.pilotWindow !== undefined) return res.status(403).json({ error: 'PILOT_CRON_DISABLED' });
+    if (req.method === 'GET' && (deps.pilotWindow !== undefined || deps.numericPilotWindow !== undefined)) return res.status(403).json({ error: 'PILOT_CRON_DISABLED' });
     if (req.method === 'GET') return sweepLib.makeHandler({ db: deps.db, cronSecret: deps.cronSecret, enabled: deps.enabled === true,
       numericApplyEnabled: deps.numericApplyEnabled === true })(req, res);
     var trace = { requestId: randomUUID(), authentication: 'NOT_CHECKED' };
@@ -96,6 +96,7 @@ async function defaultHandler(req, res) {
   }
   return makeHandler({ db: firebaseAdmin.firestore(app), verifyIdToken: admin.verifyIdToken, cronSecret: process.env.CRON_SECRET,
     pilotWindow: process.env.VDSEN_PILOT_WINDOW,
+    numericPilotWindow: process.env.VDSEN_NUMERIC_PILOT_WINDOW,
     allowProbe: admin.isFederatedMode(process.env, req.headers && req.headers['x-vercel-oidc-token']),
     enabled: process.env.AUTONOMOUS_PROGRESSION_ENABLED === 'true',
     numericApplyEnabled: process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED === 'true' })(req, res);

@@ -12,6 +12,7 @@ const { initializeApp: initAdmin, deleteApp: deleteAdmin } = require('firebase-a
 const { getFirestore: getAdminFirestore } = require('firebase-admin/firestore');
 
 const executor = require('../api/_autonomousProgression.js');
+const { createHistoricalFixture } = require('./helpers/t699-synthetic-executor.js');
 const eligibility = require('../api/_clientEligibility.js');
 const effective = require('../assets/progression-effective-prescription.js');
 const FX = require('./fixtures/t583-real-client-capture.json');
@@ -51,7 +52,7 @@ async function seedEmulator(name, o) {
   const pids = plan.days[0].exercises.map((e) => e.prescriptionExerciseId);
 
   // Setup documents in Firestore emulator via Admin SDK
-  await adminDb.doc('coaches/' + coachId).set({ role: 'coach', autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: [] } });
+  await adminDb.doc('coaches/' + coachId).set({ role: 'coach', autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: pids } });
   await adminDb.doc('clients/' + uid).set({ coachId, activePlanId: planId, coachInterventions: o.interventions || [] });
   await adminDb.doc('plans/' + planId).set(plan);
   await adminDb.doc('logs/' + uid).set({ planId, entries });
@@ -63,7 +64,8 @@ async function seedEmulator(name, o) {
     clientIds: [uid]
   });
 
-  return { name, uid, coachId, planId, plan, pids, entries };
+  const fixture = await createHistoricalFixture(adminDb, uid, planId, pids);
+  return { name, uid, coachId, planId, plan, pids, entries, fixture };
 }
 
 async function coachAssignTxn(coachDb, o) {
@@ -316,7 +318,7 @@ test('T692.E2: Full autonomous pipeline on Firestore Emulator (materialize -> ap
   assert.ok(m.created.length >= 2, 'auto-generated at least 2 PENDING records');
 
   // 2. Apply (PENDING -> APPLIED + creates nextExposureOverlays)
-  const applied = await executor.applyPending(adminDb, s.uid, s.planId, clock);
+  const applied = await s.fixture.executor.applyPending(s.fixture.db, s.uid, s.planId, clock);
   assert.ok(applied.length >= 2);
   assert.ok(applied.every(a => a.written === true), 'all candidate records applied');
 
@@ -380,7 +382,7 @@ test('T692.E3: Multi-device & reconnection continuity on Firestore Emulator', as
 
   // Device 1 runs progression
   await executor.materialize(adminDb, s.uid, s.planId, clock);
-  await executor.applyPending(adminDb, s.uid, s.planId, clock);
+  await s.fixture.executor.applyPending(s.fixture.db, s.uid, s.planId, clock);
 
   // Device 2 connects and reads authoritative state
   const dev2Snap = await adminDb.doc('logs/' + s.uid + '/mesos/' + s.planId).get();

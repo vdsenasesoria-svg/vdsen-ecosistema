@@ -13,7 +13,7 @@ const { getFirestore: getAdminFirestore } = require('firebase-admin/firestore');
 
 const eligibility = require('../api/_clientEligibility.js');
 const executor = require('../api/_autonomousProgression.js');
-const sweep = require('../api/_autonomousProgressionSweep.js');
+const { createHistoricalFixture, createSyntheticSweep } = require('./helpers/t699-synthetic-executor.js');
 const consumer = require('../assets/progression-application-consumer.js');
 
 assert.ok(process.env.FIRESTORE_EMULATOR_HOST, 'Firestore emulator is required');
@@ -107,7 +107,7 @@ test('T685.E1 cohort selection & execution on emulator: recurrent (PRIORITY_A) a
 
   await db.doc('coaches/' + coach.uid).set({
     role: 'coach',
-    autoApplyCanary: { enabled: true, clientIds: [recurrent.uid, newIdle.uid, noPlan.uid, importedOnly.uid, inactive.uid], prescriptionExerciseIds: [] }
+    autoApplyCanary: { enabled: true, clientIds: [recurrent.uid, newIdle.uid, noPlan.uid, importedOnly.uid, inactive.uid], prescriptionExerciseIds: [PID] }
   });
   await db.doc('releaseControl/autonomousProgression').set({
     schema: 'vdsen-autonomous-release-v1',
@@ -153,7 +153,16 @@ test('T685.E1 cohort selection & execution on emulator: recurrent (PRIORITY_A) a
   await db.doc('logs/' + inactive.uid).set({ planId: pInact, entries: oldLogs, updatedAt: 2 });
   await db.doc('logs/' + inactive.uid + '/mesos/' + pInact).set({ planId: pInact, entries: oldLogs, updatedAt: 2 });
 
-  const sw = await sweep.runSweep({ db, enabled: true, numericApplyEnabled: true, clock: () => T_NOW_ISO });
+  const fixtures = new Map();
+  for (const [uid, planId] of [[recurrent.uid, pRec], [newIdle.uid, pNew], [importedOnly.uid, pImp], [inactive.uid, pInact]]) {
+    fixtures.set(uid, await createHistoricalFixture(db, uid, planId, PID));
+  }
+  const testSweep = createSyntheticSweep({ ...executor, processProgression: (input) => {
+    const fixture = fixtures.get(input.clientId);
+    if (!fixture) throw new Error('No fixture for selected client');
+    return fixture.executor.processProgression({ ...input, db: fixture.db });
+  } });
+  const sw = await testSweep.runSweep({ db, enabled: true, numericApplyEnabled: true, clock: () => T_NOW_ISO });
   assert.equal(sw.status, 'SWEPT');
 
   const recMeso = (await db.doc('logs/' + recurrent.uid + '/mesos/' + pRec).get()).data();
@@ -175,7 +184,7 @@ test('T685.E2 new client onboarding on emulator: 0 activity -> first real set + 
   const plan = makePlanDoc(athlete.uid, coach.uid, { createdAt: new Date(nowMs - 2 * DAY_MS).toISOString(), updatedAt: new Date(nowMs - 2 * DAY_MS).toISOString() });
   const clientDoc = { coachId: coach.uid, activePlanId: planId, createdAt: new Date(nowMs - 2 * DAY_MS).toISOString(), onboardedAt: new Date(nowMs - 2 * DAY_MS).toISOString() };
 
-  await db.doc('coaches/' + coach.uid).set({ role: 'coach', autoApplyCanary: { enabled: true, clientIds: [athlete.uid], prescriptionExerciseIds: [] } });
+  await db.doc('coaches/' + coach.uid).set({ role: 'coach', autoApplyCanary: { enabled: true, clientIds: [athlete.uid], prescriptionExerciseIds: [PID] } });
   await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(nowMs + 36e5).toISOString(), clientIds: [athlete.uid] });
   await db.doc('clients/' + athlete.uid).set(clientDoc);
   await db.doc('plans/' + planId).set(plan);
@@ -218,7 +227,8 @@ test('T685.E2 new client onboarding on emulator: 0 activity -> first real set + 
   assert.equal(ev.priority, 'PRIORITY_A');
   assert.equal(ev.readyForMotorProgression, true);
 
-  const appliedOut = await executor.processProgression({ db, clientId: athlete.uid, planId, enabled: true, numericApplyEnabled: true, clock: () => new Date().toISOString() });
+  const fixture = await createHistoricalFixture(db, athlete.uid, planId, PID);
+  const appliedOut = await fixture.executor.processProgression({ db: fixture.db, clientId: athlete.uid, planId, enabled: true, numericApplyEnabled: true, clock: () => new Date().toISOString() });
   assert.equal(appliedOut.status, 'MATERIALIZED');
   assert.deepEqual(appliedOut.applied.map(x => [x.written, x.reason]), [[true, null]]);
 
@@ -247,7 +257,7 @@ test('T685.E2 new client onboarding on emulator: 0 activity -> first real set + 
   ));
   assert.equal(ack.written, true);
 
-  const consumedOut = await executor.processProgression({ db, clientId: athlete.uid, planId, enabled: true, numericApplyEnabled: true, clock: () => new Date().toISOString() });
+  const consumedOut = await fixture.executor.processProgression({ db: fixture.db, clientId: athlete.uid, planId, enabled: true, numericApplyEnabled: true, clock: () => new Date().toISOString() });
   assert.deepEqual(consumedOut.consumed.map(x => [x.written, x.reason]), [[true, null]]);
   const mesoFinal = (await db.doc('logs/' + athlete.uid + '/mesos/' + planId).get()).data();
   assert.equal(mesoFinal.progressionApplications[rec.key].state, 'CONSUMED');
@@ -259,7 +269,7 @@ test('T685.E3 plan suspension, draft status, or client deactivation immediately 
   const planId = 'plan-' + athlete.uid;
   const logs = makeRecurrentLogs();
 
-  await db.doc('coaches/' + coach.uid).set({ role: 'coach', autoApplyCanary: { enabled: true, clientIds: [athlete.uid], prescriptionExerciseIds: [] } });
+  await db.doc('coaches/' + coach.uid).set({ role: 'coach', autoApplyCanary: { enabled: true, clientIds: [athlete.uid], prescriptionExerciseIds: [PID] } });
   await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: [athlete.uid] });
   await db.doc('clients/' + athlete.uid).set({ coachId: coach.uid, activePlanId: planId });
   await db.doc('plans/' + planId).set(makePlanDoc(athlete.uid, coach.uid, { status: 'suspended' }));
