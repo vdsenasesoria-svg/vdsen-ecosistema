@@ -1,0 +1,198 @@
+name: VDSEN Numeric Pilot Lane (strictly isolated)
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Operational action to perform (preflight-check | arm-fences | stop | audit-status)
+        default: 'preflight-check'
+        type: choice
+        options:
+          - preflight-check
+          - arm-fences
+          - stop
+          - audit-status
+      operation_id:
+        description: Unique approved numeric operation ID (8-80 chars)
+        required: true
+        type: string
+      runtime_sha:
+        description: Reviewed runtime commit SHA (40 hex chars)
+        required: true
+        type: string
+      deployment_id:
+        description: Vercel deployment ID (dpl_...)
+        required: true
+        type: string
+      pilot_uid:
+        description: Explicit Ayrton UID (z82EDPvsCaabfMN3eGAP3rpxeMt1)
+        default: 'z82EDPvsCaabfMN3eGAP3rpxeMt1'
+        type: string
+      plan_id:
+        description: Explicit authorized planId (2wywK0y0pKtXRzGS8dNx)
+        default: '2wywK0y0pKtXRzGS8dNx'
+        type: string
+      coach_id:
+        description: Coach UID
+        required: true
+        type: string
+      prescription_exercise_id:
+        description: Explicit single PID (831ccbbe-ab09-4669-a0ef-4c652ca84b7a)
+        default: '831ccbbe-ab09-4669-a0ef-4c652ca84b7a'
+        type: string
+      starts_at:
+        description: Window start UTC ISO string (e.g. 2026-11-06T12:00:00Z)
+        required: true
+        type: string
+      expires_at:
+        description: Window expiry UTC ISO string (max 24h from starts_at)
+        required: true
+        type: string
+      stop_reason:
+        description: Reason for STOP action (required if action is stop)
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: vdsen-production-numeric-pilot
+  cancel-in-progress: false
+
+jobs:
+  numeric-pilot-ops:
+    if: github.repository == 'vdsenasesoria-svg/vdsen-ecosistema' && github.ref == 'refs/heads/codex/client-app-next'
+    environment: Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      VDSEN_NUMERIC_PILOT_RELEASE_ENABLED: ${{ vars.VDSEN_NUMERIC_PILOT_RELEASE_ENABLED }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      INPUT_ACTION: ${{ inputs.action }}
+      INPUT_OPERATION: ${{ inputs.operation_id }}
+      INPUT_RUNTIME: ${{ inputs.runtime_sha }}
+      INPUT_DEPLOYMENT: ${{ inputs.deployment_id }}
+      INPUT_UID: ${{ inputs.pilot_uid }}
+      INPUT_PLAN: ${{ inputs.plan_id }}
+      INPUT_COACH: ${{ inputs.coach_id }}
+      INPUT_PID: ${{ inputs.prescription_exercise_id }}
+      INPUT_STARTS: ${{ inputs.starts_at }}
+      INPUT_EXPIRES: ${{ inputs.expires_at }}
+      INPUT_STOP_REASON: ${{ inputs.stop_reason }}
+      REPORT_DIR: release-output/numeric-pilot
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+
+      - name: Enforce kill switch, single run, and canonical branch
+        run: node -e "require('./scripts/pilot/numeric-pilot-ops.cjs').invocation(process.env)"
+
+      - name: Create output directory
+        run: mkdir -p "$REPORT_DIR"
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Validate contracts and unit tests
+        run: |
+          node scripts/release/check.cjs
+          node --test tests/t699-numeric-contract.test.js tests/t699-numeric-ops.test.js
+
+      - id: google
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_RELEASE_SERVICE_ACCOUNT }}
+          project_id: vdsen-ecosistema
+          token_format: access_token
+          create_credentials_file: false
+          access_token_scopes: https://www.googleapis.com/auth/datastore
+
+      - name: Assemble numeric window specification
+        run: |
+          node -e "
+            const fs = require('fs');
+            const w = {
+              schema: 'vdsen-numeric-pilot-v1',
+              mode: 'NUMERIC_APPLY',
+              uid: process.env.INPUT_UID,
+              planId: process.env.INPUT_PLAN,
+              pid: process.env.INPUT_PID,
+              runtimeSha: process.env.INPUT_RUNTIME,
+              operationId: process.env.INPUT_OPERATION,
+              startsAt: process.env.INPUT_STARTS,
+              expiresAt: process.env.INPUT_EXPIRES
+            };
+            const valid = require('./scripts/pilot/numeric-preflight.cjs').validateNumericWindow(w);
+            if (!valid.valid) {
+              console.error('Window invalid:', valid.errors);
+              process.exit(1);
+            }
+            fs.writeFileSync('$REPORT_DIR/window.json', JSON.stringify(w, null, 2));
+          "
+
+      - name: Provider runtime attestation
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const { attestRuntime } = require('./scripts/pilot/numeric-attestation.cjs');
+            const w = JSON.parse(fs.readFileSync('$REPORT_DIR/window.json', 'utf8'));
+            attestRuntime({
+              deploymentId: process.env.INPUT_DEPLOYMENT,
+              expectedSha: w.runtimeSha,
+              expectedOperationId: w.operationId,
+              expectedUid: w.uid,
+              expectedPlanId: w.planId,
+              expectedPid: w.pid,
+              expectedStartsAt: w.startsAt,
+              expectedExpiresAt: w.expiresAt
+            }).then(r => {
+              fs.writeFileSync('$REPORT_DIR/attestation.json', JSON.stringify(r, null, 2));
+              if (!r.attested) {
+                console.error('Attestation failed:', r);
+                process.exit(1);
+              }
+            });
+          "
+
+      - name: Execute preflight verification
+        run: |
+          node -e "
+            const fs = require('fs');
+            const { runPreflight } = require('./scripts/pilot/numeric-preflight.cjs');
+            const w = JSON.parse(fs.readFileSync('$REPORT_DIR/window.json', 'utf8'));
+            runPreflight({
+              window: w,
+              deploymentId: process.env.INPUT_DEPLOYMENT,
+              readOnly: true
+            }).then(r => {
+              fs.writeFileSync('$REPORT_DIR/preflight-result.json', JSON.stringify(r, null, 2));
+              if (r.decision !== 'GO') {
+                console.error('Preflight NO-GO:', r);
+                process.exit(1);
+              }
+            });
+          "
+
+      - name: Upload evidence artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: numeric-pilot-evidence-${{ github.run_id }}
+          path: release-output/numeric-pilot/
+          if-no-files-found: warn
+          retention-days: 90
