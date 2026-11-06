@@ -418,6 +418,116 @@ async function attestRuntime(opts) {
     };
   }
 
+  // Step 4b: Independent Live Alias Destination Verification
+  // The presence of an alias in the deployment response does not prove it currently resolves there.
+  // Query Vercel's official alias endpoint: GET /v2/aliases/:alias?teamId=:teamId
+  let aliasData;
+  try {
+    const aliasUrl = 'https://api.vercel.com/v2/aliases/' + encodeURIComponent(opts.expectedAlias) + '?teamId=' + teamId;
+    const aliasRes = await fetchFn(aliasUrl, {
+      headers: {
+        authorization: 'Bearer ' + token,
+        'user-agent': 'vdsen-numeric-attestation/1.0'
+      },
+      redirect: 'error'
+    });
+
+    if (aliasRes.status === 401 || aliasRes.status === 403) {
+      return {
+        schema: 'vdsen-numeric-runtime-attestation-v1',
+        attested: false,
+        status: 'BLOCKED',
+        reason: 'ALIAS_PROVIDER_AUTH_FAILED',
+        httpStatus: aliasRes.status,
+        message: 'Provider denied permission to resolve live alias target (GET /v2/aliases/:alias). Required permission or credential missing.'
+      };
+    }
+
+    if (aliasRes.status === 404) {
+      return {
+        schema: 'vdsen-numeric-runtime-attestation-v1',
+        attested: false,
+        status: 'BLOCKED',
+        reason: 'ALIAS_DESTINATION_UNKNOWN',
+        message: 'Live alias "' + opts.expectedAlias + '" was not found in provider project; destination is unknown.'
+      };
+    }
+
+    if (aliasRes.status !== 200) {
+      return {
+        schema: 'vdsen-numeric-runtime-attestation-v1',
+        attested: false,
+        status: 'BLOCKED',
+        reason: 'ALIAS_PROVIDER_ERROR',
+        httpStatus: aliasRes.status,
+        message: 'Provider returned HTTP ' + aliasRes.status + ' when querying live alias target.'
+      };
+    }
+
+    aliasData = await aliasRes.json();
+  } catch (err) {
+    return {
+      schema: 'vdsen-numeric-runtime-attestation-v1',
+      attested: false,
+      status: 'BLOCKED',
+      reason: 'ALIAS_QUERY_PROVIDER_ERROR',
+      message: 'Failed to query provider live alias: ' + err.message
+    };
+  }
+
+  if (!aliasData || typeof aliasData !== 'object') {
+    return {
+      schema: 'vdsen-numeric-runtime-attestation-v1',
+      attested: false,
+      status: 'BLOCKED',
+      reason: 'ALIAS_CONTRADICTORY_EVIDENCE',
+      message: 'Provider returned non-object alias data.'
+    };
+  }
+
+  const liveTargetDeploymentId = aliasData.deploymentId || (aliasData.deployment && aliasData.deployment.id);
+  if (!liveTargetDeploymentId) {
+    return {
+      schema: 'vdsen-numeric-runtime-attestation-v1',
+      attested: false,
+      status: 'BLOCKED',
+      reason: 'ALIAS_DESTINATION_UNKNOWN',
+      message: 'Provider alias record lacks target deploymentId; effective destination cannot be determined.'
+    };
+  }
+
+  if (aliasData.alias && aliasData.alias !== opts.expectedAlias) {
+    return {
+      schema: 'vdsen-numeric-runtime-attestation-v1',
+      attested: false,
+      status: 'BLOCKED',
+      reason: 'ALIAS_CONTRADICTORY_EVIDENCE',
+      expected: opts.expectedAlias,
+      actual: aliasData.alias,
+      message: 'Provider alias query returned conflicting alias name.'
+    };
+  }
+
+  if (liveTargetDeploymentId !== opts.deploymentId) {
+    return {
+      schema: 'vdsen-numeric-runtime-attestation-v1',
+      attested: false,
+      status: 'REJECTED',
+      reason: 'ALIAS_LIVE_TARGET_MISMATCH',
+      expectedDeployment: opts.deploymentId,
+      actualTargetDeployment: liveTargetDeploymentId,
+      message: 'Live alias "' + opts.expectedAlias + '" currently routes to deployment "' + liveTargetDeploymentId + '", not candidate "' + opts.deploymentId + '".'
+    };
+  }
+
+  checks.push({
+    check: 'ALIAS_LIVE_TARGET_CORRESPONDENCE',
+    expectedDeployment: opts.deploymentId,
+    actualTargetDeployment: liveTargetDeploymentId,
+    alias: opts.expectedAlias,
+    pass: true
+  });
+
   // Window Hashes Validation in Metadata (if present)
   if (meta.vdsenPilotWindow) {
     try {

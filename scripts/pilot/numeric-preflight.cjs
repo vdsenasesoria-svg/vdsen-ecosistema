@@ -217,13 +217,25 @@ async function runPreflight(opts) {
     };
   }
 
-  // Empty history without verified source must return BLOCKED
-  if (opts.priorOperations.length === 0 && !opts.priorOperationsSourceVerified) {
+  // Source must be verified and accredited; unverified source cannot authorize operation
+  if (!opts.priorOperationsSourceVerified) {
     return {
       schema: 'vdsen-numeric-preflight-v1',
       decision: 'BLOCKED',
-      reason: 'PRIOR_OPERATIONS_UNVERIFIED_SOURCE',
-      message: 'Prior operations history is empty without verified source evidence; cannot assume zero prior operations on unverified source.',
+      reason: 'OPERATION_HISTORY_UNVERIFIED_SOURCE',
+      message: 'Prior operations history source is not verified or lacks accredited durable records. Name/title approximation is forbidden.',
+      checks,
+      evaluatedAt: new Date(now).toISOString()
+    };
+  }
+
+  // Coverage must be complete (no unpaginated runs, retries, or incomplete history)
+  if (opts.priorOperationsCoverageComplete === false || opts.hasMorePriorOperations === true) {
+    return {
+      schema: 'vdsen-numeric-preflight-v1',
+      decision: 'BLOCKED',
+      reason: 'OPERATION_HISTORY_INCOMPLETE_COVERAGE',
+      message: 'Prior operations history lacks verified complete coverage (unpaginated runs or missing coverage proof).',
       checks,
       evaluatedAt: new Date(now).toISOString()
     };

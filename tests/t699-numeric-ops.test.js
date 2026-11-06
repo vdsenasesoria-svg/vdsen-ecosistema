@@ -9,7 +9,7 @@ const C = require('../api/_numericPilotContract');
 const { attestRuntime, DEFAULT_PROJECT_ID, DEFAULT_TEAM_ID } = require('../scripts/pilot/numeric-attestation.cjs');
 const { runPreflight, validateNumericWindow, validateFences, MAX_WINDOW_HOURS } = require('../scripts/pilot/numeric-preflight.cjs');
 const { executeStop, auditMesoConsistency, assertFreshAuthorizationRequired } = require('../scripts/pilot/numeric-stop-recovery.cjs');
-const { invocation } = require('../scripts/pilot/numeric-pilot-ops.cjs');
+const { invocation, executeAuditStatus, unflattenFields } = require('../scripts/pilot/numeric-pilot-ops.cjs');
 
 const VALID_SHA = 'a'.repeat(40);
 const VALID_OP_ID = 'test-numeric-op-001';
@@ -59,8 +59,38 @@ function createValidFences(overrides = {}) {
   };
 }
 
-function createMockFetcher(deploymentResponse, httpStatus = 200) {
+function createMockFetcher(deploymentResponse, aliasResponse = null, httpStatus = 200) {
   return async (url, init) => {
+    if (url.includes('/aliases/')) {
+      if (typeof aliasResponse === 'function') {
+        return aliasResponse(url, init);
+      }
+      if (aliasResponse && aliasResponse.status) {
+        return {
+          status: aliasResponse.status,
+          json: async () => aliasResponse.data || {}
+        };
+      }
+      if (aliasResponse) {
+        return {
+          status: 200,
+          json: async () => aliasResponse
+        };
+      }
+      // Default live alias response pointing to the deployment
+      return {
+        status: 200,
+        json: async () => ({
+          alias: VALID_ALIAS,
+          deploymentId: deploymentResponse ? (deploymentResponse.id || VALID_DEPLOYMENT) : VALID_DEPLOYMENT,
+          projectId: deploymentResponse ? (deploymentResponse.projectId || DEFAULT_PROJECT_ID) : DEFAULT_PROJECT_ID
+        })
+      };
+    }
+
+    if (typeof deploymentResponse === 'function') {
+      return deploymentResponse(url, init);
+    }
     return {
       status: httpStatus,
       json: async () => deploymentResponse
@@ -160,7 +190,7 @@ test('T699-OPS.2 Runtime incorrecto: attestRuntime rechaza discrepancia en commi
 
 // 3. Deployment diferente
 test('T699-OPS.3 Deployment diferente: attestRuntime rechaza ID de deployment no coincidente o 404', async () => {
-  const fetcher = createMockFetcher({ error: { code: 'not_found' } }, 404);
+  const fetcher = createMockFetcher({ error: { code: 'not_found' } }, null, 404);
   const res = await attestRuntime({
     deploymentId: 'dpl_nonExistentDeployment',
     expectedSha: VALID_SHA,
@@ -593,8 +623,6 @@ test('T699-OPS.23 Evidencia incompleta: ausencia de token de proveedor reporta B
   }
 });
 
-// --- NUEVAS PRUEBAS FOCALIZADAS T699-OPS-R2 ---
-
 // 24. STOP con ventana caducada
 test('T699-OPS.24 STOP con ventana caducada: executeStop se ejecuta y desarma exitosamente', async () => {
   const store = new Map();
@@ -694,8 +722,8 @@ test('T699-OPS.27 Concurrencia: otro run en progreso o queued bloquea la preflig
   assert.ok(pre.blockers.some(b => b.includes('run-999')));
 });
 
-// 28. Unicidad de operación: Historial vacío sin fuente verificada devuelve BLOCKED
-test('T699-OPS.28 Historial no verificado: priorOperations vacío sin verified source devuelve BLOCKED', async () => {
+// 28. Unicidad de operación: Fuente no verificable devuelve BLOCKED
+test('T699-OPS.28 Historial no verificado: priorOperations sin verified source devuelve BLOCKED', async () => {
   const window = createValidWindow();
   const pre = await runPreflight({
     window,
@@ -709,7 +737,7 @@ test('T699-OPS.28 Historial no verificado: priorOperations vacío sin verified s
   });
 
   assert.equal(pre.decision, 'BLOCKED');
-  assert.equal(pre.reason, 'PRIOR_OPERATIONS_UNVERIFIED_SOURCE');
+  assert.equal(pre.reason, 'OPERATION_HISTORY_UNVERIFIED_SOURCE');
 });
 
 // 29. Unicidad de operación: Detección con evidencia estructurada
@@ -759,8 +787,8 @@ test('T699-OPS.30 Alias obligatorio: attestRuntime devuelve BLOCKED si expectedA
   assert.equal(res.reason, 'ALIAS_EVIDENCE_MISSING');
 });
 
-// 31. Acreditación de Alias: Alias cambiado / no coincidente
-test('T699-OPS.31 Alias no coincidente: rechaza deployment que no sirve el alias esperado', async () => {
+// 31. Acreditación de Alias: Alias cambiado / no coincidente en respuesta del deployment
+test('T699-OPS.31 Alias no coincidente en deployment: rechaza deployment que no lista el alias esperado', async () => {
   const fetcher = createMockFetcher(createValidDeployment({
     alias: ['staging.vdsen.com', 'other-domain.vercel.app']
   }));
@@ -779,7 +807,7 @@ test('T699-OPS.31 Alias no coincidente: rechaza deployment que no sirve el alias
 });
 
 // 32. Acreditación de Alias: Deployment objetivo distinto
-test('T699-OPS.32 Target deployment mismatch: rechaza cuando el alias apunta a otro deployment', async () => {
+test('T699-OPS.32 Target deployment mismatch: rechaza cuando el alias target esperado es distinto', async () => {
   const fetcher = createMockFetcher(createValidDeployment());
   const res = await attestRuntime({
     deploymentId: VALID_DEPLOYMENT,
@@ -818,9 +846,8 @@ test('T699-OPS.33 Evidencia de alias insuficiente: devuelve BLOCKED si falta inf
   assert.equal(res.reason, 'ALIAS_EVIDENCE_INSUFFICIENT');
 });
 
-// 34. Auditoría de consistencia: auditMesoConsistency
+// 34. Auditoría de consistencia: auditMesoConsistency clasificación
 test('T699-OPS.34 Auditoría de estado: verifica consistencia legítima vs inconsistencias', () => {
-  // Consistente: APPLIED con matching overlay, CONSUMED con receipt
   const validMeso = {
     progressionApplications: {
       app_01: { prescriptionExerciseId: C.PID, state: 'APPLIED', calculatedAt: '2026-11-06T10:00:00Z' },
@@ -839,7 +866,6 @@ test('T699-OPS.34 Auditoría de estado: verifica consistencia legítima vs incon
   assert.equal(repValid.classified.legitimateApplied.length, 1);
   assert.equal(repValid.classified.legitimateConsumed.length, 1);
 
-  // Inconsistente 1: Overlay huérfano (sin parent application)
   const orphanMeso = {
     progressionApplications: {},
     nextExposureOverlays: {
@@ -850,7 +876,6 @@ test('T699-OPS.34 Auditoría de estado: verifica consistencia legítima vs incon
   assert.equal(repOrphan.isConsistent, false);
   assert.equal(repOrphan.classified.orphanedOverlays.length, 1);
 
-  // Inconsistente 2: PID fuera de alcance
   const outOfScopeMeso = {
     progressionApplications: {
       app_foreign: { prescriptionExerciseId: 'foreign-exercise-pid', state: 'PENDING' }
@@ -859,4 +884,234 @@ test('T699-OPS.34 Auditoría de estado: verifica consistencia legítima vs incon
   const repOutOfScope = auditMesoConsistency(outOfScopeMeso);
   assert.equal(repOutOfScope.isConsistent, false);
   assert.equal(repOutOfScope.classified.outOfScopePids.length, 1);
+});
+
+// --- NUEVAS PRUEBAS FOCALIZADAS T699-OPS-R3 ---
+
+// 35. REST Field Path Real: unflattenFields serializa correctamente claves anidadas para Firestore REST
+test('T699-OPS.35 Firestore REST field path: unflattenFields expande autoApplyCanary.enabled para coincidir con updateMask', () => {
+  const flatFields = {
+    'autoApplyCanary.enabled': false,
+    'otherField': 'value'
+  };
+
+  const nested = unflattenFields(flatFields);
+  assert.deepEqual(nested, {
+    autoApplyCanary: { enabled: false },
+    otherField: 'value'
+  });
+});
+
+// 36. Live Alias Destination: Alias correcto
+test('T699-OPS.36 Live Alias correcto: attestRuntime verifica que alias apunta al deployment acreditado', async () => {
+  const fetcher = createMockFetcher(
+    createValidDeployment(),
+    { alias: VALID_ALIAS, deploymentId: VALID_DEPLOYMENT, projectId: DEFAULT_PROJECT_ID }
+  );
+
+  const res = await attestRuntime({
+    deploymentId: VALID_DEPLOYMENT,
+    expectedSha: VALID_SHA,
+    expectedOperationId: VALID_OP_ID,
+    expectedAlias: VALID_ALIAS,
+    vercelToken: 'mock-token',
+    fetcher
+  });
+
+  assert.equal(res.attested, true);
+  assert.equal(res.status, 'ATTESTED');
+  const aliasCheck = res.checks.find(c => c.check === 'ALIAS_LIVE_TARGET_CORRESPONDENCE');
+  assert.ok(aliasCheck);
+  assert.equal(aliasCheck.pass, true);
+});
+
+// 37. Live Alias Destination: Alias cambiado (apunta a otro deployment)
+test('T699-OPS.37 Live Alias cambiado: rechaza cuando el alias activo en proveedor resuelve a otro deployment', async () => {
+  const fetcher = createMockFetcher(
+    createValidDeployment(),
+    { alias: VALID_ALIAS, deploymentId: 'dpl_rogueOrPreviousDeployment999', projectId: DEFAULT_PROJECT_ID }
+  );
+
+  const res = await attestRuntime({
+    deploymentId: VALID_DEPLOYMENT,
+    expectedSha: VALID_SHA,
+    expectedOperationId: VALID_OP_ID,
+    expectedAlias: VALID_ALIAS,
+    vercelToken: 'mock-token',
+    fetcher
+  });
+
+  assert.equal(res.attested, false);
+  assert.equal(res.status, 'REJECTED');
+  assert.equal(res.reason, 'ALIAS_LIVE_TARGET_MISMATCH');
+  assert.equal(res.expectedDeployment, VALID_DEPLOYMENT);
+  assert.equal(res.actualTargetDeployment, 'dpl_rogueOrPreviousDeployment999');
+});
+
+// 38. Live Alias Destination: Destino desconocido (404 o sin deploymentId)
+test('T699-OPS.38 Live Alias desconocido: reporta BLOCKED ante 404 o respuesta sin deploymentId', async () => {
+  // Caso 404
+  const fetcher404 = createMockFetcher(
+    createValidDeployment(),
+    { status: 404, data: { error: { code: 'not_found' } } }
+  );
+
+  const res404 = await attestRuntime({
+    deploymentId: VALID_DEPLOYMENT,
+    expectedSha: VALID_SHA,
+    expectedOperationId: VALID_OP_ID,
+    expectedAlias: VALID_ALIAS,
+    vercelToken: 'mock-token',
+    fetcher: fetcher404
+  });
+
+  assert.equal(res404.attested, false);
+  assert.equal(res404.status, 'BLOCKED');
+  assert.equal(res404.reason, 'ALIAS_DESTINATION_UNKNOWN');
+
+  // Caso sin deploymentId en payload
+  const fetcherNoId = createMockFetcher(
+    createValidDeployment(),
+    { alias: VALID_ALIAS } // lacks deploymentId
+  );
+
+  const resNoId = await attestRuntime({
+    deploymentId: VALID_DEPLOYMENT,
+    expectedSha: VALID_SHA,
+    expectedOperationId: VALID_OP_ID,
+    expectedAlias: VALID_ALIAS,
+    vercelToken: 'mock-token',
+    fetcher: fetcherNoId
+  });
+
+  assert.equal(resNoId.attested, false);
+  assert.equal(resNoId.status, 'BLOCKED');
+  assert.equal(resNoId.reason, 'ALIAS_DESTINATION_UNKNOWN');
+});
+
+// 39. Live Alias Destination: Error de proveedor (401/403/500/network)
+test('T699-OPS.39 Live Alias error de proveedor: reporta BLOCKED con causa explícita', async () => {
+  // Auth error
+  const fetcherAuth = createMockFetcher(
+    createValidDeployment(),
+    { status: 403, data: { error: { code: 'forbidden' } } }
+  );
+  const resAuth = await attestRuntime({
+    deploymentId: VALID_DEPLOYMENT,
+    expectedSha: VALID_SHA,
+    expectedOperationId: VALID_OP_ID,
+    expectedAlias: VALID_ALIAS,
+    vercelToken: 'mock-token',
+    fetcher: fetcherAuth
+  });
+  assert.equal(resAuth.status, 'BLOCKED');
+  assert.equal(resAuth.reason, 'ALIAS_PROVIDER_AUTH_FAILED');
+
+  // Server error
+  const fetcher500 = createMockFetcher(
+    createValidDeployment(),
+    { status: 500, data: { error: 'Internal Server Error' } }
+  );
+  const res500 = await attestRuntime({
+    deploymentId: VALID_DEPLOYMENT,
+    expectedSha: VALID_SHA,
+    expectedOperationId: VALID_OP_ID,
+    expectedAlias: VALID_ALIAS,
+    vercelToken: 'mock-token',
+    fetcher: fetcher500
+  });
+  assert.equal(res500.status, 'BLOCKED');
+  assert.equal(res500.reason, 'ALIAS_PROVIDER_ERROR');
+});
+
+// 40. Live Alias Destination: Información contradictoria
+test('T699-OPS.40 Live Alias contradictorio: reporta BLOCKED si el alias retornado discrepa del solicitado', async () => {
+  const fetcher = createMockFetcher(
+    createValidDeployment(),
+    { alias: 'foreign-domain.com', deploymentId: VALID_DEPLOYMENT }
+  );
+
+  const res = await attestRuntime({
+    deploymentId: VALID_DEPLOYMENT,
+    expectedSha: VALID_SHA,
+    expectedOperationId: VALID_OP_ID,
+    expectedAlias: VALID_ALIAS,
+    vercelToken: 'mock-token',
+    fetcher
+  });
+
+  assert.equal(res.status, 'BLOCKED');
+  assert.equal(res.reason, 'ALIAS_CONTRADICTORY_EVIDENCE');
+});
+
+// 41. Operación Durable: Cobertura incompleta devuelve BLOCKED
+test('T699-OPS.41 Historial incompleto: priorOperationsCoverageComplete=false devuelve BLOCKED', async () => {
+  const window = createValidWindow();
+  const pre = await runPreflight({
+    window,
+    deploymentId: VALID_DEPLOYMENT,
+    expectedAlias: VALID_ALIAS,
+    fences: createValidFences(),
+    activeRuns: [],
+    priorOperations: [{ operationId: 'prior-op-1' }],
+    priorOperationsSourceVerified: true,
+    priorOperationsCoverageComplete: false, // Unpaginated or incomplete history
+    now: NOW
+  });
+
+  assert.equal(pre.decision, 'BLOCKED');
+  assert.equal(pre.reason, 'OPERATION_HISTORY_INCOMPLETE_COVERAGE');
+});
+
+// 42. Auditoría: executeAuditStatus contra ruta logs/{uid}/mesos/{planId}
+test('T699-OPS.42 executeAuditStatus: verifica logs/{uid}/mesos/{planId} y rechaza fallos con BLOCKED', async () => {
+  // Documento válido
+  const validDoc = {
+    progressionApplications: {
+      app_01: { prescriptionExerciseId: C.PID, state: 'APPLIED', calculatedAt: '2026-11-06T10:00:00Z' }
+    },
+    nextExposureOverlays: {
+      ov_01: { sourceRecordKey: 'app_01', status: 'APPLIED', dimension: 'load' }
+    },
+    consumptionReceipts: {}
+  };
+
+  const ioValid = {
+    readDoc: async (docPath) => {
+      assert.equal(docPath, 'logs/' + C.UID + '/mesos/' + C.PLAN);
+      return validDoc;
+    }
+  };
+  const repValid = await executeAuditStatus({ pilotUid: C.UID, planId: C.PLAN }, ioValid);
+  assert.equal(repValid.status, 'AUDIT_SUCCESS');
+  assert.equal(repValid.isConsistent, true);
+
+  // Documento ausente (null)
+  const ioMissing = {
+    readDoc: async () => null
+  };
+  const repMissing = await executeAuditStatus({ pilotUid: C.UID, planId: C.PLAN }, ioMissing);
+  assert.equal(repMissing.status, 'BLOCKED');
+  assert.equal(repMissing.reason, 'MESO_DOCUMENT_NOT_FOUND');
+  assert.equal(repMissing.isConsistent, false);
+
+  // Documento vacío ({})
+  const ioEmpty = {
+    readDoc: async () => ({})
+  };
+  const repEmpty = await executeAuditStatus({ pilotUid: C.UID, planId: C.PLAN }, ioEmpty);
+  assert.equal(repEmpty.status, 'BLOCKED');
+  assert.equal(repEmpty.reason, 'MESO_DOCUMENT_EMPTY');
+  assert.equal(repEmpty.isConsistent, false);
+
+  // Error de lectura
+  const ioErr = {
+    readDoc: async () => {
+      throw new Error('ETIMEDOUT reading meso doc');
+    }
+  };
+  const repErr = await executeAuditStatus({ pilotUid: C.UID, planId: C.PLAN }, ioErr);
+  assert.equal(repErr.status, 'BLOCKED');
+  assert.equal(repErr.reason, 'MESO_READ_ERROR');
+  assert.equal(repErr.isConsistent, false);
 });

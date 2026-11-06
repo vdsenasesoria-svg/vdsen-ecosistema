@@ -47,6 +47,57 @@ function invocation(env, action) {
 }
 
 /**
+ * Unflattens an object with dotted keys (e.g. {'autoApplyCanary.enabled': false})
+ * into a nested object hierarchy (e.g. { autoApplyCanary: { enabled: false } })
+ * for valid Firestore REST and SDK nested field paths.
+ * @param {object} obj
+ * @returns {object}
+ */
+function unflattenFields(obj) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
+  const result = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (key.includes('.')) {
+      const parts = key.split('.');
+      let current = result;
+      for (let i = 0; i < parts.length - 1; i++) {
+        current[parts[i]] = current[parts[i]] || {};
+        current = current[parts[i]];
+      }
+      current[parts[parts.length - 1]] = value;
+    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+      result[key] = unflattenFields(value);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+/**
+ * Creates a standard Firestore emulator I/O adapter using Firebase Admin SDK.
+ * Handles nested merge masks and document reads.
+ * @param {object} db - Firestore instance
+ * @returns {object} I/O adapter with writeFence and readFence
+ */
+function createEmulatorIo(db) {
+  return {
+    writeFence: async (docPath, fields, writeOpts) => {
+      const docRef = db.doc(docPath);
+      const nested = unflattenFields(fields);
+      if (writeOpts && writeOpts.mask) {
+        return docRef.set(nested, { mergeFields: writeOpts.mask });
+      }
+      return docRef.set(nested, { merge: true });
+    },
+    readFence: async (docPath) => {
+      const snap = await db.doc(docPath).get();
+      return snap.exists ? snap.data() : null;
+    }
+  };
+}
+
+/**
  * Captures live Firestore fences via REST API using Google OAuth2 access token.
  * @param {string} projectId
  * @param {string} token
@@ -87,7 +138,8 @@ async function executeStopRest(projectId, token, opts) {
       const mask = writeOpts && writeOpts.mask ? writeOpts.mask : Object.keys(fields);
       const maskParams = mask.map(m => 'updateMask.fieldPaths=' + encodeURIComponent(m)).join('&');
       const url = 'projects/' + projectId + '/databases/(default)/documents/' + docPath + (maskParams ? '?' + maskParams : '');
-      const body = { fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, encVal(v)])) };
+      const nested = unflattenFields(fields);
+      const body = { fields: Object.fromEntries(Object.entries(nested).map(([k, v]) => [k, encVal(v)])) };
       const res = await canary.http('PATCH', url, token, body);
       if (res.status !== 200) throw new Error('WRITE_FENCE_FAILED_' + res.status + '_ON_' + docPath);
       return canary.decDoc(res.body);
@@ -101,6 +153,186 @@ async function executeStopRest(projectId, token, opts) {
   };
 
   return executeStop(opts, io);
+}
+
+/**
+ * Executes a verified audit of meso consistency against Firestore or an isolated fixture.
+ * Reads logs/{uid}/mesos/{planId}.
+ * Emits BLOCKED on missing document, HTTP error, auth failure, or read error.
+ * An empty document is NOT evidence of consistency.
+ * @param {object} opts
+ * @param {string} [opts.pilotUid]
+ * @param {string} [opts.planId]
+ * @param {string} [opts.file]
+ * @param {string} [opts.token]
+ * @param {string} [opts.projectId]
+ * @param {object} [io]
+ * @returns {Promise<object>}
+ */
+async function executeAuditStatus(opts, io) {
+  opts = opts || {};
+  const pilotUid = opts.pilotUid || C.UID;
+  const planId = opts.planId || C.PLAN;
+  const docPath = 'logs/' + pilotUid + '/mesos/' + planId;
+
+  let mesoData = null;
+
+  // 1. If explicit I/O adapter is provided
+  if (io && io.readDoc) {
+    try {
+      mesoData = await io.readDoc(docPath);
+      if (mesoData === null || mesoData === undefined) {
+        return {
+          schema: 'vdsen-numeric-audit-consistency-v1',
+          status: 'BLOCKED',
+          reason: 'MESO_DOCUMENT_NOT_FOUND',
+          path: docPath,
+          message: 'Meso document ' + docPath + ' was not found; missing evidence cannot pass audit.',
+          isConsistent: false
+        };
+      }
+    } catch (err) {
+      return {
+        schema: 'vdsen-numeric-audit-consistency-v1',
+        status: 'BLOCKED',
+        reason: 'MESO_READ_ERROR',
+        path: docPath,
+        message: 'Failed to read meso document ' + docPath + ': ' + err.message,
+        isConsistent: false
+      };
+    }
+  } else if (opts.file) {
+    // 2. If reading from file
+    if (!fs.existsSync(opts.file)) {
+      return {
+        schema: 'vdsen-numeric-audit-consistency-v1',
+        status: 'BLOCKED',
+        reason: 'FILE_NOT_FOUND',
+        file: opts.file,
+        message: 'Audit file not found: ' + opts.file,
+        isConsistent: false
+      };
+    }
+    try {
+      mesoData = JSON.parse(fs.readFileSync(opts.file, 'utf8'));
+    } catch (err) {
+      return {
+        schema: 'vdsen-numeric-audit-consistency-v1',
+        status: 'BLOCKED',
+        reason: 'FILE_CORRUPT',
+        file: opts.file,
+        message: 'Failed to parse audit file: ' + err.message,
+        isConsistent: false
+      };
+    }
+  } else if (process.env.FIRESTORE_EMULATOR_HOST || opts.db) {
+    // 3. If running with Firestore Emulator
+    try {
+      let db = opts.db;
+      if (!db) {
+        const admin = require('firebase-admin');
+        const app = admin.apps && admin.apps.length ? admin.apps[0] : admin.initializeApp({ projectId: process.env.GCLOUD_PROJECT || 'demo-vdsen-shadow' });
+        db = app.firestore ? app.firestore() : admin.firestore(app);
+      }
+      const snap = await db.doc(docPath).get();
+      if (!snap.exists) {
+        return {
+          schema: 'vdsen-numeric-audit-consistency-v1',
+          status: 'BLOCKED',
+          reason: 'MESO_DOCUMENT_NOT_FOUND',
+          path: docPath,
+          message: 'Meso document ' + docPath + ' does not exist in emulator; missing evidence cannot pass audit.',
+          isConsistent: false
+        };
+      }
+      mesoData = snap.data();
+    } catch (err) {
+      return {
+        schema: 'vdsen-numeric-audit-consistency-v1',
+        status: 'BLOCKED',
+        reason: 'MESO_READ_ERROR',
+        path: docPath,
+        message: 'Failed to read meso from emulator: ' + err.message,
+        isConsistent: false
+      };
+    }
+  } else {
+    // 4. REST mode
+    const token = opts.token || process.env.GOOGLE_ACCESS_TOKEN;
+    const projectId = opts.projectId || process.env.GCP_PROJECT_ID || 'vdsen-ecosistema';
+    if (!token) {
+      return {
+        schema: 'vdsen-numeric-audit-consistency-v1',
+        status: 'BLOCKED',
+        reason: 'NO_AUTHENTICATED_ADAPTER',
+        message: 'No authenticated Firestore adapter, emulator, or file provided for audit.',
+        isConsistent: false
+      };
+    }
+
+    try {
+      const res = await canary.http('GET', 'projects/' + projectId + '/databases/(default)/documents/' + docPath, token);
+      if (res.status === 404) {
+        return {
+          schema: 'vdsen-numeric-audit-consistency-v1',
+          status: 'BLOCKED',
+          reason: 'MESO_DOCUMENT_NOT_FOUND',
+          path: docPath,
+          message: 'Meso document ' + docPath + ' does not exist in project; missing evidence cannot pass audit.',
+          isConsistent: false
+        };
+      }
+      if (res.status === 401 || res.status === 403) {
+        return {
+          schema: 'vdsen-numeric-audit-consistency-v1',
+          status: 'BLOCKED',
+          reason: 'MESO_AUTH_FAILED',
+          path: docPath,
+          httpStatus: res.status,
+          message: 'Authentication failed querying meso document: HTTP ' + res.status,
+          isConsistent: false
+        };
+      }
+      if (res.status !== 200) {
+        return {
+          schema: 'vdsen-numeric-audit-consistency-v1',
+          status: 'BLOCKED',
+          reason: 'MESO_FETCH_ERROR',
+          path: docPath,
+          httpStatus: res.status,
+          message: 'Failed to fetch meso document: HTTP ' + res.status,
+          isConsistent: false
+        };
+      }
+      mesoData = canary.decDoc(res.body);
+    } catch (err) {
+      return {
+        schema: 'vdsen-numeric-audit-consistency-v1',
+        status: 'BLOCKED',
+        reason: 'MESO_READ_ERROR',
+        path: docPath,
+        message: 'Network or adapter error reading meso document: ' + err.message,
+        isConsistent: false
+      };
+    }
+  }
+
+  // An empty document does not constitute evidence of consistency
+  if (!mesoData || typeof mesoData !== 'object' || Object.keys(mesoData).length === 0) {
+    return {
+      schema: 'vdsen-numeric-audit-consistency-v1',
+      status: 'BLOCKED',
+      reason: 'MESO_DOCUMENT_EMPTY',
+      path: docPath,
+      message: 'Meso document is empty; an empty document is not evidence of consistency.',
+      isConsistent: false
+    };
+  }
+
+  const report = auditMesoConsistency(mesoData);
+  report.status = report.isConsistent ? 'AUDIT_SUCCESS' : 'AUDIT_INCONSISTENT';
+  report.path = docPath;
+  return report;
 }
 
 async function main() {
@@ -165,26 +397,29 @@ async function main() {
 
     let priorOperations = null;
     let priorOperationsSourceVerified = false;
+    let priorOperationsCoverageComplete = true;
+
     if (priorFile && fs.existsSync(priorFile)) {
       const parsedPrior = JSON.parse(fs.readFileSync(priorFile, 'utf8'));
-      if (Array.isArray(parsedPrior)) {
-        priorOperations = parsedPrior;
-        priorOperationsSourceVerified = true;
-      } else if (parsedPrior && Array.isArray(parsedPrior.workflow_runs)) {
-        priorOperations = parsedPrior.workflow_runs.map(r => {
-          const title = r.display_title || r.name || '';
-          const opMatch = title.match(/([a-zA-Z0-9_-]{8,80})/);
-          return {
-            operationId: opMatch ? opMatch[1] : title,
-            runId: String(r.id),
-            runtimeSha: r.head_sha,
-            status: r.status,
-            conclusion: r.conclusion,
-            date: r.created_at || r.updated_at,
-            scope: 'numeric-pilot'
-          };
-        });
-        priorOperationsSourceVerified = true;
+      if (parsedPrior && parsedPrior.schema === 'vdsen-numeric-operation-ledger-v1') {
+        priorOperations = Array.isArray(parsedPrior.operations) ? parsedPrior.operations : [];
+        priorOperationsSourceVerified = parsedPrior.verifiedCoverage === true;
+        priorOperationsCoverageComplete = parsedPrior.complete !== false && !parsedPrior.hasMore;
+      } else if (Array.isArray(parsedPrior)) {
+        const isStructured = parsedPrior.every(p => p && typeof p === 'object' && typeof p.operationId === 'string');
+        if (isStructured) {
+          priorOperations = parsedPrior;
+          priorOperationsSourceVerified = true;
+          priorOperationsCoverageComplete = true;
+        } else {
+          priorOperations = parsedPrior;
+          priorOperationsSourceVerified = false;
+        }
+      } else {
+        // Raw workflow runs: name/title regex approximation is strictly forbidden
+        priorOperations = [];
+        priorOperationsSourceVerified = false;
+        priorOperationsCoverageComplete = false;
       }
     }
 
@@ -197,6 +432,7 @@ async function main() {
       currentRunId: currentRunId,
       priorOperations: priorOperations,
       priorOperationsSourceVerified: priorOperationsSourceVerified,
+      priorOperationsCoverageComplete: priorOperationsCoverageComplete,
       readOnly: true
     });
 
@@ -259,17 +495,9 @@ async function main() {
     // 2. Emulator mode (Local test / synthetic runs)
     if (process.env.FIRESTORE_EMULATOR_HOST) {
       const admin = require('firebase-admin');
-      const app = admin.apps.length ? admin.app() : admin.initializeApp({ projectId: process.env.GCLOUD_PROJECT || 'demo-vdsen-shadow' });
-      const db = admin.firestore(app);
-      const io = {
-        writeFence: async (docPath, fields, opts) => {
-          return db.doc(docPath).set(fields, opts || { merge: true });
-        },
-        readFence: async (docPath) => {
-          const snap = await db.doc(docPath).get();
-          return snap.exists ? snap.data() : null;
-        }
-      };
+      const app = admin.apps && admin.apps.length ? admin.apps[0] : admin.initializeApp({ projectId: process.env.GCLOUD_PROJECT || 'demo-vdsen-shadow' });
+      const db = app.firestore ? app.firestore() : admin.firestore(app);
+      const io = createEmulatorIo(db);
       const rep = await executeStop({ coachId, operationId, reason }, io);
       fs.mkdirSync(path.dirname(outFile), { recursive: true });
       fs.writeFileSync(outFile, JSON.stringify(rep, null, 2));
@@ -288,38 +516,15 @@ async function main() {
     const planId = args[args.indexOf('--plan-id') + 1] || C.PLAN;
     const outFile = args[args.indexOf('--out') + 1] || 'release-output/numeric-pilot/audit-status.json';
 
-    let mesoData = null;
-    if (file && fs.existsSync(file)) {
-      mesoData = JSON.parse(fs.readFileSync(file, 'utf8'));
-    } else {
-      const token = process.env.GOOGLE_ACCESS_TOKEN;
-      const projectId = process.env.GCP_PROJECT_ID || 'vdsen-ecosistema';
-      if (token) {
-        try {
-          const docPath = 'users/' + pilotUid + '/mesos/' + planId;
-          const res = await canary.http('GET', 'projects/' + projectId + '/databases/(default)/documents/' + docPath, token);
-          if (res.status === 200) {
-            mesoData = canary.decDoc(res.body);
-          } else {
-            console.warn('Could not read meso document ' + docPath + ': HTTP ' + res.status);
-            mesoData = {};
-          }
-        } catch (e) {
-          console.warn('Meso read error: ' + e.message);
-          mesoData = {};
-        }
-      } else {
-        mesoData = {};
-      }
-    }
-
-    const rep = auditMesoConsistency(mesoData);
+    const rep = await executeAuditStatus({ file, pilotUid, planId });
     if (outFile) {
       fs.mkdirSync(path.dirname(outFile), { recursive: true });
       fs.writeFileSync(outFile, JSON.stringify(rep, null, 2));
     }
     console.log(JSON.stringify(rep, null, 2));
-    if (!rep.isConsistent) process.exitCode = 1;
+    if (rep.status === 'BLOCKED' || !rep.isConsistent) {
+      process.exitCode = 1;
+    }
     return;
   }
 
@@ -343,6 +548,9 @@ module.exports = {
   invocation,
   fetchFencesFromRest,
   executeStopRest,
+  executeAuditStatus,
+  createEmulatorIo,
+  unflattenFields,
   runPreflight,
   attestRuntime,
   executeStop,
