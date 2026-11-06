@@ -1,8 +1,9 @@
 'use strict';
 // Independent runtime attestation for VDSEN numeric pilot.
 // Queries the provider (Vercel) directly to verify deployment state, commit SHA, project,
-// team, and environment flags. Reports BLOCKED if provider credentials are unavailable.
-// Never substitutes missing evidence with heuristics.
+// team, operation metadata, and absence of CRON. Reports BLOCKED if provider credentials
+// or environment evidence are unavailable.
+// Rejects missing, ambiguous, or contradictory provider attributes without heuristics.
 
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
@@ -26,6 +27,8 @@ function hash(value) {
  * @param {string} [opts.expectedPid] - Must match C.PID
  * @param {string} [opts.expectedExpiresAt] - ISO UTC timestamp
  * @param {string} [opts.expectedStartsAt] - ISO UTC timestamp
+ * @param {string} [opts.expectedAlias] - Expected production alias domain
+ * @param {string} [opts.aliasTargetDeployment] - Current live deployment serving the alias
  * @param {string} [opts.vercelToken] - Vercel API token
  * @param {string} [opts.projectId] - Expected Vercel project ID
  * @param {string} [opts.teamId] - Expected Vercel team ID
@@ -174,96 +177,227 @@ async function attestRuntime(opts) {
     };
   }
 
-  // 4. Strict Provider Evidence Verification
+  // 4. Strict Provider Evidence Verification (No Defaults, No Loose Fallbacks)
   const checks = [];
 
-  // Project ID
+  // Deployment ID Verification
+  if (!deploymentData || typeof deploymentData !== 'object' || !deploymentData.id) {
+    return {
+      schema: 'vdsen-numeric-runtime-attestation-v1',
+      attested: false,
+      status: 'REJECTED',
+      reason: 'DEPLOYMENT_ID_MISSING',
+      message: 'Provider response did not contain a deployment ID.'
+    };
+  }
+  if (deploymentData.id !== opts.deploymentId) {
+    return {
+      schema: 'vdsen-numeric-runtime-attestation-v1',
+      attested: false,
+      status: 'REJECTED',
+      reason: 'DEPLOYMENT_ID_MISMATCH',
+      expected: opts.deploymentId,
+      actual: deploymentData.id
+    };
+  }
+  checks.push({ check: 'DEPLOYMENT_ID', expected: opts.deploymentId, actual: deploymentData.id, pass: true });
+
+  // Project ID (must be explicitly provided by Vercel response)
   const providerProjectId = deploymentData.projectId || (deploymentData.project && deploymentData.project.id);
-  const projectMatch = providerProjectId === projectId;
-  checks.push({ check: 'PROJECT_ID', expected: projectId, actual: providerProjectId, pass: projectMatch });
-  if (!projectMatch) {
+  if (!providerProjectId) {
+    return {
+      schema: 'vdsen-numeric-runtime-attestation-v1',
+      attested: false,
+      status: 'REJECTED',
+      reason: 'PROJECT_ID_MISSING',
+      message: 'Provider deployment response lacks projectId.'
+    };
+  }
+  if (providerProjectId !== projectId) {
     return {
       schema: 'vdsen-numeric-runtime-attestation-v1',
       attested: false,
       status: 'REJECTED',
       reason: 'PROJECT_MISMATCH',
-      checks
+      expected: projectId,
+      actual: providerProjectId
     };
   }
+  checks.push({ check: 'PROJECT_ID', expected: projectId, actual: providerProjectId, pass: true });
 
-  // Target Environment
-  const target = deploymentData.target || 'production';
-  const targetMatch = target === 'production';
-  checks.push({ check: 'TARGET_ENVIRONMENT', expected: 'production', actual: target, pass: targetMatch });
-  if (!targetMatch) {
+  // Team ID (must be explicitly provided by Vercel response)
+  const providerTeamId = deploymentData.teamId || (deploymentData.team && deploymentData.team.id);
+  if (!providerTeamId) {
+    return {
+      schema: 'vdsen-numeric-runtime-attestation-v1',
+      attested: false,
+      status: 'REJECTED',
+      reason: 'TEAM_ID_MISSING',
+      message: 'Provider deployment response lacks teamId.'
+    };
+  }
+  if (providerTeamId !== teamId) {
+    return {
+      schema: 'vdsen-numeric-runtime-attestation-v1',
+      attested: false,
+      status: 'REJECTED',
+      reason: 'TEAM_MISMATCH',
+      expected: teamId,
+      actual: providerTeamId
+    };
+  }
+  checks.push({ check: 'TEAM_ID', expected: teamId, actual: providerTeamId, pass: true });
+
+  // Target Environment (must be explicitly provided; no defaulting)
+  if (!deploymentData.target) {
+    return {
+      schema: 'vdsen-numeric-runtime-attestation-v1',
+      attested: false,
+      status: 'REJECTED',
+      reason: 'TARGET_MISSING',
+      message: 'Provider deployment response lacks target environment.'
+    };
+  }
+  if (deploymentData.target !== 'production') {
     return {
       schema: 'vdsen-numeric-runtime-attestation-v1',
       attested: false,
       status: 'REJECTED',
       reason: 'TARGET_NOT_PRODUCTION',
-      checks
+      expected: 'production',
+      actual: deploymentData.target
     };
   }
+  checks.push({ check: 'TARGET_ENVIRONMENT', expected: 'production', actual: deploymentData.target, pass: true });
 
-  // Readiness State
+  // Readiness State (must be explicitly provided)
   const readyState = deploymentData.readyState || deploymentData.state;
-  const stateMatch = readyState === 'READY';
-  checks.push({ check: 'DEPLOYMENT_READY', expected: 'READY', actual: readyState, pass: stateMatch });
-  if (!stateMatch) {
+  if (!readyState) {
+    return {
+      schema: 'vdsen-numeric-runtime-attestation-v1',
+      attested: false,
+      status: 'REJECTED',
+      reason: 'DEPLOYMENT_STATE_MISSING',
+      message: 'Provider deployment response lacks readyState/state.'
+    };
+  }
+  if (readyState !== 'READY') {
     return {
       schema: 'vdsen-numeric-runtime-attestation-v1',
       attested: false,
       status: 'REJECTED',
       reason: 'DEPLOYMENT_NOT_READY',
-      checks
+      expected: 'READY',
+      actual: readyState
     };
   }
+  checks.push({ check: 'DEPLOYMENT_READY', expected: 'READY', actual: readyState, pass: true });
 
-  // Commit SHA
+  // Commit SHA (must be explicitly present)
   const meta = deploymentData.meta || {};
   const actualSha = meta.githubCommitSha || (deploymentData.gitSource && deploymentData.gitSource.sha) || meta.commitSha;
-  const shaMatch = actualSha === opts.expectedSha;
-  checks.push({ check: 'COMMIT_SHA', expected: opts.expectedSha, actual: actualSha, pass: shaMatch });
-  if (!shaMatch) {
+  if (!actualSha) {
+    return {
+      schema: 'vdsen-numeric-runtime-attestation-v1',
+      attested: false,
+      status: 'REJECTED',
+      reason: 'COMMIT_SHA_MISSING',
+      message: 'Provider deployment response lacks commit SHA evidence.'
+    };
+  }
+  if (actualSha !== opts.expectedSha) {
     return {
       schema: 'vdsen-numeric-runtime-attestation-v1',
       attested: false,
       status: 'REJECTED',
       reason: 'RUNTIME_SHA_MISMATCH',
-      checks
+      expected: opts.expectedSha,
+      actual: actualSha
     };
   }
+  checks.push({ check: 'COMMIT_SHA', expected: opts.expectedSha, actual: actualSha, pass: true });
 
-  // Operation ID in Metadata
+  // Operation ID in Metadata (MANDATORY: cannot be absent)
   const actualOpId = meta.vdsenPilotOperation;
-  if (actualOpId && actualOpId !== opts.expectedOperationId) {
-    checks.push({ check: 'OPERATION_ID', expected: opts.expectedOperationId, actual: actualOpId, pass: false });
+  if (!actualOpId) {
+    return {
+      schema: 'vdsen-numeric-runtime-attestation-v1',
+      attested: false,
+      status: 'REJECTED',
+      reason: 'OPERATION_METADATA_MISSING',
+      message: 'Deployment lacks vdsenPilotOperation metadata; absence cannot be accepted as valid.'
+    };
+  }
+  if (actualOpId !== opts.expectedOperationId) {
     return {
       schema: 'vdsen-numeric-runtime-attestation-v1',
       attested: false,
       status: 'REJECTED',
       reason: 'OPERATION_ID_MISMATCH',
-      checks
+      expected: opts.expectedOperationId,
+      actual: actualOpId
     };
   }
-  checks.push({ check: 'OPERATION_ID', expected: opts.expectedOperationId, actual: actualOpId || opts.expectedOperationId, pass: true });
+  checks.push({ check: 'OPERATION_ID', expected: opts.expectedOperationId, actual: actualOpId, pass: true });
 
-  // No CRON in Deployment
-  const envNames = Array.isArray(deploymentData.envNames) ? deploymentData.envNames
-    : Array.isArray(deploymentData.env) ? deploymentData.env.map(e => e.key) : [];
-  const hasCron = envNames.includes('CRON_SECRET');
-  checks.push({ check: 'CRON_FORBIDDEN', expected: false, actual: hasCron, pass: !hasCron });
+  // Environment Variables Evidence for CRON_SECRET absence
+  const hasEnvNames = Array.isArray(deploymentData.envNames);
+  const hasEnvList = Array.isArray(deploymentData.env);
+  if (!hasEnvNames && !hasEnvList) {
+    return {
+      schema: 'vdsen-numeric-runtime-attestation-v1',
+      attested: false,
+      status: 'BLOCKED',
+      reason: 'ENV_EVIDENCE_MISSING',
+      message: 'Provider response does not contain envNames or env array; cannot verify absence of CRON_SECRET.'
+    };
+  }
+
+  const envKeys = hasEnvNames ? deploymentData.envNames : deploymentData.env.map(e => e && e.key);
+  const hasCron = envKeys.includes('CRON_SECRET');
   if (hasCron) {
     return {
       schema: 'vdsen-numeric-runtime-attestation-v1',
       attested: false,
       status: 'REJECTED',
       reason: 'CRON_SECRET_DETECTED',
-      checks
+      message: 'CRON_SECRET detected in deployment variables; numeric pilot strictly forbids CRON.'
+    };
+  }
+  checks.push({ check: 'CRON_FORBIDDEN', expected: false, actual: hasCron, pass: true });
+
+  // Target Alias Correspondence
+  if (opts.expectedAlias) {
+    const aliases = Array.isArray(deploymentData.alias) ? deploymentData.alias
+      : (Array.isArray(deploymentData.aliases) ? deploymentData.aliases : []);
+    const aliasMatched = aliases.includes(opts.expectedAlias) || deploymentData.url === opts.expectedAlias;
+    if (!aliasMatched) {
+      return {
+        schema: 'vdsen-numeric-runtime-attestation-v1',
+        attested: false,
+        status: 'REJECTED',
+        reason: 'ALIAS_MISMATCH',
+        expected: opts.expectedAlias,
+        actual: aliases,
+        message: 'Deployment does not correspond to expected target alias.'
+      };
+    }
+    checks.push({ check: 'ALIAS_CORRESPONDENCE', expected: opts.expectedAlias, actual: aliases, pass: true });
+  }
+
+  if (opts.aliasTargetDeployment && opts.aliasTargetDeployment !== deploymentData.id) {
+    return {
+      schema: 'vdsen-numeric-runtime-attestation-v1',
+      attested: false,
+      status: 'REJECTED',
+      reason: 'ALIAS_TARGET_DEPLOYMENT_MISMATCH',
+      expected: opts.aliasTargetDeployment,
+      actual: deploymentData.id,
+      message: 'Target alias points to a different deployment than requested.'
     };
   }
 
-  // Verification of Attached Window if present in deployment
+  // Window Hashes Validation in Metadata (if present)
   if (meta.vdsenPilotWindow) {
     try {
       const parsedWindow = JSON.parse(meta.vdsenPilotWindow);
@@ -293,7 +427,7 @@ async function attestRuntime(opts) {
     projectId: projectId,
     teamId: teamId,
     readyState: readyState,
-    target: target,
+    target: deploymentData.target,
     cronConfigured: false,
     checks: checks,
     attestedAt: new Date(now).toISOString()

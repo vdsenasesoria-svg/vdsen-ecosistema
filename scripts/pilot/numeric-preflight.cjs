@@ -1,8 +1,8 @@
 'use strict';
-// Numeric pilot preflight verification: determines GO or NO-GO prior to any numeric operations.
+// Numeric pilot preflight verification: determines GO, NO-GO, or BLOCKED prior to any numeric operations.
 // Validates all identity fences, runtime attestation, window limits, single-operation bounds,
 // and lack of concurrency conflicts or CRON triggers.
-// Read-only by default.
+// Read-only by default. Rejects missing evidence with BLOCKED; never assumes success on absent data.
 
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
@@ -73,49 +73,67 @@ function validateNumericWindow(w, now = Date.now()) {
  */
 function validateFences(fences, window, mode = 'preflight') {
   const errors = [];
+  if (!fences || typeof fences !== 'object') {
+    return { valid: false, errors: ['Fences data object is missing or invalid.'] };
+  }
+
   const rel = fences.releaseControl;
   const num = fences.numericPilot;
   const coach = fences.coach;
 
+  if (!rel) errors.push('releaseControl/autonomousProgression fence is missing.');
+  if (!num) errors.push('releaseControl/numericPilot fence is missing.');
+  if (!coach) errors.push('coaches/{coachId} canary fence is missing.');
+
+  if (errors.length) return { valid: false, errors };
+
   // Release fence: releaseControl/autonomousProgression
-  if (rel) {
-    if (Array.isArray(rel.clientIds)) {
-      if (rel.clientIds.length !== 1 || rel.clientIds[0] !== C.UID) {
-        errors.push('Release fence clientIds must strictly contain exactly Ayrton UID.');
-      }
+  if (Array.isArray(rel.clientIds)) {
+    if (rel.clientIds.length !== 1 || rel.clientIds[0] !== C.UID) {
+      errors.push('Release fence clientIds must strictly contain exactly Ayrton UID.');
     }
-    if (mode === 'active') {
-      if (rel.enabled !== true) errors.push('Release fence must be enabled for active mode.');
-      if (rel.expiresAt !== window.expiresAt) errors.push('Release fence expiresAt mismatch.');
-    }
+  } else {
+    errors.push('Release fence clientIds must be an array.');
+  }
+
+  if (mode === 'active') {
+    if (rel.enabled !== true) errors.push('Release fence must be enabled for active mode.');
+    if (rel.expiresAt !== window.expiresAt) errors.push('Release fence expiresAt mismatch.');
   }
 
   // Numeric pilot fence: releaseControl/numericPilot
-  if (num) {
-    if (num.uid && num.uid !== C.UID) errors.push('Numeric pilot fence UID mismatch.');
-    if (num.planId && num.planId !== C.PLAN) errors.push('Numeric pilot fence planId mismatch.');
-    if (num.pid && num.pid !== C.PID) errors.push('Numeric pilot fence PID mismatch.');
-    if (mode === 'active') {
-      if (num.enabled !== true) errors.push('Numeric pilot fence must be enabled for active mode.');
-      if (num.runtimeSha !== window.runtimeSha) errors.push('Numeric pilot fence runtimeSha mismatch.');
-      if (num.operationId !== window.operationId) errors.push('Numeric pilot fence operationId mismatch.');
-      if (num.expiresAt !== window.expiresAt) errors.push('Numeric pilot fence expiresAt mismatch.');
-    }
+  if (num.uid && num.uid !== C.UID) errors.push('Numeric pilot fence UID mismatch.');
+  if (num.planId && num.planId !== C.PLAN) errors.push('Numeric pilot fence planId mismatch.');
+  if (num.pid && num.pid !== C.PID) errors.push('Numeric pilot fence PID mismatch.');
+
+  if (mode === 'active') {
+    if (num.enabled !== true) errors.push('Numeric pilot fence must be enabled for active mode.');
+    if (num.runtimeSha !== window.runtimeSha) errors.push('Numeric pilot fence runtimeSha mismatch.');
+    if (num.operationId !== window.operationId) errors.push('Numeric pilot fence operationId mismatch.');
+    if (num.expiresAt !== window.expiresAt) errors.push('Numeric pilot fence expiresAt mismatch.');
   }
 
   // Coach Canary fence: coaches/{coachId}.autoApplyCanary
-  if (coach && coach.autoApplyCanary) {
+  if (!coach.autoApplyCanary) {
+    errors.push('Coach document lacks autoApplyCanary field.');
+  } else {
     const canary = coach.autoApplyCanary;
     if (Array.isArray(canary.clientIds)) {
       if (canary.clientIds.length !== 1 || canary.clientIds[0] !== C.UID) {
         errors.push('Coach canary clientIds must strictly contain exactly Ayrton UID.');
       }
+    } else {
+      errors.push('Coach canary clientIds must be an array.');
     }
+
     if (Array.isArray(canary.prescriptionExerciseIds)) {
       if (canary.prescriptionExerciseIds.length !== 1 || canary.prescriptionExerciseIds[0] !== C.PID) {
         errors.push('Coach canary prescriptionExerciseIds must strictly contain exactly Ayrton PID (' + C.PID + ').');
       }
+    } else {
+      errors.push('Coach canary prescriptionExerciseIds must be an array.');
     }
+
     if (mode === 'active' && canary.enabled !== true) {
       errors.push('Coach canary must be enabled for active mode.');
     }
@@ -126,11 +144,14 @@ function validateFences(fences, window, mode = 'preflight') {
 
 /**
  * Conducts complete numeric preflight verification.
+ * Requires genuine evidence for fences, concurrency, operation uniqueness, and provider attestation.
+ * Returns BLOCKED if any critical evidence is missing.
  * @param {object} opts
  * @param {object} opts.window - Numeric window object
- * @param {string} [opts.deploymentId] - Vercel deployment ID
- * @param {object} [opts.fences] - Captured or mock Firestore fences
- * @param {object} [opts.activeRuns] - List of running GitHub Action runs
+ * @param {string} opts.deploymentId - Vercel deployment ID
+ * @param {object} opts.fences - Captured or mock Firestore fences
+ * @param {Array} opts.activeRuns - List of running GitHub Action runs
+ * @param {Array} opts.priorOperations - List of previously executed operation IDs
  * @param {boolean} [opts.readOnly=true] - Always true by default
  * @param {number} [opts.now] - Epoch millis
  * @param {object} [opts.io] - Pluggable I/O adapter for isolation
@@ -143,7 +164,7 @@ async function runPreflight(opts) {
   const blockers = [];
   const window = opts.window;
 
-  // 1. Window Specification & Expiry (Objective 2: max 24h, authorized UID, plan, PID)
+  // 1. Window Specification & Limits
   const windowCheck = validateNumericWindow(window, now);
   checks.push({
     check: 'WINDOW_SPEC_AND_LIMITS',
@@ -154,54 +175,89 @@ async function runPreflight(opts) {
     blockers.push(...windowCheck.errors);
   }
 
-  // 2. Concurrency Protection (Objective 2: no conflicting operations)
-  let concurrencyPassed = true;
-  if (opts.activeRuns && Array.isArray(opts.activeRuns)) {
-    const conflicts = opts.activeRuns.filter(r => r.status === 'in_progress' || r.status === 'queued');
-    if (conflicts.length > 0) {
-      concurrencyPassed = false;
-      const msg = 'Concurrent operational workflow run in progress (Run ID: ' + conflicts[0].id + ').';
-      checks.push({ check: 'NO_CONCURRENT_OPERATIONS', pass: false, error: msg });
-      blockers.push(msg);
-    } else {
-      checks.push({ check: 'NO_CONCURRENT_OPERATIONS', pass: true });
-    }
-  } else {
-    checks.push({ check: 'NO_CONCURRENT_OPERATIONS', pass: true, note: 'No active runs reported or isolated mode.' });
+  // 2. Concurrency Evidence Check (MANDATORY: missing evidence => BLOCKED)
+  if (opts.activeRuns === undefined || opts.activeRuns === null || !Array.isArray(opts.activeRuns)) {
+    return {
+      schema: 'vdsen-numeric-preflight-v1',
+      decision: 'BLOCKED',
+      reason: 'CONCURRENCY_EVIDENCE_MISSING',
+      message: 'Active runs evidence not provided; cannot verify absence of concurrent operations.',
+      checks,
+      evaluatedAt: new Date(now).toISOString()
+    };
   }
 
-  // 3. Operation Uniqueness Check
-  if (opts.priorOperations && window && window.operationId) {
-    const prior = opts.priorOperations.includes(window.operationId);
-    if (prior) {
-      const msg = 'Operation ID "' + window.operationId + '" has already been used in a prior execution.';
-      checks.push({ check: 'UNIQUE_OPERATION_ID', pass: false, error: msg });
-      blockers.push(msg);
-    } else {
-      checks.push({ check: 'UNIQUE_OPERATION_ID', pass: true });
-    }
+  const activeConflicts = opts.activeRuns.filter(r => r && (r.status === 'in_progress' || r.status === 'queued'));
+  const concurrencyPassed = activeConflicts.length === 0;
+  checks.push({
+    check: 'NO_CONCURRENT_OPERATIONS',
+    pass: concurrencyPassed,
+    conflicts: activeConflicts.map(r => r.id)
+  });
+  if (!concurrencyPassed) {
+    blockers.push('Concurrent operational workflow run in progress (Run ID: ' + activeConflicts[0].id + ').');
   }
 
-  // 4. Firestore Fences Check
-  if (opts.fences) {
-    const fenceCheck = validateFences(opts.fences, window, opts.mode || 'preflight');
+  // 3. Operation Uniqueness History Check (MANDATORY: missing evidence => BLOCKED)
+  if (opts.priorOperations === undefined || opts.priorOperations === null || !Array.isArray(opts.priorOperations)) {
+    return {
+      schema: 'vdsen-numeric-preflight-v1',
+      decision: 'BLOCKED',
+      reason: 'PRIOR_OPERATIONS_EVIDENCE_MISSING',
+      message: 'Prior operations history not provided; cannot verify operationId uniqueness.',
+      checks,
+      evaluatedAt: new Date(now).toISOString()
+    };
+  }
+
+  if (window && window.operationId) {
+    const alreadyRun = opts.priorOperations.includes(window.operationId);
     checks.push({
-      check: 'FIRESTORE_FENCES',
-      pass: fenceCheck.valid,
-      errors: fenceCheck.errors
+      check: 'UNIQUE_OPERATION_ID',
+      pass: !alreadyRun,
+      operationId: window.operationId
     });
-    if (!fenceCheck.valid) {
-      blockers.push(...fenceCheck.errors);
+    if (alreadyRun) {
+      blockers.push('Operation ID "' + window.operationId + '" has already been executed.');
     }
-  } else if (!opts.skipFenceCheck) {
-    // If live fences cannot be read and no mock provided
-    checks.push({ check: 'FIRESTORE_FENCES', pass: false, error: 'Firestore fence data unavailable.' });
-    blockers.push('Firestore fence data unavailable.');
   }
 
-  // 5. Runtime Attestation (Objective 1 & 2: Vercel provider check)
+  // 4. Firestore Fences Evidence Check (MANDATORY: missing fences => BLOCKED)
+  if (!opts.fences || typeof opts.fences !== 'object') {
+    return {
+      schema: 'vdsen-numeric-preflight-v1',
+      decision: 'BLOCKED',
+      reason: 'FENCES_UNAVAILABLE',
+      message: 'Firestore fence data unavailable; reliable fence evidence is strictly required.',
+      checks,
+      evaluatedAt: new Date(now).toISOString()
+    };
+  }
+
+  const fenceCheck = validateFences(opts.fences, window, opts.mode || 'preflight');
+  checks.push({
+    check: 'FIRESTORE_FENCES',
+    pass: fenceCheck.valid,
+    errors: fenceCheck.errors
+  });
+  if (!fenceCheck.valid) {
+    blockers.push(...fenceCheck.errors);
+  }
+
+  // 5. Runtime Attestation (MANDATORY: provider attestation check)
+  if (!opts.deploymentId) {
+    return {
+      schema: 'vdsen-numeric-preflight-v1',
+      decision: 'BLOCKED',
+      reason: 'DEPLOYMENT_ID_MISSING',
+      message: 'Deployment ID is required for preflight attestation.',
+      checks,
+      evaluatedAt: new Date(now).toISOString()
+    };
+  }
+
   let attestationResult = null;
-  if (opts.deploymentId && window && window.runtimeSha) {
+  if (window && window.runtimeSha) {
     attestationResult = await attestRuntime({
       deploymentId: opts.deploymentId,
       expectedSha: window.runtimeSha,
@@ -211,6 +267,7 @@ async function runPreflight(opts) {
       expectedPid: window.pid,
       expectedExpiresAt: window.expiresAt,
       expectedStartsAt: window.startsAt,
+      expectedAlias: opts.expectedAlias,
       now: now,
       fetcher: opts.io && opts.io.fetcher,
       vercelToken: opts.vercelToken
