@@ -9,7 +9,53 @@ const root = path.resolve(process.argv[2] || path.join(__dirname, '..', '..')), 
 const admin = require(path.join(root, 'node_modules', 'firebase-admin'));
 const app = admin.initializeApp({ projectId: PROJECT }, 'client-e2e-server');
 const db = admin.firestore(app), auth = admin.auth(app);
-const trigger = require(path.join(root, 'api', 'autonomous-progression-trigger.js'));
+const realExecutor = require(path.join(root, 'api', '_autonomousProgression.js'));
+const helper = require(path.join(root, 'tests', 'helpers', 't699-synthetic-executor.js'));
+let selectedExecutor = realExecutor;
+if (process.env.E2E_SYNTHETIC_PILOT === '1') {
+  // The test driver owns this demo-only fence; neither request body nor athlete can create it.
+  if (PROJECT !== 'demo-vdsen-client-e2e' || process.env.FIRESTORE_EMULATOR_HOST !== '127.0.0.1:8085') throw new Error('DEMO_EMULATOR_REQUIRED');
+  selectedExecutor = { ...realExecutor, async processProgression(input) {
+    const raw = fs.readFileSync(path.join(require('os').tmpdir(), 'vdsen-client-e2e-creds.json'), 'utf8');
+    const fixtures = Object.values(JSON.parse(raw).who || {});
+    const fence = (await db.doc('releaseControl/numericPilot').get()).data();
+    const fixture = fixtures.find(f => f.uid === input.clientId && f.planId === input.planId);
+    if (!fixture || !fence || fence.enabled !== true || fence.uid !== fixture.uid || fence.planId !== fixture.planId ||
+        fence.pid !== fixture.pids[0] || !fence.pid || fence.pid === '*') return realExecutor.processProgression(input);
+    const window = Object.fromEntries(['schema', 'mode', 'uid', 'planId', 'pid', 'runtimeSha', 'operationId', 'startsAt', 'expiresAt'].map(k => [k, fence[k]]));
+    return helper.createSyntheticExecutor(window, { validateTime: true }).processProgression(input);
+  } };
+}
+let trigger = process.env.E2E_SYNTHETIC_PILOT === '1'
+  ? helper.createSyntheticTrigger(selectedExecutor, require(path.join(root, 'api', '_autonomousProgressionSweep.js')))
+  : require(path.join(root, 'api', 'autonomous-progression-trigger.js'));
+if (process.env.E2E_TRACE_AUTHORITY === '1') {
+  // Optional demo-only diagnostics: wraps the real executor and cannot grant authority.
+  const contract = require(path.join(root, 'api', '_numericPilotContract.js'));
+  const consumer = require(path.join(root, 'assets', 'progression-application-consumer.js'));
+  const traced = { ...selectedExecutor, async processProgression(input) {
+    const inspect = async () => {
+      const [cl, meso, release] = await Promise.all([db.doc('clients/' + input.clientId).get(),
+        db.doc('logs/' + input.clientId + '/mesos/' + input.planId).get(), db.doc('releaseControl/autonomousProgression').get()]);
+      const client = cl.data() || {}, data = meso.data() || {}, fence = release.data() || {};
+      const coach = client.coachId ? (await db.doc('coaches/' + client.coachId).get()).data() : null;
+      const pending = Object.values(data.progressionApplications || {}).filter(r => r && r.state === 'PENDING');
+      return { planMatches: client.activePlanId === input.planId, pending: pending.length,
+        pendingInCoachScope: pending.filter(r => consumer.inCanaryScope(coach && coach.autoApplyCanary, input.clientId, r.prescriptionExerciseId)).length,
+        releaseEnabled: fence.enabled === true, releaseContainsUser: Array.isArray(fence.clientIds) && fence.clientIds.includes(input.clientId),
+        coachEnabled: coach?.autoApplyCanary?.enabled === true, runtimeAuthorized: !!contract.runtimeAuthorization(process.env, Date.now()),
+        overlays: Object.values(data.nextExposureOverlays || {}).filter(o => o && o.status === 'APPLIED').length };
+    };
+    const before = await inspect();
+    const out = await selectedExecutor.processProgression(input);
+    const after = await inspect();
+    console.info(JSON.stringify({ event: 'E2E_AUTHORITY_TRACE', handlerEnabled: input.enabled === true,
+      handlerNumericEnabled: input.numericApplyEnabled === true, before, outcome: out.status,
+      applied: (out.applied || []).map(r => ({ written: r.written === true, reason: r.reason || null })), after }));
+    return out;
+  } };
+  trigger = helper.createSyntheticTrigger(traced, require(path.join(root, 'api', '_autonomousProgressionSweep.js')));
+}
 const calls = [];
 const sdkCache = new Map(); // Immutable, version-pinned SDK code only; never cache credentials, application data or API responses.
 // E2E_ENABLED=0 -> the executor is DISARMED (202, zero writes); E2E_NUMERIC=0 -> materialize only (PENDING), never apply. Default: both ON (this is a local emulator, never production).

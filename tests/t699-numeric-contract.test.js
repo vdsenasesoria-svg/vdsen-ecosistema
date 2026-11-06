@@ -47,3 +47,8 @@ test('runtime authorization requires all independent switches, bound runtime and
     { VDSEN_NUMERIC_PILOT_WINDOW: '{' }]) assert.equal(C.runtimeAuthorization({ ...env, ...patch }, now), null);
   assert.equal(C.runtimeAuthorization(env, Date.parse(w.expiresAt)), null);
 });
+test('sandbox handler flag alone cannot grant server numeric authority', () => {
+  assert.equal(C.runtimeAuthorization({ E2E_NUMERIC: '1' }, now), null);
+  assert.equal(C.runtimeAuthorization({ E2E_NUMERIC: '1', AUTONOMOUS_PROGRESSION_ENABLED: 'true',
+    AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED: 'true' }, now), null);
+});
