@@ -12,6 +12,7 @@ const executor = require('../api/_autonomousProgression.js');
 const trigger = require('../api/autonomous-progression-trigger.js');
 const sweep = require('../api/_autonomousProgressionSweep.js');
 const F = require('./helpers/lifecycle-fixture.js');
+const harness = require('./helpers/t699-synthetic-executor.js');
 
 assert.ok(process.env.FIRESTORE_EMULATOR_HOST, 'Firestore emulator is required');
 const projectId = process.env.GCLOUD_PROJECT || 'demo-vdsen-shadow';
@@ -52,7 +53,7 @@ async function fixture(o) {
   const athlete = await signedIn(), coach = await signedIn();
   if (!o.noRelease) { ALLOWED.push(athlete.uid); await setRelease(ALLOWED.slice(-8)); }
   const planId = 'plan-' + athlete.uid, logs = evidence(o);
-  await db.doc('coaches/' + coach.uid).set(Object.assign({ role: 'coach' }, o.equipmentIncrements ? { equipmentIncrements: o.equipmentIncrements } : {}, { autoApplyCanary: o.canary === false ? { enabled: false, clientIds: [] } : { enabled: true, clientIds: o.canaryOther ? ['someone-else'] : [athlete.uid], prescriptionExerciseIds: [] } }));
+  await db.doc('coaches/' + coach.uid).set(Object.assign({ role: 'coach' }, o.equipmentIncrements ? { equipmentIncrements: o.equipmentIncrements } : {}, { autoApplyCanary: o.canary === false ? { enabled: false, clientIds: [] } : { enabled: true, clientIds: o.canaryOther ? ['someone-else'] : [athlete.uid], prescriptionExerciseIds: [PID] } }));
   await db.doc('clients/' + athlete.uid).set({ coachId: coach.uid, activePlanId: planId, coachInterventions: o.interventions || [] });
   await db.doc('plans/' + planId).set(planDoc(athlete.uid, coach.uid, o.rirTarget, o.exerciseId));
   await db.doc('logs/' + athlete.uid).set({ planId, entries: logs });
@@ -65,27 +66,35 @@ async function fixture(o) {
   await db.doc('logs/' + athlete.uid + '/starts/' + planId + '_1_2_0').set({
     planId, week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: nowIso
   });
-  return { athlete, coach, planId, logs };
+  // A separate synthetic fence per fixture keeps concurrent demo clients isolated.
+  const start = Math.floor(Date.now() / 1000) * 1000, iso = n => new Date(n).toISOString().replace('.000Z', 'Z');
+  const window = { schema: 'vdsen-numeric-pilot-v1', mode: 'NUMERIC_APPLY', uid: athlete.uid, planId, pid: PID,
+    runtimeSha: 'a'.repeat(40), operationId: 'synthetic-t570r-window', startsAt: iso(start - 1000), expiresAt: iso(start + 3600000) };
+  const fenceId = 't699-synthetic-' + athlete.uid;
+  await db.doc('releaseControl/' + fenceId).set({ ...window, enabled: true });
+  const scopedDb = Object.create(db);
+  scopedDb.collection = name => name === 'releaseControl' ? { doc: id => db.collection(name).doc(id === 'numericPilot' ? fenceId : id) } : db.collection(name);
+  scopedDb.runTransaction = fn => db.runTransaction(fn);
+  const scopedExecutor = harness.createSyntheticExecutor(window, { validateTime: true, historicalScope: true });
+  return { athlete, coach, planId, logs, db: scopedDb, executor: scopedExecutor };
 }
-const run = (f, o) => executor.processProgression(Object.assign({ db, clientId: f.athlete.uid, planId: f.planId, enabled: true, numericApplyEnabled: true,
+const run = (f, o) => f.executor.processProgression(Object.assign({ db: f.db, clientId: f.athlete.uid, planId: f.planId, enabled: true, numericApplyEnabled: true,
   clock: () => new Date().toISOString() }, o || {}));
 const meso = async f => (await db.doc('logs/' + f.athlete.uid + '/mesos/' + f.planId).get()).data();
 const recs = async f => Object.values((await meso(f)).progressionApplications || {});
 const overlays = async f => Object.values((await meso(f)).nextExposureOverlays || {});
+function fixtureSweep(fixtures) {
+  const byUid = new Map(fixtures.map(f => [f.athlete.uid, f]));
+  const dispatcher = { ...executor, processProgression: input => {
+    const f = byUid.get(input.clientId);
+    return f ? f.executor.processProgression({ ...input, db: f.db }) : executor.processProgression(input);
+  } };
+  return harness.createSyntheticSweep(dispatcher);
+}
 
 test('E01/E02 persisted evidence -> trusted executor materializes AND applies, no Coach session involved', { timeout: 60000 }, async () => {
   const f = await fixture(), before = (await meso(f)).entries;
-  // This demo-only fixture gives the same motor an explicit, single-PID synthetic authority.
-  const start = Math.floor(Date.now() / 1000) * 1000;
-  const iso = n => new Date(n).toISOString().replace('.000Z', 'Z');
-  const window = { schema: 'vdsen-numeric-pilot-v1', mode: 'NUMERIC_APPLY', uid: f.athlete.uid, planId: f.planId, pid: PID,
-    runtimeSha: 'a'.repeat(40), operationId: 'synthetic-t570r-e01', startsAt: iso(start), expiresAt: iso(start + 3600000) };
-  await setRelease([f.athlete.uid], { expiresAt: window.expiresAt });
-  await db.doc('coaches/' + f.coach.uid).set({ autoApplyCanary: { enabled: true, clientIds: [f.athlete.uid], prescriptionExerciseIds: [PID] } }, { merge: true });
-  await db.doc('releaseControl/numericPilot').set({ ...window, enabled: true });
-  const isolated = require('./helpers/t699-synthetic-executor.js').createSyntheticExecutor(window);
-  const out = await isolated.processProgression({ db, clientId: f.athlete.uid, planId: f.planId, enabled: true, numericApplyEnabled: true,
-    clock: () => new Date().toISOString() });
+  const out = await run(f);
   assert.equal(out.status, 'MATERIALIZED', JSON.stringify(out));
   assert.deepEqual(out.applied.map(a => [a.written, a.reason]), [[true, null]], JSON.stringify(out.applied));
   const [r] = await recs(f), [o] = await overlays(f);
@@ -187,7 +196,7 @@ test('E18 longitudinal: a second exposure cycle does not duplicate or regress th
 
 test('endpoint: bearer auth is mandatory, uid comes from the verified token, body client identity ignored', { timeout: 60000 }, async () => {
   const f = await fixture(), other = await fixture();
-  const handler = trigger.makeHandler({ db, enabled: true, numericApplyEnabled: true, verifyIdToken: async t => { if (t !== 'ok') throw new Error('bad'); return { uid: f.athlete.uid }; } });
+  const handler = harness.createSyntheticTrigger(f.executor, sweep).makeHandler({ db: f.db, enabled: true, numericApplyEnabled: true, verifyIdToken: async t => { if (t !== 'ok') throw new Error('bad'); return { uid: f.athlete.uid }; } });
   const res = () => ({ statusCode: 0, body: null, status(n) { this.statusCode = n; return this; }, json(v) { this.body = v; return this; } });
   let r = res(); await handler({ method: 'POST', headers: {}, body: { planId: f.planId } }, r); assert.equal(r.statusCode, 401);
   r = res(); await handler({ method: 'POST', headers: { authorization: 'Bearer nope' }, body: { planId: f.planId } }, r); assert.equal(r.statusCode, 401);
@@ -199,13 +208,14 @@ test('endpoint: bearer auth is mandatory, uid comes from the verified token, bod
 
 test('durable recovery: the cron sweep processes pending evidence when the browser never notified', { timeout: 180000 }, async () => {
   const f = await fixture(), g = await fixture({ canaryOther: true });
-  const out = await sweep.runSweep({ db, enabled: true, numericApplyEnabled: true, clock: () => new Date().toISOString() });
+  const isolatedSweep = fixtureSweep([f, g]);
+  const out = await isolatedSweep.runSweep({ db, enabled: true, numericApplyEnabled: true, clock: () => new Date().toISOString() });
   assert.ok(out.processed >= 1);
   assert.equal((await overlays(f)).length, 1, 'in-scope athlete processed without any browser call');
   assert.deepEqual(await overlays(g), [], 'out-of-scope athlete untouched');
-  const again = await sweep.runSweep({ db, enabled: true, numericApplyEnabled: true }); // idempotent
+  const again = await isolatedSweep.runSweep({ db, enabled: true, numericApplyEnabled: true }); // idempotent
   assert.equal((await overlays(f)).length, 1); assert.ok(again.processed >= 1);
-  assert.deepEqual(await sweep.runSweep({ db, enabled: false, numericApplyEnabled: true }), { status: 'DISARMED', processed: 0 });
+  assert.deepEqual(await isolatedSweep.runSweep({ db, enabled: false, numericApplyEnabled: true }), { status: 'DISARMED', processed: 0 });
 });
 
 // ---- T570-R.2 -------------------------------------------------------------------------------------------------------------------------
@@ -239,10 +249,10 @@ test('CANARY boundary: disabling the canary between the pending read and the app
   assert.equal((await recs(f))[0].state, 'PENDING');
   let txCount = 0;
   const racing = Object.create(db);
-  racing.collection = n => db.collection(n);
+  racing.collection = n => f.db.collection(n);
   racing.runTransaction = async fn => { txCount++; await setCanary(f, { enabled: false, clientIds: [f.athlete.uid] }); return db.runTransaction(fn); };
   // Use the same clock as fixture(). Its release expiry is relative to now; a fixed September clock eventually trips the 31-day release cap before the Coach revocation is reached.
-  const out = await executor.applyPending(racing, f.athlete.uid, f.planId, () => new Date().toISOString());
+  const out = await f.executor.applyPending(racing, f.athlete.uid, f.planId, () => new Date().toISOString());
   assert.ok(txCount >= 1); assert.deepEqual(out.map(x => x.written), [false]); assert.equal(out[0].reason, 'OUT_OF_CANARY_SCOPE');
   assert.deepEqual(await overlays(f), []); assert.equal((await recs(f))[0].state, 'PENDING');
 });
@@ -344,9 +354,9 @@ test('ALLOWLIST: the Coach cannot widen production scope from their own document
 
 test('ALLOWLIST: revocation between the pending read and the apply transaction rejects the operation', { timeout: 90000 }, async () => {
   const f = await fixture(); await run(f, { numericApplyEnabled: false });
-  const racing = Object.create(db); racing.collection = n => db.collection(n);
+  const racing = Object.create(db); racing.collection = n => f.db.collection(n);
   racing.runTransaction = async fn => { await setRelease(['revoked']); return db.runTransaction(fn); };
-  const out = await executor.applyPending(racing, f.athlete.uid, f.planId, () => '2026-09-28T00:00:00.000Z');
+  const out = await f.executor.applyPending(racing, f.athlete.uid, f.planId, () => '2026-09-28T00:00:00.000Z');
   assert.deepEqual(out.map(x => [x.written, x.reason]), [[false, 'OUT_OF_ALLOWLIST']]); assert.deepEqual(await overlays(f), []);
 });
 
@@ -355,7 +365,7 @@ test('CONCURRENCY: two simultaneous POSTs, and a cron sweep racing a POST, yield
   await Promise.all([run(f), run(f)]);
   assert.equal((await overlays(f)).length, 1);
   const g = await fixture();
-  await Promise.all([run(g), sweep.runSweep({ db, enabled: true, numericApplyEnabled: true, clock: () => new Date().toISOString() })]);
+  await Promise.all([run(g), fixtureSweep([g]).runSweep({ db, enabled: true, numericApplyEnabled: true, clock: () => new Date().toISOString() })]);
   const rs = await recs(g); assert.equal(rs.length, 1); assert.equal((await overlays(g)).length, 1);
   assert.equal(rs[0].events.filter(e => e.state === 'APPLIED').length, 1);
 });

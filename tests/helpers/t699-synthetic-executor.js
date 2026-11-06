@@ -10,7 +10,7 @@ instance.paths = Module._nodeModulePaths(require('node:path').dirname(filename))
 const originalRequire = instance.require.bind(instance);
 instance.require = function(id) {
   if (id !== './_numericPilotContract.js') return originalRequire(id);
-  return {
+  const synthetic = {
     runtimeAuthorization: (_env, now) => {
       if (!syntheticWindow) return null;
       if (options.validateTime === true && !(Date.parse(syntheticWindow.startsAt) <= now && now < Date.parse(syntheticWindow.expiresAt) &&
@@ -24,6 +24,14 @@ instance.require = function(id) {
       s.prescriptionExerciseIds.length === 1 && s.prescriptionExerciseIds[0] === pid &&
       plan.days.some(d => d.exercises.some(e => e.prescriptionExerciseId === pid))
   };
+  synthetic.transactionAllowed = (original, current, fence, release, scope, uid, record, plan) => !!(
+    original && current && JSON.stringify(original) === JSON.stringify(current) && fence && fence.enabled === true &&
+    release && Array.isArray(release.clientIds) && (options.historicalScope === true
+      ? release.clientIds.includes(current.uid) : release.clientIds.length === 1 && release.clientIds[0] === current.uid) &&
+    (options.historicalScope === true || release.expiresAt === current.expiresAt) &&
+    ['schema', 'mode', 'uid', 'planId', 'pid', 'runtimeSha', 'operationId', 'startsAt', 'expiresAt'].every(k => fence[k] === current[k]) &&
+    record && record.state === 'PENDING' && record.prescriptionExerciseId === current.pid && synthetic.scopeValid(scope, uid, record.prescriptionExerciseId, plan));
+  return synthetic;
 };
 instance._compile(fs.readFileSync(filename, 'utf8'), filename);
 return instance.exports;

@@ -33,4 +33,11 @@ function runtimeAuthorization(env, now) {
     return w;
   } catch (_) { return null; }
 }
-module.exports = { windowValid: windowValid, scopeValid: scopeValid, runtimeAuthorization: runtimeAuthorization, UID: UID, PLAN: PLAN, PID: PID };
+function transactionAllowed(original, current, fence, release, scope, uid, record, plan) {
+  return !!(current && JSON.stringify(current) === JSON.stringify(original) && fence && fence.enabled === true &&
+    release && Array.isArray(release.clientIds) && release.clientIds.length === 1 && release.clientIds[0] === current.uid &&
+    release.expiresAt === current.expiresAt &&
+    ['schema', 'mode', 'uid', 'planId', 'pid', 'runtimeSha', 'operationId', 'startsAt', 'expiresAt'].every(function(k) { return fence[k] === current[k]; }) &&
+    record && record.state === 'PENDING' && record.prescriptionExerciseId === current.pid && scopeValid(scope, uid, record.prescriptionExerciseId, plan));
+}
+module.exports = { windowValid: windowValid, scopeValid: scopeValid, runtimeAuthorization: runtimeAuthorization, transactionAllowed: transactionAllowed, UID: UID, PLAN: PLAN, PID: PID };

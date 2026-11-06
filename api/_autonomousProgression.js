@@ -232,14 +232,11 @@ async function applyPending(db, clientId, planId, clock) {
       var numericFence = _data(await tx.get(db.collection('releaseControl').doc('numericPilot')));
       var nw = numericPilot.runtimeAuthorization(process.env, Date.now());
       var releaseFence = _data(await tx.get(db.collection('releaseControl').doc('autonomousProgression')));
-      if (!nw || JSON.stringify(nw) !== JSON.stringify(authorizedWindow) || !numericFence || numericFence.enabled !== true ||
-          !releaseFence || !Array.isArray(releaseFence.clientIds) || releaseFence.clientIds.length !== 1 || releaseFence.clientIds[0] !== nw.uid ||
-          releaseFence.expiresAt !== nw.expiresAt ||
-          numericFence.schema !== nw.schema || numericFence.mode !== nw.mode || numericFence.uid !== nw.uid ||
-          numericFence.planId !== nw.planId || numericFence.pid !== nw.pid || numericFence.runtimeSha !== nw.runtimeSha ||
-          numericFence.operationId !== nw.operationId || numericFence.startsAt !== nw.startsAt || numericFence.expiresAt !== nw.expiresAt ||
-          !precord || precord.state !== shadow.STATES.PENDING || precord.prescriptionExerciseId !== nw.pid ||
-          !numericPilot.scopeValid(coachDoc && coachDoc.autoApplyCanary, clientId, precord.prescriptionExerciseId, planDoc)) {
+      if (precord && !consumer.inCanaryScope(coachDoc && coachDoc.autoApplyCanary, clientId, precord.prescriptionExerciseId)) {
+        return { written: false, reason: 'OUT_OF_CANARY_SCOPE' };
+      }
+      if (!numericPilot.transactionAllowed(authorizedWindow, nw, numericFence, releaseFence,
+          coachDoc && coachDoc.autoApplyCanary, clientId, precord, planDoc)) {
         return { written: false, reason: 'NUMERIC_PILOT_NOT_AUTHORIZED' };
       }
       if (precord && precord.magnitude && (precord.magnitude.candidates || []).some(function(c) { return c && c.dimension === 'LOAD'; })) {

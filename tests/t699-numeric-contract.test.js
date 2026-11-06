@@ -52,3 +52,13 @@ test('sandbox handler flag alone cannot grant server numeric authority', () => {
   assert.equal(C.runtimeAuthorization({ E2E_NUMERIC: '1', AUTONOMOUS_PROGRESSION_ENABLED: 'true',
     AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED: 'true' }, now), null);
 });
+test('transaction gate binds both fences, pending record and exact plan membership', () => {
+  const fence = { ...w, enabled: true }, release = { clientIds: [C.UID], expiresAt: w.expiresAt };
+  const record = { state: 'PENDING', prescriptionExerciseId: C.PID };
+  const check = (current = w, f = fence, rel = release, sc = scope, rec = record, pl = plan) => C.transactionAllowed(w, current, f, rel, sc, C.UID, rec, pl);
+  assert.equal(check(), true);
+  for (const args of [[null], [{ ...w, operationId: 'another-operation' }], [w, { ...fence, enabled: false }],
+    [w, fence, { ...release, clientIds: [C.UID, 'other'] }], [w, fence, release, { ...scope, prescriptionExerciseIds: [] }],
+    [w, fence, release, scope, { ...record, state: 'APPLIED' }], [w, fence, release, scope, { ...record, prescriptionExerciseId: 'other' }],
+    [w, fence, release, scope, record, { days: [] }]]) assert.equal(check(...args), false);
+});
