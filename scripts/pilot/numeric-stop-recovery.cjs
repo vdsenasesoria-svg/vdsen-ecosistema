@@ -4,6 +4,8 @@
 // audit of in-flight applications vs overlays, and immutable closing evidence.
 // Distinguishes STOP from rollback: halts new writes without erasing legitimate athlete history.
 // Uses prioritized sequential writes (NOT atomic) with failure-tolerant continuation and post-readback.
+// Preserves coach fields: updates ONLY autoApplyCanary.enabled, never touching clientIds, PIDs or profiles.
+// STOP operates independently of window validity: works with expired, invalid, or absent window.
 
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
@@ -16,12 +18,14 @@ function digest(content) {
 /**
  * Executes a prioritized sequential STOP with failure-tolerant continuation and post-verification.
  * Disarms releaseControl/numericPilot first (hard numeric gate), then releaseControl/autonomousProgression,
- * then coaches/{coachId}.autoApplyCanary (merging autoApplyCanary without touching other coach fields).
+ * then coaches/{coachId}.autoApplyCanary (updating ONLY autoApplyCanary.enabled via specific field path).
+ * Operates independently of window validity: succeeds whether window is active, expired, invalid, or absent.
  * If any step fails or readback cannot confirm full deactivation, returns status: 'STOP_INCOMPLETE'.
  * @param {object} opts
  * @param {string} [opts.reason] - Reason for stopping
  * @param {string} [opts.operationId] - Active operation identifier
  * @param {string} [opts.coachId] - Coach UID
+ * @param {object} [opts.window] - Optional window object (may be null, undefined, or expired)
  * @param {number} [opts.now] - Epoch millis
  * @param {object} io - I/O adapter for Firestore operations
  * @returns {Promise<object>} STOP execution report
@@ -40,42 +44,37 @@ async function executeStop(opts, io) {
   const writeAttempts = [];
   const errors = [];
 
-  // Step 1: Disarm Primary Numeric Pilot Gate (hard blocker for _autonomousProgression.js)
+  // Step 1: Disarm Primary Numeric Pilot Gate (hard blocker in _autonomousProgression.js)
   try {
     const numRes = await io.writeFence('releaseControl/numericPilot', {
       enabled: false,
       stoppedAt: isoNow,
       stoppedOperation: operationId,
       stopReason: reason
-    }, { merge: true });
+    }, { merge: true, mask: ['enabled', 'stoppedAt', 'stoppedOperation', 'stopReason'] });
     writeAttempts.push({ fence: 'numericPilot', path: 'releaseControl/numericPilot', success: !!numRes });
   } catch (err) {
     writeAttempts.push({ fence: 'numericPilot', path: 'releaseControl/numericPilot', success: false, error: err.message });
     errors.push('Failed to disarm releaseControl/numericPilot: ' + err.message);
   }
 
-  // Step 2: Disarm Global Progression Release Fence
+  // Step 2: Disarm Global Progression Release Fence (Do NOT overwrite clientIds)
   try {
     const relRes = await io.writeFence('releaseControl/autonomousProgression', {
       enabled: false,
-      expiresAt: isoNow,
-      clientIds: [C.UID]
-    }, { merge: true });
+      expiresAt: isoNow
+    }, { merge: true, mask: ['enabled', 'expiresAt'] });
     writeAttempts.push({ fence: 'autonomousProgression', path: 'releaseControl/autonomousProgression', success: !!relRes });
   } catch (err) {
     writeAttempts.push({ fence: 'autonomousProgression', path: 'releaseControl/autonomousProgression', success: false, error: err.message });
     errors.push('Failed to disarm releaseControl/autonomousProgression: ' + err.message);
   }
 
-  // Step 3: Disarm Coach Canary Fence (Merge only autoApplyCanary; never overwrite coach profile or unrelated fields)
+  // Step 3: Disarm Coach Canary Fence (Update ONLY autoApplyCanary.enabled; preserve clientIds, PIDs, and all coach fields)
   try {
     const coachRes = await io.writeFence('coaches/' + coachId, {
-      autoApplyCanary: {
-        enabled: false,
-        clientIds: [C.UID],
-        prescriptionExerciseIds: [C.PID]
-      }
-    }, { merge: true, mask: ['autoApplyCanary'] });
+      'autoApplyCanary.enabled': false
+    }, { merge: true, mask: ['autoApplyCanary.enabled'], fieldPath: 'autoApplyCanary.enabled' });
     writeAttempts.push({ fence: 'coachCanary', path: 'coaches/' + coachId, success: !!coachRes });
   } catch (err) {
     writeAttempts.push({ fence: 'coachCanary', path: 'coaches/' + coachId, success: false, error: err.message });
@@ -122,6 +121,7 @@ async function executeStop(opts, io) {
     coachId: coachId,
     pilotUid: C.UID,
     pid: C.PID,
+    windowProvided: !!opts.window,
     allDisarmed: allDisarmed,
     primaryFenceDisarmed: numericStopped,
     writeAttempts: writeAttempts,
@@ -134,6 +134,7 @@ async function executeStop(opts, io) {
     errors: [...errors, ...readbackErrors],
     // Explicit invariants
     sportsDataPreserved: true,
+    coachFieldsPreserved: true,
     revertedAthleteRecords: 0,
     deletedDocuments: 0,
     digest: null

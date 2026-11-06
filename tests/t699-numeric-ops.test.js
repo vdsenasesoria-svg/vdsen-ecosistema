@@ -14,6 +14,7 @@ const { invocation } = require('../scripts/pilot/numeric-pilot-ops.cjs');
 const VALID_SHA = 'a'.repeat(40);
 const VALID_OP_ID = 'test-numeric-op-001';
 const VALID_DEPLOYMENT = 'dpl_testNumeric123456';
+const VALID_ALIAS = 'vdsen-ecosistema.vercel.app';
 const NOW = Date.parse('2026-11-06T12:00:00Z');
 
 function createValidWindow(overrides = {}) {
@@ -74,6 +75,7 @@ function createValidDeployment(overrides = {}) {
     teamId: DEFAULT_TEAM_ID,
     target: 'production',
     readyState: 'READY',
+    alias: [VALID_ALIAS],
     meta: {
       githubCommitSha: VALID_SHA,
       vdsenPilotOperation: VALID_OP_ID
@@ -87,6 +89,31 @@ function createValidDeployment(overrides = {}) {
   return Object.assign({}, base, overrides);
 }
 
+function createMockStoreIo(store) {
+  return {
+    writeFence: async (path, fields, opts) => {
+      const existing = store.get(path) || {};
+      const updated = { ...existing };
+      for (const [k, v] of Object.entries(fields)) {
+        if (k.includes('.')) {
+          const parts = k.split('.');
+          let cur = updated;
+          for (let i = 0; i < parts.length - 1; i++) {
+            cur[parts[i]] = { ...(cur[parts[i]] || {}) };
+            cur = cur[parts[i]];
+          }
+          cur[parts[parts.length - 1]] = v;
+        } else {
+          updated[k] = v;
+        }
+      }
+      store.set(path, updated);
+      return true;
+    },
+    readFence: async (path) => store.get(path)
+  };
+}
+
 // 1. Runtime válido
 test('T699-OPS.1 Runtime válido: attestRuntime aprueba deployment con todas las propiedades correctas', async () => {
   const fetcher = createMockFetcher(createValidDeployment());
@@ -97,6 +124,7 @@ test('T699-OPS.1 Runtime válido: attestRuntime aprueba deployment con todas las
     expectedUid: C.UID,
     expectedPlanId: C.PLAN,
     expectedPid: C.PID,
+    expectedAlias: VALID_ALIAS,
     vercelToken: 'mock-token',
     now: NOW,
     fetcher
@@ -120,6 +148,7 @@ test('T699-OPS.2 Runtime incorrecto: attestRuntime rechaza discrepancia en commi
     deploymentId: VALID_DEPLOYMENT,
     expectedSha: VALID_SHA,
     expectedOperationId: VALID_OP_ID,
+    expectedAlias: VALID_ALIAS,
     vercelToken: 'mock-token',
     fetcher
   });
@@ -136,6 +165,7 @@ test('T699-OPS.3 Deployment diferente: attestRuntime rechaza ID de deployment no
     deploymentId: 'dpl_nonExistentDeployment',
     expectedSha: VALID_SHA,
     expectedOperationId: VALID_OP_ID,
+    expectedAlias: VALID_ALIAS,
     vercelToken: 'mock-token',
     fetcher
   });
@@ -154,6 +184,7 @@ test('T699-OPS.4 Deployment sin target: attestRuntime rechaza target ausente sin
     deploymentId: VALID_DEPLOYMENT,
     expectedSha: VALID_SHA,
     expectedOperationId: VALID_OP_ID,
+    expectedAlias: VALID_ALIAS,
     vercelToken: 'mock-token',
     fetcher
   });
@@ -170,6 +201,7 @@ test('T699-OPS.5 Target modificado: attestRuntime rechaza target preview', async
     deploymentId: VALID_DEPLOYMENT,
     expectedSha: VALID_SHA,
     expectedOperationId: VALID_OP_ID,
+    expectedAlias: VALID_ALIAS,
     vercelToken: 'mock-token',
     fetcher
   });
@@ -188,6 +220,7 @@ test('T699-OPS.6 Deployment sin ID verificable: attestRuntime rechaza respuesta 
     deploymentId: VALID_DEPLOYMENT,
     expectedSha: VALID_SHA,
     expectedOperationId: VALID_OP_ID,
+    expectedAlias: VALID_ALIAS,
     vercelToken: 'mock-token',
     fetcher
   });
@@ -206,6 +239,7 @@ test('T699-OPS.7 Deployment sin teamId: attestRuntime rechaza respuesta sin team
     deploymentId: VALID_DEPLOYMENT,
     expectedSha: VALID_SHA,
     expectedOperationId: VALID_OP_ID,
+    expectedAlias: VALID_ALIAS,
     vercelToken: 'mock-token',
     fetcher
   });
@@ -225,6 +259,7 @@ test('T699-OPS.8 Deployment sin metadata de operación: rechaza ausencia de vdse
     deploymentId: VALID_DEPLOYMENT,
     expectedSha: VALID_SHA,
     expectedOperationId: VALID_OP_ID,
+    expectedAlias: VALID_ALIAS,
     vercelToken: 'mock-token',
     fetcher
   });
@@ -244,6 +279,7 @@ test('T699-OPS.9 Respuesta sin información de variables: reporta BLOCKED ante f
     deploymentId: VALID_DEPLOYMENT,
     expectedSha: VALID_SHA,
     expectedOperationId: VALID_OP_ID,
+    expectedAlias: VALID_ALIAS,
     vercelToken: 'mock-token',
     fetcher
   });
@@ -282,9 +318,11 @@ test('T699-OPS.11 UID ajeno: rechaza cualquier UID diferente a Ayrton', async ()
   const pre = await runPreflight({
     window: foreignUidWindow,
     deploymentId: VALID_DEPLOYMENT,
+    expectedAlias: VALID_ALIAS,
     fences: createValidFences(),
     activeRuns: [],
     priorOperations: [],
+    priorOperationsSourceVerified: true,
     now: NOW
   });
   assert.equal(pre.decision, 'NO-GO');
@@ -301,9 +339,11 @@ test('T699-OPS.12 PID ajeno: rechaza cualquier PID diferente a Press Convergente
   const pre = await runPreflight({
     window: foreignPidWindow,
     deploymentId: VALID_DEPLOYMENT,
+    expectedAlias: VALID_ALIAS,
     fences: createValidFences(),
     activeRuns: [],
     priorOperations: [],
+    priorOperationsSourceVerified: true,
     now: NOW
   });
   assert.equal(pre.decision, 'NO-GO');
@@ -338,9 +378,11 @@ test('T699-OPS.14 Ausencia de barreras de Firestore: runPreflight devuelve BLOCK
   const pre = await runPreflight({
     window,
     deploymentId: VALID_DEPLOYMENT,
+    expectedAlias: VALID_ALIAS,
     fences: null, // missing fences
     activeRuns: [],
     priorOperations: [],
+    priorOperationsSourceVerified: true,
     now: NOW
   });
 
@@ -354,6 +396,7 @@ test('T699-OPS.15 Ausencia de historial de operaciones: runPreflight devuelve BL
   const pre = await runPreflight({
     window,
     deploymentId: VALID_DEPLOYMENT,
+    expectedAlias: VALID_ALIAS,
     fences: createValidFences(),
     activeRuns: [],
     priorOperations: null, // missing prior operations
@@ -370,9 +413,11 @@ test('T699-OPS.16 Ausencia de información de concurrencia: runPreflight devuelv
   const pre = await runPreflight({
     window,
     deploymentId: VALID_DEPLOYMENT,
+    expectedAlias: VALID_ALIAS,
     fences: createValidFences(),
     activeRuns: null, // missing active runs
     priorOperations: [],
+    priorOperationsSourceVerified: true,
     now: NOW
   });
 
@@ -386,9 +431,14 @@ test('T699-OPS.17 Operación ya ejecutada: runPreflight devuelve NO-GO', async (
   const pre = await runPreflight({
     window,
     deploymentId: VALID_DEPLOYMENT,
+    expectedAlias: VALID_ALIAS,
     fences: createValidFences(),
     activeRuns: [],
-    priorOperations: ['already-run-op-999', 'other-op'],
+    priorOperations: [
+      { operationId: 'already-run-op-999', runId: 'run-888', runtimeSha: VALID_SHA, status: 'completed', scope: 'numeric-pilot' },
+      { operationId: 'other-op', runId: 'run-777', runtimeSha: VALID_SHA, status: 'completed', scope: 'numeric-pilot' }
+    ],
+    priorOperationsSourceVerified: true,
     now: NOW,
     io: { fetcher: createMockFetcher(createValidDeployment({ meta: { githubCommitSha: VALID_SHA, vdsenPilotOperation: 'already-run-op-999' } })) },
     vercelToken: 'mock-token'
@@ -413,16 +463,15 @@ test('T699-OPS.18 STOP con interruptor numérico OFF: invocation permite stop au
   assert.equal(resStop.authorized, true);
   assert.equal(resStop.action, 'stop');
 
-  // Acción arm-fences bloqueada
+  // Acción arm-fences inhabilitada con ARM_NOT_IMPLEMENTED
   assert.throws(() => {
     invocation(env, 'arm-fences');
-  }, /NUMERIC_PILOT_DISARMED/);
+  }, /ARM_NOT_IMPLEMENTED/);
 });
 
 // 19. STOP con fallo en la segunda escritura (partial failure)
 test('T699-OPS.19 STOP con fallo en escritura: maneja error parcial y reporta STOP_INCOMPLETE', async () => {
   const store = new Map();
-  // Pre-seed fences as enabled before STOP
   store.set('releaseControl/numericPilot', { enabled: true });
   store.set('releaseControl/autonomousProgression', { enabled: true });
   store.set('coaches/coach-123', { autoApplyCanary: { enabled: true } });
@@ -448,7 +497,7 @@ test('T699-OPS.19 STOP con fallo en escritura: maneja error parcial y reporta ST
   assert.equal(report.schema, 'vdsen-numeric-stop-v1');
   assert.equal(report.status, 'STOP_INCOMPLETE');
   assert.equal(report.allDisarmed, false);
-  assert.equal(report.primaryFenceDisarmed, true); // Primary numeric gate was successfully closed
+  assert.equal(report.primaryFenceDisarmed, true);
   assert.ok(report.errors.some(e => e.includes('timeout on secondary fence')));
   assert.equal(report.sportsDataPreserved, true);
 });
@@ -456,7 +505,6 @@ test('T699-OPS.19 STOP con fallo en escritura: maneja error parcial y reporta ST
 // 20. STOP exitoso completo: desarma las 3 barreras preservando campos del coach
 test('T699-OPS.20 STOP completo: desarma las 3 barreras y preserva otros campos del Coach', async () => {
   const store = new Map();
-  // Pre-cargar coach con datos no relacionados al piloto
   store.set('coaches/coach-123', {
     name: 'Coach Principal',
     activeClients: 10,
@@ -464,14 +512,7 @@ test('T699-OPS.20 STOP completo: desarma las 3 barreras y preserva otros campos 
     autoApplyCanary: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] }
   });
 
-  const io = {
-    writeFence: async (path, fields, opts) => {
-      const existing = store.get(path) || {};
-      store.set(path, { ...existing, ...fields });
-      return true;
-    },
-    readFence: async (path) => store.get(path)
-  };
+  const io = createMockStoreIo(store);
 
   const report = await executeStop({
     reason: 'NORMAL_SCHEDULED_STOP',
@@ -491,6 +532,8 @@ test('T699-OPS.20 STOP completo: desarma las 3 barreras y preserva otros campos 
   assert.equal(updatedCoach.name, 'Coach Principal');
   assert.equal(updatedCoach.activeClients, 10);
   assert.equal(updatedCoach.autoApplyCanary.enabled, false);
+  assert.deepEqual(updatedCoach.autoApplyCanary.clientIds, [C.UID]);
+  assert.deepEqual(updatedCoach.autoApplyCanary.prescriptionExerciseIds, [C.PID]);
 });
 
 // 21. Reutilización de una ventana anterior
@@ -501,17 +544,14 @@ test('T699-OPS.21 Reutilización de ventana anterior: assertFreshAuthorizationRe
     stoppedAt: '2026-11-06T12:00:00Z'
   };
 
-  // Reusar mismo operationId
   assert.throws(() => {
     assertFreshAuthorizationRequired(priorReport, { operationId: 'op-alpha-12345', startsAt: '2026-11-06T13:00:00Z' });
   }, /REUSE_OF_OPERATION_ID_FORBIDDEN/);
 
-  // Ventana previa al stop
   assert.throws(() => {
     assertFreshAuthorizationRequired(priorReport, { operationId: 'op-fresh-777', startsAt: '2026-11-06T11:00:00Z' });
   }, /STALE_WINDOW_STARTS_BEFORE_PRIOR_STOP/);
 
-  // Nueva ventana válida
   assert.equal(assertFreshAuthorizationRequired(priorReport, { operationId: 'op-fresh-777', startsAt: '2026-11-06T13:00:00Z' }), true);
 });
 
@@ -524,6 +564,7 @@ test('T699-OPS.22 Error de lectura del proveedor: attestRuntime reporta BLOCKED 
     deploymentId: VALID_DEPLOYMENT,
     expectedSha: VALID_SHA,
     expectedOperationId: VALID_OP_ID,
+    expectedAlias: VALID_ALIAS,
     vercelToken: 'mock-token',
     fetcher
   });
@@ -533,7 +574,7 @@ test('T699-OPS.22 Error de lectura del proveedor: attestRuntime reporta BLOCKED 
   assert.equal(res.reason, 'NETWORK_OR_PROVIDER_ERROR');
 });
 
-// 23. Evidencia incompleta
+// 23. Evidencia incompleta de credenciales
 test('T699-OPS.23 Evidencia incompleta: ausencia de token de proveedor reporta BLOCKED', async () => {
   const savedToken = process.env.VERCEL_TOKEN;
   delete process.env.VERCEL_TOKEN;
@@ -541,7 +582,8 @@ test('T699-OPS.23 Evidencia incompleta: ausencia de token de proveedor reporta B
     const res = await attestRuntime({
       deploymentId: VALID_DEPLOYMENT,
       expectedSha: VALID_SHA,
-      expectedOperationId: VALID_OP_ID
+      expectedOperationId: VALID_OP_ID,
+      expectedAlias: VALID_ALIAS
     });
     assert.equal(res.attested, false);
     assert.equal(res.status, 'BLOCKED');
@@ -549,4 +591,272 @@ test('T699-OPS.23 Evidencia incompleta: ausencia de token de proveedor reporta B
   } finally {
     if (savedToken !== undefined) process.env.VERCEL_TOKEN = savedToken;
   }
+});
+
+// --- NUEVAS PRUEBAS FOCALIZADAS T699-OPS-R2 ---
+
+// 24. STOP con ventana caducada
+test('T699-OPS.24 STOP con ventana caducada: executeStop se ejecuta y desarma exitosamente', async () => {
+  const store = new Map();
+  const io = createMockStoreIo(store);
+
+  const expiredWindow = {
+    schema: 'vdsen-numeric-pilot-v1',
+    operationId: 'expired-op-111',
+    startsAt: '2026-11-04T10:00:00Z',
+    expiresAt: '2026-11-05T10:00:00Z' // Expired in the past
+  };
+
+  const report = await executeStop({
+    coachId: 'coach-123',
+    operationId: 'expired-op-111',
+    window: expiredWindow,
+    reason: 'STOP_ON_EXPIRED_WINDOW',
+    now: NOW
+  }, io);
+
+  assert.equal(report.status, 'STOP_CONFIRMED');
+  assert.equal(report.allDisarmed, true);
+  assert.equal(report.windowProvided, true);
+  assert.equal(report.primaryFenceDisarmed, true);
+});
+
+// 25. STOP sin ventana (ventana nula o ausente)
+test('T699-OPS.25 STOP sin ventana: executeStop no requiere especificación de ventana', async () => {
+  const store = new Map();
+  const io = createMockStoreIo(store);
+
+  const report = await executeStop({
+    coachId: 'coach-ayrton',
+    operationId: 'emergency-stop-999',
+    window: null, // No window provided
+    reason: 'OPERATIONAL_EMERGENCY_DISARM',
+    now: NOW
+  }, io);
+
+  assert.equal(report.status, 'STOP_CONFIRMED');
+  assert.equal(report.allDisarmed, true);
+  assert.equal(report.windowProvided, false);
+  assert.equal(report.primaryFenceDisarmed, true);
+});
+
+// 26. Concurrencia: Run actual excluido correctamente de conflictos
+test('T699-OPS.26 Concurrencia: currentRunId se excluye de conflictos con sí mismo', async () => {
+  const window = createValidWindow();
+  const pre = await runPreflight({
+    window,
+    deploymentId: VALID_DEPLOYMENT,
+    expectedAlias: VALID_ALIAS,
+    fences: createValidFences(),
+    activeRuns: [
+      { id: 'run-456', status: 'in_progress' } // Current executing run
+    ],
+    currentRunId: 'run-456',
+    priorOperations: [],
+    priorOperationsSourceVerified: true,
+    now: NOW,
+    io: { fetcher: createMockFetcher(createValidDeployment()) },
+    vercelToken: 'mock-token'
+  });
+
+  const concurrencyCheck = pre.checks.find(c => c.check === 'NO_CONCURRENT_OPERATIONS');
+  assert.ok(concurrencyCheck);
+  assert.equal(concurrencyCheck.pass, true);
+  assert.equal(concurrencyCheck.currentRunId, 'run-456');
+  assert.equal(concurrencyCheck.conflicts.length, 0);
+  assert.equal(pre.decision, 'GO');
+});
+
+// 27. Concurrencia: Otro run concurrente es bloqueado
+test('T699-OPS.27 Concurrencia: otro run en progreso o queued bloquea la preflight', async () => {
+  const window = createValidWindow();
+  const pre = await runPreflight({
+    window,
+    deploymentId: VALID_DEPLOYMENT,
+    expectedAlias: VALID_ALIAS,
+    fences: createValidFences(),
+    activeRuns: [
+      { id: 'run-456', status: 'in_progress' }, // Current run
+      { id: 'run-999', status: 'queued' }      // Other conflicting run
+    ],
+    currentRunId: 'run-456',
+    priorOperations: [],
+    priorOperationsSourceVerified: true,
+    now: NOW,
+    io: { fetcher: createMockFetcher(createValidDeployment()) },
+    vercelToken: 'mock-token'
+  });
+
+  assert.equal(pre.decision, 'NO-GO');
+  const concurrencyCheck = pre.checks.find(c => c.check === 'NO_CONCURRENT_OPERATIONS');
+  assert.equal(concurrencyCheck.pass, false);
+  assert.deepEqual(concurrencyCheck.conflicts, ['run-999']);
+  assert.ok(pre.blockers.some(b => b.includes('run-999')));
+});
+
+// 28. Unicidad de operación: Historial vacío sin fuente verificada devuelve BLOCKED
+test('T699-OPS.28 Historial no verificado: priorOperations vacío sin verified source devuelve BLOCKED', async () => {
+  const window = createValidWindow();
+  const pre = await runPreflight({
+    window,
+    deploymentId: VALID_DEPLOYMENT,
+    expectedAlias: VALID_ALIAS,
+    fences: createValidFences(),
+    activeRuns: [],
+    priorOperations: [],
+    priorOperationsSourceVerified: false, // Unverified source
+    now: NOW
+  });
+
+  assert.equal(pre.decision, 'BLOCKED');
+  assert.equal(pre.reason, 'PRIOR_OPERATIONS_UNVERIFIED_SOURCE');
+});
+
+// 29. Unicidad de operación: Detección con evidencia estructurada
+test('T699-OPS.29 Unicidad estructurada: detecta duplicado en ledger con runId, runtimeSha, status, date', async () => {
+  const window = createValidWindow({ operationId: 'reused-op-id-777' });
+  const pre = await runPreflight({
+    window,
+    deploymentId: VALID_DEPLOYMENT,
+    expectedAlias: VALID_ALIAS,
+    fences: createValidFences(),
+    activeRuns: [],
+    priorOperations: [
+      {
+        operationId: 'reused-op-id-777',
+        runId: 'gh-run-1234',
+        runtimeSha: VALID_SHA,
+        status: 'completed',
+        date: '2026-11-06T08:00:00Z',
+        scope: 'numeric-pilot'
+      }
+    ],
+    priorOperationsSourceVerified: true,
+    now: NOW,
+    io: { fetcher: createMockFetcher(createValidDeployment({ meta: { githubCommitSha: VALID_SHA, vdsenPilotOperation: 'reused-op-id-777' } })) },
+    vercelToken: 'mock-token'
+  });
+
+  assert.equal(pre.decision, 'NO-GO');
+  assert.ok(pre.blockers.some(b => b.includes('reused-op-id-777')));
+  assert.ok(pre.blockers.some(b => b.includes('gh-run-1234')));
+});
+
+// 30. Acreditación de Alias: expectedAlias obligatorio
+test('T699-OPS.30 Alias obligatorio: attestRuntime devuelve BLOCKED si expectedAlias no se proporciona', async () => {
+  const fetcher = createMockFetcher(createValidDeployment());
+  const res = await attestRuntime({
+    deploymentId: VALID_DEPLOYMENT,
+    expectedSha: VALID_SHA,
+    expectedOperationId: VALID_OP_ID,
+    // expectedAlias omitted
+    vercelToken: 'mock-token',
+    fetcher
+  });
+
+  assert.equal(res.attested, false);
+  assert.equal(res.status, 'BLOCKED');
+  assert.equal(res.reason, 'ALIAS_EVIDENCE_MISSING');
+});
+
+// 31. Acreditación de Alias: Alias cambiado / no coincidente
+test('T699-OPS.31 Alias no coincidente: rechaza deployment que no sirve el alias esperado', async () => {
+  const fetcher = createMockFetcher(createValidDeployment({
+    alias: ['staging.vdsen.com', 'other-domain.vercel.app']
+  }));
+  const res = await attestRuntime({
+    deploymentId: VALID_DEPLOYMENT,
+    expectedSha: VALID_SHA,
+    expectedOperationId: VALID_OP_ID,
+    expectedAlias: VALID_ALIAS,
+    vercelToken: 'mock-token',
+    fetcher
+  });
+
+  assert.equal(res.attested, false);
+  assert.equal(res.status, 'REJECTED');
+  assert.equal(res.reason, 'ALIAS_MISMATCH');
+});
+
+// 32. Acreditación de Alias: Deployment objetivo distinto
+test('T699-OPS.32 Target deployment mismatch: rechaza cuando el alias apunta a otro deployment', async () => {
+  const fetcher = createMockFetcher(createValidDeployment());
+  const res = await attestRuntime({
+    deploymentId: VALID_DEPLOYMENT,
+    expectedSha: VALID_SHA,
+    expectedOperationId: VALID_OP_ID,
+    expectedAlias: VALID_ALIAS,
+    aliasTargetDeployment: 'dpl_differentProductionDeployment999',
+    vercelToken: 'mock-token',
+    fetcher
+  });
+
+  assert.equal(res.attested, false);
+  assert.equal(res.status, 'REJECTED');
+  assert.equal(res.reason, 'ALIAS_TARGET_DEPLOYMENT_MISMATCH');
+});
+
+// 33. Acreditación de Alias: Evidencia insuficiente de la API del proveedor
+test('T699-OPS.33 Evidencia de alias insuficiente: devuelve BLOCKED si falta información de alias en respuesta', async () => {
+  const d = createValidDeployment();
+  delete d.alias;
+  delete d.aliases;
+  delete d.url;
+  const fetcher = createMockFetcher(d);
+
+  const res = await attestRuntime({
+    deploymentId: VALID_DEPLOYMENT,
+    expectedSha: VALID_SHA,
+    expectedOperationId: VALID_OP_ID,
+    expectedAlias: VALID_ALIAS,
+    vercelToken: 'mock-token',
+    fetcher
+  });
+
+  assert.equal(res.attested, false);
+  assert.equal(res.status, 'BLOCKED');
+  assert.equal(res.reason, 'ALIAS_EVIDENCE_INSUFFICIENT');
+});
+
+// 34. Auditoría de consistencia: auditMesoConsistency
+test('T699-OPS.34 Auditoría de estado: verifica consistencia legítima vs inconsistencias', () => {
+  // Consistente: APPLIED con matching overlay, CONSUMED con receipt
+  const validMeso = {
+    progressionApplications: {
+      app_01: { prescriptionExerciseId: C.PID, state: 'APPLIED', calculatedAt: '2026-11-06T10:00:00Z' },
+      app_02: { prescriptionExerciseId: C.PID, state: 'CONSUMED', calculatedAt: '2026-11-06T11:00:00Z' }
+    },
+    nextExposureOverlays: {
+      ov_01: { sourceRecordKey: 'app_01', status: 'APPLIED', dimension: 'load' }
+    },
+    consumptionReceipts: {
+      app_02: { consumedAt: '2026-11-06T11:30:00Z' }
+    }
+  };
+
+  const repValid = auditMesoConsistency(validMeso);
+  assert.equal(repValid.isConsistent, true);
+  assert.equal(repValid.classified.legitimateApplied.length, 1);
+  assert.equal(repValid.classified.legitimateConsumed.length, 1);
+
+  // Inconsistente 1: Overlay huérfano (sin parent application)
+  const orphanMeso = {
+    progressionApplications: {},
+    nextExposureOverlays: {
+      ov_orphan: { sourceRecordKey: 'non_existent_app', status: 'APPLIED' }
+    }
+  };
+  const repOrphan = auditMesoConsistency(orphanMeso);
+  assert.equal(repOrphan.isConsistent, false);
+  assert.equal(repOrphan.classified.orphanedOverlays.length, 1);
+
+  // Inconsistente 2: PID fuera de alcance
+  const outOfScopeMeso = {
+    progressionApplications: {
+      app_foreign: { prescriptionExerciseId: 'foreign-exercise-pid', state: 'PENDING' }
+    }
+  };
+  const repOutOfScope = auditMesoConsistency(outOfScopeMeso);
+  assert.equal(repOutOfScope.isConsistent, false);
+  assert.equal(repOutOfScope.classified.outOfScopePids.length, 1);
 });

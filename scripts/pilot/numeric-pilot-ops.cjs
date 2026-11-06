@@ -39,8 +39,7 @@ function invocation(env, action) {
   }
 
   if (action === 'arm-fences') {
-    assert.equal(env.VDSEN_NUMERIC_PILOT_RELEASE_ENABLED, 'true', 'NUMERIC_PILOT_DISARMED: Kill switch is active.');
-    return { authorized: true, action: 'arm-fences' };
+    throw new Error('ARM_NOT_IMPLEMENTED: Production arming is disabled. Formal owner authorization required.');
   }
 
   // Read-only actions (preflight-check, audit-status)
@@ -141,6 +140,8 @@ async function main() {
   if (command === 'preflight') {
     const windowFile = args[args.indexOf('--window-file') + 1];
     const deploymentId = args[args.indexOf('--deployment') + 1] || null;
+    const expectedAlias = args[args.indexOf('--expected-alias') + 1] || 'vdsen-ecosistema.vercel.app';
+    const currentRunId = args[args.indexOf('--current-run') + 1] || process.env.GITHUB_RUN_ID || null;
     const fencesFile = args[args.indexOf('--fences-file') + 1];
     const runsFile = args[args.indexOf('--runs-file') + 1];
     const priorFile = args[args.indexOf('--prior-file') + 1];
@@ -163,18 +164,39 @@ async function main() {
     }
 
     let priorOperations = null;
+    let priorOperationsSourceVerified = false;
     if (priorFile && fs.existsSync(priorFile)) {
       const parsedPrior = JSON.parse(fs.readFileSync(priorFile, 'utf8'));
-      priorOperations = Array.isArray(parsedPrior) ? parsedPrior
-        : ((parsedPrior.workflow_runs || []).map(r => r.display_title || r.name || ''));
+      if (Array.isArray(parsedPrior)) {
+        priorOperations = parsedPrior;
+        priorOperationsSourceVerified = true;
+      } else if (parsedPrior && Array.isArray(parsedPrior.workflow_runs)) {
+        priorOperations = parsedPrior.workflow_runs.map(r => {
+          const title = r.display_title || r.name || '';
+          const opMatch = title.match(/([a-zA-Z0-9_-]{8,80})/);
+          return {
+            operationId: opMatch ? opMatch[1] : title,
+            runId: String(r.id),
+            runtimeSha: r.head_sha,
+            status: r.status,
+            conclusion: r.conclusion,
+            date: r.created_at || r.updated_at,
+            scope: 'numeric-pilot'
+          };
+        });
+        priorOperationsSourceVerified = true;
+      }
     }
 
     const result = await runPreflight({
       window: windowData,
       deploymentId: deploymentId,
+      expectedAlias: expectedAlias,
       fences: fencesData,
       activeRuns: activeRuns,
+      currentRunId: currentRunId,
       priorOperations: priorOperations,
+      priorOperationsSourceVerified: priorOperationsSourceVerified,
       readOnly: true
     });
 
@@ -194,12 +216,14 @@ async function main() {
     const deploymentId = args[args.indexOf('--deployment') + 1];
     const sha = args[args.indexOf('--sha') + 1];
     const opId = args[args.indexOf('--operation-id') + 1];
+    const expectedAlias = args[args.indexOf('--expected-alias') + 1] || 'vdsen-ecosistema.vercel.app';
     const outFile = args[args.indexOf('--out') + 1];
 
     const result = await attestRuntime({
       deploymentId,
       expectedSha: sha,
-      expectedOperationId: opId
+      expectedOperationId: opId,
+      expectedAlias: expectedAlias
     });
 
     if (outFile) {
@@ -260,14 +284,36 @@ async function main() {
 
   if (command === 'audit') {
     const file = args[args.indexOf('--file') + 1];
-    const outFile = args[args.indexOf('--out') + 1];
-    if (!file || !fs.existsSync(file)) {
-      console.error('File required for audit.');
-      process.exitCode = 1;
-      return;
+    const pilotUid = args[args.indexOf('--pilot-uid') + 1] || C.UID;
+    const planId = args[args.indexOf('--plan-id') + 1] || C.PLAN;
+    const outFile = args[args.indexOf('--out') + 1] || 'release-output/numeric-pilot/audit-status.json';
+
+    let mesoData = null;
+    if (file && fs.existsSync(file)) {
+      mesoData = JSON.parse(fs.readFileSync(file, 'utf8'));
+    } else {
+      const token = process.env.GOOGLE_ACCESS_TOKEN;
+      const projectId = process.env.GCP_PROJECT_ID || 'vdsen-ecosistema';
+      if (token) {
+        try {
+          const docPath = 'users/' + pilotUid + '/mesos/' + planId;
+          const res = await canary.http('GET', 'projects/' + projectId + '/databases/(default)/documents/' + docPath, token);
+          if (res.status === 200) {
+            mesoData = canary.decDoc(res.body);
+          } else {
+            console.warn('Could not read meso document ' + docPath + ': HTTP ' + res.status);
+            mesoData = {};
+          }
+        } catch (e) {
+          console.warn('Meso read error: ' + e.message);
+          mesoData = {};
+        }
+      } else {
+        mesoData = {};
+      }
     }
-    const meso = JSON.parse(fs.readFileSync(file, 'utf8'));
-    const rep = auditMesoConsistency(meso);
+
+    const rep = auditMesoConsistency(mesoData);
     if (outFile) {
       fs.mkdirSync(path.dirname(outFile), { recursive: true });
       fs.writeFileSync(outFile, JSON.stringify(rep, null, 2));

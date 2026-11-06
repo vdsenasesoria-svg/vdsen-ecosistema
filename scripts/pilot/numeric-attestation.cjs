@@ -77,6 +77,16 @@ async function attestRuntime(opts) {
     };
   }
 
+  if (!opts.expectedAlias || typeof opts.expectedAlias !== 'string') {
+    return {
+      schema: 'vdsen-numeric-runtime-attestation-v1',
+      attested: false,
+      status: 'BLOCKED',
+      reason: 'ALIAS_EVIDENCE_MISSING',
+      message: 'Expected production alias domain is mandatory for operational attestation.'
+    };
+  }
+
   if (!opts.deploymentId || !/^dpl_[A-Za-z0-9]+$/.test(opts.deploymentId)) {
     return {
       schema: 'vdsen-numeric-runtime-attestation-v1',
@@ -366,24 +376,35 @@ async function attestRuntime(opts) {
   }
   checks.push({ check: 'CRON_FORBIDDEN', expected: false, actual: hasCron, pass: true });
 
-  // Target Alias Correspondence
-  if (opts.expectedAlias) {
-    const aliases = Array.isArray(deploymentData.alias) ? deploymentData.alias
-      : (Array.isArray(deploymentData.aliases) ? deploymentData.aliases : []);
-    const aliasMatched = aliases.includes(opts.expectedAlias) || deploymentData.url === opts.expectedAlias;
-    if (!aliasMatched) {
-      return {
-        schema: 'vdsen-numeric-runtime-attestation-v1',
-        attested: false,
-        status: 'REJECTED',
-        reason: 'ALIAS_MISMATCH',
-        expected: opts.expectedAlias,
-        actual: aliases,
-        message: 'Deployment does not correspond to expected target alias.'
-      };
-    }
-    checks.push({ check: 'ALIAS_CORRESPONDENCE', expected: opts.expectedAlias, actual: aliases, pass: true });
+  // Target Alias Correspondence (MANDATORY)
+  const rawAliases = deploymentData.alias !== undefined ? deploymentData.alias : deploymentData.aliases;
+  if (!rawAliases && !deploymentData.url) {
+    return {
+      schema: 'vdsen-numeric-runtime-attestation-v1',
+      attested: false,
+      status: 'BLOCKED',
+      reason: 'ALIAS_EVIDENCE_INSUFFICIENT',
+      message: 'Provider deployment response lacks alias evidence (no alias or aliases list).'
+    };
   }
+
+  const aliases = Array.isArray(deploymentData.alias) ? deploymentData.alias
+    : (Array.isArray(deploymentData.aliases) ? deploymentData.aliases
+    : (deploymentData.url ? [deploymentData.url] : []));
+
+  const aliasMatched = aliases.includes(opts.expectedAlias) || deploymentData.url === opts.expectedAlias;
+  if (!aliasMatched) {
+    return {
+      schema: 'vdsen-numeric-runtime-attestation-v1',
+      attested: false,
+      status: 'REJECTED',
+      reason: 'ALIAS_MISMATCH',
+      expected: opts.expectedAlias,
+      actual: aliases,
+      message: 'Deployment does not correspond to expected target alias.'
+    };
+  }
+  checks.push({ check: 'ALIAS_CORRESPONDENCE', expected: opts.expectedAlias, actual: aliases, pass: true });
 
   if (opts.aliasTargetDeployment && opts.aliasTargetDeployment !== deploymentData.id) {
     return {

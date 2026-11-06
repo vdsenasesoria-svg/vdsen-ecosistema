@@ -17,11 +17,13 @@ on:
         type: string
       runtime_sha:
         description: Reviewed runtime commit SHA (40 hex chars)
-        required: true
+        required: false
+        default: ''
         type: string
       deployment_id:
         description: Vercel deployment ID (dpl_...)
-        required: true
+        required: false
+        default: ''
         type: string
       pilot_uid:
         description: Explicit Ayrton UID (z82EDPvsCaabfMN3eGAP3rpxeMt1)
@@ -41,11 +43,13 @@ on:
         type: string
       starts_at:
         description: Window start UTC ISO string (e.g. 2026-11-06T12:00:00Z)
-        required: true
+        required: false
+        default: ''
         type: string
       expires_at:
         description: Window expiry UTC ISO string (max 24h from starts_at)
-        required: true
+        required: false
+        default: ''
         type: string
       stop_reason:
         description: Reason for STOP action (required if action is stop)
@@ -123,6 +127,7 @@ jobs:
           access_token_scopes: https://www.googleapis.com/auth/datastore
 
       - name: Assemble numeric window specification
+        if: inputs.action == 'preflight-check'
         run: |
           node -e "
             const fs = require('fs');
@@ -157,18 +162,31 @@ jobs:
             --reason "${INPUT_STOP_REASON:-EMERGENCY_OPERATIONAL_STOP}" \
             --out "$REPORT_DIR/stop-evidence.json"
 
+      # --- ROUTE: AUDIT STATUS (READ-ONLY) ---
+      - name: Execute real read-only consistency audit
+        if: inputs.action == 'audit-status'
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: |
+          node scripts/pilot/numeric-pilot-ops.cjs audit \
+            --pilot-uid "$INPUT_UID" \
+            --plan-id "$INPUT_PLAN" \
+            --coach-id "$INPUT_COACH" \
+            --out "$REPORT_DIR/audit-status.json"
+
       # --- ROUTE: PREFLIGHT & RUNTIME ATTESTATION ---
       - name: Provider runtime attestation
-        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
+        if: inputs.action == 'preflight-check'
         run: |
           node scripts/pilot/numeric-pilot-ops.cjs attest \
             --deployment "$INPUT_DEPLOYMENT" \
             --sha "$INPUT_RUNTIME" \
             --operation-id "$INPUT_OPERATION" \
+            --expected-alias "vdsen-ecosistema.vercel.app" \
             --out "$REPORT_DIR/attestation.json"
 
       - name: Collect live fences evidence
-        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
+        if: inputs.action == 'preflight-check'
         env:
           GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
         run: |
@@ -177,17 +195,19 @@ jobs:
             --out "$REPORT_DIR/fences.json"
 
       - name: Collect concurrency and operation history evidence
-        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
+        if: inputs.action == 'preflight-check'
         run: |
           gh api "repos/$GITHUB_REPOSITORY/actions/workflows/vdsen-numeric-pilot.yml/runs?status=in_progress" > "$REPORT_DIR/active-runs.json"
           gh api "repos/$GITHUB_REPOSITORY/actions/workflows/vdsen-numeric-pilot.yml/runs?status=completed&per_page=100" > "$REPORT_DIR/prior-runs.json"
 
       - name: Execute preflight verification with real evidence
-        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
+        if: inputs.action == 'preflight-check'
         run: |
           node scripts/pilot/numeric-pilot-ops.cjs preflight \
             --window-file "$REPORT_DIR/window.json" \
             --deployment "$INPUT_DEPLOYMENT" \
+            --expected-alias "vdsen-ecosistema.vercel.app" \
+            --current-run "${{ github.run_id }}" \
             --fences-file "$REPORT_DIR/fences.json" \
             --runs-file "$REPORT_DIR/active-runs.json" \
             --prior-file "$REPORT_DIR/prior-runs.json" \

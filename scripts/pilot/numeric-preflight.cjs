@@ -187,11 +187,18 @@ async function runPreflight(opts) {
     };
   }
 
-  const activeConflicts = opts.activeRuns.filter(r => r && (r.status === 'in_progress' || r.status === 'queued'));
+  const activeConflicts = opts.activeRuns.filter(r => {
+    if (!r) return false;
+    if (opts.currentRunId && String(r.id) === String(opts.currentRunId)) {
+      return false; // Current execution is not a conflict with itself
+    }
+    return r.status === 'in_progress' || r.status === 'queued';
+  });
   const concurrencyPassed = activeConflicts.length === 0;
   checks.push({
     check: 'NO_CONCURRENT_OPERATIONS',
     pass: concurrencyPassed,
+    currentRunId: opts.currentRunId || null,
     conflicts: activeConflicts.map(r => r.id)
   });
   if (!concurrencyPassed) {
@@ -210,15 +217,37 @@ async function runPreflight(opts) {
     };
   }
 
+  // Empty history without verified source must return BLOCKED
+  if (opts.priorOperations.length === 0 && !opts.priorOperationsSourceVerified) {
+    return {
+      schema: 'vdsen-numeric-preflight-v1',
+      decision: 'BLOCKED',
+      reason: 'PRIOR_OPERATIONS_UNVERIFIED_SOURCE',
+      message: 'Prior operations history is empty without verified source evidence; cannot assume zero prior operations on unverified source.',
+      checks,
+      evaluatedAt: new Date(now).toISOString()
+    };
+  }
+
   if (window && window.operationId) {
-    const alreadyRun = opts.priorOperations.includes(window.operationId);
+    const matchingPrior = opts.priorOperations.find(p => {
+      if (!p) return false;
+      const opId = typeof p === 'string' ? p : p.operationId;
+      return opId === window.operationId;
+    });
+
+    const alreadyRun = !!matchingPrior;
     checks.push({
       check: 'UNIQUE_OPERATION_ID',
       pass: !alreadyRun,
-      operationId: window.operationId
+      operationId: window.operationId,
+      priorRecord: matchingPrior || null
     });
     if (alreadyRun) {
-      blockers.push('Operation ID "' + window.operationId + '" has already been executed.');
+      const runDetail = typeof matchingPrior === 'object'
+        ? ' (Run: ' + (matchingPrior.runId || 'N/A') + ', Status: ' + (matchingPrior.status || 'N/A') + ', Scope: ' + (matchingPrior.scope || 'N/A') + ')'
+        : '';
+      blockers.push('Operation ID "' + window.operationId + '" has already been executed' + runDetail + '.');
     }
   }
 
