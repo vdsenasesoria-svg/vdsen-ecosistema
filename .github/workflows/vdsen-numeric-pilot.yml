@@ -72,6 +72,8 @@ jobs:
       id-token: write
     env:
       VDSEN_NUMERIC_PILOT_RELEASE_ENABLED: ${{ vars.VDSEN_NUMERIC_PILOT_RELEASE_ENABLED }}
+      VDSEN_NUMERIC_PILOT_STOP_ENABLED: ${{ vars.VDSEN_NUMERIC_PILOT_STOP_ENABLED }}
+      GCP_PROJECT_ID: vdsen-ecosistema
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       GH_TOKEN: ${{ github.token }}
       INPUT_ACTION: ${{ inputs.action }}
@@ -96,8 +98,8 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Enforce kill switch, single run, and canonical branch
-        run: node -e "require('./scripts/pilot/numeric-pilot-ops.cjs').invocation(process.env)"
+      - name: Enforce invocation authorization and canonical constraints
+        run: node -e "require('./scripts/pilot/numeric-pilot-ops.cjs').invocation(process.env, process.env.INPUT_ACTION)"
 
       - name: Create output directory
         run: mkdir -p "$REPORT_DIR"
@@ -105,7 +107,7 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Validate contracts and unit tests
+      - name: Validate contracts and operational unit tests
         run: |
           node scripts/release/check.cjs
           node --test tests/t699-numeric-contract.test.js tests/t699-numeric-ops.test.js
@@ -143,50 +145,53 @@ jobs:
             fs.writeFileSync('$REPORT_DIR/window.json', JSON.stringify(w, null, 2));
           "
 
-      - name: Provider runtime attestation
+      # --- ROUTE: STOP OPERATIVO ---
+      - name: Execute STOP (Safety Disarm)
+        if: inputs.action == 'stop'
         env:
           GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
         run: |
-          node -e "
-            const fs = require('fs');
-            const { attestRuntime } = require('./scripts/pilot/numeric-attestation.cjs');
-            const w = JSON.parse(fs.readFileSync('$REPORT_DIR/window.json', 'utf8'));
-            attestRuntime({
-              deploymentId: process.env.INPUT_DEPLOYMENT,
-              expectedSha: w.runtimeSha,
-              expectedOperationId: w.operationId,
-              expectedUid: w.uid,
-              expectedPlanId: w.planId,
-              expectedPid: w.pid,
-              expectedStartsAt: w.startsAt,
-              expectedExpiresAt: w.expiresAt
-            }).then(r => {
-              fs.writeFileSync('$REPORT_DIR/attestation.json', JSON.stringify(r, null, 2));
-              if (!r.attested) {
-                console.error('Attestation failed:', r);
-                process.exit(1);
-              }
-            });
-          "
+          node scripts/pilot/numeric-pilot-ops.cjs stop \
+            --coach-id "$INPUT_COACH" \
+            --operation-id "$INPUT_OPERATION" \
+            --reason "${INPUT_STOP_REASON:-EMERGENCY_OPERATIONAL_STOP}" \
+            --out "$REPORT_DIR/stop-evidence.json"
 
-      - name: Execute preflight verification
+      # --- ROUTE: PREFLIGHT & RUNTIME ATTESTATION ---
+      - name: Provider runtime attestation
+        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
         run: |
-          node -e "
-            const fs = require('fs');
-            const { runPreflight } = require('./scripts/pilot/numeric-preflight.cjs');
-            const w = JSON.parse(fs.readFileSync('$REPORT_DIR/window.json', 'utf8'));
-            runPreflight({
-              window: w,
-              deploymentId: process.env.INPUT_DEPLOYMENT,
-              readOnly: true
-            }).then(r => {
-              fs.writeFileSync('$REPORT_DIR/preflight-result.json', JSON.stringify(r, null, 2));
-              if (r.decision !== 'GO') {
-                console.error('Preflight NO-GO:', r);
-                process.exit(1);
-              }
-            });
-          "
+          node scripts/pilot/numeric-pilot-ops.cjs attest \
+            --deployment "$INPUT_DEPLOYMENT" \
+            --sha "$INPUT_RUNTIME" \
+            --operation-id "$INPUT_OPERATION" \
+            --out "$REPORT_DIR/attestation.json"
+
+      - name: Collect live fences evidence
+        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: |
+          node scripts/pilot/numeric-pilot-ops.cjs fetch-fences \
+            --coach-id "$INPUT_COACH" \
+            --out "$REPORT_DIR/fences.json"
+
+      - name: Collect concurrency and operation history evidence
+        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/vdsen-numeric-pilot.yml/runs?status=in_progress" > "$REPORT_DIR/active-runs.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/vdsen-numeric-pilot.yml/runs?status=completed&per_page=100" > "$REPORT_DIR/prior-runs.json"
+
+      - name: Execute preflight verification with real evidence
+        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
+        run: |
+          node scripts/pilot/numeric-pilot-ops.cjs preflight \
+            --window-file "$REPORT_DIR/window.json" \
+            --deployment "$INPUT_DEPLOYMENT" \
+            --fences-file "$REPORT_DIR/fences.json" \
+            --runs-file "$REPORT_DIR/active-runs.json" \
+            --prior-file "$REPORT_DIR/prior-runs.json" \
+            --out "$REPORT_DIR/preflight-result.json"
 
       - name: Upload evidence artifact
         if: always()

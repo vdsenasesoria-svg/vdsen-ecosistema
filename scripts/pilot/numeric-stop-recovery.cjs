@@ -1,8 +1,9 @@
 'use strict';
 // Dedicated STOP, consistency auditing, and recovery procedures for VDSEN numeric pilot.
-// Implements safe disarming of all fences, readback confirmation, audit of in-flight
-// applications vs overlays, and immutable closing evidence.
+// Implements safe disarming of fences against partial failure, post-readback confirmation,
+// audit of in-flight applications vs overlays, and immutable closing evidence.
 // Distinguishes STOP from rollback: halts new writes without erasing legitimate athlete history.
+// Uses prioritized sequential writes (NOT atomic) with failure-tolerant continuation and post-readback.
 
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
@@ -13,8 +14,10 @@ function digest(content) {
 }
 
 /**
- * Executes a verified emergency or scheduled STOP.
- * Disarms all three Firestore fences and confirms readback.
+ * Executes a prioritized sequential STOP with failure-tolerant continuation and post-verification.
+ * Disarms releaseControl/numericPilot first (hard numeric gate), then releaseControl/autonomousProgression,
+ * then coaches/{coachId}.autoApplyCanary (merging autoApplyCanary without touching other coach fields).
+ * If any step fails or readback cannot confirm full deactivation, returns status: 'STOP_INCOMPLETE'.
  * @param {object} opts
  * @param {string} [opts.reason] - Reason for stopping
  * @param {string} [opts.operationId] - Active operation identifier
@@ -34,62 +37,85 @@ async function executeStop(opts, io) {
   const operationId = opts.operationId || 'MANUAL_STOP_' + now;
   const reason = opts.reason || 'OPERATIONAL_STOP_REQUESTED';
 
-  const stopPlan = {
-    schema: 'vdsen-numeric-stop-v1',
-    operationId: operationId,
-    reason: reason,
-    stoppedAt: isoNow,
-    fencesToDisarm: [
-      {
-        path: 'releaseControl/numericPilot',
-        fields: {
-          enabled: false,
-          stoppedAt: isoNow,
-          stoppedOperation: operationId,
-          stopReason: reason
-        }
-      },
-      {
-        path: 'releaseControl/autonomousProgression',
-        fields: {
-          enabled: false,
-          expiresAt: isoNow,
-          clientIds: [C.UID]
-        }
-      },
-      {
-        path: 'coaches/' + coachId,
-        fields: {
-          autoApplyCanary: {
-            enabled: false,
-            clientIds: [C.UID],
-            prescriptionExerciseIds: [C.PID]
-          }
-        }
-      }
-    ]
-  };
+  const writeAttempts = [];
+  const errors = [];
 
-  // 1. Execute Disarm Writes
-  const writeResults = [];
-  for (const item of stopPlan.fencesToDisarm) {
-    const res = await io.writeFence(item.path, item.fields);
-    writeResults.push({ path: item.path, success: !!res });
+  // Step 1: Disarm Primary Numeric Pilot Gate (hard blocker for _autonomousProgression.js)
+  try {
+    const numRes = await io.writeFence('releaseControl/numericPilot', {
+      enabled: false,
+      stoppedAt: isoNow,
+      stoppedOperation: operationId,
+      stopReason: reason
+    }, { merge: true });
+    writeAttempts.push({ fence: 'numericPilot', path: 'releaseControl/numericPilot', success: !!numRes });
+  } catch (err) {
+    writeAttempts.push({ fence: 'numericPilot', path: 'releaseControl/numericPilot', success: false, error: err.message });
+    errors.push('Failed to disarm releaseControl/numericPilot: ' + err.message);
   }
 
-  // 2. Readback Verification (Confirm that NO new applications can start)
-  const numericFence = await io.readFence('releaseControl/numericPilot');
-  const releaseFence = await io.readFence('releaseControl/autonomousProgression');
-  const coachDoc = await io.readFence('coaches/' + coachId);
+  // Step 2: Disarm Global Progression Release Fence
+  try {
+    const relRes = await io.writeFence('releaseControl/autonomousProgression', {
+      enabled: false,
+      expiresAt: isoNow,
+      clientIds: [C.UID]
+    }, { merge: true });
+    writeAttempts.push({ fence: 'autonomousProgression', path: 'releaseControl/autonomousProgression', success: !!relRes });
+  } catch (err) {
+    writeAttempts.push({ fence: 'autonomousProgression', path: 'releaseControl/autonomousProgression', success: false, error: err.message });
+    errors.push('Failed to disarm releaseControl/autonomousProgression: ' + err.message);
+  }
 
-  const numericStopped = !numericFence || numericFence.enabled === false;
-  const releaseStopped = !releaseFence || releaseFence.enabled === false;
-  const coachStopped = !coachDoc || !coachDoc.autoApplyCanary || coachDoc.autoApplyCanary.enabled === false;
+  // Step 3: Disarm Coach Canary Fence (Merge only autoApplyCanary; never overwrite coach profile or unrelated fields)
+  try {
+    const coachRes = await io.writeFence('coaches/' + coachId, {
+      autoApplyCanary: {
+        enabled: false,
+        clientIds: [C.UID],
+        prescriptionExerciseIds: [C.PID]
+      }
+    }, { merge: true, mask: ['autoApplyCanary'] });
+    writeAttempts.push({ fence: 'coachCanary', path: 'coaches/' + coachId, success: !!coachRes });
+  } catch (err) {
+    writeAttempts.push({ fence: 'coachCanary', path: 'coaches/' + coachId, success: false, error: err.message });
+    errors.push('Failed to disarm coaches/' + coachId + ' canary: ' + err.message);
+  }
 
-  const allDisarmed = numericStopped && releaseStopped && coachStopped;
+  // Step 4: Post-Verification Readback (Confirm whether all three fences are definitively disabled)
+  let numericStopped = false;
+  let releaseStopped = false;
+  let coachStopped = false;
+  let readbackErrors = [];
+
+  try {
+    const numericFence = await io.readFence('releaseControl/numericPilot');
+    numericStopped = !numericFence || numericFence.enabled === false;
+  } catch (err) {
+    readbackErrors.push('Failed to read back releaseControl/numericPilot: ' + err.message);
+  }
+
+  try {
+    const releaseFence = await io.readFence('releaseControl/autonomousProgression');
+    releaseStopped = !releaseFence || releaseFence.enabled === false;
+  } catch (err) {
+    readbackErrors.push('Failed to read back releaseControl/autonomousProgression: ' + err.message);
+  }
+
+  try {
+    const coachDoc = await io.readFence('coaches/' + coachId);
+    coachStopped = !coachDoc || !coachDoc.autoApplyCanary || coachDoc.autoApplyCanary.enabled === false;
+  } catch (err) {
+    readbackErrors.push('Failed to read back coaches/' + coachId + ': ' + err.message);
+  }
+
+  const allFencesConfirmedDisabled = numericStopped && releaseStopped && coachStopped && (readbackErrors.length === 0);
+  const allDisarmed = allFencesConfirmedDisabled && (errors.length === 0);
+  const status = allDisarmed ? 'STOP_CONFIRMED' : 'STOP_INCOMPLETE';
 
   const report = {
     schema: 'vdsen-numeric-stop-v1',
+    status: status,
     operationId: operationId,
     stoppedAt: isoNow,
     reason: reason,
@@ -97,12 +123,19 @@ async function executeStop(opts, io) {
     pilotUid: C.UID,
     pid: C.PID,
     allDisarmed: allDisarmed,
+    primaryFenceDisarmed: numericStopped,
+    writeAttempts: writeAttempts,
     readback: {
       numericPilotDisarmed: numericStopped,
       releaseControlDisarmed: releaseStopped,
-      coachCanaryDisarmed: coachStopped
+      coachCanaryDisarmed: coachStopped,
+      readbackComplete: readbackErrors.length === 0
     },
-    writes: writeResults,
+    errors: [...errors, ...readbackErrors],
+    // Explicit invariants
+    sportsDataPreserved: true,
+    revertedAthleteRecords: 0,
+    deletedDocuments: 0,
     digest: null
   };
 
