@@ -26,7 +26,18 @@ if (process.env.E2E_SYNTHETIC_PILOT === '1') {
     return helper.createSyntheticExecutor(window, { validateTime: true }).processProgression(input);
   } };
 }
-let trigger = process.env.E2E_SYNTHETIC_PILOT === '1'
+if (process.env.E2E_HISTORICAL_FIXTURE === '1') {
+  // Only the local sandbox may compose the multi-exercise historical engine.
+  if (PROJECT !== 'demo-vdsen-client-e2e' || process.env.FIRESTORE_EMULATOR_HOST !== '127.0.0.1:8085') throw new Error('DEMO_EMULATOR_REQUIRED');
+  selectedExecutor = { ...realExecutor, async processProgression(input) {
+    const raw = fs.readFileSync(path.join(require('os').tmpdir(), 'vdsen-client-e2e-creds.json'), 'utf8');
+    const fixture = Object.values(JSON.parse(raw).who || {}).find(f => f.uid === input.clientId && f.planId === input.planId);
+    if (!fixture || !Array.isArray(fixture.pids) || !fixture.pids.length) return realExecutor.processProgression(input);
+    const scoped = await helper.createHistoricalFixture(db, fixture.uid, fixture.planId, fixture.pids);
+    return scoped.executor.processProgression({ ...input, db: scoped.db });
+  } };
+}
+let trigger = (process.env.E2E_SYNTHETIC_PILOT === '1' || process.env.E2E_HISTORICAL_FIXTURE === '1')
   ? helper.createSyntheticTrigger(selectedExecutor, require(path.join(root, 'api', '_autonomousProgressionSweep.js')))
   : require(path.join(root, 'api', 'autonomous-progression-trigger.js'));
 if (process.env.E2E_TRACE_AUTHORITY === '1') {

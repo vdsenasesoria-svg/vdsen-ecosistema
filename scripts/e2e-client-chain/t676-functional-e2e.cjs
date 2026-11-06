@@ -36,9 +36,10 @@ async function singleSession(page,real=4,post={}) {
     // The excluded athlete shares the Coach but is absent from BOTH allowlists after the main fixture is seeded.
     const other=await L.seedAthlete('T676OTHER',[ex('T676 Aislado','pectoral',100)]);
     const a=await L.seedAthlete('T676MAIN',specs,{coach:other.coach,planExtra:{musclePriorities:{PRIORITARIO:['dorsal_ancho'],NO_PRIORITARIO:['triceps']}}});
+    await L.db.doc('coaches/'+a.coach.uid).set({ autoApplyCanary: { enabled: true, clientIds: [a.uid], prescriptionExerciseIds: a.pids } }, { merge: true });
     const originalPlan=(await L.db.doc('plans/'+a.planId).get()).data(), originalHistory=JSON.stringify((await L.meso(a)).entries);
     fd=fs.openSync(path.join(OUT,'server.log'),'w');
-    server=spawn(process.execPath,[path.join(__dirname,'serve.cjs'),L.root,'5276'],{env:{...process.env,E2E_NUMERIC:'1'},stdio:['ignore',fd,fd]});
+    server=spawn(process.execPath,[path.join(__dirname,'serve.cjs'),L.root,'5276'],{env:{...process.env,E2E_NUMERIC:'1',E2E_HISTORICAL_FIXTURE:'1'},stdio:['ignore',fd,fd]});
     await until(async()=>{try{return(await fetch(ORIGIN+'/__trigger-log')).ok;}catch(_){return false;}},20000);
     browser=await chromium.launch({executablePath:process.env.CHROME_PATH||'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
     let blocked=true,lost=false,attempts=0;
@@ -124,7 +125,9 @@ async function singleSession(page,real=4,post={}) {
     await coachCtx.close();await b.ctx.close();
     const ob=await boot(browser,other.label);await singleSession(ob.page);const om=await L.meso(other);
     must('I another client has persisted execution but zero numerical applications',!!om.entries.done_2_0&&!L.recordsOf(om).length&&!L.overlaysOf(om).length);await ob.ctx.close();
-    const d=await L.seedAthlete('T676DELOAD',[ex('T676 Sentadilla','cuadriceps',100)],{planExtra:{rirByWeek:{3:4}}}),bd=await boot(browser,d.label);
+    const d=await L.seedAthlete('T676DELOAD',[ex('T676 Sentadilla','cuadriceps',100)],{planExtra:{rirByWeek:{3:4}}});
+    await L.db.doc('coaches/'+d.coach.uid).set({ autoApplyCanary: { enabled: true, clientIds: [d.uid], prescriptionExerciseIds: d.pids } }, { merge: true });
+    const bd=await boot(browser,d.label);
     await singleSession(bd.page,2,{sleep:'5',rpe:'10',durationMinutes:60});await until(async()=>L.overlaysOf(await L.meso(d)).length===1);
     const dm=await L.meso(d),dov=L.overlaysOf(dm)[0],dv=await view(bd.page);
     must('reactive DELOAD and plan-owned RIR reach live prescription',dov.dimension==='DELOAD'&&dov.components.SETS===2&&dov.components.LOAD===90&&dov.components.RIR===4&&dv.sets.length===2&&dv.sets.every(s=>s.load===90&&s.rirTarget===4),{overlay:L.slimOv(dov),view:dv});await bd.ctx.close();
