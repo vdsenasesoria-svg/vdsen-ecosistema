@@ -394,6 +394,11 @@ async function executeAuditStatus(opts, io) {
   return report;
 }
 
+function getArg(args, name, fallback = null) {
+  const i = args.indexOf(name);
+  return (i !== -1 && i + 1 < args.length) ? args[i + 1] : fallback;
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const command = args[0] || 'help';
@@ -406,8 +411,8 @@ async function main() {
   }
 
   if (command === 'fetch-fences') {
-    const coachId = args[args.indexOf('--coach-id') + 1] || 'coach-ayrton';
-    const outFile = args[args.indexOf('--out') + 1] || 'release-output/fences.json';
+    const coachId = getArg(args, '--coach-id', 'coach-ayrton');
+    const outFile = getArg(args, '--out', 'release-output/fences.json');
     const token = process.env.GOOGLE_ACCESS_TOKEN;
     const projectId = process.env.GCP_PROJECT_ID || 'vdsen-ecosistema';
 
@@ -429,14 +434,14 @@ async function main() {
   }
 
   if (command === 'preflight') {
-    const windowFile = args[args.indexOf('--window-file') + 1];
-    const deploymentId = args[args.indexOf('--deployment') + 1] || null;
-    const expectedAlias = args[args.indexOf('--expected-alias') + 1] || 'vdsen-ecosistema.vercel.app';
-    const currentRunId = args[args.indexOf('--current-run') + 1] || process.env.GITHUB_RUN_ID || null;
-    const fencesFile = args[args.indexOf('--fences-file') + 1];
-    const runsFile = args[args.indexOf('--runs-file') + 1];
-    const priorFile = args[args.indexOf('--prior-file') + 1];
-    const outFile = args[args.indexOf('--out') + 1];
+    const windowFile = getArg(args, '--window-file');
+    const deploymentId = getArg(args, '--deployment');
+    const expectedAlias = getArg(args, '--expected-alias', 'vdsen-ecosistema.vercel.app');
+    const currentRunId = getArg(args, '--current-run', process.env.GITHUB_RUN_ID);
+    const fencesFile = getArg(args, '--fences-file');
+    const runsFile = getArg(args, '--runs-file');
+    const priorFile = getArg(args, '--prior-file');
+    const outFile = getArg(args, '--out');
 
     let windowData = null;
     if (windowFile && fs.existsSync(windowFile)) {
@@ -499,11 +504,11 @@ async function main() {
   }
 
   if (command === 'attest') {
-    const deploymentId = args[args.indexOf('--deployment') + 1];
-    const sha = args[args.indexOf('--sha') + 1];
-    const opId = args[args.indexOf('--operation-id') + 1];
-    const expectedAlias = args[args.indexOf('--expected-alias') + 1] || 'vdsen-ecosistema.vercel.app';
-    const outFile = args[args.indexOf('--out') + 1];
+    const deploymentId = getArg(args, '--deployment');
+    const sha = getArg(args, '--sha');
+    const opId = getArg(args, '--operation-id');
+    const expectedAlias = getArg(args, '--expected-alias', 'vdsen-ecosistema.vercel.app');
+    const outFile = getArg(args, '--out');
 
     const result = await attestRuntime({
       deploymentId,
@@ -525,10 +530,10 @@ async function main() {
   }
 
   if (command === 'stop') {
-    const coachId = args[args.indexOf('--coach-id') + 1] || 'coach-ayrton';
-    const operationId = args[args.indexOf('--operation-id') + 1] || 'STOP_CLI_' + Date.now();
-    const reason = args[args.indexOf('--reason') + 1] || 'OPERATOR_STOP_CLI';
-    const outFile = args[args.indexOf('--out') + 1] || 'release-output/stop-evidence.json';
+    const coachId = getArg(args, '--coach-id', 'coach-ayrton');
+    const operationId = getArg(args, '--operation-id', 'STOP_CLI_' + Date.now());
+    const reason = getArg(args, '--reason', 'OPERATOR_STOP_CLI');
+    const outFile = getArg(args, '--out', 'release-output/stop-evidence.json');
 
     // 1. Google OAuth2 token REST mode (GitHub Actions with WIF)
     const token = process.env.GOOGLE_ACCESS_TOKEN;
@@ -561,10 +566,10 @@ async function main() {
   }
 
   if (command === 'audit') {
-    const file = args[args.indexOf('--file') + 1];
-    const pilotUid = args[args.indexOf('--pilot-uid') + 1] || C.UID;
-    const planId = args[args.indexOf('--plan-id') + 1] || C.PLAN;
-    const outFile = args[args.indexOf('--out') + 1] || 'release-output/numeric-pilot/audit-status.json';
+    const file = getArg(args, '--file');
+    const pilotUid = getArg(args, '--pilot-uid', C.UID);
+    const planId = getArg(args, '--plan-id', C.PLAN);
+    const outFile = getArg(args, '--out', 'release-output/numeric-pilot/audit-status.json');
 
     const rep = await executeAuditStatus({ file, pilotUid, planId });
     if (outFile) {
