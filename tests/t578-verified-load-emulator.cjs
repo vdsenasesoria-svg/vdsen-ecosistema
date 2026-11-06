@@ -9,7 +9,7 @@ const admin = require('firebase-admin');
 const projectId = process.env.GCLOUD_PROJECT || 'demo-vdsen-shadow';
 const app = admin.initializeApp({ projectId }, 't578-admin');
 const db = admin.firestore(app);
-const executor = require('../api/_autonomousProgression');
+const { createHistoricalFixture } = require('./helpers/t699-synthetic-executor');
 const effective = require('../assets/progression-effective-prescription.js');
 test.after(async () => { await app.delete(); });
 
@@ -42,13 +42,14 @@ async function seed(o) {
   await db.doc('plans/' + planId).set(plan);
   await db.doc('logs/' + uid).set({ planId, entries: logs });
   await db.doc('logs/' + uid + '/mesos/' + planId).set({ planId, entries: logs });
-  return { uid, planId, coachId, plan, logs };
+  const scoped = await createHistoricalFixture(db, uid, planId, PID);
+  return { uid, planId, coachId, plan, logs, ...scoped };
 }
 // The release allowlist is a single global document: every run opens it for exactly the athlete being processed (unless a test sets it itself).
 const run = async (s, extra) => {
   const { keepAllowlist, ...rest } = extra || {};
   if (!keepAllowlist) await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: [s.uid] });
-  return executor.processProgression(Object.assign({ db, clientId: s.uid, planId: s.planId, enabled: true, numericApplyEnabled: true, clock }, rest));
+  return s.executor.processProgression(Object.assign({ db: s.db, clientId: s.uid, planId: s.planId, enabled: true, numericApplyEnabled: true, clock }, rest));
 };
 const meso = async (s) => (await db.doc('logs/' + s.uid + '/mesos/' + s.planId).get()).data();
 

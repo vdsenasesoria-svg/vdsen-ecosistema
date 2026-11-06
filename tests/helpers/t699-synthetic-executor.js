@@ -46,6 +46,22 @@ function createSyntheticSweep(executor) {
   instance._compile(fs.readFileSync(file, 'utf8'), file);
   return instance.exports;
 }
+// Emulator-only authority for a named synthetic fixture. The real release and
+// Coach documents are still read transactionally; only the extra pilot fence is
+// isolated per fixture so historical multi-client tests cannot race on it.
+async function createHistoricalFixture(db, uid, planId, pid) {
+  if (!/^127\.0\.0\.1:\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || '') || !/^demo-/.test(process.env.GCLOUD_PROJECT || '')) throw new Error('DEMO_EMULATOR_REQUIRED');
+  if (![uid, planId, pid].every(x => typeof x === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(x) && x !== '*')) throw new Error('SYNTHETIC_IDENTITY_INVALID');
+  const start = Math.floor(Date.now() / 1000) * 1000, iso = n => new Date(n).toISOString().replace('.000Z', 'Z');
+  const window = { schema: 'vdsen-numeric-pilot-v1', mode: 'NUMERIC_APPLY', uid, planId, pid,
+    runtimeSha: 'a'.repeat(40), operationId: 'synthetic-test-window', startsAt: iso(start - 1000), expiresAt: iso(start + 3600000) };
+  const fenceId = 't699-synthetic-' + uid;
+  await db.doc('releaseControl/' + fenceId).set({ ...window, enabled: true });
+  const scopedDb = Object.create(db);
+  scopedDb.collection = name => name === 'releaseControl' ? { doc: id => db.collection(name).doc(id === 'numericPilot' ? fenceId : id) } : db.collection(name);
+  scopedDb.runTransaction = fn => db.runTransaction(fn);
+  return { db: scopedDb, executor: createSyntheticExecutor(window, { validateTime: true, historicalScope: true }) };
+}
 // Compose the unchanged request handler with an explicitly supplied test-only executor.
 // Authentication still goes through the handler's verifyIdToken dependency.
 function createSyntheticTrigger(executor, sweep) {
@@ -59,4 +75,4 @@ function createSyntheticTrigger(executor, sweep) {
   instance._compile(fs.readFileSync(file, 'utf8'), file);
   return instance.exports;
 }
-module.exports = { createSyntheticExecutor, createSyntheticSweep, createSyntheticTrigger };
+module.exports = { createSyntheticExecutor, createSyntheticSweep, createSyntheticTrigger, createHistoricalFixture };

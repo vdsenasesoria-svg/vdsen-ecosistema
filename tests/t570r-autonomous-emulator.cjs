@@ -66,17 +66,8 @@ async function fixture(o) {
   await db.doc('logs/' + athlete.uid + '/starts/' + planId + '_1_2_0').set({
     planId, week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: nowIso
   });
-  // A separate synthetic fence per fixture keeps concurrent demo clients isolated.
-  const start = Math.floor(Date.now() / 1000) * 1000, iso = n => new Date(n).toISOString().replace('.000Z', 'Z');
-  const window = { schema: 'vdsen-numeric-pilot-v1', mode: 'NUMERIC_APPLY', uid: athlete.uid, planId, pid: PID,
-    runtimeSha: 'a'.repeat(40), operationId: 'synthetic-t570r-window', startsAt: iso(start - 1000), expiresAt: iso(start + 3600000) };
-  const fenceId = 't699-synthetic-' + athlete.uid;
-  await db.doc('releaseControl/' + fenceId).set({ ...window, enabled: true });
-  const scopedDb = Object.create(db);
-  scopedDb.collection = name => name === 'releaseControl' ? { doc: id => db.collection(name).doc(id === 'numericPilot' ? fenceId : id) } : db.collection(name);
-  scopedDb.runTransaction = fn => db.runTransaction(fn);
-  const scopedExecutor = harness.createSyntheticExecutor(window, { validateTime: true, historicalScope: true });
-  return { athlete, coach, planId, logs, db: scopedDb, executor: scopedExecutor };
+  const scoped = await harness.createHistoricalFixture(db, athlete.uid, planId, PID);
+  return { athlete, coach, planId, logs, ...scoped };
 }
 const run = (f, o) => f.executor.processProgression(Object.assign({ db: f.db, clientId: f.athlete.uid, planId: f.planId, enabled: true, numericApplyEnabled: true,
   clock: () => new Date().toISOString() }, o || {}));
