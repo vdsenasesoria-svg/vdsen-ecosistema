@@ -27,16 +27,17 @@ function invocation(env, action) {
   assert.equal(env.GITHUB_ACTIONS, 'true', 'Must be executed within GitHub Actions environment.');
   assert.equal(env.GITHUB_REPOSITORY, 'vdsenasesoria-svg/vdsen-ecosistema', 'Invalid repository.');
   assert.equal(env.GITHUB_REF, 'refs/heads/codex/client-app-next', 'Must target canonical branch codex/client-app-next.');
-  assert.equal(env.GITHUB_RUN_ATTEMPT, '1', 'NO_JOB_RERUNS: Reruns are forbidden for numeric operations.');
 
   if (action === 'stop') {
-    // STOP is an emergency safety disarm action. It does NOT require the activation release switch.
-    // It requires that STOP is not explicitly blocked by operator.
+    // STOP is an emergency safety disarm action. It does NOT require the activation release switch,
+    // and is never blocked by job re-run attempts (retry after network/transient failure is permitted).
     if (env.VDSEN_NUMERIC_PILOT_STOP_ENABLED === 'false') {
       throw new Error('NUMERIC_PILOT_STOP_BLOCKED: STOP authorization explicitly revoked.');
     }
     return { authorized: true, action: 'stop' };
   }
+
+  assert.equal(env.GITHUB_RUN_ATTEMPT, '1', 'NO_JOB_RERUNS: Reruns are forbidden for numeric operations.');
 
   if (action === 'arm-fences') {
     throw new Error('ARM_NOT_IMPLEMENTED: Production arming is disabled. Formal owner authorization required.');

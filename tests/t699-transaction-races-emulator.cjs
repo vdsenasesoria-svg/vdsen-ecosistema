@@ -195,23 +195,43 @@ test('transaction races in emulator: exercises all 16 mandatory concurrency case
       });
     };
     const resCoachEdit = await executor.applyPending(interceptingDb4, C.UID, C.PLAN, () => new Date().toISOString());
-    // Transaction allowed check verifies plan and fences
+    assert.ok(resCoachEdit.every(r => !r.written));
+    assert.equal((await mesoRef.get()).data().progressionApplications[sc.rec.key].state, 'PENDING');
+    assert.deepEqual((await mesoRef.get()).data().nextExposureOverlays, {});
     await db.doc('plans/' + C.PLAN).set(sc.plan); // restore
 
     // 8. Cambio del plan activo durante una transacción
     await mesoRef.set(pending);
-    await db.doc('clients/' + C.UID).set({ activePlanId: 'foreign-plan-999', coachId: coach });
-    const resPlanSwitch = await executor.applyPending(db, C.UID, C.PLAN, () => new Date().toISOString());
+    const interceptingDb5 = Object.create(db);
+    interceptingDb5.collection = name => db.collection(name);
+    interceptingDb5.runTransaction = async (fn) => {
+      return db.runTransaction(async (tx) => {
+        await db.doc('clients/' + C.UID).set({ activePlanId: 'foreign-plan-999', coachId: coach });
+        return fn(tx);
+      });
+    };
+    const resPlanSwitch = await executor.applyPending(interceptingDb5, C.UID, C.PLAN, () => new Date().toISOString());
     assert.ok(resPlanSwitch.every(r => !r.written));
+    assert.equal((await mesoRef.get()).data().progressionApplications[sc.rec.key].state, 'PENDING');
+    assert.deepEqual((await mesoRef.get()).data().nextExposureOverlays, {});
     await db.doc('clients/' + C.UID).set({ activePlanId: C.PLAN, coachId: coach }); // restore
 
     // 9. Sustitución del PID autorizado
     await mesoRef.set(pending);
-    await db.doc('coaches/' + coach).set({
-      autoApplyCanary: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: ['other-pid-999'] }
-    });
-    const resPidSub = await executor.applyPending(db, C.UID, C.PLAN, () => new Date().toISOString());
+    const interceptingDb6 = Object.create(db);
+    interceptingDb6.collection = name => db.collection(name);
+    interceptingDb6.runTransaction = async (fn) => {
+      return db.runTransaction(async (tx) => {
+        await db.doc('coaches/' + coach).set({
+          autoApplyCanary: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: ['other-pid-999'] }
+        });
+        return fn(tx);
+      });
+    };
+    const resPidSub = await executor.applyPending(interceptingDb6, C.UID, C.PLAN, () => new Date().toISOString());
     assert.ok(resPidSub.every(r => !r.written));
+    assert.equal((await mesoRef.get()).data().progressionApplications[sc.rec.key].state, 'PENDING');
+    assert.deepEqual((await mesoRef.get()).data().nextExposureOverlays, {});
     await db.doc('coaches/' + coach).set({
       autoApplyCanary: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] }
     }); // restore
@@ -221,6 +241,8 @@ test('transaction races in emulator: exercises all 16 mandatory concurrency case
     const expiredClock = () => iso(Date.parse(window.expiresAt) + 1000);
     const resExpired = await executor.applyPending(db, C.UID, C.PLAN, expiredClock);
     assert.ok(resExpired.every(r => !r.written));
+    assert.equal((await mesoRef.get()).data().progressionApplications[sc.rec.key].state, 'PENDING');
+    assert.deepEqual((await mesoRef.get()).data().nextExposureOverlays, {});
 
     // 11. Aborto antes del commit
     await mesoRef.set(pending);

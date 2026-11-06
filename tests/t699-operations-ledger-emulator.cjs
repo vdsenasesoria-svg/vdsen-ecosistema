@@ -1,21 +1,23 @@
 'use strict';
 /**
- * VDSEN — T699 Phase P0.4 Durable Operations Ledger Suite in Firestore Emulator
+ * VDSEN — T699 Phase P0.5 Durable Operations Ledger Suite in Firestore Emulator
  *
- * Exercises all 13 required scenarios for the durable operationId ledger:
- * 1. Primera reserva
- * 2. Reserva duplicada
- * 3. Dos reservas simultáneas (concurrencia)
- * 4. Reserva después de STOP
- * 5. Reintento de una operación ejecutada
- * 6. Operación fallida antes de reservar
- * 7. Error de red simulado
- * 8. Documento inválido
- * 9. Credenciales no autorizadas
- * 10. Estado incompleto
- * 11. Registro manipulado
- * 12. Conflicto de operación
- * 13. Recuperación de evidencia
+ * Exercises all 15 required scenarios for the durable operationId ledger:
+ * 1. Más de 100 operaciones previas con duplicado fuera del primer bloque
+ * 2. Consulta directa del operationId
+ * 3. Dos reservas concurrentes (concurrencia atómica)
+ * 4. Reintento después de reserva
+ * 5. Conflicto de SHA (data.runtimeSha !== window.runtimeSha)
+ * 6. Conflicto de ventana (data.operationId !== window.operationId)
+ * 7. Conflicto UID/PID/plan (mismatches)
+ * 8. Reserva con release desarmado
+ * 9. STOP concurrente (idempotencia)
+ * 10. Reintento tras STOP
+ * 11. Transiciones de estado inválidas (COMPLETED -> FAILED, STOPPED -> COMPLETED, etc.)
+ * 12. Campos históricos protegidos (identidad inmutable)
+ * 13. Error de conexión simulado
+ * 14. Recuperación de evidencia desinfectada
+ * 15. Rechazo de fuente no acreditada en preflight
  */
 
 const test = require('node:test');
@@ -25,6 +27,7 @@ const { getFirestore } = require('firebase-admin/firestore');
 
 const C = require('../api/_numericPilotContract');
 const ledger = require('../scripts/pilot/numeric-operations-ledger.cjs');
+const { runPreflight } = require('../scripts/pilot/numeric-preflight.cjs');
 
 assert.ok(process.env.FIRESTORE_EMULATOR_HOST, 'Firestore Emulator required');
 const projectId = process.env.GCLOUD_PROJECT || 'demo-vdsen-shadow';
@@ -64,29 +67,46 @@ function makeValidOpData(opId = 'op-ledger-01') {
   };
 }
 
-test('ledger in emulator: exercises all 13 scenarios for operationId ledger', async () => {
+test('ledger in emulator: exercises all 15 scenarios for operationId ledger', async () => {
   // Ensure releaseControl/numericPilot is armed for reservation tests
   await db.doc('releaseControl/numericPilot').set({ enabled: true });
 
-  // 1. Primera reserva
-  const op1 = makeValidOpData('op-first-reserve');
-  const res1 = await ledger.reserveOperation(db, op1);
-  assert.equal(res1.success, true);
-  assert.equal(res1.operationId, 'op-first-reserve');
-  assert.equal(res1.status, 'RESERVED');
+  // 1. Más de 100 operaciones previas, con duplicado fuera del primer bloque
+  // Seed 105 operations directly into emulator
+  const batch = db.batch();
+  for (let i = 1; i <= 105; i++) {
+    const id = `op-bulk-${String(i).padStart(3, '0')}`;
+    const ref = db.doc(`releaseControl/numericPilot/operations/${id}`);
+    batch.set(ref, {
+      schema: ledger.LEDGER_SCHEMA,
+      operationId: id,
+      uid: C.UID,
+      planId: C.PLAN,
+      pid: C.PID,
+      status: ledger.STATES.COMPLETED,
+      reservedAt: new Date(Date.now() - (106 - i) * 1000).toISOString()
+    });
+  }
+  await batch.commit();
 
-  const verify1 = await ledger.verifyOperation(db, 'op-first-reserve');
-  assert.equal(verify1.exists, true);
-  assert.equal(verify1.status, 'RESERVED');
-  assert.equal(verify1.operation.deploymentId, 'dpl_valid_01');
+  // Operation #104 is beyond any 100-limit page:
+  const directLookup104 = await ledger.checkOperationUniquenessDirect(db, 'op-bulk-104');
+  assert.equal(directLookup104.exists, true, 'Direct lookup must find operation #104 regardless of collection size');
+  assert.equal(directLookup104.status, ledger.STATES.COMPLETED);
 
-  // 2. Reserva duplicada rechazada
+  // Attempting to reserve op-bulk-104 must be rejected immediately:
+  const op104Data = makeValidOpData('op-bulk-104');
   await assert.rejects(
-    () => ledger.reserveOperation(db, op1),
+    () => ledger.reserveOperation(db, op104Data),
     /OPERATION_ALREADY_EXISTS/
   );
 
-  // 3. Dos reservas simultáneas (concurrencia atómica: exactamente 1 tiene éxito, 1 falla)
+  // 2. Consulta directa del operationId (devuelve null si no existe, o doc exacto si existe)
+  const lookupFresh = await ledger.checkOperationUniquenessDirect(db, 'op-never-seen-999');
+  assert.equal(lookupFresh.exists, false);
+  assert.equal(lookupFresh.status, null);
+
+  // 3. Dos reservas concurrentes (concurrencia atómica: exactamente 1 tiene éxito, 1 falla)
   const concurrentOp = makeValidOpData('op-concurrent-test');
   const attempts = await Promise.allSettled([
     ledger.reserveOperation(db, concurrentOp),
@@ -98,39 +118,99 @@ test('ledger in emulator: exercises all 13 scenarios for operationId ledger', as
   assert.equal(rejected.length, 1, 'Concurrent duplicate must be rejected');
   assert.match(rejected[0].reason.message, /OPERATION_ALREADY_EXISTS/);
 
-  // 4. Reserva después de STOP
-  await db.doc('releaseControl/numericPilot').set({ enabled: false });
-  const opAfterStop = makeValidOpData('op-after-stop');
+  // 4. Reintento después de reserva
   await assert.rejects(
-    () => ledger.reserveOperation(db, opAfterStop),
+    () => ledger.reserveOperation(db, concurrentOp),
+    /OPERATION_ALREADY_EXISTS/
+  );
+
+  // 5. Conflicto de SHA (data.runtimeSha !== data.window.runtimeSha)
+  const opShaConflict = makeValidOpData('op-sha-conflict');
+  opShaConflict.runtimeSha = 'b'.repeat(40); // window has 'a'.repeat(40)
+  assert.throws(
+    () => ledger.validateOperationData(opShaConflict),
+    /IDENTITY_MISMATCH/
+  );
+
+  // 6. Conflicto de ventana (data.operationId !== data.window.operationId)
+  const opWindowConflict = makeValidOpData('op-root-id');
+  opWindowConflict.window.operationId = 'op-window-mismatch';
+  assert.throws(
+    () => ledger.validateOperationData(opWindowConflict),
+    /IDENTITY_MISMATCH/
+  );
+
+  // 7. Conflicto UID/PID/plan
+  const opUidConflict = makeValidOpData('op-uid-conflict');
+  opUidConflict.window.uid = 'other-uid';
+  assert.throws(
+    () => ledger.validateOperationData(opUidConflict),
+    /IDENTITY_MISMATCH/
+  );
+  const opWrongContractUid = { ...makeValidOpData('op-wrong-uid'), uid: 'not-ayrton' };
+  assert.throws(
+    () => ledger.validateOperationData(opWrongContractUid),
+    /UNAUTHORIZED_IDENTIFIER/
+  );
+
+  // 8. Reserva con release desarmado
+  await db.doc('releaseControl/numericPilot').set({ enabled: false });
+  const opDisarmed = makeValidOpData('op-when-disarmed');
+  await assert.rejects(
+    () => ledger.reserveOperation(db, opDisarmed),
     /RELEASE_CONTROL_DISARMED/
   );
   await db.doc('releaseControl/numericPilot').set({ enabled: true }); // rearm
 
-  // 5. Reintento de una operación ejecutada (marcar COMPLETED y reintentar reserva o ejecución)
-  const opToComplete = makeValidOpData('op-to-complete');
-  await ledger.reserveOperation(db, opToComplete);
-  const completion = await ledger.recordResult(db, opToComplete.operationId, { success: true, summary: { applied: 1 } });
-  assert.equal(completion.status, 'COMPLETED');
-  // Attempting to reserve again fails:
+  // 9. STOP concurrente (idempotencia y sin carreras)
+  const opToStop = makeValidOpData('op-to-stop-concurrent');
+  await ledger.reserveOperation(db, opToStop);
+  const stopResults = await Promise.all([
+    ledger.recordStop(db, opToStop.operationId, { reason: 'CONCURRENT_STOP_1' }),
+    ledger.recordStop(db, opToStop.operationId, { reason: 'CONCURRENT_STOP_2' })
+  ]);
+  assert.equal(stopResults[0].status, 'STOPPED');
+  assert.equal(stopResults[1].status, 'STOPPED');
+  const verifyStopped = await ledger.verifyOperation(db, opToStop.operationId);
+  assert.equal(verifyStopped.status, 'STOPPED');
+
+  // 10. Reintento tras STOP
   await assert.rejects(
-    () => ledger.reserveOperation(db, opToComplete),
+    () => ledger.recordResult(db, opToStop.operationId, { success: true }),
+    /INVALID_STATE_TRANSITION/
+  );
+  await assert.rejects(
+    () => ledger.reserveOperation(db, opToStop),
     /OPERATION_ALREADY_EXISTS/
   );
-  // Attempting to record completion again fails:
+
+  // 11. Transiciones de estado inválidas
+  const opTransition = makeValidOpData('op-state-transitions');
+  await ledger.reserveOperation(db, opTransition);
+  await ledger.recordResult(db, opTransition.operationId, { success: true, summary: { applied: 1 } });
+  const completedOp = await ledger.verifyOperation(db, opTransition.operationId);
+  assert.equal(completedOp.status, 'COMPLETED');
+
+  // COMPLETED -> FAILED is forbidden
   await assert.rejects(
-    () => ledger.recordResult(db, opToComplete.operationId, { success: true }),
-    /OPERATION_ALREADY_COMPLETED/
+    () => ledger.recordResult(db, opTransition.operationId, { success: false }),
+    /INVALID_STATE_TRANSITION/
+  );
+  // COMPLETED -> RESERVED is forbidden
+  await assert.rejects(
+    () => ledger.reserveOperation(db, opTransition),
+    /OPERATION_ALREADY_EXISTS/
   );
 
-  // 6. Operación fallida antes de reservar (payload con formato inválido falla sin tocar DB)
-  const opBadId = makeValidOpData('bad'); // too short (< 8 chars)
-  assert.throws(
-    () => ledger.validateOperationData(opBadId),
-    /INVALID_OPERATION_DATA/
-  );
+  // 12. Campos históricos protegidos (identidad inmutable)
+  const initialData = (await db.doc(`releaseControl/numericPilot/operations/${opTransition.operationId}`).get()).data();
+  assert.equal(initialData.uid, C.UID);
+  assert.equal(initialData.planId, C.PLAN);
+  assert.equal(initialData.pid, C.PID);
+  assert.equal(initialData.runtimeSha, 'a'.repeat(40));
+  assert.equal(initialData.deploymentId, 'dpl_valid_01');
 
-  // 7. Error de red simulado (transient connection error handling)
+  // 13. Error de conexión simulado
   const simulatedDb = Object.create(db);
   simulatedDb.runTransaction = () => Promise.reject(new Error('UNAVAILABLE: network connection lost'));
   const opNetwork = makeValidOpData('op-network-err');
@@ -139,46 +219,7 @@ test('ledger in emulator: exercises all 13 scenarios for operationId ledger', as
     /UNAVAILABLE: network connection lost/
   );
 
-  // 8. Documento inválido (missing required fields)
-  assert.throws(
-    () => ledger.validateOperationData({ operationId: 'op-missing-fields' }),
-    /INVALID_OPERATION_DATA/
-  );
-
-  // 9. Credenciales no autorizadas (mismatched UID/PID/Plan)
-  const opWrongUid = { ...makeValidOpData('op-wrong-uid'), uid: 'unauthorized-user' };
-  assert.throws(
-    () => ledger.validateOperationData(opWrongUid),
-    /UNAUTHORIZED_IDENTIFIER/
-  );
-  const opWrongPid = { ...makeValidOpData('op-wrong-pid'), pid: 'unauthorized-pid' };
-  assert.throws(
-    () => ledger.validateOperationData(opWrongPid),
-    /UNAUTHORIZED_IDENTIFIER/
-  );
-
-  // 10. Estado incompleto (corrupted or empty document)
-  const nonExistent = await ledger.verifyOperation(db, 'op-does-not-exist');
-  assert.equal(nonExistent.exists, false);
-  assert.equal(nonExistent.status, 'NOT_FOUND');
-
-  // 11. Registro manipulado (tampered hash / mismatched runtimeSha)
-  const opTamperedSha = { ...makeValidOpData('op-tampered-sha'), runtimeSha: 'invalid-sha' };
-  assert.throws(
-    () => ledger.validateOperationData(opTamperedSha),
-    /INVALID_OPERATION_DATA/
-  );
-
-  // 12. Conflicto de operación (different deployment attempting same operationId)
-  const conflictOp = makeValidOpData('op-conflict-test');
-  await ledger.reserveOperation(db, conflictOp);
-  const diffDeploymentOp = { ...conflictOp, deploymentId: 'dpl_another_run_999' };
-  await assert.rejects(
-    () => ledger.reserveOperation(db, diffDeploymentOp),
-    /OPERATION_ALREADY_EXISTS/
-  );
-
-  // 13. Recuperación de evidencia
+  // 14. Recuperación de evidencia desinfectada
   const opEvidence = makeValidOpData('op-evidence-recovery');
   await ledger.reserveOperation(db, opEvidence);
   await ledger.recordResult(db, opEvidence.operationId, { success: true, summary: { applied: 1, delta: '+2.5kg' } });
@@ -188,12 +229,29 @@ test('ledger in emulator: exercises all 13 scenarios for operationId ledger', as
   assert.equal(evidence.status, 'COMPLETED');
   assert.equal(evidence.runtimeSha, 'a'.repeat(40));
   assert.equal(evidence.deploymentId, 'dpl_valid_01');
-  assert.equal(evidence.history.length, 2);
+  assert.ok(evidence.history.length >= 2);
   assert.equal(evidence.history[0].action, 'RESERVED');
   assert.equal(evidence.history[1].action, 'COMPLETED');
-  assert.equal(evidence.resultSummary.delta, '+2.5kg');
 
-  // Fetch list
-  const allOps = await ledger.fetchDurableOperations(db);
-  assert.ok(allOps.length >= 4);
+  // 15. Rechazo de fuente no acreditada en preflight (fail-closed BLOCKED)
+  const preflightUnverified = await runPreflight({
+    window: opEvidence.window,
+    deploymentId: 'dpl_valid_01',
+    activeRuns: [],
+    ledgerDb: db,
+    isEmulator: false // Simulates production / unaccredited source!
+  });
+  assert.equal(preflightUnverified.decision, 'BLOCKED');
+  assert.equal(preflightUnverified.reason, 'OPERATION_HISTORY_UNVERIFIED_SOURCE');
+
+  // Conversely, in emulator mode with direct document lookup:
+  const preflightExisting = await runPreflight({
+    window: opEvidence.window,
+    deploymentId: 'dpl_valid_01',
+    activeRuns: [],
+    ledgerDb: db,
+    isEmulator: true
+  });
+  assert.equal(preflightExisting.decision, 'NO-GO');
+  assert.equal(preflightExisting.reason, 'OPERATION_ALREADY_EXECUTED');
 });

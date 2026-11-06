@@ -159,22 +159,45 @@ function validateFences(fences, window, mode = 'preflight') {
  */
 async function runPreflight(opts) {
   opts = opts || {};
+  const window = opts.window;
   if (opts.ledgerDb && opts.priorOperations === undefined) {
-    try {
-      const ledger = require('./numeric-operations-ledger.cjs');
-      const ops = await ledger.fetchDurableOperations(opts.ledgerDb);
+    if (opts.isEmulator !== true) {
       opts = {
         ...opts,
-        priorOperations: ops,
-        priorOperationsSourceVerified: opts.isEmulator === true,
-        priorOperationsCoverageComplete: true
+        priorOperations: [],
+        priorOperationsSourceVerified: false,
+        priorOperationsCoverageComplete: false
       };
-    } catch (_) {}
+    } else {
+      try {
+        const ledger = require('./numeric-operations-ledger.cjs');
+        const targetOpId = window && window.operationId;
+        if (targetOpId) {
+          const directCheck = await ledger.checkOperationUniquenessDirect(opts.ledgerDb, targetOpId);
+          if (directCheck.exists) {
+            opts = {
+              ...opts,
+              priorOperations: [{ operationId: targetOpId, status: directCheck.status }],
+              priorOperationsSourceVerified: true,
+              priorOperationsCoverageComplete: true,
+              directLookupChecked: true
+            };
+          } else {
+            opts = {
+              ...opts,
+              priorOperations: [],
+              priorOperationsSourceVerified: true,
+              priorOperationsCoverageComplete: true,
+              directLookupChecked: true
+            };
+          }
+        }
+      } catch (_) {}
+    }
   }
   const now = opts.now || Date.now();
   const checks = [];
   const blockers = [];
-  const window = opts.window;
 
   // 1. Window Specification & Limits
   const windowCheck = validateNumericWindow(window, now);
@@ -271,7 +294,17 @@ async function runPreflight(opts) {
       const runDetail = typeof matchingPrior === 'object'
         ? ' (Run: ' + (matchingPrior.runId || 'N/A') + ', Status: ' + (matchingPrior.status || 'N/A') + ', Scope: ' + (matchingPrior.scope || 'N/A') + ')'
         : '';
-      blockers.push('Operation ID "' + window.operationId + '" has already been executed' + runDetail + '.');
+      const reasonMsg = 'Operation ID "' + window.operationId + '" has already been executed' + runDetail + '.';
+      blockers.push(reasonMsg);
+      return {
+        schema: 'vdsen-numeric-preflight-v1',
+        decision: 'NO-GO',
+        reason: 'OPERATION_ALREADY_EXECUTED',
+        message: reasonMsg,
+        checks,
+        blockers,
+        evaluatedAt: new Date(now).toISOString()
+      };
     }
   }
 

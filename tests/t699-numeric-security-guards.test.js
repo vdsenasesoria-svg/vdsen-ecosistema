@@ -4,9 +4,9 @@
  *
  * Exercises all 4 categories of safety invariants for the real numeric pilot:
  * A. Authorization (16 checks)
- * B. Materialization (10 checks)
+ * B. Materialization (10 checks, with real functional transaction execution)
  * C. Coach Priority (9 checks)
- * D. Consumption (9 checks)
+ * D. Consumption (9 checks, with real consumer transactions and receipts)
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -16,6 +16,11 @@ const C = require('../api/_numericPilotContract');
 const effective = require('../assets/progression-effective-prescription');
 const consumer = require('../assets/progression-application-consumer');
 const F = require('./helpers/lifecycle-fixture');
+const { makeStore } = require('./helpers/fake-firestore');
+
+const on = F.on;
+const C_ON = on.consumer;
+const shadowOn = F.shadowOn;
 
 const now = Date.parse('2026-11-04T12:00:00Z');
 const baseWindow = {
@@ -37,6 +42,39 @@ const baseScope = {
 const basePlan = {
   days: [{ exercises: [{ prescriptionExerciseId: C.PID, exerciseId: 'ex-bench', sets: [{ setIndex: 0, repsTarget: 10 }] }] }]
 };
+
+const REFS = {
+  meso: 'logs/' + C.UID + '/mesos/' + C.PLAN,
+  plan: 'plans/' + C.PLAN,
+  client: 'clients/' + C.UID,
+  root: 'logs/' + C.UID,
+  coach: 'coaches/synthetic-coach'
+};
+
+function storeFor(sc, over = {}) {
+  return makeStore(Object.assign({
+    [REFS.client]: { activePlanId: C.PLAN, coachInterventions: [], coachId: 'synthetic-coach' },
+    [REFS.plan]: sc.plan,
+    [REFS.meso]: Object.assign({ planId: C.PLAN, entries: sc.entries, progressionApplications: { [sc.rec.key]: sc.rec }, nextExposureOverlays: {} }, over.meso),
+    [REFS.root]: { planId: C.PLAN },
+    [REFS.coach]: { role: 'coach', autoApplyCanary: baseScope }
+  }, over.docs || {}));
+}
+
+const applyInput = (sc, o = {}) => Object.assign({
+  recordKey: sc.rec.key,
+  expectedRevision: sc.rec.revision,
+  now: '2026-09-28T01:00:00.000Z',
+  actorId: 'synthetic-coach',
+  context: {
+    clientId: C.UID,
+    planId: C.PLAN,
+    equipmentResolution: F.equipmentFor(sc),
+    resolveNextExposure: shadowOn.resolveNextExposure
+  }
+}, o);
+
+const apply = (api, s, sc, o, refs = REFS) => s.run(tx => api.applyOverlayTransaction(tx, refs, applyInput(sc, o), { isCurrent: () => true }));
 
 function appliedFixture(dimension = 'LOAD', value = 105, extra = {}) {
   const sc = F.scenario({ clientId: C.UID, planId: C.PLAN, pid: C.PID });
@@ -162,7 +200,7 @@ test('A16: Revocación de release rechaza aplicación', () => {
 });
 
 // ============================================================================
-// PART B: MATERIALIZACIÓN (10 CHECKS)
+// PART B: MATERIALIZACIÓN (10 CHECKS CON CÓDIGO PRODUCTIVO)
 // ============================================================================
 
 test('B1: Solo se materializa el PID autorizado en modo numérico', () => {
@@ -185,17 +223,68 @@ test('B2: Las recomendaciones de otros PID permanecen intactas en logs', () => {
   assert.equal(entries.progrec_1_2.recommendations[1].prescriptionExerciseId, 'foreign-pid');
 });
 
-test('B3: Registros PENDING ajenos no cambian a STALE durante materialización numérica', () => {
+test('B3: Registros PENDING ajenos no cambian a STALE durante materialización', () => {
   const sc = F.scenario({ clientId: C.UID, planId: C.PLAN, pid: C.PID });
-  const foreignRecord = { ...structuredClone(sc.rec), key: 'foreign-key', prescriptionExerciseId: 'other-pid', state: 'PENDING' };
-  assert.equal(foreignRecord.state, 'PENDING');
-  assert.equal(foreignRecord.prescriptionExerciseId !== C.PID, true);
+  const otherPid = 'other-pid-999';
+  const expandedPlan = structuredClone(sc.plan);
+  expandedPlan.days.forEach(day => day.exercises.push({ ...day.exercises[0], prescriptionExerciseId: otherPid }));
+
+  const foreignRecord = shadowOn.buildRecord({
+    clientId: C.UID,
+    planId: C.PLAN,
+    activePlanId: C.PLAN,
+    plan: expandedPlan,
+    entries: sc.entries,
+    week: 1,
+    dayIndex: 2,
+    calculatedAt: '2026-09-27T12:00:00.000Z',
+    sourceMatches: true,
+    sourcePidCount: 1,
+    recommendation: { prescriptionExerciseId: otherPid, exerciseId: sc.exerciseId, exerciseName: 'X', action: 'increase_load', newLoad: 10 }
+  }, '2026-09-27T13:00:00.000Z');
+
+  const existingRecords = { [foreignRecord.key]: foreignRecord };
+  const out = shadowOn.materializeRecords({
+    clientId: C.UID,
+    planId: C.PLAN,
+    activePlanId: C.PLAN,
+    plan: expandedPlan,
+    interventions: [],
+    entries: sc.entries,
+    records: existingRecords,
+    overlays: {},
+    structural: true,
+    at: '2026-09-27T14:00:00.000Z',
+    isStarted: () => false
+  });
+
+  assert.ok(out.records[foreignRecord.key], 'Foreign record must be preserved in records');
+  assert.equal(out.records[foreignRecord.key].state, 'PENDING', 'Foreign record must remain PENDING');
+  assert.equal(out.records[foreignRecord.key].revision, foreignRecord.revision);
 });
 
-test('B4: Overlays ajenos no se reescriben ni sobrescriben', () => {
-  const foreignOverlay = { key: 'foreign-ov', prescriptionExerciseId: 'other-pid', appliedValue: 50, status: 'APPLIED' };
-  const overlays = { 'foreign-ov': foreignOverlay };
-  assert.equal(overlays['foreign-ov'].appliedValue, 50);
+test('B4: Overlays ajenos no se reescriben ni sobrescriben durante applyOverlayTransaction', async () => {
+  const sc = F.scenario({ clientId: C.UID, planId: C.PLAN, pid: C.PID });
+  const foreignOverlay = {
+    schema: 'vdsen-next-exposure-overlay-v1',
+    key: 'foreign-ov-key',
+    sourceRecordKey: 'foreign-rec-key',
+    clientId: C.UID,
+    planId: C.PLAN,
+    prescriptionExerciseId: 'other-pid-foreign',
+    appliedValue: 80,
+    dimension: 'LOAD',
+    status: 'APPLIED',
+    target: { week: 2, dayIndex: 1 }
+  };
+  const s = storeFor(sc, { meso: { nextExposureOverlays: { [foreignOverlay.key]: foreignOverlay } } });
+  const r = await apply(C_ON, s, sc);
+  assert.equal(r.written, true);
+  const m = s.get(REFS.meso);
+  assert.ok(m.nextExposureOverlays[foreignOverlay.key], 'Foreign overlay must still exist in meso');
+  assert.equal(m.nextExposureOverlays[foreignOverlay.key].appliedValue, 80);
+  assert.equal(m.nextExposureOverlays[foreignOverlay.key].status, 'APPLIED');
+  assert.ok(m.nextExposureOverlays['ovl_' + sc.rec.key], 'Authorized overlay was created');
 });
 
 test('B5: Decisiones y eventos históricos no se eliminan', () => {
@@ -207,11 +296,13 @@ test('B5: Decisiones y eventos históricos no se eliminan', () => {
   assert.equal(recWithEvents.events.length, 1);
 });
 
-test('B6: Plan base permanece inmutable durante toda la ejecución', () => {
+test('B6: Plan base permanece inmutable tras la ejecución real de apply', async () => {
   const sc = F.scenario({ clientId: C.UID, planId: C.PLAN, pid: C.PID });
-  const frozenPlan = JSON.stringify(sc.plan);
-  const copy = JSON.parse(frozenPlan);
-  assert.deepEqual(copy, sc.plan);
+  const s = storeFor(sc);
+  const beforePlan = structuredClone(s.get(REFS.plan));
+  const r = await apply(C_ON, s, sc);
+  assert.equal(r.written, true);
+  assert.deepEqual(s.get(REFS.plan), beforePlan, 'Base plan must remain byte-for-byte identical after transaction');
 });
 
 test('B7: Versión efectiva proviene del overlay autorizado (CANONICAL_OVERLAY)', () => {
@@ -228,15 +319,54 @@ test('B8: Shadow conserva su comportamiento cuando numeric apply está apagado',
   assert.equal(resolved.provenance, 'BASE_PLAN');
 });
 
-test('B9: Materializar dos veces no duplica registros (idempotencia estructural)', () => {
+test('B9: Materializar dos veces no duplica registros (idempotencia real de materialize)', () => {
   const sc = F.scenario({ clientId: C.UID, planId: C.PLAN, pid: C.PID });
-  const records = { [sc.rec.key]: sc.rec };
-  assert.equal(Object.keys(records).length, 1);
+  const entriesWithRec = structuredClone(sc.entries);
+  entriesWithRec.progrec_1_2 = {
+    calculatedAt: '2026-09-27T12:00:00.000Z',
+    recommendations: [{
+      prescriptionExerciseId: C.PID,
+      exerciseId: sc.exerciseId,
+      exerciseName: 'X',
+      action: 'increase_load',
+      newLoad: 5,
+      newReps: 10
+    }]
+  };
+  const input = {
+    clientId: C.UID,
+    planId: C.PLAN,
+    activePlanId: C.PLAN,
+    plan: sc.plan,
+    interventions: [],
+    entries: entriesWithRec,
+    records: {},
+    overlays: {},
+    structural: true,
+    at: '2026-09-27T14:00:00.000Z',
+    isStarted: () => false
+  };
+  const out1 = shadowOn.materializeRecords(input);
+  const count1 = Object.keys(out1.records).length;
+  assert.ok(count1 >= 1);
+  const out2 = shadowOn.materializeRecords({ ...input, records: out1.records });
+  const count2 = Object.keys(out2.records).length;
+  assert.equal(count2, count1, 'Second materialization must not duplicate records');
+  assert.equal(out2.created.length, 0, 'No new records should be created on second run');
 });
 
-test('B10: STOP bloquea nuevas materializaciones', () => {
-  const fence = { ...baseWindow, enabled: false };
-  assert.equal(fence.enabled, false);
+test('B10: STOP bloquea nuevas aplicaciones en el consumidor real', async () => {
+  const sc = F.scenario({ clientId: C.UID, planId: C.PLAN, pid: C.PID });
+  const s = storeFor(sc, {
+    docs: {
+      [REFS.coach]: { role: 'coach', autoApplyCanary: { enabled: false, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] } }
+    }
+  });
+  const r = await apply(C_ON, s, sc);
+  assert.equal(r.written, false);
+  assert.equal(r.reason, 'OUT_OF_CANARY_SCOPE');
+  const m = s.get(REFS.meso);
+  assert.equal(m.progressionApplications[sc.rec.key].state, 'PENDING');
 });
 
 // ============================================================================
@@ -350,14 +480,49 @@ test('C9: Actualización concurrente de prescripción del Coach toma precedencia
 });
 
 // ============================================================================
-// PART D: CONSUMO (9 CHECKS)
+// PART D: CONSUMO (9 CHECKS CON CÓDIGO PRODUCTIVO)
 // ============================================================================
 
-test('D1: Ciclo completo PENDING -> APPLIED -> CONSUMED transicional', () => {
-  const states = ['PENDING', 'APPLIED', 'CONSUMED'];
-  assert.equal(states[0], 'PENDING');
-  assert.equal(states[1], 'APPLIED');
-  assert.equal(states[2], 'CONSUMED');
+test('D1: Ciclo completo PENDING -> APPLIED -> CONSUMED transicional', async () => {
+  const sc = F.scenario({ clientId: C.UID, planId: C.PLAN, pid: C.PID });
+  const s = storeFor(sc);
+  assert.equal(s.get(REFS.meso).progressionApplications[sc.rec.key].state, 'PENDING');
+
+  // 1. applyOverlayTransaction: PENDING -> APPLIED
+  const rApply = await apply(C_ON, s, sc);
+  assert.equal(rApply.written, true);
+  assert.equal(s.get(REFS.meso).progressionApplications[sc.rec.key].state, 'APPLIED');
+  const ov = s.get(REFS.meso).nextExposureOverlays['ovl_' + sc.rec.key];
+  assert.equal(ov.status, 'APPLIED');
+
+  // 2. recordConsumptionReceiptTransaction: Athlete writes receipt
+  const targetKey = 'log_' + ov.target.week + '_' + ov.target.dayIndex + '_0_s0';
+  s.docs.get(REFS.meso).entries[targetKey] = {
+    carga: '102.5', reps: '10', unit: 'KG', done: true, rir: 2, rir_real: 2,
+    prescriptionExerciseId: C.PID, ts: 5, sts: Date.parse('2026-09-28T02:00:00.000Z')
+  };
+  const rReceipt = await s.run(tx => C_ON.recordConsumptionReceiptTransaction(tx, REFS, {
+    recordKey: sc.rec.key,
+    clientId: C.UID,
+    now: '2026-09-30T08:59:00.000Z',
+    shown: {
+      provenance: 'CANONICAL_OVERLAY',
+      overlayKey: ov.key,
+      dimension: ov.dimension,
+      appliedValue: ov.appliedValue
+    }
+  }, { isCurrent: () => true }));
+  assert.equal(rReceipt.written, true);
+  assert.ok(s.get(REFS.meso).consumptionReceipts[sc.rec.key]);
+
+  // 3. consumeOverlayTransaction: APPLIED -> CONSUMED
+  const rConsume = await s.run(tx => C_ON.consumeOverlayTransaction(tx, REFS, {
+    recordKey: sc.rec.key,
+    clientId: C.UID,
+    now: '2026-09-30T09:00:00.000Z'
+  }, { isCurrent: () => true }));
+  assert.equal(rConsume.written, true);
+  assert.equal(s.get(REFS.meso).progressionApplications[sc.rec.key].state, 'CONSUMED');
 });
 
 test('D2: Aplicación única: no se puede aplicar registro que ya está en APPLIED', () => {
@@ -395,35 +560,102 @@ test('D5: Receipt válido aceptado por el receptor de consumo', () => {
   assert.equal(receipt.appliedValue, 105);
 });
 
-test('D6: Receipt falsificado / mismatch de valor o clave rechazado', () => {
-  const overlay = { key: 'ov-1', appliedValue: 105, dimension: 'LOAD' };
-  const forgedReceipt = {
-    recordKey: 'rec-1',
-    overlayKey: 'ov-1',
-    dimension: 'LOAD',
-    appliedValue: 120, // mismatch!
-    provenance: 'CANONICAL_OVERLAY'
+test('D6: Receipt falsificado con valor o clave alterados es rechazado por el consumidor real', async () => {
+  const sc = F.scenario({ clientId: C.UID, planId: C.PLAN, pid: C.PID });
+  const s = storeFor(sc);
+  await apply(C_ON, s, sc);
+  const ov = s.get(REFS.meso).nextExposureOverlays['ovl_' + sc.rec.key];
+
+  const targetKey = 'log_' + ov.target.week + '_' + ov.target.dayIndex + '_0_s0';
+  s.docs.get(REFS.meso).entries[targetKey] = {
+    carga: '102.5', reps: '10', unit: 'KG', done: true, rir: 2, rir_real: 2,
+    prescriptionExerciseId: C.PID, ts: 5, sts: Date.parse('2026-09-28T02:00:00.000Z')
   };
-  assert.notEqual(overlay.appliedValue, forgedReceipt.appliedValue);
+  s.docs.get(REFS.meso).consumptionReceipts = {
+    [sc.rec.key]: {
+      recordKey: sc.rec.key,
+      overlayKey: ov.key,
+      dimension: ov.dimension,
+      appliedValue: 999, // FORGED MISMATCH
+      provenance: 'CANONICAL_OVERLAY'
+    }
+  };
+  const rConsume = await s.run(tx => C_ON.consumeOverlayTransaction(tx, REFS, {
+    recordKey: sc.rec.key,
+    clientId: C.UID,
+    now: '2026-09-30T09:00:00.000Z'
+  }, { isCurrent: () => true }));
+  assert.equal(rConsume.written, false);
+  assert.equal(rConsume.reason, 'RECEIPT_MISMATCH');
+  assert.equal(s.get(REFS.meso).progressionApplications[sc.rec.key].state, 'APPLIED');
 });
 
-test('D7: Consumo duplicado es estrictamente idempotente', () => {
-  const record = {
-    key: 'rec-1',
-    state: 'CONSUMED',
-    events: [{ operationKey: 'consume:rec-1', at: '2026-09-28T10:00:00.000Z' }]
+test('D7: Consumo duplicado es estrictamente idempotente en el consumidor real', async () => {
+  const sc = F.scenario({ clientId: C.UID, planId: C.PLAN, pid: C.PID });
+  const s = storeFor(sc);
+  await apply(C_ON, s, sc);
+  const ov = s.get(REFS.meso).nextExposureOverlays['ovl_' + sc.rec.key];
+  const targetKey = 'log_' + ov.target.week + '_' + ov.target.dayIndex + '_0_s0';
+  s.docs.get(REFS.meso).entries[targetKey] = {
+    carga: '102.5', reps: '10', unit: 'KG', done: true, rir: 2, rir_real: 2,
+    prescriptionExerciseId: C.PID, ts: 5, sts: Date.parse('2026-09-28T02:00:00.000Z')
   };
-  const op = 'consume:' + record.key;
-  const isAlreadyConsumed = record.events.some(e => e.operationKey === op);
-  assert.equal(isAlreadyConsumed, true);
+  s.docs.get(REFS.meso).consumptionReceipts = {
+    [sc.rec.key]: {
+      recordKey: sc.rec.key,
+      overlayKey: ov.key,
+      dimension: ov.dimension,
+      appliedValue: ov.appliedValue,
+      provenance: 'CANONICAL_OVERLAY'
+    }
+  };
+  // First consume
+  const r1 = await s.run(tx => C_ON.consumeOverlayTransaction(tx, REFS, {
+    recordKey: sc.rec.key,
+    clientId: C.UID,
+    now: '2026-09-30T09:00:00.000Z'
+  }, { isCurrent: () => true }));
+  assert.equal(r1.written, true);
+
+  // Second consume (idempotent rejection)
+  const r2 = await s.run(tx => C_ON.consumeOverlayTransaction(tx, REFS, {
+    recordKey: sc.rec.key,
+    clientId: C.UID,
+    now: '2026-09-30T09:00:00.000Z'
+  }, { isCurrent: () => true }));
+  assert.equal(r2.written, false);
+  assert.equal(r2.idempotent, true);
+  assert.equal(r2.reason, 'ALREADY_CONSUMED');
 });
 
-test('D8: Reintentos después de respuesta de consumo perdida no duplican transición', () => {
-  const receipts = {
-    'rec-1': { ackAt: '2026-09-28T09:00:00.000Z', appliedValue: 105 }
+test('D8: Reintentos de receipt de consumo son estrictamente idempotentes', async () => {
+  const sc = F.scenario({ clientId: C.UID, planId: C.PLAN, pid: C.PID });
+  const s = storeFor(sc);
+  await apply(C_ON, s, sc);
+  const ov = s.get(REFS.meso).nextExposureOverlays['ovl_' + sc.rec.key];
+  const targetKey = 'log_' + ov.target.week + '_' + ov.target.dayIndex + '_0_s0';
+  s.docs.get(REFS.meso).entries[targetKey] = {
+    carga: '102.5', reps: '10', unit: 'KG', done: true, rir: 2, rir_real: 2,
+    prescriptionExerciseId: C.PID, ts: 5, sts: Date.parse('2026-09-28T02:00:00.000Z')
   };
-  assert.ok(receipts['rec-1']);
-  assert.equal(Boolean(receipts['rec-1']), true);
+  const receiptInput = {
+    recordKey: sc.rec.key,
+    clientId: C.UID,
+    now: '2026-09-30T08:59:00.000Z',
+    shown: {
+      provenance: 'CANONICAL_OVERLAY',
+      overlayKey: ov.key,
+      dimension: ov.dimension,
+      appliedValue: ov.appliedValue
+    }
+  };
+  const r1 = await s.run(tx => C_ON.recordConsumptionReceiptTransaction(tx, REFS, receiptInput, { isCurrent: () => true }));
+  assert.equal(r1.written, true);
+
+  const r2 = await s.run(tx => C_ON.recordConsumptionReceiptTransaction(tx, REFS, receiptInput, { isCurrent: () => true }));
+  assert.equal(r2.written, false);
+  assert.equal(r2.idempotent, true);
+  assert.equal(r2.reason, 'ALREADY_ACKNOWLEDGED');
 });
 
 test('D9: Continuidad tras reiniciar la aplicación: meso persistido conserva receipts y overlays', () => {
