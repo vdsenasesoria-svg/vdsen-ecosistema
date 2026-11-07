@@ -3,6 +3,10 @@
 // All tests use strict mocks and isolated environments; no live secrets, network or prod mutations.
 // Verifies all operational failure modes, missing evidence paths, STOP semantics, and attestation gates.
 
+// Explicitly accredited demo test environment for unit mocks
+process.env.GCLOUD_PROJECT = process.env.GCLOUD_PROJECT || 'demo-vdsen-ops-test';
+process.env.FIRESTORE_EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
+
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

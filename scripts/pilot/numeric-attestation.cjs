@@ -44,12 +44,32 @@ function isLiveTarget() {
   return false;
 }
 
-function isAccreditedDemoEnvironment() {
+function isAccreditedDemoEnvironment(db = null) {
   if (isLiveTarget()) return false;
+  if (isProductionTarget()) return false;
   const emuHost = process.env.FIRESTORE_EMULATOR_HOST;
+  if (!emuHost || typeof emuHost !== 'string' || emuHost.trim().length === 0) return false;
+  const hostTrimmed = emuHost.trim();
+  if (!/^((127\.0\.0\.1)|(localhost)|(0\.0\.0\.0)):[0-9]+$/.test(hostTrimmed)) {
+    return false;
+  }
   const project = process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || '';
-  if (!emuHost) return false;
-  return typeof project === 'string' && project !== 'undefined' && project.startsWith('demo-');
+  if (typeof project !== 'string' || project === '' || project === 'undefined' || !project.startsWith('demo-')) {
+    return false;
+  }
+  // Validate Firestore adapter isolation when db instance is supplied
+  if (db && typeof db === 'object') {
+    if (db._settings && db._settings.host) {
+      const dbHost = db._settings.host;
+      if (!dbHost.includes('127.0.0.1') && !dbHost.includes('localhost') && !dbHost.includes('0.0.0.0')) {
+        return false;
+      }
+    }
+    if (db.formattedName && db.formattedName.includes('vdsen-ecosistema') && !db.formattedName.includes('demo-')) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function sealAttestation(record) {
@@ -138,11 +158,17 @@ function hash(value) {
  */
 async function attestRuntime(opts) {
   opts = opts || {};
-  if (opts.fetcher && isLiveTarget()) {
-    throw new Error('PROVIDER_INJECTION_REJECTED: Custom fetcher injection is strictly forbidden when targeting live cloud resources');
+  // P0 Mock/Clock Provider Boundary: Custom fetcher or injected clock are ONLY permitted
+  // when isAccreditedDemoEnvironment() is unequivocally true. In ANY other context, reject.
+  if (opts.fetcher && !isAccreditedDemoEnvironment()) {
+    throw new Error('PROVIDER_INJECTION_REJECTED: Custom fetcher injection is strictly forbidden outside an accredited demo emulator environment');
   }
-  if (opts.now && isLiveTarget()) {
-    throw new Error('CLOCK_TAMPERING_REJECTED: External clock injection is strictly forbidden when targeting live cloud resources');
+  const hasInjectedClock = opts.now !== undefined || opts.dynamicClock !== undefined || opts.clock !== undefined || opts.currentTime !== undefined;
+  if (hasInjectedClock && !isAccreditedDemoEnvironment()) {
+    throw new Error('CLOCK_TAMPERING_REJECTED: External clock injection is strictly forbidden outside an accredited demo emulator environment');
+  }
+  if (opts.dynamicClock || opts.clock || opts.currentTime) {
+    throw new Error('CLOCK_TAMPERING_REJECTED: Unauthorized temporal option key rejected');
   }
   const now = opts.now || Date.now();
   const projectId = opts.projectId || DEFAULT_PROJECT_ID;

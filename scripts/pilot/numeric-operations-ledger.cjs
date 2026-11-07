@@ -18,6 +18,7 @@
  * Production remains BLOCKED until formal IAM and Firestore Rules are provisioned.
  */
 
+const crypto = require('crypto');
 const C = require('../../api/_numericPilotContract');
 const {
   verifyAttestationAuthenticity,
@@ -169,15 +170,32 @@ async function checkOperationUniquenessDirect(db, operationId) {
 async function reserveOperation(db, opData, opts = {}) {
   validateOperationData(opData);
 
-  // 0. Clock trust boundary: opts.now is strictly restricted to isolated demo emulator environments.
-  // In production or unaccredited environments, caller-supplied clock is strictly rejected.
-  if (opts.now) {
-    if (!isAccreditedDemoEnvironment()) {
-      throw new Error('CLOCK_TAMPERING_REJECTED: External clock injection is strictly forbidden in production or non-demo environments');
+  // 0. Strict Temporal and Provider Boundary Check
+  const hasInjectedTime = 'now' in opts || 'dynamicClock' in opts || 'clock' in opts || 'currentTime' in opts;
+  if (hasInjectedTime) {
+    if (!isAccreditedDemoEnvironment(db)) {
+      throw new Error('CLOCK_TAMPERING_REJECTED: External clock or dynamicClock injection is strictly forbidden in production or non-demo environments');
     }
+    // Reject any unauthorized temporal option keys
+    if ('clock' in opts || 'currentTime' in opts) {
+      throw new Error('CLOCK_TAMPERING_REJECTED: Unauthorized temporal option key rejected');
+    }
+  }
+
+  if (opts.now !== undefined && opts.now !== null) {
     const parsed = Date.parse(opts.now);
-    if (!Number.isFinite(parsed) || new Date(parsed).toISOString() !== opts.now.replace('Z', '.000Z')) {
-      throw new Error('INVALID_CLOCK_INJECTION: Injected clock must be a valid UTC ISO string');
+    if (!Number.isFinite(parsed) || isNaN(parsed)) {
+      throw new Error('INVALID_CLOCK_INJECTION: Injected now must be a valid UTC ISO string');
+    }
+    const normalized = new Date(parsed).toISOString();
+    if (normalized !== opts.now && normalized.replace('.000Z', 'Z') !== opts.now) {
+      throw new Error('INVALID_CLOCK_INJECTION: Injected now must be a valid UTC ISO string');
+    }
+  }
+
+  if (opts.dynamicClock !== undefined && opts.dynamicClock !== null) {
+    if (typeof opts.dynamicClock !== 'function') {
+      throw new Error('INVALID_CLOCK_INJECTION: dynamicClock must be an executable function');
     }
   }
 
@@ -220,7 +238,7 @@ async function reserveOperation(db, opData, opts = {}) {
   }
 
   // Production environment boundary: in live production, token and live provider verification are mandatory
-  if (!isAccreditedDemoEnvironment()) {
+  if (!isAccreditedDemoEnvironment(db)) {
     if (!process.env.VERCEL_TOKEN) {
       throw new Error('BLOCKED: Live runtime attestation from accredited provider credentials required in non-demo environment');
     }
@@ -229,13 +247,36 @@ async function reserveOperation(db, opData, opts = {}) {
   const opRef = db.doc(`${OPERATIONS_COLLECTION}/${opData.operationId}`);
   const releaseRef = db.doc('releaseControl/numericPilot');
 
+  // Unique, non-manipulable attempt identity generated for this specific attempt
+  const reservationAttemptId = `att_attempt_${opData.operationId}_${Date.now()}_${crypto.randomBytes(16).toString('hex')}`;
+
   let commitSucceeded = false;
   let reservationResult = null;
 
   try {
     reservationResult = await db.runTransaction(async (tx) => {
       // P0.2: Dynamically revalidate time on EACH attempt/retry inside transaction
-      const attemptNowIso = opts.now || (typeof opts.dynamicClock === 'function' ? opts.dynamicClock() : new Date().toISOString());
+      let attemptNowIso;
+      if (opts.dynamicClock) {
+        const dynamicVal = opts.dynamicClock();
+        if (typeof dynamicVal !== 'string') {
+          throw new Error('INVALID_CLOCK_INJECTION: dynamicClock must return an ISO string timestamp');
+        }
+        const parsedDynamic = Date.parse(dynamicVal);
+        if (!Number.isFinite(parsedDynamic) || isNaN(parsedDynamic)) {
+          throw new Error('INVALID_CLOCK_INJECTION: dynamicClock returned non-finite or invalid timestamp');
+        }
+        const normalizedDynamic = new Date(parsedDynamic).toISOString();
+        if (normalizedDynamic !== dynamicVal && normalizedDynamic.replace('.000Z', 'Z') !== dynamicVal) {
+          throw new Error('INVALID_CLOCK_INJECTION: dynamicClock must return a valid UTC ISO string');
+        }
+        attemptNowIso = dynamicVal;
+      } else if (opts.now) {
+        attemptNowIso = opts.now;
+      } else {
+        // Real route: reliable operational system clock
+        attemptNowIso = new Date().toISOString();
+      }
       const parsedNow = Date.parse(attemptNowIso);
 
       // Revalidate window chronometry on every retry
@@ -341,6 +382,7 @@ async function reserveOperation(db, opData, opts = {}) {
         runId: String(opData.runId),
         window: opData.window,
         scope: opData.scope,
+        reservationAttemptId: reservationAttemptId,
         status: STATES.RESERVED,
         reservedAt: attemptNowIso,
         history: [
@@ -351,6 +393,7 @@ async function reserveOperation(db, opData, opts = {}) {
             actor: opts.actor || 'pilot-runner',
             runId: String(opData.runId),
             deploymentId: opData.deploymentId,
+            reservationAttemptId: reservationAttemptId,
             previousStatus: null
           }
         ]
@@ -364,7 +407,8 @@ async function reserveOperation(db, opData, opts = {}) {
         success: true,
         operationId: opData.operationId,
         status: STATES.RESERVED,
-        reservedAt: attemptNowIso
+        reservedAt: attemptNowIso,
+        reservationAttemptId: reservationAttemptId
       };
     });
 
@@ -379,23 +423,72 @@ async function reserveOperation(db, opData, opts = {}) {
     );
 
     if (isAmbiguousNetworkError) {
+      let directCheck;
       try {
-        const directCheck = await checkOperationUniquenessDirect(db, opData.operationId);
-        if (directCheck && directCheck.exists && directCheck.status === STATES.RESERVED) {
-          const docData = directCheck.operation;
-          if (docData.deploymentId === opData.deploymentId && docData.runtimeSha === opData.runtimeSha) {
+        directCheck = await checkOperationUniquenessDirect(db, opData.operationId);
+      } catch (readbackErr) {
+        // Readback failed: commit state is truly unknown. Preserve UNKNOWN/BLOCKED.
+        const unknownErr = new Error(`AMBIGUOUS_COMMIT_UNRESOLVED: Commit status is unknown due to primary network error (${err.message}) and readback failure (${readbackErr.message})`);
+        unknownErr.code = 'AMBIGUOUS_COMMIT_UNRESOLVED';
+        unknownErr.status = 'UNKNOWN';
+        unknownErr.primaryError = err;
+        unknownErr.readbackError = readbackErr;
+        throw unknownErr;
+      }
+
+      if (directCheck && directCheck.exists) {
+        const docData = directCheck.operation;
+
+        // Check if the document was written by this specific attempt
+        if (docData.reservationAttemptId === reservationAttemptId) {
+          // Verify ALL immutable attributes:
+          const isUidMatch = docData.uid === opData.uid;
+          const isPlanMatch = docData.planId === opData.planId;
+          const isPidMatch = docData.pid === opData.pid;
+          const isShaMatch = docData.runtimeSha === opData.runtimeSha;
+          const isDeploymentMatch = docData.deploymentId === opData.deploymentId;
+          const isRunIdMatch = String(docData.runId) === String(opData.runId);
+          const isOperationIdMatch = docData.operationId === opData.operationId;
+          const isStatusReserved = docData.status === STATES.RESERVED;
+
+          const isWindowMatch = docData.window &&
+            docData.window.startsAt === opData.window.startsAt &&
+            docData.window.expiresAt === opData.window.expiresAt &&
+            docData.window.mode === opData.window.mode;
+          const isScopeMatch = docData.scope &&
+            docData.scope.enabled === opData.scope.enabled &&
+            Array.isArray(docData.scope.clientIds) && docData.scope.clientIds[0] === opData.uid &&
+            Array.isArray(docData.scope.prescriptionExerciseIds) && docData.scope.prescriptionExerciseIds[0] === opData.pid;
+
+          if (isUidMatch && isPlanMatch && isPidMatch && isShaMatch && isDeploymentMatch &&
+              isRunIdMatch && isOperationIdMatch && isStatusReserved && isWindowMatch && isScopeMatch) {
+            // Unequivocal verified recovery of this attempt's commit!
             commitSucceeded = true;
             reservationResult = {
               success: true,
               operationId: opData.operationId,
               status: STATES.RESERVED,
               reservedAt: docData.reservedAt,
+              reservationAttemptId: docData.reservationAttemptId,
               recoveredFromAmbiguity: true
             };
+          } else {
+            const corruptErr = new Error(`CORRUPTED_RESERVATION_STATE: Reservation document for "${opData.operationId}" matches attempt ID but contains contradictory attributes`);
+            corruptErr.code = 'CORRUPTED_RESERVATION_STATE';
+            corruptErr.status = 'BLOCKED';
+            throw corruptErr;
           }
+        } else {
+          // The document exists, but was written by a different attempt / operation!
+          const conflictErr = new Error(`OPERATION_ALREADY_EXISTS: Operation ID "${opData.operationId}" was already reserved by attempt "${docData.reservationAttemptId || 'unknown'}" at ${docData.reservedAt} (status: ${docData.status})`);
+          conflictErr.code = 'OPERATION_ALREADY_EXISTS';
+          conflictErr.existingStatus = docData.status;
+          conflictErr.existingAttemptId = docData.reservationAttemptId;
+          throw conflictErr;
         }
-      } catch (_recErr) {
-        // Direct lookup failed; cannot confirm commit
+      } else {
+        // Readback confirmed document does not exist: commit did not happen.
+        throw err;
       }
     }
 
