@@ -19,6 +19,13 @@
  */
 
 const C = require('../../api/_numericPilotContract');
+const {
+  verifyAttestationAuthenticity,
+  consumeAttestation,
+  isAccreditedDemoEnvironment,
+  isProductionTarget,
+  attestRuntime
+} = require('./numeric-attestation.cjs');
 
 const LEDGER_SCHEMA = 'vdsen-numeric-operations-ledger-v1';
 const OPERATIONS_COLLECTION = 'releaseControl/numericPilot/operations';
@@ -162,12 +169,12 @@ async function checkOperationUniquenessDirect(db, operationId) {
 async function reserveOperation(db, opData, opts = {}) {
   validateOperationData(opData);
 
-  // 0. Clock trust boundary: opts.now is strictly restricted to isolated emulator/test suites.
-  // In operational / production environments, caller-supplied clock is strictly rejected.
+  // 0. Clock trust boundary: opts.now is strictly restricted to isolated demo emulator environments.
+  // In production or unaccredited environments, caller-supplied clock is strictly rejected.
   let nowIso;
   if (opts.now) {
-    if (!process.env.FIRESTORE_EMULATOR_HOST && !process.env.VDSEN_ALLOW_TEST_CLOCK) {
-      throw new Error('CLOCK_TAMPERING_REJECTED: External clock injection is strictly forbidden in non-emulator environments');
+    if (!isAccreditedDemoEnvironment()) {
+      throw new Error('CLOCK_TAMPERING_REJECTED: External clock injection is strictly forbidden in production or non-demo environments');
     }
     const parsed = Date.parse(opts.now);
     if (!Number.isFinite(parsed) || new Date(parsed).toISOString() !== opts.now.replace('Z', '.000Z')) {
@@ -273,39 +280,43 @@ async function reserveOperation(db, opData, opts = {}) {
       throw new Error('ATTESTATION_MISSING: Runtime attestation object is mandatory for operation reservation');
     }
     const att = opts.attestation;
-    if (att.attested !== true) {
-      throw new Error('ATTESTATION_REJECTED: Runtime attestation attested flag is not true');
-    }
-    if (att.schema !== 'vdsen-numeric-runtime-attestation-v1' || att.status !== 'ATTESTED' || att.provider !== 'vercel') {
-      throw new Error('ATTESTATION_UNTRUSTED: Attestation record does not meet accredited provider schema or status');
+    if (att.attested === false || att.status === 'REJECTED' || att.status === 'BLOCKED') {
+      throw new Error(`ATTESTATION_REJECTED: Attestation status is ${att.status || 'REJECTED'}`);
     }
     if (!att.operationId) {
-      throw new Error('ATTESTATION_OPERATION_ID_MISSING: Attestation record must explicitly contain operationId');
+      throw new Error('ATTESTATION_OPERATION_ID_MISSING: Attestation record lacks operationId');
+    }
+    if (!Array.isArray(att.checks) || att.checks.length === 0) {
+      throw new Error('ATTESTATION_UNTRUSTED: Attestation lacks verified provider checks');
+    }
+    const authCheck = verifyAttestationAuthenticity(att);
+    if (!authCheck.valid) {
+      throw new Error(`${authCheck.reason}: ${authCheck.message}`);
     }
     if (att.operationId !== opData.operationId) {
       throw new Error(`ATTESTATION_MISMATCH: Attestation operationId "${att.operationId}" does not match operation operationId "${opData.operationId}"`);
     }
-    if (!att.deploymentId || att.deploymentId !== opData.deploymentId) {
+    if (att.deploymentId !== opData.deploymentId) {
       throw new Error(`ATTESTATION_MISMATCH: Attestation deploymentId "${att.deploymentId}" does not match operation deploymentId "${opData.deploymentId}"`);
     }
     const attSha = att.runtimeSha || att.sha;
     if (!attSha || attSha !== opData.runtimeSha) {
       throw new Error(`ATTESTATION_MISMATCH: Attestation runtimeSha "${attSha}" does not match operation runtimeSha "${opData.runtimeSha}"`);
     }
-    if (!Array.isArray(att.checks) || att.checks.length === 0) {
-      throw new Error('ATTESTATION_UNTRUSTED: Attestation lacks verified provider checks evidence');
+    if (att.pilotUid && att.pilotUid !== opData.uid) {
+      throw new Error(`ATTESTATION_MISMATCH: Attestation pilotUid "${att.pilotUid}" does not match operation uid "${opData.uid}"`);
     }
-    const hasOpIdCheck = att.checks.some(c => c && c.check === 'OPERATION_ID' && c.pass === true);
-    const hasShaCheck = att.checks.some(c => c && c.check === 'COMMIT_SHA' && c.pass === true);
-    const hasDplCheck = att.checks.some(c => c && c.check === 'DEPLOYMENT_ID' && c.pass === true);
-    if (!hasOpIdCheck || !hasShaCheck || !hasDplCheck) {
-      throw new Error('ATTESTATION_UNTRUSTED: Attestation provider checks are incomplete or unverified');
+    if (att.planId && att.planId !== opData.planId) {
+      throw new Error(`ATTESTATION_MISMATCH: Attestation planId "${att.planId}" does not match operation planId "${opData.planId}"`);
+    }
+    if (att.pid && att.pid !== opData.pid) {
+      throw new Error(`ATTESTATION_MISMATCH: Attestation pid "${att.pid}" does not match operation pid "${opData.pid}"`);
     }
 
     // Production environment boundary: in live production, token and live provider verification are mandatory
-    if (!process.env.FIRESTORE_EMULATOR_HOST) {
+    if (!isAccreditedDemoEnvironment()) {
       if (!process.env.VERCEL_TOKEN) {
-        throw new Error('BLOCKED: Live runtime attestation from accredited provider credentials required');
+        throw new Error('BLOCKED: Live runtime attestation from accredited provider credentials required in non-demo environment');
       }
     }
 
@@ -337,6 +348,7 @@ async function reserveOperation(db, opData, opts = {}) {
     };
 
     tx.set(opRef, reservationDoc);
+    consumeAttestation(att);
     return {
       success: true,
       operationId: opData.operationId,
@@ -531,6 +543,39 @@ async function recoverEvidence(db, operationId) {
   };
 }
 
+/**
+ * High-level orchestration that conducts external provider attestation first,
+ * then atomically reserves the operation in Firestore without performing network calls in transaction.
+ */
+async function reserveVerifiedOperation(db, opData, verifierOpts = {}, ledgerOpts = {}) {
+  // 1. Outside Firestore transaction: query and attest runtime with provider
+  const attestation = await attestRuntime({
+    deploymentId: opData.deploymentId,
+    expectedSha: opData.runtimeSha,
+    expectedOperationId: opData.operationId,
+    expectedAlias: verifierOpts.expectedAlias,
+    expectedUid: opData.uid,
+    expectedPlanId: opData.planId,
+    expectedPid: opData.pid,
+    vercelToken: verifierOpts.vercelToken,
+    fetcher: verifierOpts.fetcher,
+    now: ledgerOpts.now ? (typeof ledgerOpts.now === 'number' ? ledgerOpts.now : Date.parse(ledgerOpts.now)) : undefined
+  });
+
+  if (!attestation || attestation.attested !== true || attestation.status !== 'ATTESTED') {
+    const err = new Error(`ATTESTATION_VERIFICATION_FAILED: Provider verification failed (${attestation && attestation.reason})`);
+    err.code = attestation && attestation.reason;
+    err.attestation = attestation;
+    throw err;
+  }
+
+  // 2. Inside Firestore transaction: execute reservation with the sealed attestation
+  return await reserveOperation(db, opData, {
+    ...ledgerOpts,
+    attestation
+  });
+}
+
 module.exports = {
   LEDGER_SCHEMA,
   OPERATIONS_COLLECTION,
@@ -540,6 +585,7 @@ module.exports = {
   validateOperationData,
   checkOperationUniquenessDirect,
   reserveOperation,
+  reserveVerifiedOperation,
   verifyOperation,
   recordResult,
   recordStop,

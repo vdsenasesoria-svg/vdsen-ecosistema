@@ -30,6 +30,14 @@ const { getFirestore } = require('firebase-admin/firestore');
 const C = require('../api/_numericPilotContract');
 const ledger = require('../scripts/pilot/numeric-operations-ledger.cjs');
 const { runPreflight } = require('../scripts/pilot/numeric-preflight.cjs');
+const {
+  attestRuntime,
+  verifyAttestationAuthenticity,
+  consumeAttestation,
+  isProductionTarget,
+  isAccreditedDemoEnvironment,
+  MAX_ATTESTATION_AGE_MS
+} = require('../scripts/pilot/numeric-attestation.cjs');
 
 assert.ok(process.env.FIRESTORE_EMULATOR_HOST, 'Firestore Emulator required');
 const projectId = process.env.GCLOUD_PROJECT || 'demo-vdsen-shadow';
@@ -69,7 +77,62 @@ function makeValidOpData(opId = 'op-ledger-01') {
   };
 }
 
-function makeValidAttestation(opData) {
+function createMockFetcher(opData, customDeployment = null, customAlias = null) {
+  return async (url, init) => {
+    if (url.includes('/aliases/')) {
+      if (typeof customAlias === 'function') return customAlias(url, init);
+      if (customAlias && customAlias.status) {
+        return { status: customAlias.status, json: async () => customAlias.data || {} };
+      }
+      return {
+        status: 200,
+        json: async () => ({
+          alias: 'vdsen-ecosistema.vercel.app',
+          deploymentId: opData.deploymentId,
+          projectId: 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN'
+        })
+      };
+    }
+    if (typeof customDeployment === 'function') return customDeployment(url, init);
+    if (customDeployment && customDeployment.status) {
+      return { status: customDeployment.status, json: async () => customDeployment.data || {} };
+    }
+    const deploymentObj = {
+      id: opData.deploymentId,
+      projectId: 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN',
+      teamId: 'team_VZc5H7Q1DBIJ3g0mwrSBz1o8',
+      target: 'production',
+      readyState: 'READY',
+      alias: ['vdsen-ecosistema.vercel.app'],
+      meta: {
+        githubCommitSha: opData.runtimeSha,
+        vdsenPilotOperation: opData.operationId
+      },
+      envNames: ['AUTONOMOUS_PROGRESSION_ENABLED']
+    };
+    return {
+      status: 200,
+      json: async () => Object.assign(deploymentObj, customDeployment || {})
+    };
+  };
+}
+
+async function makeValidAttestation(opData, opts = {}) {
+  const fetcher = opts.fetcher || createMockFetcher(opData, opts.customDeployment, opts.customAlias);
+  return await attestRuntime({
+    deploymentId: opData.deploymentId,
+    expectedSha: opData.runtimeSha,
+    expectedOperationId: opData.operationId,
+    expectedAlias: opts.expectedAlias || 'vdsen-ecosistema.vercel.app',
+    expectedUid: opData.uid,
+    expectedPlanId: opData.planId,
+    expectedPid: opData.pid,
+    fetcher,
+    now: opts.now
+  });
+}
+
+function makeManufacturedAttestation(opData) {
   return {
     schema: 'vdsen-numeric-runtime-attestation-v1',
     attested: true,
@@ -148,7 +211,7 @@ test('ledger in emulator: exercises all 15 scenarios for operationId ledger', as
   const op104Data = makeValidOpData('op-bulk-104');
   await armFencesForOp(db, op104Data);
   await assert.rejects(
-    () => ledger.reserveOperation(db, op104Data, { attestation: makeValidAttestation(op104Data) }),
+    async () => ledger.reserveOperation(db, op104Data, { attestation: await makeValidAttestation(op104Data) }),
     /OPERATION_ALREADY_EXISTS/
   );
 
@@ -160,20 +223,24 @@ test('ledger in emulator: exercises all 15 scenarios for operationId ledger', as
   // 3. Dos reservas concurrentes (concurrencia atómica: exactamente 1 tiene éxito, 1 falla)
   const concurrentOp = makeValidOpData('op-concurrent-test');
   await armFencesForOp(db, concurrentOp);
+  const [attConcurrent1, attConcurrent2] = await Promise.all([
+    makeValidAttestation(concurrentOp),
+    makeValidAttestation(concurrentOp)
+  ]);
   const attempts = await Promise.allSettled([
-    ledger.reserveOperation(db, concurrentOp, { attestation: makeValidAttestation(concurrentOp) }),
-    ledger.reserveOperation(db, concurrentOp, { attestation: makeValidAttestation(concurrentOp) })
+    ledger.reserveOperation(db, concurrentOp, { attestation: attConcurrent1 }),
+    ledger.reserveOperation(db, concurrentOp, { attestation: attConcurrent2 })
   ]);
   const fulfilled = attempts.filter(a => a.status === 'fulfilled');
   const rejected = attempts.filter(a => a.status === 'rejected');
   assert.equal(fulfilled.length, 1, 'Exactly one concurrent reservation must succeed');
   assert.equal(rejected.length, 1, 'Concurrent duplicate must be rejected');
-  assert.match(rejected[0].reason.message, /OPERATION_ALREADY_EXISTS/);
+  assert.match(rejected[0].reason.message, /OPERATION_ALREADY_EXISTS|ATTESTATION_ALREADY_CONSUMED/);
 
   // 4. Reintento después de reserva
   await assert.rejects(
-    () => ledger.reserveOperation(db, concurrentOp, { attestation: makeValidAttestation(concurrentOp) }),
-    /OPERATION_ALREADY_EXISTS/
+    async () => ledger.reserveOperation(db, concurrentOp, { attestation: await makeValidAttestation(concurrentOp) }),
+    /OPERATION_ALREADY_EXISTS|ATTESTATION_ALREADY_CONSUMED/
   );
 
   // 5. Conflicto de SHA (data.runtimeSha !== data.window.runtimeSha)
@@ -210,7 +277,7 @@ test('ledger in emulator: exercises all 15 scenarios for operationId ledger', as
   await armFencesForOp(db, opDisarmed);
   await db.doc('releaseControl/numericPilot').set({ enabled: false });
   await assert.rejects(
-    () => ledger.reserveOperation(db, opDisarmed, { attestation: makeValidAttestation(opDisarmed) }),
+    async () => ledger.reserveOperation(db, opDisarmed, { attestation: await makeValidAttestation(opDisarmed) }),
     /RELEASE_CONTROL_DISARMED/
   );
   await armFencesForOp(db, opDisarmed); // rearm
@@ -220,7 +287,7 @@ test('ledger in emulator: exercises all 15 scenarios for operationId ledger', as
   await armFencesForOp(db, opGenDisarmed);
   await db.doc('releaseControl/autonomousProgression').set({ enabled: false });
   await assert.rejects(
-    () => ledger.reserveOperation(db, opGenDisarmed, { attestation: makeValidAttestation(opGenDisarmed) }),
+    async () => ledger.reserveOperation(db, opGenDisarmed, { attestation: await makeValidAttestation(opGenDisarmed) }),
     /RELEASE_CONTROL_DISARMED/
   );
   await armFencesForOp(db, opGenDisarmed); // restore
@@ -230,7 +297,7 @@ test('ledger in emulator: exercises all 15 scenarios for operationId ledger', as
   await armFencesForOp(db, opCanaryDisarmed);
   await db.doc('coaches/synthetic-coach').set({ autoApplyCanary: { enabled: false, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] } });
   await assert.rejects(
-    () => ledger.reserveOperation(db, opCanaryDisarmed, { attestation: makeValidAttestation(opCanaryDisarmed) }),
+    async () => ledger.reserveOperation(db, opCanaryDisarmed, { attestation: await makeValidAttestation(opCanaryDisarmed) }),
     /COACH_CANARY_DISARMED/
   );
   await armFencesForOp(db, opCanaryDisarmed); // restore
@@ -238,7 +305,7 @@ test('ledger in emulator: exercises all 15 scenarios for operationId ledger', as
   // 9. STOP concurrente (idempotencia y sin carreras)
   const opToStop = makeValidOpData('op-to-stop-concurrent');
   await armFencesForOp(db, opToStop);
-  await ledger.reserveOperation(db, opToStop, { attestation: makeValidAttestation(opToStop) });
+  await ledger.reserveOperation(db, opToStop, { attestation: await makeValidAttestation(opToStop) });
   const stopResults = await Promise.all([
     ledger.recordStop(db, opToStop.operationId, { reason: 'CONCURRENT_STOP_1' }),
     ledger.recordStop(db, opToStop.operationId, { reason: 'CONCURRENT_STOP_2' })
@@ -262,14 +329,14 @@ test('ledger in emulator: exercises all 15 scenarios for operationId ledger', as
     /INVALID_STATE_TRANSITION/
   );
   await assert.rejects(
-    () => ledger.reserveOperation(db, opToStop, { attestation: makeValidAttestation(opToStop) }),
+    async () => ledger.reserveOperation(db, opToStop, { attestation: await makeValidAttestation(opToStop) }),
     /OPERATION_ALREADY_EXISTS/
   );
 
   // 11. Transiciones de estado inválidas y STOP terminal
   const opTransition = makeValidOpData('op-state-transitions');
   await armFencesForOp(db, opTransition);
-  await ledger.reserveOperation(db, opTransition, { attestation: makeValidAttestation(opTransition) });
+  await ledger.reserveOperation(db, opTransition, { attestation: await makeValidAttestation(opTransition) });
   await ledger.recordResult(db, opTransition.operationId, { success: true, summary: { applied: 1 } });
   const completedOp = await ledger.verifyOperation(db, opTransition.operationId);
   assert.equal(completedOp.status, 'COMPLETED');
@@ -284,7 +351,7 @@ test('ledger in emulator: exercises all 15 scenarios for operationId ledger', as
   // FAILED preserves its result upon global STOP:
   const opFailed = makeValidOpData('op-failed-test');
   await armFencesForOp(db, opFailed);
-  await ledger.reserveOperation(db, opFailed, { attestation: makeValidAttestation(opFailed) });
+  await ledger.reserveOperation(db, opFailed, { attestation: await makeValidAttestation(opFailed) });
   await ledger.recordResult(db, opFailed.operationId, { success: false, summary: { error: 'TIMED_OUT' } });
   const stopOnFailed = await ledger.recordStop(db, opFailed.operationId, { reason: 'GLOBAL_EMERGENCY_STOP' });
   assert.equal(stopOnFailed.status, 'FAILED');
@@ -298,7 +365,7 @@ test('ledger in emulator: exercises all 15 scenarios for operationId ledger', as
   );
   // COMPLETED -> RESERVED is forbidden
   await assert.rejects(
-    () => ledger.reserveOperation(db, opTransition, { attestation: makeValidAttestation(opTransition) }),
+    async () => ledger.reserveOperation(db, opTransition, { attestation: await makeValidAttestation(opTransition) }),
     /OPERATION_ALREADY_EXISTS/
   );
 
@@ -316,14 +383,14 @@ test('ledger in emulator: exercises all 15 scenarios for operationId ledger', as
   const opNetwork = makeValidOpData('op-network-err');
   await armFencesForOp(db, opNetwork);
   await assert.rejects(
-    () => ledger.reserveOperation(simulatedDb, opNetwork, { attestation: makeValidAttestation(opNetwork) }),
+    async () => ledger.reserveOperation(simulatedDb, opNetwork, { attestation: await makeValidAttestation(opNetwork) }),
     /UNAVAILABLE: network connection lost/
   );
 
   // 14. Recuperación de evidencia desinfectada
   const opEvidence = makeValidOpData('op-evidence-recovery');
   await armFencesForOp(db, opEvidence);
-  await ledger.reserveOperation(db, opEvidence, { attestation: makeValidAttestation(opEvidence) });
+  await ledger.reserveOperation(db, opEvidence, { attestation: await makeValidAttestation(opEvidence) });
   await ledger.recordResult(db, opEvidence.operationId, { success: true, summary: { applied: 1, delta: '+2.5kg' } });
   const evidence = await ledger.recoverEvidence(db, opEvidence.operationId);
   assert.ok(evidence);
@@ -364,7 +431,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   await armFencesForOp(db, op1);
   await db.doc('releaseControl/numericPilot').delete();
   await assert.rejects(
-    () => ledger.reserveOperation(db, op1, { attestation: makeValidAttestation(op1) }),
+    async () => ledger.reserveOperation(db, op1, { attestation: await makeValidAttestation(op1) }),
     /RELEASE_CONTROL_DISARMED/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op1.operationId}`).get()).exists, false, 'op1 must not persist reservation');
@@ -376,7 +443,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   delete fenceNoOpId.operationId;
   await db.doc('releaseControl/numericPilot').set(fenceNoOpId);
   await assert.rejects(
-    () => ledger.reserveOperation(db, op2, { attestation: makeValidAttestation(op2) }),
+    async () => ledger.reserveOperation(db, op2, { attestation: await makeValidAttestation(op2) }),
     /FENCE_FIELD_MISSING/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op2.operationId}`).get()).exists, false, 'op2 must not persist reservation');
@@ -388,7 +455,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   delete fenceNoSha.runtimeSha;
   await db.doc('releaseControl/numericPilot').set(fenceNoSha);
   await assert.rejects(
-    () => ledger.reserveOperation(db, op3, { attestation: makeValidAttestation(op3) }),
+    async () => ledger.reserveOperation(db, op3, { attestation: await makeValidAttestation(op3) }),
     /FENCE_FIELD_MISSING/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op3.operationId}`).get()).exists, false, 'op3 must not persist reservation');
@@ -398,7 +465,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   await armFencesForOp(db, op4);
   await db.doc('releaseControl/autonomousProgression').delete();
   await assert.rejects(
-    () => ledger.reserveOperation(db, op4, { attestation: makeValidAttestation(op4) }),
+    async () => ledger.reserveOperation(db, op4, { attestation: await makeValidAttestation(op4) }),
     /RELEASE_CONTROL_DISARMED/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op4.operationId}`).get()).exists, false, 'op4 must not persist reservation');
@@ -408,7 +475,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   await armFencesForOp(db, op5);
   await db.doc('releaseControl/autonomousProgression').update({ enabled: false });
   await assert.rejects(
-    () => ledger.reserveOperation(db, op5, { attestation: makeValidAttestation(op5) }),
+    async () => ledger.reserveOperation(db, op5, { attestation: await makeValidAttestation(op5) }),
     /RELEASE_CONTROL_DISARMED/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op5.operationId}`).get()).exists, false, 'op5 must not persist reservation');
@@ -418,7 +485,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   await armFencesForOp(db, op6);
   await db.doc('clients/' + op6.uid).update({ coachId: 'non-existent-coach-id' });
   await assert.rejects(
-    () => ledger.reserveOperation(db, op6, { attestation: makeValidAttestation(op6) }),
+    async () => ledger.reserveOperation(db, op6, { attestation: await makeValidAttestation(op6) }),
     /COACH_NOT_FOUND/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op6.operationId}`).get()).exists, false, 'op6 must not persist reservation');
@@ -428,7 +495,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   await armFencesForOp(db, op7);
   await db.doc('coaches/synthetic-coach').set({ name: 'Coach Without Canary Field' });
   await assert.rejects(
-    () => ledger.reserveOperation(db, op7, { attestation: makeValidAttestation(op7) }),
+    async () => ledger.reserveOperation(db, op7, { attestation: await makeValidAttestation(op7) }),
     /COACH_CANARY_NOT_FOUND/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op7.operationId}`).get()).exists, false, 'op7 must not persist reservation');
@@ -440,7 +507,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
     autoApplyCanary: { enabled: false, clientIds: [op8.uid], prescriptionExerciseIds: [op8.pid] }
   });
   await assert.rejects(
-    () => ledger.reserveOperation(db, op8, { attestation: makeValidAttestation(op8) }),
+    async () => ledger.reserveOperation(db, op8, { attestation: await makeValidAttestation(op8) }),
     /COACH_CANARY_DISARMED/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op8.operationId}`).get()).exists, false, 'op8 must not persist reservation');
@@ -453,7 +520,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
     autoApplyCanary: { enabled: true, clientIds: [], prescriptionExerciseIds: [op9a.pid] }
   });
   await assert.rejects(
-    () => ledger.reserveOperation(db, op9a, { attestation: makeValidAttestation(op9a) }),
+    async () => ledger.reserveOperation(db, op9a, { attestation: await makeValidAttestation(op9a) }),
     /COACH_CANARY_MISMATCH/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op9a.operationId}`).get()).exists, false, 'op9a must not persist reservation');
@@ -465,7 +532,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
     autoApplyCanary: { enabled: true, clientIds: [op9b.uid, 'unauthorized-second-uid'], prescriptionExerciseIds: [op9b.pid] }
   });
   await assert.rejects(
-    () => ledger.reserveOperation(db, op9b, { attestation: makeValidAttestation(op9b) }),
+    async () => ledger.reserveOperation(db, op9b, { attestation: await makeValidAttestation(op9b) }),
     /COACH_CANARY_MISMATCH/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op9b.operationId}`).get()).exists, false, 'op9b must not persist reservation');
@@ -477,7 +544,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
     autoApplyCanary: { enabled: true, clientIds: [op9c.uid], prescriptionExerciseIds: [] }
   });
   await assert.rejects(
-    () => ledger.reserveOperation(db, op9c, { attestation: makeValidAttestation(op9c) }),
+    async () => ledger.reserveOperation(db, op9c, { attestation: await makeValidAttestation(op9c) }),
     /COACH_CANARY_MISMATCH/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op9c.operationId}`).get()).exists, false, 'op9c must not persist reservation');
@@ -487,7 +554,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   await armFencesForOp(db, op10);
   await db.doc('clients/' + op10.uid).update({ activePlanId: 'substituted-plan-id' });
   await assert.rejects(
-    () => ledger.reserveOperation(db, op10, { attestation: makeValidAttestation(op10) }),
+    async () => ledger.reserveOperation(db, op10, { attestation: await makeValidAttestation(op10) }),
     /PLAN_MISMATCH/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op10.operationId}`).get()).exists, false, 'op10 must not persist reservation');
@@ -497,7 +564,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   await armFencesForOp(db, op11);
   await db.doc('clients/' + op11.uid).update({ coachId: '' });
   await assert.rejects(
-    () => ledger.reserveOperation(db, op11, { attestation: makeValidAttestation(op11) }),
+    async () => ledger.reserveOperation(db, op11, { attestation: await makeValidAttestation(op11) }),
     /COACH_NOT_AUTHORIZED/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op11.operationId}`).get()).exists, false, 'op11 must not persist reservation');
@@ -506,7 +573,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   const op12 = makeValidOpData('op-neg-no-attestation');
   await armFencesForOp(db, op12);
   await assert.rejects(
-    () => ledger.reserveOperation(db, op12),
+    async () => ledger.reserveOperation(db, op12),
     /ATTESTATION_MISSING/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op12.operationId}`).get()).exists, false, 'op12 must not persist reservation');
@@ -515,9 +582,9 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   // 13a. Falsified deploymentId:
   const op13a = makeValidOpData('op-neg-fake-dpl-attestation');
   await armFencesForOp(db, op13a);
-  const fakeDplAtt = { ...makeValidAttestation(op13a), deploymentId: 'dpl_forged_fake_01' };
+  const fakeDplAtt = await makeValidAttestation({ ...op13a, deploymentId: 'dpl_forged_fake_01' });
   await assert.rejects(
-    () => ledger.reserveOperation(db, op13a, { attestation: fakeDplAtt }),
+    async () => ledger.reserveOperation(db, op13a, { attestation: fakeDplAtt }),
     /ATTESTATION_MISMATCH/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op13a.operationId}`).get()).exists, false, 'op13a must not persist reservation');
@@ -525,19 +592,23 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   // 13b. Falsified sha:
   const op13b = makeValidOpData('op-neg-fake-sha-attestation');
   await armFencesForOp(db, op13b);
-  const fakeShaAtt = { ...makeValidAttestation(op13b), runtimeSha: 'f'.repeat(40) };
+  const fakeShaAtt = await makeValidAttestation({ ...op13b, runtimeSha: 'f'.repeat(40), window: { ...op13b.window, runtimeSha: 'f'.repeat(40) } });
   await assert.rejects(
-    () => ledger.reserveOperation(db, op13b, { attestation: fakeShaAtt }),
+    async () => ledger.reserveOperation(db, op13b, { attestation: fakeShaAtt }),
     /ATTESTATION_MISMATCH/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op13b.operationId}`).get()).exists, false, 'op13b must not persist reservation');
 
-  // 13c. Caller provides only attested: true boolean without accredited fields:
+  // 13c. Caller provides only boolean or manufactured object without accredited source:
   const op13c = makeValidOpData('op-neg-only-bool-attestation');
   await armFencesForOp(db, op13c);
   await assert.rejects(
-    () => ledger.reserveOperation(db, op13c, { attestation: { attested: true } }),
-    /ATTESTATION_UNTRUSTED|ATTESTATION_MISMATCH/
+    async () => ledger.reserveOperation(db, op13c, { attestation: { attested: true } }),
+    /ATTESTATION_UNTRUSTED|ATTESTATION_UNVERIFIED_SOURCE|ATTESTATION_OPERATION_ID_MISSING/
+  );
+  await assert.rejects(
+    async () => ledger.reserveOperation(db, op13c, { attestation: makeManufacturedAttestation(op13c) }),
+    /ATTESTATION_UNVERIFIED_SOURCE/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op13c.operationId}`).get()).exists, false, 'op13c must not persist reservation');
 
@@ -545,8 +616,8 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   const op13d = makeValidOpData('op-neg-rejected-attestation');
   await armFencesForOp(db, op13d);
   await assert.rejects(
-    () => ledger.reserveOperation(db, op13d, { attestation: { ...makeValidAttestation(op13d), attested: false } }),
-    /ATTESTATION_REJECTED/
+    async () => ledger.reserveOperation(db, op13d, { attestation: { ...(await makeValidAttestation(op13d)), attested: false } }),
+    /ATTESTATION_REJECTED|ATTESTATION_UNVERIFIED_SOURCE/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op13d.operationId}`).get()).exists, false, 'op13d must not persist reservation');
 
@@ -555,7 +626,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   await armFencesForOp(db, op14);
   op14.window.operationId = 'op-different-window-id';
   await assert.rejects(
-    () => ledger.reserveOperation(db, op14, { attestation: makeValidAttestation(op14) }),
+    async () => ledger.reserveOperation(db, op14, { attestation: await makeValidAttestation(op14) }),
     /IDENTITY_MISMATCH/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op14.operationId}`).get()).exists, false, 'op14 must not persist reservation');
@@ -563,21 +634,21 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   // 15. Atestación sin operationId
   const op15 = makeValidOpData('op-neg-att-no-opid');
   await armFencesForOp(db, op15);
-  const attNoOpId = { ...makeValidAttestation(op15) };
+  const attNoOpId = { ...(await makeValidAttestation(op15)) };
   delete attNoOpId.operationId;
   await assert.rejects(
-    () => ledger.reserveOperation(db, op15, { attestation: attNoOpId }),
-    /ATTESTATION_OPERATION_ID_MISSING/
+    async () => ledger.reserveOperation(db, op15, { attestation: attNoOpId }),
+    /ATTESTATION_OPERATION_ID_MISSING|ATTESTATION_UNVERIFIED_SOURCE/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op15.operationId}`).get()).exists, false, 'op15 must not persist reservation');
 
   // 16. Atestación sin checks del proveedor (untrusted)
   const op16 = makeValidOpData('op-neg-att-untrusted');
   await armFencesForOp(db, op16);
-  const attUntrusted = { ...makeValidAttestation(op16), checks: [] };
+  const attUntrusted = { ...(await makeValidAttestation(op16)), checks: [] };
   await assert.rejects(
-    () => ledger.reserveOperation(db, op16, { attestation: attUntrusted }),
-    /ATTESTATION_UNTRUSTED/
+    async () => ledger.reserveOperation(db, op16, { attestation: attUntrusted }),
+    /ATTESTATION_UNTRUSTED|ATTESTATION_UNVERIFIED_SOURCE/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op16.operationId}`).get()).exists, false, 'op16 must not persist reservation');
 
@@ -588,7 +659,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   delete fenceNoUid.uid;
   await db.doc('releaseControl/numericPilot').set(fenceNoUid);
   await assert.rejects(
-    () => ledger.reserveOperation(db, op17, { attestation: makeValidAttestation(op17) }),
+    async () => ledger.reserveOperation(db, op17, { attestation: await makeValidAttestation(op17) }),
     /FENCE_FIELD_MISSING.*uid/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op17.operationId}`).get()).exists, false, 'op17 must not persist reservation');
@@ -600,7 +671,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   delete fenceNoPlan.planId;
   await db.doc('releaseControl/numericPilot').set(fenceNoPlan);
   await assert.rejects(
-    () => ledger.reserveOperation(db, op18, { attestation: makeValidAttestation(op18) }),
+    async () => ledger.reserveOperation(db, op18, { attestation: await makeValidAttestation(op18) }),
     /FENCE_FIELD_MISSING.*planId/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op18.operationId}`).get()).exists, false, 'op18 must not persist reservation');
@@ -612,7 +683,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   delete fenceNoPid.pid;
   await db.doc('releaseControl/numericPilot').set(fenceNoPid);
   await assert.rejects(
-    () => ledger.reserveOperation(db, op19, { attestation: makeValidAttestation(op19) }),
+    async () => ledger.reserveOperation(db, op19, { attestation: await makeValidAttestation(op19) }),
     /FENCE_FIELD_MISSING.*pid/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op19.operationId}`).get()).exists, false, 'op19 must not persist reservation');
@@ -624,7 +695,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   delete fenceNoExp.expiresAt;
   await db.doc('releaseControl/numericPilot').set(fenceNoExp);
   await assert.rejects(
-    () => ledger.reserveOperation(db, op20, { attestation: makeValidAttestation(op20) }),
+    async () => ledger.reserveOperation(db, op20, { attestation: await makeValidAttestation(op20) }),
     /FENCE_FIELD_MISSING.*expiresAt/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op20.operationId}`).get()).exists, false, 'op20 must not persist reservation');
@@ -635,7 +706,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   const fenceBadStart = { ...op21.window, enabled: true, startsAt: '2026-01-01T00:00:00Z' };
   await db.doc('releaseControl/numericPilot').set(fenceBadStart);
   await assert.rejects(
-    () => ledger.reserveOperation(db, op21, { attestation: makeValidAttestation(op21) }),
+    async () => ledger.reserveOperation(db, op21, { attestation: await makeValidAttestation(op21) }),
     /FENCE_MISMATCH.*startsAt/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op21.operationId}`).get()).exists, false, 'op21 must not persist reservation');
@@ -644,7 +715,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   const op22 = makeValidOpData('op-neg-invalid-clock');
   await armFencesForOp(db, op22);
   await assert.rejects(
-    () => ledger.reserveOperation(db, op22, { now: 'not-a-valid-iso-date', attestation: makeValidAttestation(op22) }),
+    async () => ledger.reserveOperation(db, op22, { now: 'not-a-valid-iso-date', attestation: await makeValidAttestation(op22) }),
     /INVALID_CLOCK_INJECTION/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op22.operationId}`).get()).exists, false, 'op22 must not persist reservation');
@@ -656,11 +727,136 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   try {
     delete process.env.FIRESTORE_EMULATOR_HOST;
     await assert.rejects(
-      () => ledger.reserveOperation(db, op23, { now: op23.window.startsAt, attestation: makeValidAttestation(op23) }),
+      async () => ledger.reserveOperation(db, op23, { now: op23.window.startsAt, attestation: await makeValidAttestation(op23) }),
       /CLOCK_TAMPERING_REJECTED/
     );
   } finally {
     process.env.FIRESTORE_EMULATOR_HOST = origEmuHost;
   }
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op23.operationId}`).get()).exists, false, 'op23 must not persist reservation');
+});
+
+test('ledger in emulator: P0 attestation trust boundary and injection control (R16)', async () => {
+  // P0.1 Reproduce Defect: Manufactured attestation rejected with ATTESTATION_UNVERIFIED_SOURCE
+  const opDefect = makeValidOpData('op-r16-p01-defect');
+  await armFencesForOp(db, opDefect);
+  const manufactured = makeManufacturedAttestation(opDefect);
+  await assert.rejects(
+    async () => ledger.reserveOperation(db, opDefect, { attestation: manufactured }),
+    /ATTESTATION_UNVERIFIED_SOURCE/
+  );
+  assert.equal((await db.doc(`releaseControl/numericPilot/operations/${opDefect.operationId}`).get()).exists, false, 'Manufactured attestation must not persist reservation');
+
+  // Even with dummy VERCEL_TOKEN present in environment:
+  const origToken = process.env.VERCEL_TOKEN;
+  try {
+    process.env.VERCEL_TOKEN = 'synthetic_dummy_token_123';
+    await assert.rejects(
+      async () => ledger.reserveOperation(db, opDefect, { attestation: manufactured }),
+      /ATTESTATION_UNVERIFIED_SOURCE/
+    );
+    assert.equal((await db.doc(`releaseControl/numericPilot/operations/${opDefect.operationId}`).get()).exists, false, 'Token alone cannot validate manufactured attestation');
+  } finally {
+    process.env.VERCEL_TOKEN = origToken;
+  }
+
+  // P0.2 Replay Protection: consumeAttestation prevents reuse
+  const opReplay1 = makeValidOpData('op-r16-replay-01');
+  await armFencesForOp(db, opReplay1);
+  const validAtt = await makeValidAttestation(opReplay1);
+  const res1 = await ledger.reserveOperation(db, opReplay1, { attestation: validAtt });
+  assert.equal(res1.status, 'RESERVED');
+
+  const opReplay2 = makeValidOpData('op-r16-replay-02');
+  await armFencesForOp(db, opReplay2);
+  await assert.rejects(
+    async () => ledger.reserveOperation(db, opReplay2, { attestation: validAtt }),
+    /ATTESTATION_ALREADY_CONSUMED|ATTESTATION_MISMATCH/
+  );
+  assert.equal((await db.doc(`releaseControl/numericPilot/operations/${opReplay2.operationId}`).get()).exists, false, 'Reused attestation must not persist reservation');
+
+  // P0.2 TTL / Expiration check (> 15m rejected)
+  const opExpired = makeValidOpData('op-r16-expired');
+  await armFencesForOp(db, opExpired);
+  const expiredAtt = await makeValidAttestation(opExpired, { now: Date.now() - (16 * 60 * 1000) });
+  await assert.rejects(
+    async () => ledger.reserveOperation(db, opExpired, { attestation: expiredAtt }),
+    /ATTESTATION_EXPIRED/
+  );
+  assert.equal((await db.doc(`releaseControl/numericPilot/operations/${opExpired.operationId}`).get()).exists, false, 'Expired attestation must not persist reservation');
+
+  // P0.2 Tampering detection: sealed object cannot be mutated or tampered
+  const opTamper = makeValidOpData('op-r16-tamper');
+  await armFencesForOp(db, opTamper);
+  const sealedAtt = await makeValidAttestation(opTamper);
+  assert.ok(Object.isFrozen(sealedAtt), 'Sealed attestation must be frozen');
+  assert.throws(() => {
+    sealedAtt.deploymentId = 'dpl_tampered';
+  }, TypeError);
+
+  // P0.3 Injection Control: Custom fetcher & clock injection rejected in production
+  const origGcpProject = process.env.GCP_PROJECT_ID;
+  try {
+    process.env.GCP_PROJECT_ID = 'vdsen-ecosistema';
+    assert.equal(isProductionTarget(), true);
+    // Provider fetcher injection rejected in production:
+    await assert.rejects(
+      async () => attestRuntime({
+        deploymentId: 'dpl_test',
+        expectedSha: 'a'.repeat(40),
+        expectedOperationId: 'op-prod-inject',
+        expectedAlias: 'vdsen-ecosistema.vercel.app',
+        fetcher: async () => ({ status: 200 })
+      }),
+      /PROVIDER_INJECTION_REJECTED/
+    );
+
+    // Clock injection rejected in production:
+    const opProdClock = makeValidOpData('op-prod-clock');
+    await assert.rejects(
+      async () => ledger.reserveOperation(db, opProdClock, { now: opProdClock.window.startsAt }),
+      /CLOCK_TAMPERING_REJECTED/
+    );
+  } finally {
+    process.env.GCP_PROJECT_ID = origGcpProject;
+  }
+
+  // P0.4 Provider Error Handling via reserveVerifiedOperation
+  // 401 Unauthorized:
+  const opAuthFail = makeValidOpData('op-r16-auth-fail');
+  await armFencesForOp(db, opAuthFail);
+  await assert.rejects(
+    async () => ledger.reserveVerifiedOperation(db, opAuthFail, {
+      expectedAlias: 'vdsen-ecosistema.vercel.app',
+      fetcher: async () => ({ status: 401 })
+    }),
+    /ATTESTATION_VERIFICATION_FAILED/
+  );
+  assert.equal((await db.doc(`releaseControl/numericPilot/operations/${opAuthFail.operationId}`).get()).exists, false, 'Provider 401 must not persist reservation');
+
+  // 404 Deployment Not Found:
+  const opNotFound = makeValidOpData('op-r16-404-fail');
+  await armFencesForOp(db, opNotFound);
+  await assert.rejects(
+    async () => ledger.reserveVerifiedOperation(db, opNotFound, {
+      expectedAlias: 'vdsen-ecosistema.vercel.app',
+      fetcher: async () => ({ status: 404 })
+    }),
+    /ATTESTATION_VERIFICATION_FAILED/
+  );
+  assert.equal((await db.doc(`releaseControl/numericPilot/operations/${opNotFound.operationId}`).get()).exists, false, 'Provider 404 must not persist reservation');
+
+  // High-level reserveVerifiedOperation Success Path:
+  const opVerifiedSuccess = makeValidOpData('op-r16-verified-ok');
+  await armFencesForOp(db, opVerifiedSuccess);
+  const mockFetcher = createMockFetcher(opVerifiedSuccess);
+  const verifiedRes = await ledger.reserveVerifiedOperation(db, opVerifiedSuccess, {
+    expectedAlias: 'vdsen-ecosistema.vercel.app',
+    fetcher: mockFetcher
+  });
+  assert.equal(verifiedRes.status, 'RESERVED');
+  assert.equal(verifiedRes.operationId, opVerifiedSuccess.operationId);
+  const persistedDoc = await db.doc(`releaseControl/numericPilot/operations/${opVerifiedSuccess.operationId}`).get();
+  assert.equal(persistedDoc.exists, true);
+  assert.equal(persistedDoc.data().status, 'RESERVED');
 });

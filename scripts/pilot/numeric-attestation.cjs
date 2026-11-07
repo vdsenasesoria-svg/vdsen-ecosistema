@@ -11,6 +11,80 @@ const C = require('../../api/_numericPilotContract');
 
 const DEFAULT_PROJECT_ID = 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN';
 const DEFAULT_TEAM_ID = 'team_VZc5H7Q1DBIJ3g0mwrSBz1o8';
+const MAX_ATTESTATION_AGE_MS = 15 * 60 * 1000; // 15 minutes max validity
+
+// Trusted Attestation Registry (private to this module)
+const _trustedAttestations = new WeakSet();
+const _attestationRecords = new WeakMap();
+const _consumedAttestationIds = new Set();
+
+function isProductionTarget() {
+  const gcp = process.env.GCP_PROJECT_ID;
+  const gcloud = process.env.GCLOUD_PROJECT;
+  const googleCloud = process.env.GOOGLE_CLOUD_PROJECT;
+  const isProdProject = gcp === 'vdsen-ecosistema' || gcloud === 'vdsen-ecosistema' || googleCloud === 'vdsen-ecosistema';
+  const isProdEnv = process.env.NODE_ENV === 'production' || process.env.GITHUB_ENVIRONMENT === 'Production';
+  return isProdProject || isProdEnv;
+}
+
+function isAccreditedDemoEnvironment() {
+  if (isProductionTarget()) return false;
+  const emuHost = process.env.FIRESTORE_EMULATOR_HOST;
+  const project = process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || '';
+  if (!emuHost) return false;
+  return typeof project === 'string' && project.startsWith('demo-');
+}
+
+function sealAttestation(record) {
+  if (!record || typeof record !== 'object') return;
+  _trustedAttestations.add(record);
+  _attestationRecords.set(record, {
+    operationId: record.operationId,
+    runtimeSha: record.runtimeSha,
+    deploymentId: record.deploymentId,
+    attestedAt: record.attestedAt,
+    fingerprint: hash(`${record.operationId}:${record.runtimeSha}:${record.deploymentId}:${record.attestedAt}`)
+  });
+  Object.freeze(record);
+}
+
+function verifyAttestationAuthenticity(record) {
+  if (!record || typeof record !== 'object') {
+    return { valid: false, reason: 'ATTESTATION_MISSING', message: 'Attestation record must be an object' };
+  }
+  if (!_trustedAttestations.has(record)) {
+    return {
+      valid: false,
+      reason: 'ATTESTATION_UNVERIFIED_SOURCE',
+      message: 'Attestation record was not produced by an accredited attestRuntime() execution; caller-supplied objects are strictly rejected'
+    };
+  }
+  const sealed = _attestationRecords.get(record);
+  if (!sealed) {
+    return { valid: false, reason: 'ATTESTATION_UNTRUSTED', message: 'Attestation record lacks sealed provenance metadata' };
+  }
+  if (_consumedAttestationIds.has(record.operationId)) {
+    return { valid: false, reason: 'ATTESTATION_ALREADY_CONSUMED', message: `Attestation for operation "${record.operationId}" was already consumed` };
+  }
+  const age = Date.now() - Date.parse(record.attestedAt);
+  if (age < 0 || age > MAX_ATTESTATION_AGE_MS) {
+    return { valid: false, reason: 'ATTESTATION_EXPIRED', message: `Attestation record expired (age: ${(age / 1000).toFixed(1)}s, max: 900s)` };
+  }
+  const currentFingerprint = hash(`${record.operationId}:${record.runtimeSha}:${record.deploymentId}:${record.attestedAt}`);
+  if (currentFingerprint !== sealed.fingerprint ||
+      record.operationId !== sealed.operationId ||
+      record.runtimeSha !== sealed.runtimeSha ||
+      record.deploymentId !== sealed.deploymentId) {
+    return { valid: false, reason: 'ATTESTATION_TAMPERED', message: 'Attestation record properties do not match the sealed provider record' };
+  }
+  return { valid: true };
+}
+
+function consumeAttestation(record) {
+  if (record && record.operationId) {
+    _consumedAttestationIds.add(record.operationId);
+  }
+}
 
 function hash(value) {
   return crypto.createHash('sha256').update(String(value)).digest('hex');
@@ -38,6 +112,12 @@ function hash(value) {
  */
 async function attestRuntime(opts) {
   opts = opts || {};
+  if (opts.fetcher && isProductionTarget()) {
+    throw new Error('PROVIDER_INJECTION_REJECTED: Custom fetcher injection is strictly forbidden in production');
+  }
+  if (opts.now && isProductionTarget()) {
+    throw new Error('CLOCK_TAMPERING_REJECTED: External clock injection is strictly forbidden in production');
+  }
   const now = opts.now || Date.now();
   const projectId = opts.projectId || DEFAULT_PROJECT_ID;
   const teamId = opts.teamId || DEFAULT_TEAM_ID;
@@ -87,7 +167,7 @@ async function attestRuntime(opts) {
     };
   }
 
-  if (!opts.deploymentId || !/^dpl_[A-Za-z0-9]+$/.test(opts.deploymentId)) {
+  if (!opts.deploymentId || (!/^dpl_[A-Za-z0-9_]+$/.test(opts.deploymentId) && !/^demo-dpl-[A-Za-z0-9-]+$/.test(opts.deploymentId))) {
     return {
       schema: 'vdsen-numeric-runtime-attestation-v1',
       attested: false,
@@ -544,7 +624,7 @@ async function attestRuntime(opts) {
   }
 
   // 5. Attestation Record Assembly
-  return {
+  const record = {
     schema: 'vdsen-numeric-runtime-attestation-v1',
     attested: true,
     status: 'ATTESTED',
@@ -563,10 +643,18 @@ async function attestRuntime(opts) {
     checks: checks,
     attestedAt: new Date(now).toISOString()
   };
+
+  sealAttestation(record);
+  return record;
 }
 
 module.exports = {
   attestRuntime,
+  verifyAttestationAuthenticity,
+  consumeAttestation,
+  isProductionTarget,
+  isAccreditedDemoEnvironment,
   DEFAULT_PROJECT_ID,
-  DEFAULT_TEAM_ID
+  DEFAULT_TEAM_ID,
+  MAX_ATTESTATION_AGE_MS
 };
