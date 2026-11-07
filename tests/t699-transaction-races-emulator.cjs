@@ -76,6 +76,83 @@ async function setupBaseEnvironment(sc) {
   await db.doc('logs/' + C.UID).set({ planId: C.PLAN, entries: sc.entries });
 }
 
+async function executeRaceTransaction(promise) {
+  try {
+    const res = await promise;
+    return { status: 'RESOLVED', res, written: Array.isArray(res) && res.some(r => r.written) };
+  } catch (err) {
+    return { status: 'ABORTED', err, written: false };
+  }
+}
+
+/**
+ * Deterministic synchronization barrier for post-read race conditions.
+ * Pauses the transaction execution immediately after the target document has been read
+ * (POST_READ phase) and resumes it only after the concurrent mutation has been committed.
+ */
+function createPostReadSync(targetPathSubstr) {
+  let hasTriggered = false;
+  let signalReadComplete;
+  let signalProceed;
+
+  const readCompletePromise = new Promise(resolve => {
+    signalReadComplete = resolve;
+  });
+
+  const proceedPromise = new Promise(resolve => {
+    signalProceed = resolve;
+  });
+
+  return {
+    makeDb(baseDb) {
+      const customDb = Object.create(baseDb);
+      customDb.collection = name => baseDb.collection(name);
+      customDb.doc = path => baseDb.doc(path);
+      customDb.runTransaction = async (fn, opts) => {
+        return baseDb.runTransaction(async (rawTx) => {
+          const instrumentedTx = {
+            async get(ref) {
+              const snap = await rawTx.get(ref);
+              const refPath = ref.path || (ref._path && ref._path.segments ? ref._path.segments.join('/') : '');
+              if (!hasTriggered && (!targetPathSubstr || refPath.includes(targetPathSubstr))) {
+                hasTriggered = true;
+                signalReadComplete({ path: refPath, data: snap.exists ? snap.data() : null });
+                await proceedPromise;
+              }
+              return snap;
+            },
+            set(ref, data, o) {
+              return o ? rawTx.set(ref, data, o) : rawTx.set(ref, data);
+            },
+            update(ref, data, o) {
+              return o ? rawTx.update(ref, data, o) : rawTx.update(ref, data);
+            },
+            delete(ref) {
+              return rawTx.delete(ref);
+            }
+          };
+          return fn(instrumentedTx);
+        }, { maxAttempts: 1, ...opts });
+      };
+      return customDb;
+    },
+    async waitForPostRead(timeoutMs = 15000) {
+      let timer;
+      const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('TIMEOUT_WAITING_FOR_POST_READ')), timeoutMs);
+      });
+      try {
+        return await Promise.race([readCompletePromise, timeout]);
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    release() {
+      signalProceed();
+    }
+  };
+}
+
 test('transaction races in emulator: exercises all 16 mandatory concurrency cases', async () => {
   const sc = F.scenario({ clientId: C.UID, planId: C.PLAN, pid: C.PID });
   const pending = {
@@ -136,21 +213,27 @@ test('transaction races in emulator: exercises all 16 mandatory concurrency case
     const matRecords = Object.values((await mesoRef.get()).data().progressionApplications);
     assert.equal(matRecords.length, 1, 'Two concurrent materializations must not duplicate records');
 
-    // 4. STOP después de la lectura inicial (interrupción antes de commit)
+    // 4. STOP después de la lectura inicial (Escenario A: carrera post-read con barrera de sincronización)
     await mesoRef.set(pending);
-    const interceptingDb1 = Object.create(db);
-    interceptingDb1.collection = name => db.collection(name);
-    interceptingDb1.runTransaction = async (fn) => {
-      return db.runTransaction(async (tx) => {
-        // Disarm STOP right after transaction begins
-        await db.doc('releaseControl/numericPilot').set({ enabled: false }, { merge: true });
-        return fn(tx);
-      });
-    };
-    const resAfterStopRead = await executor.applyPending(interceptingDb1, C.UID, C.PLAN, () => new Date().toISOString());
-    assert.ok(resAfterStopRead.every(r => !r.written));
+    const stopSync = createPostReadSync('releaseControl/autonomousProgression');
+    const txAStopPromise = executor.applyPending(stopSync.makeDb(db), C.UID, C.PLAN, () => new Date().toISOString());
+    const stopReadInfo = await stopSync.waitForPostRead();
+    assert.ok(stopReadInfo, 'Transaction A must reach POST_READ phase before STOP is executed');
+    // Operation B executes emergency STOP in Firestore
+    await db.doc('releaseControl/numericPilot').set({ enabled: false }, { merge: true });
+    await db.doc('coaches/' + coach).set({
+      autoApplyCanary: { enabled: false, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] }
+    }, { merge: true });
+    stopSync.release();
+    const outcomeStop = await executeRaceTransaction(txAStopPromise);
+    assert.equal(outcomeStop.written, false, 'Transaction A must abort/reject write after concurrent STOP');
     assert.equal((await mesoRef.get()).data().progressionApplications[sc.rec.key].state, 'PENDING');
-    await db.doc('releaseControl/numericPilot').set({ enabled: true }, { merge: true }); // rearm
+    assert.deepEqual((await mesoRef.get()).data().nextExposureOverlays, {});
+    // Rearm for subsequent tests
+    await db.doc('releaseControl/numericPilot').set({ ...window, enabled: true });
+    await db.doc('coaches/' + coach).set({
+      autoApplyCanary: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] }
+    });
 
     // 5. STOP antes del commit (staged transaction write fails closed)
     await mesoRef.set(pending);
@@ -169,80 +252,98 @@ test('transaction races in emulator: exercises all 16 mandatory concurrency case
     );
     assert.equal((await mesoRef.get()).data().progressionApplications[sc.rec.key].state, 'PENDING');
 
-    // 6. Revocación de autorización durante una transacción
+    // 6. Revocación de autorización durante una transacción (Escenario B: post-read release revocation)
     await mesoRef.set(pending);
-    const interceptingDb3 = Object.create(db);
-    interceptingDb3.collection = name => db.collection(name);
-    interceptingDb3.runTransaction = async (fn) => {
-      return db.runTransaction(async (tx) => {
-        await db.doc('releaseControl/autonomousProgression').set({ enabled: false }, { merge: true });
-        return fn(tx);
-      });
-    };
-    const resRevoked = await executor.applyPending(interceptingDb3, C.UID, C.PLAN, () => new Date().toISOString());
-    assert.ok(resRevoked.every(r => !r.written));
-    await db.doc('releaseControl/autonomousProgression').set({ enabled: true }, { merge: true }); // rearm
+    const releaseSync = createPostReadSync('releaseControl/autonomousProgression');
+    const txAReleasePromise = executor.applyPending(releaseSync.makeDb(db), C.UID, C.PLAN, () => new Date().toISOString());
+    await releaseSync.waitForPostRead();
+    await db.doc('releaseControl/autonomousProgression').set({ enabled: false }, { merge: true });
+    releaseSync.release();
+    const outcomeRevoked = await executeRaceTransaction(txAReleasePromise);
+    assert.equal(outcomeRevoked.written, false, 'Transaction must abort/reject upon post-read release revocation');
+    assert.equal((await mesoRef.get()).data().progressionApplications[sc.rec.key].state, 'PENDING');
+    assert.deepEqual((await mesoRef.get()).data().nextExposureOverlays, {});
+    await db.doc('releaseControl/autonomousProgression').set({
+      schema: 'vdsen-autonomous-release-v1',
+      enabled: true,
+      clientIds: [C.UID],
+      expiresAt: window.expiresAt
+    });
 
-    // 7. Edición del Coach durante una transacción
+    // 7. Edición del Coach durante una transacción (Escenario C: post-read Coach priority)
     await mesoRef.set(pending);
-    const interceptingDb4 = Object.create(db);
-    interceptingDb4.collection = name => db.collection(name);
-    interceptingDb4.runTransaction = async (fn) => {
-      return db.runTransaction(async (tx) => {
-        // Coach updates plan with new timestamp
-        await db.doc('plans/' + C.PLAN).set({ ...sc.plan, updatedAt: '2026-11-04T12:30:00.000Z' });
-        return fn(tx);
-      });
-    };
-    const resCoachEdit = await executor.applyPending(interceptingDb4, C.UID, C.PLAN, () => new Date().toISOString());
-    assert.ok(resCoachEdit.every(r => !r.written));
+    const coachEditSync = createPostReadSync('plans/' + C.PLAN);
+    const txACoachPromise = executor.applyPending(coachEditSync.makeDb(db), C.UID, C.PLAN, () => new Date().toISOString());
+    await coachEditSync.waitForPostRead();
+    // Coach updates plan with new timestamp
+    await db.doc('plans/' + C.PLAN).set({ ...sc.plan, updatedAt: '2026-11-04T12:55:00.000Z' });
+    coachEditSync.release();
+    const outcomeCoach = await executeRaceTransaction(txACoachPromise);
+    assert.equal(outcomeCoach.written, false, 'Coach edit must take precedence; stale application rejected or aborted');
     assert.equal((await mesoRef.get()).data().progressionApplications[sc.rec.key].state, 'PENDING');
     assert.deepEqual((await mesoRef.get()).data().nextExposureOverlays, {});
     await db.doc('plans/' + C.PLAN).set(sc.plan); // restore
 
-    // 8. Cambio del plan activo durante una transacción
+    // 8. Cambio del plan activo durante una transacción (Escenario D: post-read active plan switch)
     await mesoRef.set(pending);
-    const interceptingDb5 = Object.create(db);
-    interceptingDb5.collection = name => db.collection(name);
-    interceptingDb5.runTransaction = async (fn) => {
-      return db.runTransaction(async (tx) => {
-        await db.doc('clients/' + C.UID).set({ activePlanId: 'foreign-plan-999', coachId: coach });
-        return fn(tx);
-      });
-    };
-    const resPlanSwitch = await executor.applyPending(interceptingDb5, C.UID, C.PLAN, () => new Date().toISOString());
-    assert.ok(resPlanSwitch.every(r => !r.written));
+    const planSwitchSync = createPostReadSync('clients/' + C.UID);
+    const txAPlanPromise = executor.applyPending(planSwitchSync.makeDb(db), C.UID, C.PLAN, () => new Date().toISOString());
+    await planSwitchSync.waitForPostRead();
+    await db.doc('clients/' + C.UID).set({ activePlanId: 'foreign-plan-replaced-001', coachId: coach });
+    planSwitchSync.release();
+    const outcomePlan = await executeRaceTransaction(txAPlanPromise);
+    assert.equal(outcomePlan.written, false, 'Plan replacement must abort/reject application for old plan');
     assert.equal((await mesoRef.get()).data().progressionApplications[sc.rec.key].state, 'PENDING');
     assert.deepEqual((await mesoRef.get()).data().nextExposureOverlays, {});
     await db.doc('clients/' + C.UID).set({ activePlanId: C.PLAN, coachId: coach }); // restore
 
-    // 9. Sustitución del PID autorizado
+    // 9. Sustitución del PID autorizado (Escenario E: post-read canary PID substitution)
     await mesoRef.set(pending);
-    const interceptingDb6 = Object.create(db);
-    interceptingDb6.collection = name => db.collection(name);
-    interceptingDb6.runTransaction = async (fn) => {
-      return db.runTransaction(async (tx) => {
-        await db.doc('coaches/' + coach).set({
-          autoApplyCanary: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: ['other-pid-999'] }
-        });
-        return fn(tx);
-      });
-    };
-    const resPidSub = await executor.applyPending(interceptingDb6, C.UID, C.PLAN, () => new Date().toISOString());
-    assert.ok(resPidSub.every(r => !r.written));
+    const pidSubSync = createPostReadSync('coaches/' + coach);
+    const txAPidPromise = executor.applyPending(pidSubSync.makeDb(db), C.UID, C.PLAN, () => new Date().toISOString());
+    await pidSubSync.waitForPostRead();
+    await db.doc('coaches/' + coach).set({
+      autoApplyCanary: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: ['other-unauthorized-pid-999'] }
+    });
+    pidSubSync.release();
+    const outcomePid = await executeRaceTransaction(txAPidPromise);
+    assert.equal(outcomePid.written, false, 'PID change must prevent application for non-allowed PID');
     assert.equal((await mesoRef.get()).data().progressionApplications[sc.rec.key].state, 'PENDING');
     assert.deepEqual((await mesoRef.get()).data().nextExposureOverlays, {});
     await db.doc('coaches/' + coach).set({
       autoApplyCanary: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] }
     }); // restore
 
-    // 10. Expiración de ventana durante el proceso
+    // 10. Expiración de ventana durante el proceso (Escenario F: evaluación temporal)
+    // 10a. Expiración antes de preparar escrituras
     await mesoRef.set(pending);
     const expiredClock = () => iso(Date.parse(window.expiresAt) + 1000);
     const resExpired = await executor.applyPending(db, C.UID, C.PLAN, expiredClock);
     assert.ok(resExpired.every(r => !r.written));
     assert.equal((await mesoRef.get()).data().progressionApplications[sc.rec.key].state, 'PENDING');
     assert.deepEqual((await mesoRef.get()).data().nextExposureOverlays, {});
+
+    // 10b. Vencimiento durante un reintento transaccional
+    let attemptNum = 0;
+    const dynamicClock = () => {
+      return attemptNum <= 1 ? iso(Date.parse(window.startsAt) + 5000) : iso(Date.parse(window.expiresAt) + 5000);
+    };
+    const retryExpiringDb = Object.create(db);
+    retryExpiringDb.collection = name => db.collection(name);
+    retryExpiringDb.runTransaction = fn => {
+      attemptNum++;
+      if (attemptNum === 1) {
+        return Promise.reject(new Error('ABORTED: transient contention, retry'));
+      }
+      return db.runTransaction(fn);
+    };
+    try {
+      await executor.applyPending(retryExpiringDb, C.UID, C.PLAN, dynamicClock);
+    } catch (_) {
+      const retryExpiredRes = await executor.applyPending(retryExpiringDb, C.UID, C.PLAN, dynamicClock);
+      assert.ok(retryExpiredRes.every(r => !r.written), 'Expired clock on retry must reject application');
+      assert.equal((await mesoRef.get()).data().progressionApplications[sc.rec.key].state, 'PENDING');
+    }
 
     // 11. Aborto antes del commit
     await mesoRef.set(pending);

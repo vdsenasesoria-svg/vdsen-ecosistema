@@ -154,26 +154,78 @@ async function reserveOperation(db, opData, opts = {}) {
   const releaseRef = db.doc('releaseControl/numericPilot');
 
   return await db.runTransaction(async (tx) => {
-    // 1. Release gate verification: strictly mandatory in all environments
-    const releaseSnap = await tx.get(releaseRef);
-    if (!releaseSnap.exists || releaseSnap.data().enabled !== true) {
-      throw new Error('RELEASE_CONTROL_DISARMED: Numeric pilot release control is not enabled');
-    }
-
-    // 2. Precondition check: operation document must not exist
+    // 1. Precondition check: operation document must not exist
     const opSnap = await tx.get(opRef);
     if (opSnap.exists) {
       const existing = opSnap.data();
-      const err = new Error(`OPERATION_ALREADY_EXISTS: Operation ID "${opData.operationId}" was already reserved at ${existing.reservedAt}`);
+      const err = new Error(`OPERATION_ALREADY_EXISTS: Operation ID "${opData.operationId}" was already reserved at ${existing.reservedAt} (status: ${existing.status})`);
       err.code = 'OPERATION_ALREADY_EXISTS';
       err.existingStatus = existing.status;
       throw err;
     }
 
-    // 3. Window check at reservation time
+    // 2. Numeric pilot release gate verification
+    const releaseSnap = await tx.get(releaseRef);
+    if (!releaseSnap.exists || releaseSnap.data().enabled !== true) {
+      throw new Error('RELEASE_CONTROL_DISARMED: Numeric pilot release control is not enabled');
+    }
+    const numFence = releaseSnap.data();
+    if (numFence.operationId && numFence.operationId !== opData.operationId) {
+      throw new Error(`FENCE_MISMATCH: numericPilot fence operationId "${numFence.operationId}" does not match "${opData.operationId}"`);
+    }
+    if (numFence.runtimeSha && numFence.runtimeSha !== opData.runtimeSha) {
+      throw new Error(`FENCE_MISMATCH: numericPilot fence runtimeSha "${numFence.runtimeSha}" does not match "${opData.runtimeSha}"`);
+    }
+
+    // 3. General release fence verification: releaseControl/autonomousProgression
+    const autoReleaseSnap = await tx.get(db.doc('releaseControl/autonomousProgression'));
+    if (autoReleaseSnap.exists) {
+      const autoData = autoReleaseSnap.data();
+      if (autoData.enabled !== true) {
+        throw new Error('RELEASE_CONTROL_DISARMED: Autonomous progression general release is disabled');
+      }
+      if (Array.isArray(autoData.clientIds) && !autoData.clientIds.includes(opData.uid)) {
+        throw new Error('UNAUTHORIZED_IDENTIFIER: UID not present in autonomous progression release clientIds');
+      }
+      if (autoData.expiresAt && Date.parse(autoData.expiresAt) <= Date.parse(nowIso)) {
+        throw new Error('RELEASE_CONTROL_DISARMED: Autonomous progression general release has expired');
+      }
+    }
+
+    // 4. Coach Canary fence verification:
+    const clientRef = db.doc('clients/' + opData.uid);
+    const clientSnap = await tx.get(clientRef);
+    const coachId = (clientSnap.exists && clientSnap.data().coachId) || opts.coachId || 'synthetic-coach';
+    const coachSnap = await tx.get(db.doc('coaches/' + coachId));
+    if (coachSnap.exists) {
+      const coachData = coachSnap.data();
+      const canary = coachData.autoApplyCanary;
+      if (canary) {
+        if (canary.enabled !== true) {
+          throw new Error('COACH_CANARY_DISARMED: Coach autoApplyCanary is disabled');
+        }
+        if (Array.isArray(canary.clientIds) && !canary.clientIds.includes(opData.uid)) {
+          throw new Error('COACH_CANARY_MISMATCH: Coach canary does not authorize UID');
+        }
+        if (Array.isArray(canary.prescriptionExerciseIds) && !canary.prescriptionExerciseIds.includes(opData.pid)) {
+          throw new Error('COACH_CANARY_MISMATCH: Coach canary does not authorize PID');
+        }
+      }
+    }
+
+    // 5. Window check at reservation time
     const parsedNow = Date.parse(nowIso);
     if (!C.windowValid(opData.window, parsedNow)) {
       throw new Error('WINDOW_EXPIRED: Authorization window is expired or invalid at reservation time');
+    }
+
+    // 6. Attestation verification (if provided by caller)
+    if (opts.attestation) {
+      if (opts.attestation.attested !== true ||
+          opts.attestation.deploymentId !== opData.deploymentId ||
+          opts.attestation.sha !== opData.runtimeSha) {
+        throw new Error('ATTESTATION_MISMATCH: Runtime attestation failed or does not match operation data');
+      }
     }
 
     const reservationDoc = {
@@ -308,6 +360,44 @@ async function recordStop(db, operationId, stopData = {}, opts = {}) {
     }
 
     const data = snap.data();
+
+    // 1. Terminal states preservation: COMPLETED and FAILED must retain their status and result!
+    // STOP global does NOT modify retrospectively a completed or failed operation.
+    if (data.status === STATES.COMPLETED) {
+      return {
+        success: true,
+        operationId,
+        status: STATES.COMPLETED,
+        modified: false,
+        reason: 'ALREADY_COMPLETED',
+        completedAt: data.completedAt,
+        resultSummary: data.resultSummary
+      };
+    }
+
+    if (data.status === STATES.FAILED) {
+      return {
+        success: true,
+        operationId,
+        status: STATES.FAILED,
+        modified: false,
+        reason: 'ALREADY_FAILED',
+        completedAt: data.completedAt
+      };
+    }
+
+    // 2. STOPPED -> STOPPED idempotence without duplicating events:
+    if (data.status === STATES.STOPPED) {
+      return {
+        success: true,
+        operationId,
+        status: STATES.STOPPED,
+        modified: false,
+        duplicate: true
+      };
+    }
+
+    // 3. RESERVED -> STOPPED transition
     const history = Array.isArray(data.history) ? [...data.history] : [];
     history.push({
       sequence: history.length + 1,
@@ -325,7 +415,7 @@ async function recordStop(db, operationId, stopData = {}, opts = {}) {
       history: history
     });
 
-    return { success: true, operationId, status: STATES.STOPPED, sentinel: false };
+    return { success: true, operationId, status: STATES.STOPPED, sentinel: false, modified: true };
   });
 }
 

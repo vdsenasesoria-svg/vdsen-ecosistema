@@ -68,8 +68,13 @@ function makeValidOpData(opId = 'op-ledger-01') {
 }
 
 test('ledger in emulator: exercises all 15 scenarios for operationId ledger', async () => {
-  // Ensure releaseControl/numericPilot is armed for reservation tests
+  // Ensure releaseControl/numericPilot, autonomousProgression, coach and client are armed for reservation tests
   await db.doc('releaseControl/numericPilot').set({ enabled: true });
+  await db.doc('releaseControl/autonomousProgression').set({ enabled: true, clientIds: [C.UID] });
+  await db.doc('clients/' + C.UID).set({ activePlanId: C.PLAN, coachId: 'synthetic-coach' });
+  await db.doc('coaches/synthetic-coach').set({
+    autoApplyCanary: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] }
+  });
 
   // 1. Más de 100 operaciones previas, con duplicado fuera del primer bloque
   // Seed 105 operations directly into emulator
@@ -162,6 +167,24 @@ test('ledger in emulator: exercises all 15 scenarios for operationId ledger', as
   );
   await db.doc('releaseControl/numericPilot').set({ enabled: true }); // rearm
 
+  // 8b. Reserva con release general desarmado (releaseControl/autonomousProgression)
+  await db.doc('releaseControl/autonomousProgression').set({ enabled: false });
+  const opGenDisarmed = makeValidOpData('op-gen-disarmed');
+  await assert.rejects(
+    () => ledger.reserveOperation(db, opGenDisarmed),
+    /RELEASE_CONTROL_DISARMED/
+  );
+  await db.doc('releaseControl/autonomousProgression').set({ enabled: true, clientIds: [C.UID] }); // restore
+
+  // 8c. Reserva con Coach Canary desarmado
+  await db.doc('coaches/synthetic-coach').set({ autoApplyCanary: { enabled: false, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] } });
+  const opCanaryDisarmed = makeValidOpData('op-canary-disarmed');
+  await assert.rejects(
+    () => ledger.reserveOperation(db, opCanaryDisarmed),
+    /COACH_CANARY_DISARMED/
+  );
+  await db.doc('coaches/synthetic-coach').set({ autoApplyCanary: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] } }); // restore
+
   // 9. STOP concurrente (idempotencia y sin carreras)
   const opToStop = makeValidOpData('op-to-stop-concurrent');
   await ledger.reserveOperation(db, opToStop);
@@ -174,6 +197,14 @@ test('ledger in emulator: exercises all 15 scenarios for operationId ledger', as
   const verifyStopped = await ledger.verifyOperation(db, opToStop.operationId);
   assert.equal(verifyStopped.status, 'STOPPED');
 
+  // STOPPED -> STOPPED idempotence without duplicating events:
+  const historyLenBefore = verifyStopped.operation.history.length;
+  const subsequentStop = await ledger.recordStop(db, opToStop.operationId, { reason: 'CONCURRENT_STOP_3' });
+  assert.equal(subsequentStop.status, 'STOPPED');
+  assert.equal(subsequentStop.duplicate, true);
+  const verifyStoppedAgain = await ledger.verifyOperation(db, opToStop.operationId);
+  assert.equal(verifyStoppedAgain.operation.history.length, historyLenBefore, 'Subsequent STOP calls must not duplicate history events');
+
   // 10. Reintento tras STOP
   await assert.rejects(
     () => ledger.recordResult(db, opToStop.operationId, { success: true }),
@@ -184,12 +215,28 @@ test('ledger in emulator: exercises all 15 scenarios for operationId ledger', as
     /OPERATION_ALREADY_EXISTS/
   );
 
-  // 11. Transiciones de estado inválidas
+  // 11. Transiciones de estado inválidas y STOP terminal
   const opTransition = makeValidOpData('op-state-transitions');
   await ledger.reserveOperation(db, opTransition);
   await ledger.recordResult(db, opTransition.operationId, { success: true, summary: { applied: 1 } });
   const completedOp = await ledger.verifyOperation(db, opTransition.operationId);
   assert.equal(completedOp.status, 'COMPLETED');
+
+  // COMPLETED preserves its result upon global STOP:
+  const stopOnCompleted = await ledger.recordStop(db, opTransition.operationId, { reason: 'GLOBAL_EMERGENCY_STOP' });
+  assert.equal(stopOnCompleted.status, 'COMPLETED');
+  const verifyCompletedAfterStop = await ledger.verifyOperation(db, opTransition.operationId);
+  assert.equal(verifyCompletedAfterStop.status, 'COMPLETED', 'Global STOP must not retrospectively alter a completed operation');
+  assert.deepEqual(verifyCompletedAfterStop.operation.resultSummary, { applied: 1 });
+
+  // FAILED preserves its result upon global STOP:
+  const opFailed = makeValidOpData('op-failed-test');
+  await ledger.reserveOperation(db, opFailed);
+  await ledger.recordResult(db, opFailed.operationId, { success: false, summary: { error: 'TIMED_OUT' } });
+  const stopOnFailed = await ledger.recordStop(db, opFailed.operationId, { reason: 'GLOBAL_EMERGENCY_STOP' });
+  assert.equal(stopOnFailed.status, 'FAILED');
+  const verifyFailedAfterStop = await ledger.verifyOperation(db, opFailed.operationId);
+  assert.equal(verifyFailedAfterStop.status, 'FAILED', 'Global STOP must not retrospectively alter a failed operation');
 
   // COMPLETED -> FAILED is forbidden
   await assert.rejects(
