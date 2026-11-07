@@ -24,11 +24,30 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
-const SCREENSHOT_DIR = path.resolve('C:/Users/bonaf/.gemini/antigravity/brain/280d1bb3-230c-4fbd-abdf-b06f05a7bd6f/t700-qa');
+const SCREENSHOT_DIR = process.env.VDSEN_SCREENSHOT_DIR || path.join(os.tmpdir(), 'vdsen-t700-qa');
 
-const CHROME_PATH = fs.existsSync('C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe')
-  ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-  : 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+function findChrome() {
+  if (process.env.VDSEN_CHROMIUM && fs.existsSync(process.env.VDSEN_CHROMIUM)) {
+    return process.env.VDSEN_CHROMIUM;
+  }
+  const candidates = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe'),
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
+  ];
+  for (const c of candidates) {
+    if (c && fs.existsSync(c)) return c;
+  }
+  return null;
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -119,7 +138,19 @@ class CdpClient {
   }
 }
 
-test('T700 Browser QA: verifies real visual layout, tokens, steppers and viewports', { timeout: 120000 }, async () => {
+test('T700 COMPONENT_BROWSER_QA: verifies real visual layout, tokens, steppers and viewports', { timeout: 120000 }, async (t) => {
+  const chromePath = findChrome();
+  if (!chromePath) {
+    t.skip('Chrome/Chromium executable not found; skipping headless browser verification');
+    return;
+  }
+
+  // NOTE: COMPONENT_BROWSER_QA verifies headless DOM layout, brand design tokens,
+  // stepper mechanics, and the architectural absence of .focus() calls on button clicks.
+  // It demonstrates that steppers do not invoke programmatic focus in DOM,
+  // but does not constitute conclusive evidence of physical phone virtual keyboard
+  // behavior on real physical touchscreen mobile devices.
+
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 
   const httpPort = await getFreePort();
@@ -129,7 +160,7 @@ test('T700 Browser QA: verifies real visual layout, tokens, steppers and viewpor
   const userDataDir = path.join(os.tmpdir(), 'vdsen-t700-chrome-' + Date.now());
   fs.mkdirSync(userDataDir, { recursive: true });
 
-  const chromeProc = spawn(CHROME_PATH, [
+  const chromeProc = spawn(chromePath, [
     '--headless=new',
     `--remote-debugging-port=${cdpPort}`,
     `--user-data-dir=${userDataDir}`,
@@ -384,4 +415,20 @@ test('T700 Browser QA: verifies real visual layout, tokens, steppers and viewpor
     await new Promise(r => server.close(r));
     try { fs.rmSync(userDataDir, { recursive: true, force: true }); } catch (_) {}
   }
+});
+
+test('T700 REAL_CLIENT_E2E: authenticated real client flow in demo environment', async (t) => {
+  // Evaluates end-to-end client workout flow against real backend in demo environment:
+  // - Renderizado real de la serie activa
+  // - Control de carga y repeticiones
+  // - Guardado y edición de serie
+  // - Estado de progresión
+  // - Persistencia después de recargar
+  // - Navegación móvil
+  if (!process.env.FIREBASE_AUTH_EMULATOR_HOST) {
+    console.log('T700_REAL_CLIENT_E2E: NOT_VERIFIED (FIREBASE_AUTH_EMULATOR_HOST not configured; requires Firebase Auth Emulator and accredited synthetic client session)');
+    t.skip('Auth Emulator not available; reporting NOT_VERIFIED for authenticated real client E2E');
+    return;
+  }
+  assert.fail('Demo environment synthetic auth fixtures not yet provisioned');
 });

@@ -169,48 +169,82 @@ async function reserveOperation(db, opData, opts = {}) {
     if (!releaseSnap.exists || releaseSnap.data().enabled !== true) {
       throw new Error('RELEASE_CONTROL_DISARMED: Numeric pilot release control is not enabled');
     }
-    const numFence = releaseSnap.data();
-    if (numFence.operationId && numFence.operationId !== opData.operationId) {
+    const numFence = releaseSnap.data() || {};
+    if (!numFence.operationId) {
+      throw new Error('FENCE_FIELD_MISSING: numericPilot fence is missing required field "operationId"');
+    }
+    if (numFence.operationId !== opData.operationId) {
       throw new Error(`FENCE_MISMATCH: numericPilot fence operationId "${numFence.operationId}" does not match "${opData.operationId}"`);
     }
-    if (numFence.runtimeSha && numFence.runtimeSha !== opData.runtimeSha) {
+    if (!numFence.runtimeSha) {
+      throw new Error('FENCE_FIELD_MISSING: numericPilot fence is missing required field "runtimeSha"');
+    }
+    if (numFence.runtimeSha !== opData.runtimeSha) {
       throw new Error(`FENCE_MISMATCH: numericPilot fence runtimeSha "${numFence.runtimeSha}" does not match "${opData.runtimeSha}"`);
+    }
+    if (numFence.uid && numFence.uid !== opData.uid) {
+      throw new Error(`FENCE_MISMATCH: numericPilot fence uid "${numFence.uid}" does not match "${opData.uid}"`);
+    }
+    if (numFence.planId && numFence.planId !== opData.planId) {
+      throw new Error(`FENCE_MISMATCH: numericPilot fence planId "${numFence.planId}" does not match "${opData.planId}"`);
+    }
+    if (numFence.pid && numFence.pid !== opData.pid) {
+      throw new Error(`FENCE_MISMATCH: numericPilot fence pid "${numFence.pid}" does not match "${opData.pid}"`);
+    }
+    if (numFence.expiresAt && numFence.expiresAt !== opData.window.expiresAt) {
+      throw new Error(`FENCE_MISMATCH: numericPilot fence expiresAt "${numFence.expiresAt}" does not match window "${opData.window.expiresAt}"`);
     }
 
     // 3. General release fence verification: releaseControl/autonomousProgression
     const autoReleaseSnap = await tx.get(db.doc('releaseControl/autonomousProgression'));
-    if (autoReleaseSnap.exists) {
-      const autoData = autoReleaseSnap.data();
-      if (autoData.enabled !== true) {
-        throw new Error('RELEASE_CONTROL_DISARMED: Autonomous progression general release is disabled');
-      }
-      if (Array.isArray(autoData.clientIds) && !autoData.clientIds.includes(opData.uid)) {
-        throw new Error('UNAUTHORIZED_IDENTIFIER: UID not present in autonomous progression release clientIds');
-      }
-      if (autoData.expiresAt && Date.parse(autoData.expiresAt) <= Date.parse(nowIso)) {
-        throw new Error('RELEASE_CONTROL_DISARMED: Autonomous progression general release has expired');
-      }
+    if (!autoReleaseSnap.exists) {
+      throw new Error('RELEASE_CONTROL_DISARMED: Autonomous progression general release control document does not exist');
+    }
+    const autoData = autoReleaseSnap.data() || {};
+    if (autoData.enabled !== true) {
+      throw new Error('RELEASE_CONTROL_DISARMED: Autonomous progression general release is disabled');
+    }
+    if (!Array.isArray(autoData.clientIds) || !autoData.clientIds.includes(opData.uid)) {
+      throw new Error('UNAUTHORIZED_IDENTIFIER: UID not present in autonomous progression release clientIds');
+    }
+    if (autoData.expiresAt && Date.parse(autoData.expiresAt) <= Date.parse(nowIso)) {
+      throw new Error('RELEASE_CONTROL_DISARMED: Autonomous progression general release has expired');
     }
 
-    // 4. Coach Canary fence verification:
+    // 4. Client and Coach Canary fence verification
     const clientRef = db.doc('clients/' + opData.uid);
     const clientSnap = await tx.get(clientRef);
-    const coachId = (clientSnap.exists && clientSnap.data().coachId) || opts.coachId || 'synthetic-coach';
-    const coachSnap = await tx.get(db.doc('coaches/' + coachId));
-    if (coachSnap.exists) {
-      const coachData = coachSnap.data();
-      const canary = coachData.autoApplyCanary;
-      if (canary) {
-        if (canary.enabled !== true) {
-          throw new Error('COACH_CANARY_DISARMED: Coach autoApplyCanary is disabled');
-        }
-        if (Array.isArray(canary.clientIds) && !canary.clientIds.includes(opData.uid)) {
-          throw new Error('COACH_CANARY_MISMATCH: Coach canary does not authorize UID');
-        }
-        if (Array.isArray(canary.prescriptionExerciseIds) && !canary.prescriptionExerciseIds.includes(opData.pid)) {
-          throw new Error('COACH_CANARY_MISMATCH: Coach canary does not authorize PID');
-        }
-      }
+    if (!clientSnap.exists) {
+      throw new Error(`CLIENT_NOT_FOUND: Client document "clients/${opData.uid}" does not exist`);
+    }
+    const clientData = clientSnap.data() || {};
+    if (!clientData.activePlanId || clientData.activePlanId !== opData.planId) {
+      throw new Error(`PLAN_MISMATCH: Client activePlanId "${clientData.activePlanId}" does not match operation planId "${opData.planId}"`);
+    }
+
+    const coachId = clientData.coachId;
+    if (!coachId || typeof coachId !== 'string' || coachId.trim().length === 0) {
+      throw new Error('COACH_NOT_AUTHORIZED: Client document does not contain an accredited coachId');
+    }
+
+    const coachRef = db.doc('coaches/' + coachId);
+    const coachSnap = await tx.get(coachRef);
+    if (!coachSnap.exists) {
+      throw new Error(`COACH_NOT_FOUND: Coach document "coaches/${coachId}" does not exist`);
+    }
+    const coachData = coachSnap.data() || {};
+    const canary = coachData.autoApplyCanary;
+    if (!canary || typeof canary !== 'object') {
+      throw new Error('COACH_CANARY_NOT_FOUND: Coach document is missing autoApplyCanary');
+    }
+    if (canary.enabled !== true) {
+      throw new Error('COACH_CANARY_DISARMED: Coach autoApplyCanary is disabled');
+    }
+    if (!Array.isArray(canary.clientIds) || canary.clientIds.length !== 1 || canary.clientIds[0] !== opData.uid) {
+      throw new Error('COACH_CANARY_MISMATCH: Coach canary clientIds must contain exactly the single authorized UID');
+    }
+    if (!Array.isArray(canary.prescriptionExerciseIds) || canary.prescriptionExerciseIds.length !== 1 || canary.prescriptionExerciseIds[0] !== opData.pid) {
+      throw new Error('COACH_CANARY_MISMATCH: Coach canary prescriptionExerciseIds must contain exactly the single authorized PID');
     }
 
     // 5. Window check at reservation time
@@ -219,13 +253,23 @@ async function reserveOperation(db, opData, opts = {}) {
       throw new Error('WINDOW_EXPIRED: Authorization window is expired or invalid at reservation time');
     }
 
-    // 6. Attestation verification (if provided by caller)
-    if (opts.attestation) {
-      if (opts.attestation.attested !== true ||
-          opts.attestation.deploymentId !== opData.deploymentId ||
-          opts.attestation.sha !== opData.runtimeSha) {
-        throw new Error('ATTESTATION_MISMATCH: Runtime attestation failed or does not match operation data');
-      }
+    // 6. Attestation verification (strictly mandatory)
+    if (!opts.attestation || typeof opts.attestation !== 'object') {
+      throw new Error('ATTESTATION_MISSING: Runtime attestation object is mandatory for operation reservation');
+    }
+    const att = opts.attestation;
+    if (att.attested !== true) {
+      throw new Error('ATTESTATION_REJECTED: Runtime attestation attested flag is not true');
+    }
+    if (!att.deploymentId || att.deploymentId !== opData.deploymentId) {
+      throw new Error(`ATTESTATION_MISMATCH: Attestation deploymentId "${att.deploymentId}" does not match operation deploymentId "${opData.deploymentId}"`);
+    }
+    const attSha = att.runtimeSha || att.sha;
+    if (!attSha || attSha !== opData.runtimeSha) {
+      throw new Error(`ATTESTATION_MISMATCH: Attestation runtimeSha "${attSha}" does not match operation runtimeSha "${opData.runtimeSha}"`);
+    }
+    if (att.operationId && att.operationId !== opData.operationId) {
+      throw new Error(`ATTESTATION_MISMATCH: Attestation operationId "${att.operationId}" does not match operation operationId "${opData.operationId}"`);
     }
 
     const reservationDoc = {
