@@ -1056,6 +1056,87 @@ test('ledger in emulator: P0 error-handling simulations, ambiguous recovery, and
     /ATTESTATION_ALREADY_CONSUMED|ATTESTATION_MISMATCH/
   );
 
+  // Helper for simulating ambiguous commit with corrupted persisted state
+  const makeAmbiguousCorruptionDb = (corruptDocFn) => {
+    const customDb = Object.create(db);
+    customDb.runTransaction = async (callback) => {
+      let stagedRef = null;
+      let stagedData = null;
+      const proxyTx = {
+        get: (ref) => db.doc(ref.path).get(),
+        set: (ref, data) => {
+          stagedRef = ref;
+          stagedData = corruptDocFn(structuredClone(data));
+        }
+      };
+      await callback(proxyTx);
+      // Persist the corrupted document in Firestore
+      await db.doc(stagedRef.path).set(stagedData);
+      // Simulate network interruption between commit and response ack
+      const netErr = new Error('UNAVAILABLE: network connection dropped after write');
+      netErr.code = 14;
+      throw netErr;
+    };
+    return customDb;
+  };
+
+  // 6b. Window with altered schema rejected (P1 integrity check)
+  const opAlteredWinSchema = makeValidOpData('op-corrupt-win-schema');
+  await armFencesForOp(db, opAlteredWinSchema);
+  const attAlteredWinSchema = await makeValidAttestation(opAlteredWinSchema);
+  const dbAlteredWinSchema = makeAmbiguousCorruptionDb(d => { d.window.schema = 'corrupted-window-schema-v9'; return d; });
+  await assert.rejects(
+    async () => ledger.reserveOperation(dbAlteredWinSchema, opAlteredWinSchema, { attestation: attAlteredWinSchema }),
+    /CORRUPTED_RESERVATION_STATE/
+  );
+  assert.equal(verifyAttestationAuthenticity(attAlteredWinSchema).valid, true, 'Attestation must remain unconsumed after corrupted readback');
+  const persistedWinSchema = (await db.doc(`releaseControl/numericPilot/operations/${opAlteredWinSchema.operationId}`).get()).data();
+  assert.equal(persistedWinSchema.window.schema, 'corrupted-window-schema-v9', 'Persisted state must not be modified during rejection');
+
+  // 6c. Window with altered UID / plan / PID rejected
+  const opAlteredWinFields = makeValidOpData('op-corrupt-win-fields');
+  await armFencesForOp(db, opAlteredWinFields);
+  const attAlteredWinFields = await makeValidAttestation(opAlteredWinFields);
+  const dbAlteredWinFields = makeAmbiguousCorruptionDb(d => { d.window.uid = 'synthetic-foreign-athlete'; return d; });
+  await assert.rejects(
+    async () => ledger.reserveOperation(dbAlteredWinFields, opAlteredWinFields, { attestation: attAlteredWinFields }),
+    /CORRUPTED_RESERVATION_STATE/
+  );
+  assert.equal(verifyAttestationAuthenticity(attAlteredWinFields).valid, true);
+
+  // 6d. Scope with second client rejected (allowlist length exactly 1)
+  const opScopeMultiClient = makeValidOpData('op-corrupt-multi-client');
+  await armFencesForOp(db, opScopeMultiClient);
+  const attScopeMultiClient = await makeValidAttestation(opScopeMultiClient);
+  const dbScopeMultiClient = makeAmbiguousCorruptionDb(d => { d.scope.clientIds = [opScopeMultiClient.uid, 'attacker-injected-client']; return d; });
+  await assert.rejects(
+    async () => ledger.reserveOperation(dbScopeMultiClient, opScopeMultiClient, { attestation: attScopeMultiClient }),
+    /CORRUPTED_RESERVATION_STATE/
+  );
+  assert.equal(verifyAttestationAuthenticity(attScopeMultiClient).valid, true);
+
+  // 6e. Scope with second PID rejected (allowlist length exactly 1)
+  const opScopeMultiPid = makeValidOpData('op-corrupt-multi-pid');
+  await armFencesForOp(db, opScopeMultiPid);
+  const attScopeMultiPid = await makeValidAttestation(opScopeMultiPid);
+  const dbScopeMultiPid = makeAmbiguousCorruptionDb(d => { d.scope.prescriptionExerciseIds = [opScopeMultiPid.pid, 'attacker-injected-pid']; return d; });
+  await assert.rejects(
+    async () => ledger.reserveOperation(dbScopeMultiPid, opScopeMultiPid, { attestation: attScopeMultiPid }),
+    /CORRUPTED_RESERVATION_STATE/
+  );
+  assert.equal(verifyAttestationAuthenticity(attScopeMultiPid).valid, true);
+
+  // 6f. Incorrect ledger schema or contract version rejected
+  const opBadLedgerSchema = makeValidOpData('op-corrupt-ledger-schema');
+  await armFencesForOp(db, opBadLedgerSchema);
+  const attBadLedgerSchema = await makeValidAttestation(opBadLedgerSchema);
+  const dbBadLedgerSchema = makeAmbiguousCorruptionDb(d => { d.schema = 'wrong-ledger-schema-v9'; return d; });
+  await assert.rejects(
+    async () => ledger.reserveOperation(dbBadLedgerSchema, opBadLedgerSchema, { attestation: attBadLedgerSchema }),
+    /CORRUPTED_RESERVATION_STATE/
+  );
+  assert.equal(verifyAttestationAuthenticity(attBadLedgerSchema).valid, true);
+
   // 7. Ambiguous commit conflict: document exists with DIFFERENT reservationAttemptId
   const opConflict = makeValidOpData('op-r17-ambiguous-conflict');
   await armFencesForOp(db, opConflict);

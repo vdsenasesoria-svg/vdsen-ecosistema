@@ -442,6 +442,8 @@ async function reserveOperation(db, opData, opts = {}) {
         // Check if the document was written by this specific attempt
         if (docData.reservationAttemptId === reservationAttemptId) {
           // Verify ALL immutable attributes:
+          const isSchemaMatch = docData.schema === LEDGER_SCHEMA &&
+            docData.contractVersion === (opData.window.schema || 'vdsen-numeric-pilot-v1');
           const isUidMatch = docData.uid === opData.uid;
           const isPlanMatch = docData.planId === opData.planId;
           const isPidMatch = docData.pid === opData.pid;
@@ -452,15 +454,26 @@ async function reserveOperation(db, opData, opts = {}) {
           const isStatusReserved = docData.status === STATES.RESERVED;
 
           const isWindowMatch = docData.window &&
+            docData.window.schema === (opData.window.schema || 'vdsen-numeric-pilot-v1') &&
+            docData.window.mode === opData.window.mode &&
+            docData.window.uid === opData.uid &&
+            docData.window.planId === opData.planId &&
+            docData.window.pid === opData.pid &&
+            docData.window.runtimeSha === opData.runtimeSha &&
+            docData.window.operationId === opData.operationId &&
             docData.window.startsAt === opData.window.startsAt &&
-            docData.window.expiresAt === opData.window.expiresAt &&
-            docData.window.mode === opData.window.mode;
+            docData.window.expiresAt === opData.window.expiresAt;
+
           const isScopeMatch = docData.scope &&
             docData.scope.enabled === opData.scope.enabled &&
-            Array.isArray(docData.scope.clientIds) && docData.scope.clientIds[0] === opData.uid &&
-            Array.isArray(docData.scope.prescriptionExerciseIds) && docData.scope.prescriptionExerciseIds[0] === opData.pid;
+            Array.isArray(docData.scope.clientIds) &&
+            docData.scope.clientIds.length === 1 &&
+            docData.scope.clientIds[0] === opData.uid &&
+            Array.isArray(docData.scope.prescriptionExerciseIds) &&
+            docData.scope.prescriptionExerciseIds.length === 1 &&
+            docData.scope.prescriptionExerciseIds[0] === opData.pid;
 
-          if (isUidMatch && isPlanMatch && isPidMatch && isShaMatch && isDeploymentMatch &&
+          if (isSchemaMatch && isUidMatch && isPlanMatch && isPidMatch && isShaMatch && isDeploymentMatch &&
               isRunIdMatch && isOperationIdMatch && isStatusReserved && isWindowMatch && isScopeMatch) {
             // Unequivocal verified recovery of this attempt's commit!
             commitSucceeded = true;
