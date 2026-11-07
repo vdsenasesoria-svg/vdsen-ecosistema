@@ -13,7 +13,14 @@ const DEFAULT_PROJECT_ID = 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN';
 const DEFAULT_TEAM_ID = 'team_VZc5H7Q1DBIJ3g0mwrSBz1o8';
 const MAX_ATTESTATION_AGE_MS = 15 * 60 * 1000; // 15 minutes max validity
 
-// Trusted Attestation Registry (private to this module)
+// Trusted Attestation Registry (in-process memory boundary)
+// NOTE: WeakSet and WeakMap provide in-process isolation during the lifetime of a single
+// Node.js process to guarantee that an attestation passed to reserveOperation() was genuinely
+// produced by attestRuntime(). They DO NOT provide cross-process or durable persistent storage;
+// cross-process and post-restart uniqueness is enforced durably by Firestore document keys
+// under releaseControl/numericPilot/operations/{operationId}.
+// The fingerprint is a SHA-256 digest for in-memory tamper detection, NOT an asymmetric
+// cryptographic signature.
 const _trustedAttestations = new WeakSet();
 const _attestationRecords = new WeakMap();
 const _consumedAttestationIds = new Set();
@@ -24,15 +31,25 @@ function isProductionTarget() {
   const googleCloud = process.env.GOOGLE_CLOUD_PROJECT;
   const isProdProject = gcp === 'vdsen-ecosistema' || gcloud === 'vdsen-ecosistema' || googleCloud === 'vdsen-ecosistema';
   const isProdEnv = process.env.NODE_ENV === 'production' || process.env.GITHUB_ENVIRONMENT === 'Production';
-  return isProdProject || isProdEnv;
+  return Boolean(isProdProject || isProdEnv);
+}
+
+function isLiveTarget() {
+  if (isProductionTarget()) return true;
+  const gcp = process.env.GCP_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || '';
+  if (gcp && gcp !== 'undefined' && !gcp.startsWith('demo-')) {
+    // Non-demo cloud project configured (e.g. staging or real GCP project)
+    return true;
+  }
+  return false;
 }
 
 function isAccreditedDemoEnvironment() {
-  if (isProductionTarget()) return false;
+  if (isLiveTarget()) return false;
   const emuHost = process.env.FIRESTORE_EMULATOR_HOST;
   const project = process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || '';
   if (!emuHost) return false;
-  return typeof project === 'string' && project.startsWith('demo-');
+  return typeof project === 'string' && project !== 'undefined' && project.startsWith('demo-');
 }
 
 function sealAttestation(record) {
@@ -48,7 +65,7 @@ function sealAttestation(record) {
   Object.freeze(record);
 }
 
-function verifyAttestationAuthenticity(record) {
+function verifyAttestationAuthenticity(record, checkNow = null) {
   if (!record || typeof record !== 'object') {
     return { valid: false, reason: 'ATTESTATION_MISSING', message: 'Attestation record must be an object' };
   }
@@ -66,7 +83,10 @@ function verifyAttestationAuthenticity(record) {
   if (_consumedAttestationIds.has(record.operationId)) {
     return { valid: false, reason: 'ATTESTATION_ALREADY_CONSUMED', message: `Attestation for operation "${record.operationId}" was already consumed` };
   }
-  const age = Date.now() - Date.parse(record.attestedAt);
+  const currentTime = (typeof checkNow === 'number' && Number.isFinite(checkNow))
+    ? checkNow
+    : (typeof checkNow === 'string' && Number.isFinite(Date.parse(checkNow)) ? Date.parse(checkNow) : Date.now());
+  const age = currentTime - Date.parse(record.attestedAt);
   if (age < 0 || age > MAX_ATTESTATION_AGE_MS) {
     return { valid: false, reason: 'ATTESTATION_EXPIRED', message: `Attestation record expired (age: ${(age / 1000).toFixed(1)}s, max: 900s)` };
   }
@@ -83,6 +103,12 @@ function verifyAttestationAuthenticity(record) {
 function consumeAttestation(record) {
   if (record && record.operationId) {
     _consumedAttestationIds.add(record.operationId);
+  }
+}
+
+function _clearConsumedAttestationsForTesting() {
+  if (isAccreditedDemoEnvironment()) {
+    _consumedAttestationIds.clear();
   }
 }
 
@@ -112,11 +138,11 @@ function hash(value) {
  */
 async function attestRuntime(opts) {
   opts = opts || {};
-  if (opts.fetcher && isProductionTarget()) {
-    throw new Error('PROVIDER_INJECTION_REJECTED: Custom fetcher injection is strictly forbidden in production');
+  if (opts.fetcher && isLiveTarget()) {
+    throw new Error('PROVIDER_INJECTION_REJECTED: Custom fetcher injection is strictly forbidden when targeting live cloud resources');
   }
-  if (opts.now && isProductionTarget()) {
-    throw new Error('CLOCK_TAMPERING_REJECTED: External clock injection is strictly forbidden in production');
+  if (opts.now && isLiveTarget()) {
+    throw new Error('CLOCK_TAMPERING_REJECTED: External clock injection is strictly forbidden when targeting live cloud resources');
   }
   const now = opts.now || Date.now();
   const projectId = opts.projectId || DEFAULT_PROJECT_ID;
@@ -652,7 +678,9 @@ module.exports = {
   attestRuntime,
   verifyAttestationAuthenticity,
   consumeAttestation,
+  _clearConsumedAttestationsForTesting,
   isProductionTarget,
+  isLiveTarget,
   isAccreditedDemoEnvironment,
   DEFAULT_PROJECT_ID,
   DEFAULT_TEAM_ID,

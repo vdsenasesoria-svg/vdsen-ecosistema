@@ -34,7 +34,9 @@ const {
   attestRuntime,
   verifyAttestationAuthenticity,
   consumeAttestation,
+  _clearConsumedAttestationsForTesting,
   isProductionTarget,
+  isLiveTarget,
   isAccreditedDemoEnvironment,
   MAX_ATTESTATION_AGE_MS
 } = require('../scripts/pilot/numeric-attestation.cjs');
@@ -330,7 +332,7 @@ test('ledger in emulator: exercises all 15 scenarios for operationId ledger', as
   );
   await assert.rejects(
     async () => ledger.reserveOperation(db, opToStop, { attestation: await makeValidAttestation(opToStop) }),
-    /OPERATION_ALREADY_EXISTS/
+    /OPERATION_ALREADY_EXISTS|ATTESTATION_ALREADY_CONSUMED/
   );
 
   // 11. Transiciones de estado inválidas y STOP terminal
@@ -366,7 +368,7 @@ test('ledger in emulator: exercises all 15 scenarios for operationId ledger', as
   // COMPLETED -> RESERVED is forbidden
   await assert.rejects(
     async () => ledger.reserveOperation(db, opTransition, { attestation: await makeValidAttestation(opTransition) }),
-    /OPERATION_ALREADY_EXISTS/
+    /OPERATION_ALREADY_EXISTS|ATTESTATION_ALREADY_CONSUMED/
   );
 
   // 12. Campos históricos protegidos (identidad inmutable)
@@ -818,7 +820,8 @@ test('ledger in emulator: P0 attestation trust boundary and injection control (R
       /CLOCK_TAMPERING_REJECTED/
     );
   } finally {
-    process.env.GCP_PROJECT_ID = origGcpProject;
+    if (origGcpProject !== undefined) process.env.GCP_PROJECT_ID = origGcpProject;
+    else delete process.env.GCP_PROJECT_ID;
   }
 
   // P0.4 Provider Error Handling via reserveVerifiedOperation
@@ -859,4 +862,233 @@ test('ledger in emulator: P0 attestation trust boundary and injection control (R
   const persistedDoc = await db.doc(`releaseControl/numericPilot/operations/${opVerifiedSuccess.operationId}`).get();
   assert.equal(persistedDoc.exists, true);
   assert.equal(persistedDoc.data().status, 'RESERVED');
+});
+
+test('ledger in emulator: P0 transactional attestation, retry resilience, and commit recovery (R17)', async () => {
+  // 1. P0.1 Abort before commit & successful retry with same attestation
+  const opAbort = makeValidOpData('op-r17-abort-retry');
+  await armFencesForOp(db, opAbort);
+  const attAbort = await makeValidAttestation(opAbort);
+
+  // Simulated DB where runTransaction runs callback (staging tx.set), but fails at commit stage
+  const abortingDb = Object.create(db);
+  abortingDb.runTransaction = async (callback) => {
+    let stagedSet = false;
+    const mockTx = {
+      get: (ref) => db.doc(ref.path).get(),
+      set: () => { stagedSet = true; }
+    };
+    await callback(mockTx);
+    assert.equal(stagedSet, true, 'Transaction callback must have staged tx.set');
+    // Force abort before commit
+    throw new Error('TRANSACTION_ABORTED_BEFORE_COMMIT: Simulated OCC conflict / rollback');
+  };
+
+  // Attempt reservation on abortingDb - must abort
+  await assert.rejects(
+    async () => ledger.reserveOperation(abortingDb, opAbort, { attestation: attAbort }),
+    /TRANSACTION_ABORTED_BEFORE_COMMIT/
+  );
+
+  // Verify that NO document was persisted in Firestore
+  const abortedDoc = await db.doc(`releaseControl/numericPilot/operations/${opAbort.operationId}`).get();
+  assert.equal(abortedDoc.exists, false, 'Aborted transaction must not persist document in Firestore');
+
+  // Verify that the attestation was NOT consumed and can be used on legitimate retry
+  const retryRes = await ledger.reserveOperation(db, opAbort, { attestation: attAbort });
+  assert.equal(retryRes.status, 'RESERVED');
+  assert.equal(retryRes.operationId, opAbort.operationId);
+
+  // Verify document is now persisted in Firestore
+  const committedDoc = await db.doc(`releaseControl/numericPilot/operations/${opAbort.operationId}`).get();
+  assert.equal(committedDoc.exists, true, 'Committed retry must persist document in Firestore');
+  assert.equal(committedDoc.data().status, 'RESERVED');
+
+  // Attempting to reuse attAbort AFTER confirmed commit must be rejected with ATTESTATION_ALREADY_CONSUMED
+  const opReplayAfterCommit = makeValidOpData('op-r17-replay-after-commit');
+  await armFencesForOp(db, opReplayAfterCommit);
+  await assert.rejects(
+    async () => ledger.reserveOperation(db, opReplayAfterCommit, { attestation: attAbort }),
+    /ATTESTATION_ALREADY_CONSUMED|ATTESTATION_MISMATCH/
+  );
+
+  // 2. Transaction retry after contention / OCC Conflict (in-memory state not corrupted)
+  const opContention = makeValidOpData('op-r17-contention-retry');
+  await armFencesForOp(db, opContention);
+  const attContention = await makeValidAttestation(opContention);
+
+  let attemptCount = 0;
+  const contentionDb = Object.create(db);
+  contentionDb.runTransaction = async (callback) => {
+    attemptCount++;
+    try {
+      return await db.runTransaction(async (tx) => {
+        if (attemptCount === 1) {
+          throw new Error('ABORTED: Transaction contention conflict');
+        }
+        return await callback(tx);
+      });
+    } catch (firstErr) {
+      if (firstErr.message.includes('Transaction contention conflict')) {
+        attemptCount++;
+        return await db.runTransaction(async (tx) => {
+          return await callback(tx);
+        });
+      }
+      throw firstErr;
+    }
+  };
+
+  const contentionRes = await ledger.reserveOperation(contentionDb, opContention, { attestation: attContention });
+  assert.equal(contentionRes.status, 'RESERVED');
+  assert.equal(attemptCount, 2, 'Contention retry must have executed attempt 2');
+  const contentionPersisted = await db.doc(`releaseControl/numericPilot/operations/${opContention.operationId}`).get();
+  assert.equal(contentionPersisted.exists, true);
+
+  // 3. Process restart simulation: durable uniqueness relies on Firestore document, not ephemeral memory
+  const opDurable = makeValidOpData('op-r17-durable-restart');
+  await armFencesForOp(db, opDurable);
+  const attDurable = await makeValidAttestation(opDurable);
+  await ledger.reserveOperation(db, opDurable, { attestation: attDurable });
+
+  // Simulate process restart: memory state (_consumedAttestationIds) is wiped
+  _clearConsumedAttestationsForTesting();
+
+  // Create a brand new verified attestation for the same operationId in the new process context
+  const freshAttAfterRestart = await makeValidAttestation(opDurable);
+  // Transaction must fail at Step 1 (opSnap.exists) with OPERATION_ALREADY_EXISTS, proving durable authority
+  await assert.rejects(
+    async () => ledger.reserveOperation(db, opDurable, { attestation: freshAttAfterRestart }),
+    /OPERATION_ALREADY_EXISTS/
+  );
+
+  // 4. P0.2 Window Revalidation on Retry: window expires between attempts
+  const opWinRetry = makeValidOpData('op-r17-win-retry');
+  const winStart = Date.now() - 1000;
+  const winExpire = Date.now() + 2000;
+  opWinRetry.window.startsAt = new Date(winStart).toISOString();
+  opWinRetry.window.expiresAt = new Date(winExpire).toISOString();
+  await armFencesForOp(db, opWinRetry);
+  const attWinRetry = await makeValidAttestation(opWinRetry);
+
+  let winAttempt = 0;
+  const winRetryDb = Object.create(db);
+  winRetryDb.runTransaction = async (callback) => {
+    winAttempt++;
+    await db.runTransaction(async (tx) => {
+      throw new Error('ABORTED: Contention');
+    }).catch(async () => {
+      winAttempt++;
+      return await db.runTransaction(async (tx) => {
+        return await callback(tx);
+      });
+    });
+  };
+
+  await assert.rejects(
+    async () => ledger.reserveOperation(winRetryDb, opWinRetry, {
+      attestation: attWinRetry,
+      dynamicClock: () => winAttempt === 1 ? new Date(winStart + 500).toISOString() : new Date(winExpire + 1000).toISOString()
+    }),
+    /WINDOW_EXPIRED/
+  );
+  assert.equal((await db.doc(`releaseControl/numericPilot/operations/${opWinRetry.operationId}`).get()).exists, false);
+
+  // 5. P0.2 Attestation Expiration on Retry (> 15 min on retry)
+  const opAttRetry = makeValidOpData('op-r17-att-exp-retry');
+  await armFencesForOp(db, opAttRetry);
+  const attExpRetry = await makeValidAttestation(opAttRetry, { now: Date.now() });
+
+  let attAttempt = 0;
+  const attRetryDb = Object.create(db);
+  attRetryDb.runTransaction = async (callback) => {
+    attAttempt++;
+    await db.runTransaction(async (tx) => {
+      throw new Error('ABORTED: Contention');
+    }).catch(async () => {
+      attAttempt++;
+      return await db.runTransaction(async (tx) => {
+        return await callback(tx);
+      });
+    });
+  };
+
+  await assert.rejects(
+    async () => ledger.reserveOperation(attRetryDb, opAttRetry, {
+      attestation: attExpRetry,
+      dynamicClock: () => attAttempt === 1 ? new Date().toISOString() : new Date(Date.now() + 16 * 60 * 1000).toISOString()
+    }),
+    /ATTESTATION_EXPIRED/
+  );
+  assert.equal((await db.doc(`releaseControl/numericPilot/operations/${opAttRetry.operationId}`).get()).exists, false);
+
+  // 6. Ambiguous commit recovery: network failure where commit actually succeeded
+  const opAmbiguous = makeValidOpData('op-r17-ambiguous-commit');
+  await armFencesForOp(db, opAmbiguous);
+  const attAmbiguous = await makeValidAttestation(opAmbiguous);
+
+  const ambiguousDb = Object.create(db);
+  ambiguousDb.runTransaction = async (callback) => {
+    await db.runTransaction(callback);
+    const netErr = new Error('UNAVAILABLE: network connection lost before commit ack');
+    netErr.code = 14;
+    throw netErr;
+  };
+
+  const recoveredRes = await ledger.reserveOperation(ambiguousDb, opAmbiguous, { attestation: attAmbiguous });
+  assert.equal(recoveredRes.status, 'RESERVED');
+  assert.equal(recoveredRes.recoveredFromAmbiguity, true);
+  assert.equal(recoveredRes.operationId, opAmbiguous.operationId);
+
+  const opReplayRecovered = makeValidOpData('op-r17-replay-recovered');
+  await armFencesForOp(db, opReplayRecovered);
+  await assert.rejects(
+    async () => ledger.reserveOperation(db, opReplayRecovered, { attestation: attAmbiguous }),
+    /ATTESTATION_ALREADY_CONSUMED|ATTESTATION_MISMATCH/
+  );
+
+  // 7. Ambiguous network failure where commit did NOT succeed:
+  const opNetFail = makeValidOpData('op-r17-net-fail');
+  await armFencesForOp(db, opNetFail);
+  const attNetFail = await makeValidAttestation(opNetFail);
+
+  const failDb = Object.create(db);
+  failDb.runTransaction = async () => {
+    const netErr = new Error('UNAVAILABLE: connection refused before server reached');
+    netErr.code = 14;
+    throw netErr;
+  };
+
+  await assert.rejects(
+    async () => ledger.reserveOperation(failDb, opNetFail, { attestation: attNetFail }),
+    /UNAVAILABLE/
+  );
+  assert.equal((await db.doc(`releaseControl/numericPilot/operations/${opNetFail.operationId}`).get()).exists, false);
+
+  // 8. P0.3 Mock provider injection rejected when targeting non-demo / staging
+  const origGcpProject = process.env.GCP_PROJECT_ID;
+  try {
+    process.env.GCP_PROJECT_ID = 'vdsen-ecosistema-staging';
+    assert.equal(isLiveTarget(), true, 'vdsen-ecosistema-staging must be identified as live target');
+
+    await assert.rejects(
+      async () => attestRuntime({
+        deploymentId: 'dpl_staging_test',
+        expectedSha: 'a'.repeat(40),
+        expectedOperationId: 'op-staging-inject',
+        expectedAlias: 'vdsen-ecosistema.vercel.app',
+        fetcher: async () => ({ status: 200 })
+      }),
+      /PROVIDER_INJECTION_REJECTED/
+    );
+
+    const opStagingClock = makeValidOpData('op-staging-clock');
+    await assert.rejects(
+      async () => ledger.reserveOperation(db, opStagingClock, { now: opStagingClock.window.startsAt }),
+      /CLOCK_TAMPERING_REJECTED/
+    );
+  } finally {
+    if (origGcpProject !== undefined) process.env.GCP_PROJECT_ID = origGcpProject;
+    else delete process.env.GCP_PROJECT_ID;
+  }
 });

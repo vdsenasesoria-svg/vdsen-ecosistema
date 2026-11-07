@@ -171,7 +171,6 @@ async function reserveOperation(db, opData, opts = {}) {
 
   // 0. Clock trust boundary: opts.now is strictly restricted to isolated demo emulator environments.
   // In production or unaccredited environments, caller-supplied clock is strictly rejected.
-  let nowIso;
   if (opts.now) {
     if (!isAccreditedDemoEnvironment()) {
       throw new Error('CLOCK_TAMPERING_REJECTED: External clock injection is strictly forbidden in production or non-demo environments');
@@ -180,182 +179,237 @@ async function reserveOperation(db, opData, opts = {}) {
     if (!Number.isFinite(parsed) || new Date(parsed).toISOString() !== opts.now.replace('Z', '.000Z')) {
       throw new Error('INVALID_CLOCK_INJECTION: Injected clock must be a valid UTC ISO string');
     }
-    nowIso = opts.now;
-  } else {
-    nowIso = new Date().toISOString();
+  }
+
+  // Pre-transaction structural and provenance verification
+  if (!opts.attestation || typeof opts.attestation !== 'object') {
+    throw new Error('ATTESTATION_MISSING: Runtime attestation object is mandatory for operation reservation');
+  }
+  const att = opts.attestation;
+  if (att.attested === false || att.status === 'REJECTED' || att.status === 'BLOCKED') {
+    throw new Error(`ATTESTATION_REJECTED: Attestation status is ${att.status || 'REJECTED'}`);
+  }
+  if (!att.operationId) {
+    throw new Error('ATTESTATION_OPERATION_ID_MISSING: Attestation record lacks operationId');
+  }
+  if (!Array.isArray(att.checks) || att.checks.length === 0) {
+    throw new Error('ATTESTATION_UNTRUSTED: Attestation lacks verified provider checks');
+  }
+  const initialAuthCheck = verifyAttestationAuthenticity(att);
+  if (!initialAuthCheck.valid) {
+    throw new Error(`${initialAuthCheck.reason}: ${initialAuthCheck.message}`);
+  }
+  if (att.operationId !== opData.operationId) {
+    throw new Error(`ATTESTATION_MISMATCH: Attestation operationId "${att.operationId}" does not match operation operationId "${opData.operationId}"`);
+  }
+  if (att.deploymentId !== opData.deploymentId) {
+    throw new Error(`ATTESTATION_MISMATCH: Attestation deploymentId "${att.deploymentId}" does not match operation deploymentId "${opData.deploymentId}"`);
+  }
+  const attSha = att.runtimeSha || att.sha;
+  if (!attSha || attSha !== opData.runtimeSha) {
+    throw new Error(`ATTESTATION_MISMATCH: Attestation runtimeSha "${attSha}" does not match operation runtimeSha "${opData.runtimeSha}"`);
+  }
+  if (att.pilotUid && att.pilotUid !== opData.uid) {
+    throw new Error(`ATTESTATION_MISMATCH: Attestation pilotUid "${att.pilotUid}" does not match operation uid "${opData.uid}"`);
+  }
+  if (att.planId && att.planId !== opData.planId) {
+    throw new Error(`ATTESTATION_MISMATCH: Attestation planId "${att.planId}" does not match operation planId "${opData.planId}"`);
+  }
+  if (att.pid && att.pid !== opData.pid) {
+    throw new Error(`ATTESTATION_MISMATCH: Attestation pid "${att.pid}" does not match operation pid "${opData.pid}"`);
+  }
+
+  // Production environment boundary: in live production, token and live provider verification are mandatory
+  if (!isAccreditedDemoEnvironment()) {
+    if (!process.env.VERCEL_TOKEN) {
+      throw new Error('BLOCKED: Live runtime attestation from accredited provider credentials required in non-demo environment');
+    }
   }
 
   const opRef = db.doc(`${OPERATIONS_COLLECTION}/${opData.operationId}`);
   const releaseRef = db.doc('releaseControl/numericPilot');
 
-  return await db.runTransaction(async (tx) => {
-    // 1. Precondition check: operation document must not exist
-    const opSnap = await tx.get(opRef);
-    if (opSnap.exists) {
-      const existing = opSnap.data();
-      const err = new Error(`OPERATION_ALREADY_EXISTS: Operation ID "${opData.operationId}" was already reserved at ${existing.reservedAt} (status: ${existing.status})`);
-      err.code = 'OPERATION_ALREADY_EXISTS';
-      err.existingStatus = existing.status;
+  let commitSucceeded = false;
+  let reservationResult = null;
+
+  try {
+    reservationResult = await db.runTransaction(async (tx) => {
+      // P0.2: Dynamically revalidate time on EACH attempt/retry inside transaction
+      const attemptNowIso = opts.now || (typeof opts.dynamicClock === 'function' ? opts.dynamicClock() : new Date().toISOString());
+      const parsedNow = Date.parse(attemptNowIso);
+
+      // Revalidate window chronometry on every retry
+      if (!C.windowValid(opData.window, parsedNow)) {
+        throw new Error('WINDOW_EXPIRED: Authorization window is expired or invalid at reservation time');
+      }
+
+      // Revalidate attestation age/authenticity on every retry
+      const attemptAuth = verifyAttestationAuthenticity(att, parsedNow);
+      if (!attemptAuth.valid) {
+        throw new Error(`${attemptAuth.reason}: ${attemptAuth.message}`);
+      }
+
+      // 1. Precondition check: operation document must not exist
+      const opSnap = await tx.get(opRef);
+      if (opSnap.exists) {
+        const existing = opSnap.data();
+        const err = new Error(`OPERATION_ALREADY_EXISTS: Operation ID "${opData.operationId}" was already reserved at ${existing.reservedAt} (status: ${existing.status})`);
+        err.code = 'OPERATION_ALREADY_EXISTS';
+        err.existingStatus = existing.status;
+        throw err;
+      }
+
+      // 2. Numeric pilot release gate verification (exact 9 mandatory fields matching contract)
+      const releaseSnap = await tx.get(releaseRef);
+      if (!releaseSnap.exists || releaseSnap.data().enabled !== true) {
+        throw new Error('RELEASE_CONTROL_DISARMED: Numeric pilot release control is not enabled');
+      }
+      const numFence = releaseSnap.data() || {};
+      for (const k of REQUIRED_NUMERIC_FENCE_FIELDS) {
+        if (numFence[k] === undefined || numFence[k] === null || numFence[k] === '') {
+          throw new Error(`FENCE_FIELD_MISSING: numericPilot fence is missing required field "${k}"`);
+        }
+        if (numFence[k] !== opData.window[k]) {
+          throw new Error(`FENCE_MISMATCH: numericPilot fence ${k} "${numFence[k]}" does not match window "${opData.window[k]}"`);
+        }
+      }
+
+      // 3. General release fence verification: releaseControl/autonomousProgression
+      const autoReleaseSnap = await tx.get(db.doc('releaseControl/autonomousProgression'));
+      if (!autoReleaseSnap.exists) {
+        throw new Error('RELEASE_CONTROL_DISARMED: Autonomous progression general release control document does not exist');
+      }
+      const autoData = autoReleaseSnap.data() || {};
+      if (autoData.enabled !== true) {
+        throw new Error('RELEASE_CONTROL_DISARMED: Autonomous progression general release is disabled');
+      }
+      if (!Array.isArray(autoData.clientIds) || autoData.clientIds.length !== 1 || autoData.clientIds[0] !== opData.uid) {
+        throw new Error('UNAUTHORIZED_IDENTIFIER: Autonomous progression release clientIds must contain strictly the single authorized UID');
+      }
+      if (!autoData.expiresAt || autoData.expiresAt !== opData.window.expiresAt) {
+        throw new Error(`FENCE_MISMATCH: Autonomous progression release expiresAt "${autoData.expiresAt}" does not match window "${opData.window.expiresAt}"`);
+      }
+      if (Date.parse(autoData.expiresAt) <= parsedNow) {
+        throw new Error('RELEASE_CONTROL_DISARMED: Autonomous progression general release has expired');
+      }
+
+      // 4. Client and Coach Canary fence verification
+      const clientRef = db.doc('clients/' + opData.uid);
+      const clientSnap = await tx.get(clientRef);
+      if (!clientSnap.exists) {
+        throw new Error(`CLIENT_NOT_FOUND: Client document "clients/${opData.uid}" does not exist`);
+      }
+      const clientData = clientSnap.data() || {};
+      if (!clientData.activePlanId || clientData.activePlanId !== opData.planId) {
+        throw new Error(`PLAN_MISMATCH: Client activePlanId "${clientData.activePlanId}" does not match operation planId "${opData.planId}"`);
+      }
+
+      const coachId = clientData.coachId;
+      if (!coachId || typeof coachId !== 'string' || coachId.trim().length === 0) {
+        throw new Error('COACH_NOT_AUTHORIZED: Client document does not contain an accredited coachId');
+      }
+
+      const coachRef = db.doc('coaches/' + coachId);
+      const coachSnap = await tx.get(coachRef);
+      if (!coachSnap.exists) {
+        throw new Error(`COACH_NOT_FOUND: Coach document "coaches/${coachId}" does not exist`);
+      }
+      const coachData = coachSnap.data() || {};
+      const canary = coachData.autoApplyCanary;
+      if (!canary || typeof canary !== 'object') {
+        throw new Error('COACH_CANARY_NOT_FOUND: Coach document is missing autoApplyCanary');
+      }
+      if (canary.enabled !== true) {
+        throw new Error('COACH_CANARY_DISARMED: Coach autoApplyCanary is disabled');
+      }
+      if (!Array.isArray(canary.clientIds) || canary.clientIds.length !== 1 || canary.clientIds[0] !== opData.uid) {
+        throw new Error('COACH_CANARY_MISMATCH: Coach canary clientIds must contain exactly the single authorized UID');
+      }
+      if (!Array.isArray(canary.prescriptionExerciseIds) || canary.prescriptionExerciseIds.length !== 1 || canary.prescriptionExerciseIds[0] !== opData.pid) {
+        throw new Error('COACH_CANARY_MISMATCH: Coach canary prescriptionExerciseIds must contain exactly the single authorized PID');
+      }
+
+      const reservationDoc = {
+        schema: LEDGER_SCHEMA,
+        contractVersion: opData.window.schema || 'vdsen-numeric-pilot-v1',
+        operationId: opData.operationId,
+        uid: opData.uid,
+        planId: opData.planId,
+        pid: opData.pid,
+        runtimeSha: opData.runtimeSha,
+        deploymentId: opData.deploymentId,
+        runId: String(opData.runId),
+        window: opData.window,
+        scope: opData.scope,
+        status: STATES.RESERVED,
+        reservedAt: attemptNowIso,
+        history: [
+          {
+            sequence: 1,
+            action: STATES.RESERVED,
+            at: attemptNowIso,
+            actor: opts.actor || 'pilot-runner',
+            runId: String(opData.runId),
+            deploymentId: opData.deploymentId,
+            previousStatus: null
+          }
+        ]
+      };
+
+      tx.set(opRef, reservationDoc);
+      // NOTE: consumeAttestation is intentionally NOT called inside the transaction callback.
+      // Irreversible in-memory side effects are executed only AFTER commit confirmation.
+
+      return {
+        success: true,
+        operationId: opData.operationId,
+        status: STATES.RESERVED,
+        reservedAt: attemptNowIso
+      };
+    });
+
+    commitSucceeded = true;
+  } catch (err) {
+    // Ambiguous commit result handling:
+    const isAmbiguousNetworkError = err && (
+      err.code === 14 || // UNAVAILABLE
+      err.code === 4 ||  // DEADLINE_EXCEEDED
+      err.code === 2 ||  // UNKNOWN
+      /UNAVAILABLE|DEADLINE_EXCEEDED|network connection lost|ETIMEDOUT|ECONNRESET/i.test(err.message || '')
+    );
+
+    if (isAmbiguousNetworkError) {
+      try {
+        const directCheck = await checkOperationUniquenessDirect(db, opData.operationId);
+        if (directCheck && directCheck.exists && directCheck.status === STATES.RESERVED) {
+          const docData = directCheck.operation;
+          if (docData.deploymentId === opData.deploymentId && docData.runtimeSha === opData.runtimeSha) {
+            commitSucceeded = true;
+            reservationResult = {
+              success: true,
+              operationId: opData.operationId,
+              status: STATES.RESERVED,
+              reservedAt: docData.reservedAt,
+              recoveredFromAmbiguity: true
+            };
+          }
+        }
+      } catch (_recErr) {
+        // Direct lookup failed; cannot confirm commit
+      }
+    }
+
+    if (!commitSucceeded) {
+      // Transaction did NOT commit. Attestation remains unconsumed and valid for retry.
       throw err;
     }
+  }
 
-    // 2. Numeric pilot release gate verification (exact 9 mandatory fields matching contract)
-    const releaseSnap = await tx.get(releaseRef);
-    if (!releaseSnap.exists || releaseSnap.data().enabled !== true) {
-      throw new Error('RELEASE_CONTROL_DISARMED: Numeric pilot release control is not enabled');
-    }
-    const numFence = releaseSnap.data() || {};
-    for (const k of REQUIRED_NUMERIC_FENCE_FIELDS) {
-      if (numFence[k] === undefined || numFence[k] === null || numFence[k] === '') {
-        throw new Error(`FENCE_FIELD_MISSING: numericPilot fence is missing required field "${k}"`);
-      }
-      if (numFence[k] !== opData.window[k]) {
-        throw new Error(`FENCE_MISMATCH: numericPilot fence ${k} "${numFence[k]}" does not match window "${opData.window[k]}"`);
-      }
-    }
-
-    // 3. General release fence verification: releaseControl/autonomousProgression
-    const autoReleaseSnap = await tx.get(db.doc('releaseControl/autonomousProgression'));
-    if (!autoReleaseSnap.exists) {
-      throw new Error('RELEASE_CONTROL_DISARMED: Autonomous progression general release control document does not exist');
-    }
-    const autoData = autoReleaseSnap.data() || {};
-    if (autoData.enabled !== true) {
-      throw new Error('RELEASE_CONTROL_DISARMED: Autonomous progression general release is disabled');
-    }
-    if (!Array.isArray(autoData.clientIds) || autoData.clientIds.length !== 1 || autoData.clientIds[0] !== opData.uid) {
-      throw new Error('UNAUTHORIZED_IDENTIFIER: Autonomous progression release clientIds must contain strictly the single authorized UID');
-    }
-    if (!autoData.expiresAt || autoData.expiresAt !== opData.window.expiresAt) {
-      throw new Error(`FENCE_MISMATCH: Autonomous progression release expiresAt "${autoData.expiresAt}" does not match window "${opData.window.expiresAt}"`);
-    }
-    if (Date.parse(autoData.expiresAt) <= Date.parse(nowIso)) {
-      throw new Error('RELEASE_CONTROL_DISARMED: Autonomous progression general release has expired');
-    }
-
-    // 4. Client and Coach Canary fence verification
-    const clientRef = db.doc('clients/' + opData.uid);
-    const clientSnap = await tx.get(clientRef);
-    if (!clientSnap.exists) {
-      throw new Error(`CLIENT_NOT_FOUND: Client document "clients/${opData.uid}" does not exist`);
-    }
-    const clientData = clientSnap.data() || {};
-    if (!clientData.activePlanId || clientData.activePlanId !== opData.planId) {
-      throw new Error(`PLAN_MISMATCH: Client activePlanId "${clientData.activePlanId}" does not match operation planId "${opData.planId}"`);
-    }
-
-    const coachId = clientData.coachId;
-    if (!coachId || typeof coachId !== 'string' || coachId.trim().length === 0) {
-      throw new Error('COACH_NOT_AUTHORIZED: Client document does not contain an accredited coachId');
-    }
-
-    const coachRef = db.doc('coaches/' + coachId);
-    const coachSnap = await tx.get(coachRef);
-    if (!coachSnap.exists) {
-      throw new Error(`COACH_NOT_FOUND: Coach document "coaches/${coachId}" does not exist`);
-    }
-    const coachData = coachSnap.data() || {};
-    const canary = coachData.autoApplyCanary;
-    if (!canary || typeof canary !== 'object') {
-      throw new Error('COACH_CANARY_NOT_FOUND: Coach document is missing autoApplyCanary');
-    }
-    if (canary.enabled !== true) {
-      throw new Error('COACH_CANARY_DISARMED: Coach autoApplyCanary is disabled');
-    }
-    if (!Array.isArray(canary.clientIds) || canary.clientIds.length !== 1 || canary.clientIds[0] !== opData.uid) {
-      throw new Error('COACH_CANARY_MISMATCH: Coach canary clientIds must contain exactly the single authorized UID');
-    }
-    if (!Array.isArray(canary.prescriptionExerciseIds) || canary.prescriptionExerciseIds.length !== 1 || canary.prescriptionExerciseIds[0] !== opData.pid) {
-      throw new Error('COACH_CANARY_MISMATCH: Coach canary prescriptionExerciseIds must contain exactly the single authorized PID');
-    }
-
-    // 5. Window check at reservation time
-    const parsedNow = Date.parse(nowIso);
-    if (!C.windowValid(opData.window, parsedNow)) {
-      throw new Error('WINDOW_EXPIRED: Authorization window is expired or invalid at reservation time');
-    }
-
-    // 6. Attestation verification (strictly mandatory and trusted boundary)
-    if (!opts.attestation || typeof opts.attestation !== 'object') {
-      throw new Error('ATTESTATION_MISSING: Runtime attestation object is mandatory for operation reservation');
-    }
-    const att = opts.attestation;
-    if (att.attested === false || att.status === 'REJECTED' || att.status === 'BLOCKED') {
-      throw new Error(`ATTESTATION_REJECTED: Attestation status is ${att.status || 'REJECTED'}`);
-    }
-    if (!att.operationId) {
-      throw new Error('ATTESTATION_OPERATION_ID_MISSING: Attestation record lacks operationId');
-    }
-    if (!Array.isArray(att.checks) || att.checks.length === 0) {
-      throw new Error('ATTESTATION_UNTRUSTED: Attestation lacks verified provider checks');
-    }
-    const authCheck = verifyAttestationAuthenticity(att);
-    if (!authCheck.valid) {
-      throw new Error(`${authCheck.reason}: ${authCheck.message}`);
-    }
-    if (att.operationId !== opData.operationId) {
-      throw new Error(`ATTESTATION_MISMATCH: Attestation operationId "${att.operationId}" does not match operation operationId "${opData.operationId}"`);
-    }
-    if (att.deploymentId !== opData.deploymentId) {
-      throw new Error(`ATTESTATION_MISMATCH: Attestation deploymentId "${att.deploymentId}" does not match operation deploymentId "${opData.deploymentId}"`);
-    }
-    const attSha = att.runtimeSha || att.sha;
-    if (!attSha || attSha !== opData.runtimeSha) {
-      throw new Error(`ATTESTATION_MISMATCH: Attestation runtimeSha "${attSha}" does not match operation runtimeSha "${opData.runtimeSha}"`);
-    }
-    if (att.pilotUid && att.pilotUid !== opData.uid) {
-      throw new Error(`ATTESTATION_MISMATCH: Attestation pilotUid "${att.pilotUid}" does not match operation uid "${opData.uid}"`);
-    }
-    if (att.planId && att.planId !== opData.planId) {
-      throw new Error(`ATTESTATION_MISMATCH: Attestation planId "${att.planId}" does not match operation planId "${opData.planId}"`);
-    }
-    if (att.pid && att.pid !== opData.pid) {
-      throw new Error(`ATTESTATION_MISMATCH: Attestation pid "${att.pid}" does not match operation pid "${opData.pid}"`);
-    }
-
-    // Production environment boundary: in live production, token and live provider verification are mandatory
-    if (!isAccreditedDemoEnvironment()) {
-      if (!process.env.VERCEL_TOKEN) {
-        throw new Error('BLOCKED: Live runtime attestation from accredited provider credentials required in non-demo environment');
-      }
-    }
-
-    const reservationDoc = {
-      schema: LEDGER_SCHEMA,
-      contractVersion: opData.window.schema || 'vdsen-numeric-pilot-v1',
-      operationId: opData.operationId,
-      uid: opData.uid,
-      planId: opData.planId,
-      pid: opData.pid,
-      runtimeSha: opData.runtimeSha,
-      deploymentId: opData.deploymentId,
-      runId: String(opData.runId),
-      window: opData.window,
-      scope: opData.scope,
-      status: STATES.RESERVED,
-      reservedAt: nowIso,
-      history: [
-        {
-          sequence: 1,
-          action: STATES.RESERVED,
-          at: nowIso,
-          actor: opts.actor || 'pilot-runner',
-          runId: String(opData.runId),
-          deploymentId: opData.deploymentId,
-          previousStatus: null
-        }
-      ]
-    };
-
-    tx.set(opRef, reservationDoc);
+  // Post-commit logical consumption:
+  if (commitSucceeded && reservationResult) {
     consumeAttestation(att);
-    return {
-      success: true,
-      operationId: opData.operationId,
-      status: STATES.RESERVED,
-      reservedAt: nowIso
-    };
-  });
+    return reservationResult;
+  }
 }
 
 /**
