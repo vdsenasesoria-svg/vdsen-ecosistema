@@ -80,7 +80,16 @@ function makeValidAttestation(opData) {
     pilotUid: opData.uid,
     planId: opData.planId,
     pid: opData.pid,
-    provider: 'vercel'
+    provider: 'vercel',
+    readyState: 'READY',
+    cronConfigured: false,
+    checks: [
+      { check: 'DEPLOYMENT_ID', expected: opData.deploymentId, actual: opData.deploymentId, pass: true },
+      { check: 'COMMIT_SHA', expected: opData.runtimeSha, actual: opData.runtimeSha, pass: true },
+      { check: 'OPERATION_ID', expected: opData.operationId, actual: opData.operationId, pass: true },
+      { check: 'CRON_FORBIDDEN', expected: false, actual: false, pass: true }
+    ],
+    attestedAt: new Date().toISOString()
   };
 }
 
@@ -528,7 +537,7 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
   await armFencesForOp(db, op13c);
   await assert.rejects(
     () => ledger.reserveOperation(db, op13c, { attestation: { attested: true } }),
-    /ATTESTATION_MISMATCH/
+    /ATTESTATION_UNTRUSTED|ATTESTATION_MISMATCH/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op13c.operationId}`).get()).exists, false, 'op13c must not persist reservation');
 
@@ -550,4 +559,108 @@ test('ledger in emulator: verifies all 14 fail-closed negative rejection modes w
     /IDENTITY_MISMATCH/
   );
   assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op14.operationId}`).get()).exists, false, 'op14 must not persist reservation');
+
+  // 15. Atestación sin operationId
+  const op15 = makeValidOpData('op-neg-att-no-opid');
+  await armFencesForOp(db, op15);
+  const attNoOpId = { ...makeValidAttestation(op15) };
+  delete attNoOpId.operationId;
+  await assert.rejects(
+    () => ledger.reserveOperation(db, op15, { attestation: attNoOpId }),
+    /ATTESTATION_OPERATION_ID_MISSING/
+  );
+  assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op15.operationId}`).get()).exists, false, 'op15 must not persist reservation');
+
+  // 16. Atestación sin checks del proveedor (untrusted)
+  const op16 = makeValidOpData('op-neg-att-untrusted');
+  await armFencesForOp(db, op16);
+  const attUntrusted = { ...makeValidAttestation(op16), checks: [] };
+  await assert.rejects(
+    () => ledger.reserveOperation(db, op16, { attestation: attUntrusted }),
+    /ATTESTATION_UNTRUSTED/
+  );
+  assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op16.operationId}`).get()).exists, false, 'op16 must not persist reservation');
+
+  // 17. numericPilot fence: uid ausente
+  const op17 = makeValidOpData('op-neg-no-fence-uid');
+  await armFencesForOp(db, op17);
+  const fenceNoUid = { ...op17.window, enabled: true };
+  delete fenceNoUid.uid;
+  await db.doc('releaseControl/numericPilot').set(fenceNoUid);
+  await assert.rejects(
+    () => ledger.reserveOperation(db, op17, { attestation: makeValidAttestation(op17) }),
+    /FENCE_FIELD_MISSING.*uid/
+  );
+  assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op17.operationId}`).get()).exists, false, 'op17 must not persist reservation');
+
+  // 18. numericPilot fence: planId ausente
+  const op18 = makeValidOpData('op-neg-no-fence-planid');
+  await armFencesForOp(db, op18);
+  const fenceNoPlan = { ...op18.window, enabled: true };
+  delete fenceNoPlan.planId;
+  await db.doc('releaseControl/numericPilot').set(fenceNoPlan);
+  await assert.rejects(
+    () => ledger.reserveOperation(db, op18, { attestation: makeValidAttestation(op18) }),
+    /FENCE_FIELD_MISSING.*planId/
+  );
+  assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op18.operationId}`).get()).exists, false, 'op18 must not persist reservation');
+
+  // 19. numericPilot fence: pid ausente
+  const op19 = makeValidOpData('op-neg-no-fence-pid');
+  await armFencesForOp(db, op19);
+  const fenceNoPid = { ...op19.window, enabled: true };
+  delete fenceNoPid.pid;
+  await db.doc('releaseControl/numericPilot').set(fenceNoPid);
+  await assert.rejects(
+    () => ledger.reserveOperation(db, op19, { attestation: makeValidAttestation(op19) }),
+    /FENCE_FIELD_MISSING.*pid/
+  );
+  assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op19.operationId}`).get()).exists, false, 'op19 must not persist reservation');
+
+  // 20. numericPilot fence: expiresAt ausente
+  const op20 = makeValidOpData('op-neg-no-fence-expiresat');
+  await armFencesForOp(db, op20);
+  const fenceNoExp = { ...op20.window, enabled: true };
+  delete fenceNoExp.expiresAt;
+  await db.doc('releaseControl/numericPilot').set(fenceNoExp);
+  await assert.rejects(
+    () => ledger.reserveOperation(db, op20, { attestation: makeValidAttestation(op20) }),
+    /FENCE_FIELD_MISSING.*expiresAt/
+  );
+  assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op20.operationId}`).get()).exists, false, 'op20 must not persist reservation');
+
+  // 21. numericPilot fence: startsAt manipulado
+  const op21 = makeValidOpData('op-neg-fence-startsat-mismatch');
+  await armFencesForOp(db, op21);
+  const fenceBadStart = { ...op21.window, enabled: true, startsAt: '2026-01-01T00:00:00Z' };
+  await db.doc('releaseControl/numericPilot').set(fenceBadStart);
+  await assert.rejects(
+    () => ledger.reserveOperation(db, op21, { attestation: makeValidAttestation(op21) }),
+    /FENCE_MISMATCH.*startsAt/
+  );
+  assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op21.operationId}`).get()).exists, false, 'op21 must not persist reservation');
+
+  // 22. Inyección de reloj inválido
+  const op22 = makeValidOpData('op-neg-invalid-clock');
+  await armFencesForOp(db, op22);
+  await assert.rejects(
+    () => ledger.reserveOperation(db, op22, { now: 'not-a-valid-iso-date', attestation: makeValidAttestation(op22) }),
+    /INVALID_CLOCK_INJECTION/
+  );
+  assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op22.operationId}`).get()).exists, false, 'op22 must not persist reservation');
+
+  // 23. Inyección de reloj fuera de emulador (CLOCK_TAMPERING_REJECTED)
+  const op23 = makeValidOpData('op-neg-clock-tampering');
+  await armFencesForOp(db, op23);
+  const origEmuHost = process.env.FIRESTORE_EMULATOR_HOST;
+  try {
+    delete process.env.FIRESTORE_EMULATOR_HOST;
+    await assert.rejects(
+      () => ledger.reserveOperation(db, op23, { now: op23.window.startsAt, attestation: makeValidAttestation(op23) }),
+      /CLOCK_TAMPERING_REJECTED/
+    );
+  } finally {
+    process.env.FIRESTORE_EMULATOR_HOST = origEmuHost;
+  }
+  assert.equal((await db.doc(`releaseControl/numericPilot/operations/${op23.operationId}`).get()).exists, false, 'op23 must not persist reservation');
 });

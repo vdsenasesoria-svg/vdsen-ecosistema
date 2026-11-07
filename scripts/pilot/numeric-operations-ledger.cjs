@@ -23,6 +23,18 @@ const C = require('../../api/_numericPilotContract');
 const LEDGER_SCHEMA = 'vdsen-numeric-operations-ledger-v1';
 const OPERATIONS_COLLECTION = 'releaseControl/numericPilot/operations';
 
+const REQUIRED_NUMERIC_FENCE_FIELDS = Object.freeze([
+  'schema',
+  'mode',
+  'uid',
+  'planId',
+  'pid',
+  'runtimeSha',
+  'operationId',
+  'startsAt',
+  'expiresAt'
+]);
+
 const STATES = Object.freeze({
   RESERVED: 'RESERVED',
   COMPLETED: 'COMPLETED',
@@ -145,11 +157,27 @@ async function checkOperationUniquenessDirect(db, operationId) {
 /**
  * Atomically reserves an operationId in Firestore.
  * Rejects with OPERATION_ALREADY_EXISTS if operationId was previously reserved.
- * NEVER allows bypassing the release gate.
+ * NEVER allows bypassing the release gate or forging unverified attestation.
  */
 async function reserveOperation(db, opData, opts = {}) {
   validateOperationData(opData);
-  const nowIso = opts.now || new Date().toISOString();
+
+  // 0. Clock trust boundary: opts.now is strictly restricted to isolated emulator/test suites.
+  // In operational / production environments, caller-supplied clock is strictly rejected.
+  let nowIso;
+  if (opts.now) {
+    if (!process.env.FIRESTORE_EMULATOR_HOST && !process.env.VDSEN_ALLOW_TEST_CLOCK) {
+      throw new Error('CLOCK_TAMPERING_REJECTED: External clock injection is strictly forbidden in non-emulator environments');
+    }
+    const parsed = Date.parse(opts.now);
+    if (!Number.isFinite(parsed) || new Date(parsed).toISOString() !== opts.now.replace('Z', '.000Z')) {
+      throw new Error('INVALID_CLOCK_INJECTION: Injected clock must be a valid UTC ISO string');
+    }
+    nowIso = opts.now;
+  } else {
+    nowIso = new Date().toISOString();
+  }
+
   const opRef = db.doc(`${OPERATIONS_COLLECTION}/${opData.operationId}`);
   const releaseRef = db.doc('releaseControl/numericPilot');
 
@@ -164,35 +192,19 @@ async function reserveOperation(db, opData, opts = {}) {
       throw err;
     }
 
-    // 2. Numeric pilot release gate verification
+    // 2. Numeric pilot release gate verification (exact 9 mandatory fields matching contract)
     const releaseSnap = await tx.get(releaseRef);
     if (!releaseSnap.exists || releaseSnap.data().enabled !== true) {
       throw new Error('RELEASE_CONTROL_DISARMED: Numeric pilot release control is not enabled');
     }
     const numFence = releaseSnap.data() || {};
-    if (!numFence.operationId) {
-      throw new Error('FENCE_FIELD_MISSING: numericPilot fence is missing required field "operationId"');
-    }
-    if (numFence.operationId !== opData.operationId) {
-      throw new Error(`FENCE_MISMATCH: numericPilot fence operationId "${numFence.operationId}" does not match "${opData.operationId}"`);
-    }
-    if (!numFence.runtimeSha) {
-      throw new Error('FENCE_FIELD_MISSING: numericPilot fence is missing required field "runtimeSha"');
-    }
-    if (numFence.runtimeSha !== opData.runtimeSha) {
-      throw new Error(`FENCE_MISMATCH: numericPilot fence runtimeSha "${numFence.runtimeSha}" does not match "${opData.runtimeSha}"`);
-    }
-    if (numFence.uid && numFence.uid !== opData.uid) {
-      throw new Error(`FENCE_MISMATCH: numericPilot fence uid "${numFence.uid}" does not match "${opData.uid}"`);
-    }
-    if (numFence.planId && numFence.planId !== opData.planId) {
-      throw new Error(`FENCE_MISMATCH: numericPilot fence planId "${numFence.planId}" does not match "${opData.planId}"`);
-    }
-    if (numFence.pid && numFence.pid !== opData.pid) {
-      throw new Error(`FENCE_MISMATCH: numericPilot fence pid "${numFence.pid}" does not match "${opData.pid}"`);
-    }
-    if (numFence.expiresAt && numFence.expiresAt !== opData.window.expiresAt) {
-      throw new Error(`FENCE_MISMATCH: numericPilot fence expiresAt "${numFence.expiresAt}" does not match window "${opData.window.expiresAt}"`);
+    for (const k of REQUIRED_NUMERIC_FENCE_FIELDS) {
+      if (numFence[k] === undefined || numFence[k] === null || numFence[k] === '') {
+        throw new Error(`FENCE_FIELD_MISSING: numericPilot fence is missing required field "${k}"`);
+      }
+      if (numFence[k] !== opData.window[k]) {
+        throw new Error(`FENCE_MISMATCH: numericPilot fence ${k} "${numFence[k]}" does not match window "${opData.window[k]}"`);
+      }
     }
 
     // 3. General release fence verification: releaseControl/autonomousProgression
@@ -204,10 +216,13 @@ async function reserveOperation(db, opData, opts = {}) {
     if (autoData.enabled !== true) {
       throw new Error('RELEASE_CONTROL_DISARMED: Autonomous progression general release is disabled');
     }
-    if (!Array.isArray(autoData.clientIds) || !autoData.clientIds.includes(opData.uid)) {
-      throw new Error('UNAUTHORIZED_IDENTIFIER: UID not present in autonomous progression release clientIds');
+    if (!Array.isArray(autoData.clientIds) || autoData.clientIds.length !== 1 || autoData.clientIds[0] !== opData.uid) {
+      throw new Error('UNAUTHORIZED_IDENTIFIER: Autonomous progression release clientIds must contain strictly the single authorized UID');
     }
-    if (autoData.expiresAt && Date.parse(autoData.expiresAt) <= Date.parse(nowIso)) {
+    if (!autoData.expiresAt || autoData.expiresAt !== opData.window.expiresAt) {
+      throw new Error(`FENCE_MISMATCH: Autonomous progression release expiresAt "${autoData.expiresAt}" does not match window "${opData.window.expiresAt}"`);
+    }
+    if (Date.parse(autoData.expiresAt) <= Date.parse(nowIso)) {
       throw new Error('RELEASE_CONTROL_DISARMED: Autonomous progression general release has expired');
     }
 
@@ -253,13 +268,22 @@ async function reserveOperation(db, opData, opts = {}) {
       throw new Error('WINDOW_EXPIRED: Authorization window is expired or invalid at reservation time');
     }
 
-    // 6. Attestation verification (strictly mandatory)
+    // 6. Attestation verification (strictly mandatory and trusted boundary)
     if (!opts.attestation || typeof opts.attestation !== 'object') {
       throw new Error('ATTESTATION_MISSING: Runtime attestation object is mandatory for operation reservation');
     }
     const att = opts.attestation;
     if (att.attested !== true) {
       throw new Error('ATTESTATION_REJECTED: Runtime attestation attested flag is not true');
+    }
+    if (att.schema !== 'vdsen-numeric-runtime-attestation-v1' || att.status !== 'ATTESTED' || att.provider !== 'vercel') {
+      throw new Error('ATTESTATION_UNTRUSTED: Attestation record does not meet accredited provider schema or status');
+    }
+    if (!att.operationId) {
+      throw new Error('ATTESTATION_OPERATION_ID_MISSING: Attestation record must explicitly contain operationId');
+    }
+    if (att.operationId !== opData.operationId) {
+      throw new Error(`ATTESTATION_MISMATCH: Attestation operationId "${att.operationId}" does not match operation operationId "${opData.operationId}"`);
     }
     if (!att.deploymentId || att.deploymentId !== opData.deploymentId) {
       throw new Error(`ATTESTATION_MISMATCH: Attestation deploymentId "${att.deploymentId}" does not match operation deploymentId "${opData.deploymentId}"`);
@@ -268,8 +292,21 @@ async function reserveOperation(db, opData, opts = {}) {
     if (!attSha || attSha !== opData.runtimeSha) {
       throw new Error(`ATTESTATION_MISMATCH: Attestation runtimeSha "${attSha}" does not match operation runtimeSha "${opData.runtimeSha}"`);
     }
-    if (att.operationId && att.operationId !== opData.operationId) {
-      throw new Error(`ATTESTATION_MISMATCH: Attestation operationId "${att.operationId}" does not match operation operationId "${opData.operationId}"`);
+    if (!Array.isArray(att.checks) || att.checks.length === 0) {
+      throw new Error('ATTESTATION_UNTRUSTED: Attestation lacks verified provider checks evidence');
+    }
+    const hasOpIdCheck = att.checks.some(c => c && c.check === 'OPERATION_ID' && c.pass === true);
+    const hasShaCheck = att.checks.some(c => c && c.check === 'COMMIT_SHA' && c.pass === true);
+    const hasDplCheck = att.checks.some(c => c && c.check === 'DEPLOYMENT_ID' && c.pass === true);
+    if (!hasOpIdCheck || !hasShaCheck || !hasDplCheck) {
+      throw new Error('ATTESTATION_UNTRUSTED: Attestation provider checks are incomplete or unverified');
+    }
+
+    // Production environment boundary: in live production, token and live provider verification are mandatory
+    if (!process.env.FIRESTORE_EMULATOR_HOST) {
+      if (!process.env.VERCEL_TOKEN) {
+        throw new Error('BLOCKED: Live runtime attestation from accredited provider credentials required');
+      }
     }
 
     const reservationDoc = {
@@ -497,6 +534,7 @@ async function recoverEvidence(db, operationId) {
 module.exports = {
   LEDGER_SCHEMA,
   OPERATIONS_COLLECTION,
+  REQUIRED_NUMERIC_FENCE_FIELDS,
   STATES,
   TERMINAL_STATES,
   validateOperationData,
