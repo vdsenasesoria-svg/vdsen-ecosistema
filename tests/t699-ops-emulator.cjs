@@ -190,36 +190,67 @@ test('real STOP REST in emulator: executeStopRest disarms autoApplyCanary.enable
   assert.equal(coachAfterPartial.name, 'Synthetic REST Coach');
 });
 
-test('real STOP REST OCC in emulator: preserves concurrent COMPLETED operation in durable ledger without overwrite', async () => {
-  const coachId = 'synthetic-coach-occ';
+test('E1 — Carrera RESERVED -> COMPLETED: STOP lee RESERVED pero transaccion concurrente confirma COMPLETED en Firestore Emulator', async () => {
+  const coachId = 'synthetic-coach-e1';
   const coachRef = db.doc('coaches/' + coachId);
   const numRef = db.doc('releaseControl/numericPilot');
   const relRef = db.doc('releaseControl/autonomousProgression');
-  const opId = 'op-emu-occ-completed';
+  const opId = 'op-emu-e1-completed-race';
   const opRef = db.doc('releaseControl/numericPilot/operations/' + opId);
 
   await coachRef.set({
-    name: 'Synthetic OCC Coach',
+    name: 'Synthetic Coach E1',
     autoApplyCanary: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] }
   });
-  await numRef.set({ enabled: true, operationId: opId, runtimeSha: 'c'.repeat(40) });
+  await numRef.set({ enabled: true, operationId: opId, runtimeSha: 'e1'.repeat(20) });
   await relRef.set({ enabled: true, clientIds: [C.UID], expiresAt: new Date(Date.now() + 3600000).toISOString() });
 
-  // Pre-seed operation as COMPLETED
+  // 1. Pre-seed as RESERVED
   await opRef.set({
     schema: 'vdsen-numeric-operations-ledger-v1',
     operationId: opId,
-    status: 'COMPLETED',
-    completedAt: '2026-11-08T10:00:00Z',
-    resultSummary: { success: true, count: 1 },
-    history: [{ sequence: 1, action: 'RESERVED' }, { sequence: 2, action: 'COMPLETED' }]
+    status: 'RESERVED',
+    uid: C.UID,
+    history: [{ sequence: 1, action: 'RESERVED', at: '2026-11-08T10:00:00Z' }]
   });
+
+  let firstGetDone = false;
+  let concurrentCompleteRan = false;
+
+  // Custom fetcher intercepting REST requests against Firestore Emulator
+  const interceptingFetcher = async (url, opts) => {
+    const isOpDoc = url.includes('releaseControl/numericPilot/operations/' + opId);
+    const isCommit = url.includes(':commit');
+    const method = opts && opts.method ? opts.method : 'GET';
+
+    if (isOpDoc && method === 'GET' && !firstGetDone) {
+      firstGetDone = true;
+      return globalThis.fetch(url, opts);
+    }
+
+    if ((isCommit || isOpDoc) && (method === 'POST' || method === 'PATCH') && !concurrentCompleteRan) {
+      concurrentCompleteRan = true;
+      // Real concurrent transaction confirms COMPLETED directly on Firestore Emulator,
+      // advancing the document's updateTime ahead of the STOP PATCH precondition!
+      await opRef.update({
+        status: 'COMPLETED',
+        completedAt: '2026-11-08T10:05:00Z',
+        resultSummary: { success: true, count: 1 },
+        history: [
+          { sequence: 1, action: 'RESERVED', at: '2026-11-08T10:00:00Z' },
+          { sequence: 2, action: 'COMPLETED', at: '2026-11-08T10:05:00Z' }
+        ]
+      });
+    }
+
+    return globalThis.fetch(url, opts);
+  };
 
   const rep = await executeStopRest(projectId, 'owner', {
     coachId: coachId,
     operationId: opId,
-    reason: 'TEST_OCC_TERMINAL_PRESERVATION'
-  });
+    reason: 'TEST_E1_RACE_COMPLETED'
+  }, interceptingFetcher);
 
   assert.equal(rep.status, 'STOP_CONFIRMED');
   assert.equal(rep.allDisarmed, true);
@@ -227,9 +258,244 @@ test('real STOP REST OCC in emulator: preserves concurrent COMPLETED operation i
   assert.equal(rep.ledgerResult.modified, false);
 
   const finalDoc = (await opRef.get()).data();
-  assert.equal(finalDoc.status, 'COMPLETED');
-  assert.equal(finalDoc.completedAt, '2026-11-08T10:00:00Z');
-  assert.equal(finalDoc.history.length, 2);
+  assert.equal(finalDoc.status, 'COMPLETED', 'Must retain COMPLETED status despite concurrent STOP attempt');
+  assert.equal(finalDoc.completedAt, '2026-11-08T10:05:00Z');
+  assert.equal(finalDoc.history.length, 2, 'History must not have STOPPED appended after completion');
+  assert.equal(finalDoc.history[1].action, 'COMPLETED');
+});
+
+test('E2 — Carrera con historial: STOP lee RESERVED pero transaccion concurrente anexa evento en Firestore Emulator', async () => {
+  const coachId = 'synthetic-coach-e2';
+  const coachRef = db.doc('coaches/' + coachId);
+  const numRef = db.doc('releaseControl/numericPilot');
+  const relRef = db.doc('releaseControl/autonomousProgression');
+  const opId = 'op-emu-e2-history-race';
+  const opRef = db.doc('releaseControl/numericPilot/operations/' + opId);
+
+  await coachRef.set({
+    name: 'Synthetic Coach E2',
+    autoApplyCanary: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] }
+  });
+  await numRef.set({ enabled: true, operationId: opId, runtimeSha: 'e2'.repeat(20) });
+  await relRef.set({ enabled: true, clientIds: [C.UID], expiresAt: new Date(Date.now() + 3600000).toISOString() });
+
+  await opRef.set({
+    schema: 'vdsen-numeric-operations-ledger-v1',
+    operationId: opId,
+    status: 'RESERVED',
+    appliedRecordKeys: [],
+    history: [{ sequence: 1, action: 'RESERVED', at: '2026-11-08T10:00:00Z' }]
+  });
+
+  let firstGetDone = false;
+  let intermediateEventInjected = false;
+
+  const interceptingFetcher = async (url, opts) => {
+    const isOpDoc = url.includes('releaseControl/numericPilot/operations/' + opId);
+    const isCommit = url.includes(':commit');
+    const method = opts && opts.method ? opts.method : 'GET';
+
+    if (isOpDoc && method === 'GET' && !firstGetDone) {
+      firstGetDone = true;
+      return globalThis.fetch(url, opts);
+    }
+
+    if ((isCommit || isOpDoc) && (method === 'POST' || method === 'PATCH') && !intermediateEventInjected) {
+      intermediateEventInjected = true;
+      // Concurrent actor appends an event directly to Firestore Emulator
+      const cur = (await opRef.get()).data();
+      await opRef.update({
+        appliedRecordKeys: ['rec-01'],
+        history: [...cur.history, { sequence: 2, action: 'RECORD_APPLIED', recordKey: 'rec-01', at: '2026-11-08T10:01:00Z' }]
+      });
+    }
+
+    return globalThis.fetch(url, opts);
+  };
+
+  const rep = await executeStopRest(projectId, 'owner', {
+    coachId: coachId,
+    operationId: opId,
+    reason: 'TEST_E2_HISTORY_RACE'
+  }, interceptingFetcher);
+
+  assert.equal(rep.status, 'STOP_CONFIRMED');
+  assert.equal(rep.allDisarmed, true);
+  assert.equal(rep.ledgerResult.status, 'STOPPED');
+
+  const finalDoc = (await opRef.get()).data();
+  assert.equal(finalDoc.status, 'STOPPED');
+  // History must retain sequence 1 (RESERVED), sequence 2 (RECORD_APPLIED), and sequence 3 (STOPPED)
+  assert.equal(finalDoc.history.length, 3, 'Must retain all intermediate events without dropping any');
+  assert.equal(finalDoc.history[0].action, 'RESERVED');
+  assert.equal(finalDoc.history[1].action, 'RECORD_APPLIED');
+  assert.equal(finalDoc.history[2].action, 'STOPPED');
+});
+
+test('E3 — Version ausente: GET existente sin updateTime valido no envia PATCH al ledger y termina en STOP_INCOMPLETE', async () => {
+  const coachId = 'synthetic-coach-e3';
+  const coachRef = db.doc('coaches/' + coachId);
+  const numRef = db.doc('releaseControl/numericPilot');
+  const relRef = db.doc('releaseControl/autonomousProgression');
+  const opId = 'op-emu-e3-no-updatetime';
+  const opRef = db.doc('releaseControl/numericPilot/operations/' + opId);
+
+  await coachRef.set({
+    name: 'Synthetic Coach E3',
+    autoApplyCanary: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] }
+  });
+  await numRef.set({ enabled: true, operationId: opId, runtimeSha: 'e3'.repeat(20) });
+  await relRef.set({ enabled: true, clientIds: [C.UID], expiresAt: new Date(Date.now() + 3600000).toISOString() });
+
+  await opRef.set({
+    schema: 'vdsen-numeric-operations-ledger-v1',
+    operationId: opId,
+    status: 'RESERVED',
+    history: [{ sequence: 1, action: 'RESERVED', at: '2026-11-08T10:00:00Z' }]
+  });
+
+  let patchSentToLedger = false;
+
+  const interceptingFetcher = async (url, opts) => {
+    const isOpDoc = url.includes('releaseControl/numericPilot/operations/' + opId);
+    const isCommit = url.includes(':commit');
+    const method = opts && opts.method ? opts.method : 'GET';
+
+    if (isOpDoc && method === 'GET') {
+      const realRes = await globalThis.fetch(url, opts);
+      const text = await realRes.text();
+      const json = JSON.parse(text);
+      // Strip updateTime to simulate malformed/missing version metadata
+      delete json.updateTime;
+      return {
+        status: 200,
+        text: async () => JSON.stringify(json)
+      };
+    }
+
+    if ((isCommit || isOpDoc) && (method === 'POST' || method === 'PATCH')) {
+      patchSentToLedger = true;
+    }
+
+    return globalThis.fetch(url, opts);
+  };
+
+  const rep = await executeStopRest(projectId, 'owner', {
+    coachId: coachId,
+    operationId: opId,
+    reason: 'TEST_E3_MISSING_VERSION'
+  }, interceptingFetcher);
+
+  // Fences are disarmed
+  assert.equal(rep.primaryFenceDisarmed, true);
+  assert.equal(rep.fencesDisarmed, true);
+  // Ledger was NOT modified via PATCH
+  assert.equal(patchSentToLedger, false, 'Must never send PATCH to ledger when updateTime is missing');
+  assert.equal(rep.ledgerStopped, false);
+  assert.equal(rep.allDisarmed, false);
+  assert.equal(rep.status, 'STOP_INCOMPLETE');
+  assert.equal(rep.ledgerResult.error, 'MISSING_UPDATE_TIME');
+
+  // Verify in Firestore Emulator that the document remained untouched
+  const finalDoc = (await opRef.get()).data();
+  assert.equal(finalDoc.status, 'RESERVED');
+  assert.equal(finalDoc.history.length, 1);
+});
+
+test('E4 — Adaptador incompleto: executeStop sin io.recordStop no escribe al ledger y termina en STOP_INCOMPLETE', async () => {
+  const coachId = 'synthetic-coach-e4';
+  const coachRef = db.doc('coaches/' + coachId);
+  const numRef = db.doc('releaseControl/numericPilot');
+  const relRef = db.doc('releaseControl/autonomousProgression');
+  const opId = 'op-emu-e4-incomplete-adapter';
+  const opRef = db.doc('releaseControl/numericPilot/operations/' + opId);
+
+  await coachRef.set({
+    name: 'Synthetic Coach E4',
+    autoApplyCanary: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] }
+  });
+  await numRef.set({ enabled: true, operationId: opId, runtimeSha: 'e4'.repeat(20) });
+  await relRef.set({ enabled: true, clientIds: [C.UID], expiresAt: new Date(Date.now() + 3600000).toISOString() });
+
+  // Custom adapter with writeFence and readFence, but recordStop explicitly omitted
+  let ledgerWriteAttempted = false;
+  const baseIo = createEmulatorIo(db);
+  const incompleteIo = {
+    writeFence: async (path, fields, opts) => {
+      if (path.includes('operations')) {
+        ledgerWriteAttempted = true;
+      }
+      return baseIo.writeFence(path, fields, opts);
+    },
+    readFence: baseIo.readFence
+    // recordStop is explicitly omitted!
+  };
+
+  const rep = await executeStop({
+    coachId: coachId,
+    operationId: opId,
+    reason: 'TEST_E4_INCOMPLETE_ADAPTER'
+  }, incompleteIo);
+
+  // Fences are disarmed and verified
+  assert.equal(rep.primaryFenceDisarmed, true);
+  assert.equal(rep.fencesDisarmed, true);
+  assert.equal(rep.allDisarmed, false);
+  assert.equal(rep.ledgerStopped, false);
+  assert.equal(rep.status, 'STOP_INCOMPLETE');
+  assert.ok(rep.ledgerError.includes('ADAPTER_MISSING_RECORD_STOP'));
+  assert.equal(ledgerWriteAttempted, false, 'Must never attempt write to ledger via fallback');
+
+  // Document must not exist in Firestore Emulator
+  const finalSnap = await opRef.get();
+  assert.equal(finalSnap.exists, false, 'Operation document must not be created without recordStop');
+});
+
+test('E5 — STOP simultaneos: dos solicitudes STOP concurrentes transicionan limpiamente e idempotentemente en Firestore Emulator', async () => {
+  const coachId = 'synthetic-coach-e5';
+  const coachRef = db.doc('coaches/' + coachId);
+  const numRef = db.doc('releaseControl/numericPilot');
+  const relRef = db.doc('releaseControl/autonomousProgression');
+  const opId = 'op-emu-e5-simultaneous-stop';
+  const opRef = db.doc('releaseControl/numericPilot/operations/' + opId);
+
+  await coachRef.set({
+    name: 'Synthetic Coach E5',
+    autoApplyCanary: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] }
+  });
+  await numRef.set({ enabled: true, operationId: opId, runtimeSha: 'e5'.repeat(20) });
+  await relRef.set({ enabled: true, clientIds: [C.UID], expiresAt: new Date(Date.now() + 3600000).toISOString() });
+
+  await opRef.set({
+    schema: 'vdsen-numeric-operations-ledger-v1',
+    operationId: opId,
+    status: 'RESERVED',
+    history: [{ sequence: 1, action: 'RESERVED', at: '2026-11-08T10:00:00Z' }]
+  });
+
+  // Launch two concurrent executeStopRest calls
+  const [rep1, rep2] = await Promise.all([
+    executeStopRest(projectId, 'owner', { coachId, operationId: opId, reason: 'STOP_CALL_A' }),
+    executeStopRest(projectId, 'owner', { coachId, operationId: opId, reason: 'STOP_CALL_B' })
+  ]);
+
+  assert.equal(rep1.status, 'STOP_CONFIRMED');
+  assert.equal(rep2.status, 'STOP_CONFIRMED');
+  assert.equal(rep1.allDisarmed, true);
+  assert.equal(rep2.allDisarmed, true);
+  assert.equal(rep1.ledgerStopped, true);
+  assert.equal(rep2.ledgerStopped, true);
+
+  // Exactly one of the calls performed modified: true, and the other modified: false (duplicate: true)
+  const modifiedCount = (rep1.ledgerResult.modified ? 1 : 0) + (rep2.ledgerResult.modified ? 1 : 0);
+  assert.equal(modifiedCount, 1, 'Exactly one concurrent call transitions the document; the other is idempotent');
+
+  const finalDoc = (await opRef.get()).data();
+  assert.equal(finalDoc.status, 'STOPPED');
+  // History must have sequence 1 (RESERVED) and sequence 2 (STOPPED); NO duplicated STOPPED entry
+  assert.equal(finalDoc.history.length, 2, 'History must not contain duplicate STOPPED events');
+  assert.equal(finalDoc.history[0].action, 'RESERVED');
+  assert.equal(finalDoc.history[1].action, 'STOPPED');
 });
 
 test('real audit in emulator: validates logs/{uid}/mesos/{planId} and returns BLOCKED on missing doc or read error', async () => {

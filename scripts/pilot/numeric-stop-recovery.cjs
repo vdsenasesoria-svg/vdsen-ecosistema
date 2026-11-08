@@ -117,74 +117,26 @@ async function executeStop(opts, io) {
     try {
       ledgerResult = await io.recordStop(operationId, { reason, coachId });
       ledgerStopped = !!(ledgerResult && ledgerResult.success);
-      writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: ledgerStopped, result: ledgerResult });
+      if (!ledgerStopped && ledgerResult && ledgerResult.error) {
+        ledgerError = ledgerResult.error;
+        errors.push('Failed to record STOP in durable ledger: ' + (ledgerResult.message || ledgerResult.error));
+      }
+      writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: ledgerStopped, result: ledgerResult, error: ledgerError });
     } catch (err) {
       ledgerError = err.message;
       writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: false, error: err.message });
       errors.push('Failed to record STOP in durable ledger: ' + err.message);
     }
-  } else if (io && typeof io.writeFence === 'function') {
-    try {
-      let existing = null;
-      if (typeof io.readFence === 'function') {
-        try {
-          existing = await io.readFence('releaseControl/numericPilot/operations/' + operationId);
-        } catch (_) {}
-      }
-      if (existing && (existing.status === 'COMPLETED' || existing.status === 'FAILED')) {
-        ledgerStopped = true;
-        ledgerResult = { success: true, operationId, status: existing.status, modified: false, reason: 'ALREADY_' + existing.status };
-        writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: true, result: ledgerResult });
-      } else if (existing && existing.status === 'STOPPED') {
-        ledgerStopped = true;
-        ledgerResult = { success: true, operationId, status: 'STOPPED', modified: false, duplicate: true };
-        writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: true, result: ledgerResult });
-      } else if (!existing) {
-        const stopDoc = {
-          schema: 'vdsen-numeric-operations-ledger-v1',
-          operationId: operationId,
-          status: 'STOPPED',
-          stoppedAt: isoNow,
-          stopReason: reason,
-          history: [{ sequence: 1, action: 'STOPPED', at: isoNow, actor: 'pilot-stop', reason, previousStatus: null }]
-        };
-        await io.writeFence('releaseControl/numericPilot/operations/' + operationId, stopDoc, { merge: true });
-        ledgerStopped = true;
-        ledgerResult = { success: true, status: 'STOPPED', sentinel: true };
-        writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: true, result: ledgerResult });
-      } else {
-        const hist = Array.isArray(existing.history) ? [...existing.history] : [];
-        hist.push({
-          sequence: hist.length + 1,
-          action: 'STOPPED',
-          at: isoNow,
-          actor: 'pilot-stop',
-          reason,
-          previousStatus: existing.status
-        });
-        const updateFields = {
-          status: 'STOPPED',
-          stoppedAt: isoNow,
-          stopReason: reason,
-          history: hist
-        };
-        await io.writeFence('releaseControl/numericPilot/operations/' + operationId, updateFields, {
-          merge: true,
-          mask: ['status', 'stoppedAt', 'stopReason', 'history']
-        });
-        ledgerStopped = true;
-        ledgerResult = { success: true, status: 'STOPPED', sentinel: false, modified: true };
-        writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: true, result: ledgerResult });
-      }
-    } catch (err) {
-      ledgerError = err.message;
-      writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: false, error: err.message });
-      errors.push('Failed to record STOP in durable ledger: ' + err.message);
-    }
+  } else {
+    // Insecure fallback eliminated per T704/T705: executeStop requires an adapter with concurrency guarantees (io.recordStop).
+    ledgerStopped = false;
+    ledgerError = 'ADAPTER_MISSING_RECORD_STOP: recordStop adapter with concurrency guarantees is required to transition durable ledger.';
+    writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: false, error: ledgerError });
+    errors.push('Failed to record STOP in durable ledger: ' + ledgerError);
   }
 
   const allFencesConfirmedDisabled = numericStopped && releaseStopped && coachStopped && (readbackErrors.length === 0);
-  const fencesDisarmed = allFencesConfirmedDisabled && (errors.filter(e => !e.includes('durable ledger')).length === 0);
+  const fencesDisarmed = allFencesConfirmedDisabled && (errors.filter(e => !e.toLowerCase().includes('durable ledger')).length === 0);
   const allDisarmed = fencesDisarmed && ledgerStopped;
   const status = allDisarmed ? 'STOP_CONFIRMED' : 'STOP_INCOMPLETE';
 

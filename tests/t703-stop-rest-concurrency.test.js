@@ -155,6 +155,63 @@ function createRestSimulator(initialDocs = {}) {
       };
     }
 
+    if (method === 'POST' && url.includes(':commit')) {
+      const body = opts.body ? JSON.parse(opts.body) : {};
+      const writes = Array.isArray(body.writes) ? body.writes : [];
+      const writeResults = [];
+
+      for (const w of writes) {
+        const targetDocPath = (w.update && w.update.name || '').replace(/^.*\/documents\//, '');
+        const doc = docs.get(targetDocPath);
+        const curDocPre = w.currentDocument || {};
+
+        if (curDocPre.exists === false && doc) {
+          return {
+            status: 400,
+            text: async () => JSON.stringify({ error: { code: 400, message: 'Document already exists', status: 'FAILED_PRECONDITION' } })
+          };
+        }
+
+        if (curDocPre.updateTime) {
+          if (!doc || doc.updateTime !== curDocPre.updateTime) {
+            return {
+              status: 400,
+              text: async () => JSON.stringify({ error: { code: 400, message: 'updateTime mismatch', status: 'FAILED_PRECONDITION' } })
+            };
+          }
+        }
+
+        const nowIso = new Date(clock++).toISOString();
+        const existingData = doc ? structuredClone(doc.data) : {};
+        const fields = w.update && w.update.fields ? canary.decDoc(w.update) : {};
+        const mask = w.updateMask && w.updateMask.fieldPaths ? w.updateMask.fieldPaths : [];
+
+        let nextData;
+        if (mask && mask.length > 0) {
+          nextData = { ...existingData };
+          for (const m of mask) {
+            const val = getDeep(fields, m);
+            if (val !== undefined) setDeep(nextData, m, val);
+          }
+        } else {
+          nextData = { ...existingData, ...fields };
+        }
+
+        docs.set(targetDocPath, {
+          data: nextData,
+          createTime: doc ? doc.createTime : nowIso,
+          updateTime: nowIso
+        });
+
+        writeResults.push({ updateTime: nowIso });
+      }
+
+      return {
+        status: 200,
+        text: async () => JSON.stringify({ writeResults, commitTime: new Date(clock++).toISOString() })
+      };
+    }
+
     throw new Error('Unsupported method: ' + method);
   };
 
@@ -175,6 +232,7 @@ test('T703-R1: Creación concurrente — STOP recibe 404, pero otro actor crea R
 
   const interceptingFetcher = async (url, opts) => {
     const isOpDoc = url.includes('releaseControl/numericPilot/operations/op-r1');
+    const isCommit = url.includes(':commit') && opts && opts.body && opts.body.includes('op-r1');
     const method = opts && opts.method ? opts.method : 'GET';
 
     if (isOpDoc && method === 'GET' && !initialGetDone) {
@@ -183,7 +241,7 @@ test('T703-R1: Creación concurrente — STOP recibe 404, pero otro actor crea R
       return sim.fetcher(url, opts);
     }
 
-    if (isOpDoc && method === 'PATCH' && !concurrentActorRan) {
+    if ((isCommit || (isOpDoc && method === 'PATCH')) && !concurrentActorRan) {
       concurrentActorRan = true;
       // Before STOP creates the sentinel, a concurrent actor creates the RESERVED operation document!
       const opDoc = {
@@ -195,7 +253,7 @@ test('T703-R1: Creación concurrente — STOP recibe 404, pero otro actor crea R
         pid: 'pid-1',
         history: [{ sequence: 1, action: 'RESERVED', at: '2026-11-08T10:00:00Z', actor: 'pilot-runner' }]
       };
-      await sim.fetcher(url, {
+      await sim.fetcher('https://firestore.googleapis.com/v1/projects/demo/databases/(default)/documents/releaseControl/numericPilot/operations/op-r1', {
         method: 'PATCH',
         body: JSON.stringify({ fields: Object.fromEntries(Object.entries(opDoc).map(([k, v]) => [k, enc(v)])) })
       });
@@ -245,6 +303,7 @@ test('T703-R2: Finalización concurrente — STOP lee RESERVED, pero otra transa
 
   const interceptingFetcher = async (url, opts) => {
     const isOpDoc = url.includes('releaseControl/numericPilot/operations/op-r2');
+    const isCommit = url.includes(':commit') && opts && opts.body && opts.body.includes('op-r2');
     const method = opts && opts.method ? opts.method : 'GET';
 
     if (isOpDoc && method === 'GET' && !firstGetDone) {
@@ -252,10 +311,10 @@ test('T703-R2: Finalización concurrente — STOP lee RESERVED, pero otra transa
       return sim.fetcher(url, opts);
     }
 
-    if (isOpDoc && method === 'PATCH' && !concurrentCompleteRan) {
+    if ((isCommit || (isOpDoc && method === 'PATCH')) && !concurrentCompleteRan) {
       concurrentCompleteRan = true;
       // Another transaction completes the operation concurrently, advancing updateTime
-      const baseOpUrl = url.split('?')[0];
+      const baseOpUrl = 'https://firestore.googleapis.com/v1/projects/demo/databases/(default)/documents/releaseControl/numericPilot/operations/op-r2';
       const completeData = {
         status: 'COMPLETED',
         completedAt: '2026-11-08T10:05:00Z',
@@ -307,6 +366,7 @@ test('T703-R3: Historial concurrente — después de GET, otra transacción agre
 
   const interceptingFetcher = async (url, opts) => {
     const isOpDoc = url.includes('releaseControl/numericPilot/operations/op-r3');
+    const isCommit = url.includes(':commit') && opts && opts.body && opts.body.includes('op-r3');
     const method = opts && opts.method ? opts.method : 'GET';
 
     if (isOpDoc && method === 'GET' && !firstGetDone) {
@@ -314,10 +374,10 @@ test('T703-R3: Historial concurrente — después de GET, otra transacción agre
       return sim.fetcher(url, opts);
     }
 
-    if (isOpDoc && method === 'PATCH' && !intermediateEventInjected) {
+    if ((isCommit || (isOpDoc && method === 'PATCH')) && !intermediateEventInjected) {
       intermediateEventInjected = true;
-      // Another actor appends a RECORD_APPLIED event to history before STOP PATCH arrives
-      const baseOpUrl = url.split('?')[0];
+      // Another actor appends a RECORD_APPLIED event to history before STOP commit arrives
+      const baseOpUrl = 'https://firestore.googleapis.com/v1/projects/demo/databases/(default)/documents/releaseControl/numericPilot/operations/op-r3';
       const doc = sim.docs.get('releaseControl/numericPilot/operations/op-r3');
       const updatedHistory = [...doc.data.history, { sequence: 2, action: 'RECORD_APPLIED', recordKey: 'key-1', at: '2026-11-08T10:01:00Z' }];
       await sim.fetcher(baseOpUrl + '?updateMask.fieldPaths=history&updateMask.fieldPaths=appliedRecordKeys', {
@@ -363,9 +423,10 @@ test('T703-R4: Resultado ambiguo — la escritura se confirma en Firestore pero 
 
   const interceptingFetcher = async (url, opts) => {
     const isOpDoc = url.includes('releaseControl/numericPilot/operations/op-r4');
+    const isCommit = url.includes(':commit') && opts && opts.body && opts.body.includes('op-r4');
     const method = opts && opts.method ? opts.method : 'GET';
 
-    if (isOpDoc && method === 'PATCH' && !patchDroppedOnce) {
+    if ((isCommit || (isOpDoc && method === 'PATCH')) && !patchDroppedOnce) {
       patchDroppedOnce = true;
       // Apply the PATCH to the database...
       await sim.fetcher(url, opts);
@@ -403,9 +464,10 @@ test('T703-R5: Fallo persistente — la escritura falla y la comprobación autor
 
   const failingFetcher = async (url, opts) => {
     const isOpDoc = url.includes('releaseControl/numericPilot/operations/op-r5');
+    const isCommit = url.includes(':commit') && opts && opts.body && opts.body.includes('op-r5');
     const method = opts && opts.method ? opts.method : 'GET';
 
-    if (isOpDoc && method === 'PATCH') {
+    if (isCommit || (isOpDoc && method === 'PATCH')) {
       // Server error on write, not committed
       return {
         status: 503,
@@ -462,21 +524,74 @@ test('T703-R6: STOP repetido — dos solicitudes STOP sobre la misma operación 
   assert.equal(finalDoc.data.history.length, 2, 'History must not duplicate STOPPED event on replay');
 });
 
-// Fallback path in executeStop when io.recordStop is missing
-test('T703-Fallback: executeStop sin io.recordStop preserva estados terminales y evita sobrescritura incondicional', async () => {
+// T705-E3 — Respuesta GET sin updateTime válido
+test('T705-E3: Respuesta GET existente sin updateTime nunca provoca PATCH al ledger y termina en STOP_INCOMPLETE', async () => {
+  const initialDocs = {
+    'releaseControl/numericPilot': { enabled: true, operationId: 'op-e3' },
+    'releaseControl/autonomousProgression': { enabled: true, clientIds: ['ath-1'] },
+    'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: ['ath-1'], prescriptionExerciseIds: ['pid-1'] } },
+    'releaseControl/numericPilot/operations/op-e3': {
+      schema: 'vdsen-numeric-operations-ledger-v1',
+      operationId: 'op-e3',
+      status: 'RESERVED',
+      history: [{ sequence: 1, action: 'RESERVED', at: '2026-11-08T10:00:00Z' }]
+    }
+  };
+  const sim = createRestSimulator(initialDocs);
+
+  let patchAttempted = false;
+
+  const interceptingFetcher = async (url, opts) => {
+    const isOpDoc = url.includes('releaseControl/numericPilot/operations/op-e3');
+    const isCommit = url.includes(':commit') && opts && opts.body && opts.body.includes('op-e3');
+    const method = opts && opts.method ? opts.method : 'GET';
+
+    if (isOpDoc && method === 'GET') {
+      const res = await sim.fetcher(url, opts);
+      const json = JSON.parse(await res.text());
+      // Explicitly delete updateTime to simulate missing updateTime from provider
+      delete json.updateTime;
+      return {
+        status: 200,
+        text: async () => JSON.stringify(json)
+      };
+    }
+
+    if (isCommit || (isOpDoc && method === 'PATCH')) {
+      patchAttempted = true;
+    }
+
+    return sim.fetcher(url, opts);
+  };
+
+  const rep = await executeStopRest('demo', 'token', { coachId: 'coach-1', operationId: 'op-e3', reason: 'NO_UPDATE_TIME' }, interceptingFetcher);
+
+  // Fences must be disarmed
+  assert.equal(rep.primaryFenceDisarmed, true);
+  assert.equal(rep.fencesDisarmed, true);
+  // Ledger must NOT have been updated
+  assert.equal(patchAttempted, false, 'Must NEVER attempt PATCH on the ledger when updateTime is missing');
+  assert.equal(rep.ledgerStopped, false);
+  assert.equal(rep.allDisarmed, false);
+  assert.equal(rep.status, 'STOP_INCOMPLETE');
+  assert.equal(rep.ledgerResult.error, 'MISSING_UPDATE_TIME');
+
+  // Verify document in store remained untouched
+  const finalDoc = sim.docs.get('releaseControl/numericPilot/operations/op-e3');
+  assert.equal(finalDoc.data.status, 'RESERVED');
+  assert.equal(finalDoc.data.history.length, 1);
+});
+
+// T705-E4 — Adaptador incompleto (executeStop sin io.recordStop)
+test('T705-E4: executeStop sin io.recordStop no escribe al ledger, reporta ledgerStopped=false y STOP_INCOMPLETE', async () => {
   const store = new Map();
-  // Pre-seed an operation that is already COMPLETED
-  store.set('releaseControl/numericPilot/operations/op-terminal', {
-    schema: 'vdsen-numeric-operations-ledger-v1',
-    operationId: 'op-terminal',
-    status: 'COMPLETED',
-    completedAt: '2026-11-08T10:00:00Z',
-    resultSummary: { applied: 1 },
-    history: [{ sequence: 1, action: 'COMPLETED', at: '2026-11-08T10:00:00Z' }]
-  });
+  let ledgerWriteAttempted = false;
 
   const mockIo = {
     writeFence: async (path, data, opts) => {
+      if (path.includes('operations')) {
+        ledgerWriteAttempted = true;
+      }
       const prev = store.get(path) || {};
       store.set(path, { ...prev, ...data });
       return true;
@@ -487,16 +602,17 @@ test('T703-Fallback: executeStop sin io.recordStop preserva estados terminales y
 
   const rep = await executeStop({
     coachId: 'coach-1',
-    operationId: 'op-terminal',
-    reason: 'STOP_AFTER_FINISH'
+    operationId: 'op-incomplete-adapter',
+    reason: 'INCOMPLETE_ADAPTER_TEST'
   }, mockIo);
 
-  assert.equal(rep.status, 'STOP_CONFIRMED');
-  assert.equal(rep.allDisarmed, true);
-  assert.equal(rep.ledgerResult.status, 'COMPLETED');
-  assert.equal(rep.ledgerResult.modified, false);
-
-  const finalDoc = store.get('releaseControl/numericPilot/operations/op-terminal');
-  assert.equal(finalDoc.status, 'COMPLETED', 'Must retain COMPLETED status in fallback path');
-  assert.equal(finalDoc.history.length, 1, 'Must not overwrite or append to completed history');
+  // Fences are disarmed
+  assert.equal(rep.primaryFenceDisarmed, true);
+  assert.equal(rep.fencesDisarmed, true);
+  // Ledger was NOT written via writeFence
+  assert.equal(ledgerWriteAttempted, false, 'Must NEVER write to ledger via writeFence fallback');
+  assert.equal(rep.ledgerStopped, false);
+  assert.equal(rep.allDisarmed, false);
+  assert.equal(rep.status, 'STOP_INCOMPLETE');
+  assert.ok(rep.ledgerError.includes('ADAPTER_MISSING_RECORD_STOP'));
 });

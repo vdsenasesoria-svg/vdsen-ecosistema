@@ -272,15 +272,23 @@ async function executeStopRest(projectId, token, opts, customFetcher) {
             stopReason: (stopData && stopData.reason) || 'MANUAL_STOP',
             history: [{ sequence: 1, action: 'STOPPED', at: nowIso, actor: (stopData && stopData.actor) || 'pilot-stop-rest', reason: (stopData && stopData.reason) || 'MANUAL_STOP', previousStatus: null }]
           };
-          const body = { fields: Object.fromEntries(Object.entries(sentinelDoc).map(([k, v]) => [k, encVal(v)])) };
-          const putUrl = url + '?currentDocument.exists=false';
+          const commitUrl = baseUrl.replace(/\/documents\/?$/, '/documents:commit');
+          const commitBody = {
+            writes: [{
+              update: {
+                name: 'projects/' + projectId + '/databases/(default)/documents/' + docPath,
+                fields: Object.fromEntries(Object.entries(sentinelDoc).map(([k, v]) => [k, encVal(v)]))
+              },
+              currentDocument: { exists: false }
+            }]
+          };
 
           let patchRes;
           try {
-            patchRes = await fetcher(putUrl, {
-              method: 'PATCH',
+            patchRes = await fetcher(commitUrl, {
+              method: 'POST',
               headers: { 'content-type': 'application/json', ...headers },
-              body: JSON.stringify(body)
+              body: JSON.stringify(commitBody)
             });
           } catch (writeErr) {
             const verified = await checkDurableState();
@@ -324,6 +332,20 @@ async function executeStopRest(projectId, token, opts, customFetcher) {
           return { success: true, operationId, status: 'STOPPED', modified: false, duplicate: true, stoppedAt: existing.stoppedAt };
         }
 
+        // Require valid updateTime for existing documents.
+        // If missing or invalid, do NOT perform write over the ledger to prevent concurrency hazards.
+        if (typeof updateTime !== 'string' || !updateTime.trim()) {
+          return {
+            success: false,
+            operationId,
+            error: 'MISSING_UPDATE_TIME',
+            reason: 'DOCUMENT_UPDATE_TIME_MISSING',
+            message: 'Authoritative Firestore response missing valid updateTime for operation ' + operationId + '; aborting PATCH to prevent concurrency hazard.',
+            status: (existing && existing.status) || 'UNKNOWN',
+            modified: false
+          };
+        }
+
         const history = Array.isArray(existing && existing.history) ? [...existing.history] : [];
         history.push({
           sequence: history.length + 1,
@@ -342,19 +364,24 @@ async function executeStopRest(projectId, token, opts, customFetcher) {
         };
 
         const mask = ['status', 'stoppedAt', 'stopReason', 'history'];
-        const maskParams = mask.map(m => 'updateMask.fieldPaths=' + encodeURIComponent(m)).join('&');
-        const condParam = updateTime
-          ? '&currentDocument.updateTime=' + encodeURIComponent(updateTime)
-          : '&currentDocument.exists=true';
-        const patchUrl = url + '?' + maskParams + condParam;
-        const body = { fields: Object.fromEntries(Object.entries(updateFields).map(([k, v]) => [k, encVal(v)])) };
+        const commitUrl = baseUrl.replace(/\/documents\/?$/, '/documents:commit');
+        const commitBody = {
+          writes: [{
+            update: {
+              name: 'projects/' + projectId + '/databases/(default)/documents/' + docPath,
+              fields: Object.fromEntries(Object.entries(updateFields).map(([k, v]) => [k, encVal(v)]))
+            },
+            updateMask: { fieldPaths: mask },
+            currentDocument: { updateTime: updateTime }
+          }]
+        };
 
         let patchRes;
         try {
-          patchRes = await fetcher(patchUrl, {
-            method: 'PATCH',
+          patchRes = await fetcher(commitUrl, {
+            method: 'POST',
             headers: { 'content-type': 'application/json', ...headers },
-            body: JSON.stringify(body)
+            body: JSON.stringify(commitBody)
           });
         } catch (writeErr) {
           const verified = await checkDurableState();

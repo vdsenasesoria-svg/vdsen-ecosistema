@@ -148,7 +148,35 @@ function createMockStoreIo(store) {
       store.set(path, updated);
       return true;
     },
-    readFence: async (path) => store.get(path)
+    readFence: async (path) => store.get(path),
+    recordStop: async (operationId, stopData) => {
+      const opPath = 'releaseControl/numericPilot/operations/' + operationId;
+      const existing = store.get(opPath);
+      if (existing && (existing.status === 'COMPLETED' || existing.status === 'FAILED')) {
+        return { success: true, operationId, status: existing.status, modified: false, reason: 'ALREADY_' + existing.status };
+      }
+      if (existing && existing.status === 'STOPPED') {
+        return { success: true, operationId, status: 'STOPPED', modified: false, duplicate: true };
+      }
+      const nowIso = (stopData && stopData.now) || new Date().toISOString();
+      const hist = Array.isArray(existing && existing.history) ? [...existing.history] : [];
+      hist.push({
+        sequence: hist.length + 1,
+        action: 'STOPPED',
+        at: nowIso,
+        actor: (stopData && stopData.actor) || 'mock-stop',
+        reason: (stopData && stopData.reason) || 'MANUAL_STOP'
+      });
+      const updated = {
+        ...(existing || { schema: 'vdsen-numeric-operations-ledger-v1', operationId }),
+        status: 'STOPPED',
+        stoppedAt: nowIso,
+        stopReason: (stopData && stopData.reason) || 'MANUAL_STOP',
+        history: hist
+      };
+      store.set(opPath, updated);
+      return { success: true, operationId, status: 'STOPPED', modified: true };
+    }
   };
 }
 
