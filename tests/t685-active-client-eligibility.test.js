@@ -41,7 +41,9 @@ function syntheticMotor(db, uid, planId) {
   db.docs.get('coaches/coach-1').autoApplyCanary.prescriptionExerciseIds = [window.pid];
   db.docs.get('releaseControl/autonomousProgression').expiresAt = window.expiresAt;
   db.docs.set('releaseControl/numericPilot', { ...window, enabled: true });
-  return require('./helpers/t699-synthetic-executor.js').createSyntheticExecutor(window);
+  const helper = require('./helpers/t699-synthetic-executor.js');
+  db.docs.set('releaseControl/numericPilot/operations/' + window.operationId, helper.createSyntheticLedgerDoc(window));
+  return helper.createSyntheticExecutor(window);
 }
 
 function makePlan(overrides) {

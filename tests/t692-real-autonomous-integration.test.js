@@ -447,6 +447,7 @@ test('T692.2: complete 10-step automatic progression lifecycle from authentic lo
   await db.doc('coaches/' + coachId).set({ autoApplyCanary: { enabled: true, clientIds: [clientId], prescriptionExerciseIds: [pid] } }, { merge: true });
   await db.doc('releaseControl/autonomousProgression').set({ expiresAt: window.expiresAt }, { merge: true });
   await db.doc('releaseControl/numericPilot').set({ ...window, enabled: true });
+  await db.doc('releaseControl/numericPilot/operations/' + window.operationId).set(require('./helpers/t699-synthetic-executor.js').createSyntheticLedgerDoc(window));
   // Paso 6: Aplicar el resultado mediante applyPending
   const applyResults = await syntheticExecutor.applyPending(db, clientId, planId, CLOCK_FN);
   assert.ok(applyResults.length > 0, 'applyPending applies pending records');

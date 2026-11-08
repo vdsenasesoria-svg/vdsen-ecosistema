@@ -55,6 +55,27 @@ function createSyntheticSweep(executor) {
   instance._compile(fs.readFileSync(file, 'utf8'), file);
   return instance.exports;
 }
+function createSyntheticLedgerDoc(window, pids) {
+  const effectivePids = Array.isArray(pids) ? pids : (window && window.pid ? [window.pid] : []);
+  return {
+    schema: 'vdsen-numeric-operations-ledger-v1',
+    operationId: window.operationId,
+    status: 'RESERVED',
+    reservedAt: new Date().toISOString(),
+    completedAt: null,
+    stoppedAt: null,
+    uid: window.uid,
+    planId: window.planId,
+    pid: window.pid,
+    runtimeSha: window.runtimeSha,
+    deploymentId: 'dpl_synthetic_test',
+    runId: 'run-' + (window.operationId || 'synthetic'),
+    window: structuredClone(window),
+    scope: { enabled: true, clientIds: [window.uid], prescriptionExerciseIds: effectivePids },
+    appliedRecordKeys: [],
+    history: []
+  };
+}
 // Emulator-only authority for a named synthetic fixture. The real release and
 // Coach documents are still read transactionally; only the extra pilot fence is
 // isolated per fixture so historical multi-client tests cannot race on it.
@@ -67,24 +88,7 @@ async function createHistoricalFixture(db, uid, planId, pid) {
     runtimeSha: 'a'.repeat(40), operationId: 'synthetic-test-window', startsAt: iso(start - 1000), expiresAt: iso(start + 3600000) };
   const fenceId = 't699-synthetic-' + uid;
   await db.doc('releaseControl/' + fenceId).set({ ...window, enabled: true });
-  const opDoc = {
-    schema: 'vdsen-numeric-operations-ledger-v1',
-    operationId: window.operationId,
-    status: 'RESERVED',
-    reservedAt: new Date().toISOString(),
-    completedAt: null,
-    stoppedAt: null,
-    uid,
-    planId,
-    pid: pids[0],
-    runtimeSha: window.runtimeSha,
-    deploymentId: 'dpl_historical_fixture',
-    runId: 'hist-1',
-    window: structuredClone(window),
-    scope: { enabled: true, clientIds: [uid], prescriptionExerciseIds: pids },
-    appliedRecordKeys: [],
-    history: []
-  };
+  const opDoc = createSyntheticLedgerDoc(window, pids);
   await db.doc('releaseControl/' + fenceId + '/operations/' + window.operationId).set(opDoc);
   await db.doc('releaseControl/numericPilot/operations/' + window.operationId).set(opDoc);
   const scopedDb = Object.create(db);
@@ -105,4 +109,4 @@ function createSyntheticTrigger(executor, sweep) {
   instance._compile(fs.readFileSync(file, 'utf8'), file);
   return instance.exports;
 }
-module.exports = { createSyntheticExecutor, createSyntheticSweep, createSyntheticTrigger, createHistoricalFixture };
+module.exports = { createSyntheticExecutor, createSyntheticSweep, createSyntheticTrigger, createHistoricalFixture, createSyntheticLedgerDoc };

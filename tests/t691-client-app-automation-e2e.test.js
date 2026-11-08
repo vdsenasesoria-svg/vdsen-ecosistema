@@ -262,6 +262,7 @@ test('T691 — Circuito integral E2E: Coach prescribe -> Cliente ejecuta -> Moto
   db._docs.get('coaches/' + coachId).autoApplyCanary.prescriptionExerciseIds = [pid];
   db._docs.get('releaseControl/autonomousProgression').expiresAt = window.expiresAt;
   db._docs.set('releaseControl/numericPilot', { ...window, enabled: true });
+  db._docs.set('releaseControl/numericPilot/operations/' + window.operationId, require('./helpers/t699-synthetic-executor.js').createSyntheticLedgerDoc(window));
   // Aplicación autorizada (PENDING -> APPLIED)
   var appliedRes = await syntheticExecutor.applyPending(db, clientId, planId, () => T1_ISO);
   assert.equal(appliedRes.length, 1);

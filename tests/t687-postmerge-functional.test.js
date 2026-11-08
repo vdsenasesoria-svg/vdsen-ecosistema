@@ -559,6 +559,7 @@ test('T687 — 9. Contratos PENDING -> APPLIED -> CONSUMED: full lifecycle adher
   seed['coaches/' + coachId].autoApplyCanary.prescriptionExerciseIds = [pid];
   seed['releaseControl/autonomousProgression'].expiresAt = window.expiresAt;
   seed['releaseControl/numericPilot'] = { ...window, enabled: true };
+  seed['releaseControl/numericPilot/operations/' + window.operationId] = require('./helpers/t699-synthetic-executor.js').createSyntheticLedgerDoc(window);
   var db = makeFakeDb(seed);
   // Step 1: applyPending transitions PENDING -> APPLIED
   var appliedRes = await syntheticExecutor.applyPending(db, clientId, planId, () => NOW_ISO);

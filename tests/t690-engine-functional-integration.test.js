@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const executor = require('../api/_autonomousProgression.js');
-const { createSyntheticExecutor } = require('./helpers/t699-synthetic-executor.js');
+const { createSyntheticExecutor, createSyntheticLedgerDoc } = require('./helpers/t699-synthetic-executor.js');
 const consumer = require('../assets/progression-application-consumer.js');
 const shadow = require('../assets/progression-auto-apply-shadow.js');
 const effective = require('../assets/progression-effective-prescription.js');
@@ -133,6 +133,7 @@ test('T690.1 - Ciclo PENDING -> APPLIED -> CONSUMED para progresión de CARGA (L
   var syntheticExecutor = createSyntheticExecutor(auth.window);
   seed['coaches/' + coachId].autoApplyCanary.prescriptionExerciseIds = [pid];
   seed['releaseControl/numericPilot'] = { ...auth.window, enabled: true };
+  seed['releaseControl/numericPilot/operations/' + auth.window.operationId] = createSyntheticLedgerDoc(auth.window);
   seed['releaseControl/autonomousProgression'].expiresAt = auth.window.expiresAt;
   var db = makeFakeDb(seed);
 
@@ -216,6 +217,7 @@ test('T690.2 - Progresión de DESCANSO (REST): reps incompletas con RIR previsto
   var syntheticExecutor = createSyntheticExecutor(auth.window);
   seed['coaches/' + coachId].autoApplyCanary.prescriptionExerciseIds = [pid];
   seed['releaseControl/numericPilot'] = { ...auth.window, enabled: true };
+  seed['releaseControl/numericPilot/operations/' + auth.window.operationId] = createSyntheticLedgerDoc(auth.window);
   seed['releaseControl/autonomousProgression'].expiresAt = auth.window.expiresAt;
   var db = makeFakeDb(seed);
 

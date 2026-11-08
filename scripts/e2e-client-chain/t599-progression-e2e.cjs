@@ -53,6 +53,25 @@ async function shape(a, spec) {
   batch.set(db.doc('releaseControl/autonomousProgression'), { schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [a.uid], expiresAt: window.expiresAt });
   batch.set(db.doc('coaches/' + p.coachId), { autoApplyCanary: { enabled: true, clientIds: [a.uid], prescriptionExerciseIds: [a.pids[0]] } }, { merge: true });
   batch.set(db.doc('releaseControl/numericPilot'), { ...window, enabled: true });
+  const opDoc = {
+    schema: 'vdsen-numeric-operations-ledger-v1',
+    operationId: window.operationId,
+    status: 'RESERVED',
+    reservedAt: new Date().toISOString(),
+    completedAt: null,
+    stoppedAt: null,
+    uid: a.uid,
+    planId: a.planId,
+    pid: a.pids[0],
+    runtimeSha: window.runtimeSha,
+    deploymentId: 'dpl_t599_sandbox',
+    runId: 't599-run-' + spec.label,
+    window: structuredClone(window),
+    scope: { enabled: true, clientIds: [a.uid], prescriptionExerciseIds: [a.pids[0]] },
+    appliedRecordKeys: [],
+    history: []
+  };
+  batch.set(db.doc('releaseControl/numericPilot/operations/' + window.operationId), opDoc);
   await batch.commit();
   // The Coach prescribes no numerical load; longitudinal history supplies 10 KG.
   p.days[0].exercises = p.days[0].exercises.slice(0, 1);

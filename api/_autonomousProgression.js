@@ -257,9 +257,6 @@ async function applyPending(db, clientId, planId, clock) {
       if (precord && !consumer.inCanaryScope(coachDoc && coachDoc.autoApplyCanary, clientId, precord.prescriptionExerciseId)) {
         return { written: false, reason: 'OUT_OF_CANARY_SCOPE' };
       }
-      if (!precord || precord.prescriptionExerciseId !== authorizedWindow.pid) {
-        return { written: false, reason: 'OUT_OF_NUMERIC_PILOT_SCOPE' };
-      }
       if (!numericPilot.transactionAllowed(authorizedWindow, nw, numericFence, releaseFence,
           coachDoc && coachDoc.autoApplyCanary, clientId, precord, planDoc, opDoc, key)) {
         return { written: false, reason: 'NUMERIC_PILOT_NOT_AUTHORIZED' };
@@ -296,10 +293,17 @@ async function applyPending(db, clientId, planId, clock) {
           at: _now(clock),
           actor: 'trusted-progressor'
         });
-        tx.update(opRef, {
-          appliedRecordKeys: appliedKeys,
-          history: hist
-        });
+        if (typeof tx.update === 'function') {
+          tx.update(opRef, {
+            appliedRecordKeys: appliedKeys,
+            history: hist
+          });
+        } else {
+          tx.set(opRef, {
+            appliedRecordKeys: appliedKeys,
+            history: hist
+          }, { merge: true });
+        }
       }
       return appRes;
     });
