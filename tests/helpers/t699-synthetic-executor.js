@@ -22,7 +22,12 @@ instance.require = function(id) {
       Date.parse(w.expiresAt) - Date.parse(w.startsAt) <= 86400000,
     scopeValid: (s, uid, pid, plan) => !!s && s.enabled === true && s.clientIds.length === 1 && s.clientIds[0] === uid &&
       s.prescriptionExerciseIds.length === 1 && s.prescriptionExerciseIds[0] === pid &&
-      plan.days.some(d => d.exercises.some(e => e.prescriptionExerciseId === pid))
+      plan.days.some(d => d.exercises.some(e => e.prescriptionExerciseId === pid)),
+    ledgerValid: (doc, current, key) => {
+      if (options.historicalScope === true) return true;
+      const realC = require('../../api/_numericPilotContract');
+      return realC.ledgerValid(doc, current, key);
+    }
   };
   synthetic.transactionAllowed = (original, current, fence, release, scope, uid, record, plan) => !!(
     original && current && JSON.stringify(original) === JSON.stringify(current) && fence && fence.enabled === true &&
@@ -62,6 +67,26 @@ async function createHistoricalFixture(db, uid, planId, pid) {
     runtimeSha: 'a'.repeat(40), operationId: 'synthetic-test-window', startsAt: iso(start - 1000), expiresAt: iso(start + 3600000) };
   const fenceId = 't699-synthetic-' + uid;
   await db.doc('releaseControl/' + fenceId).set({ ...window, enabled: true });
+  const opDoc = {
+    schema: 'vdsen-numeric-operations-ledger-v1',
+    operationId: window.operationId,
+    status: 'RESERVED',
+    reservedAt: new Date().toISOString(),
+    completedAt: null,
+    stoppedAt: null,
+    uid,
+    planId,
+    pid: pids[0],
+    runtimeSha: window.runtimeSha,
+    deploymentId: 'dpl_historical_fixture',
+    runId: 'hist-1',
+    window: structuredClone(window),
+    scope: { enabled: true, clientIds: [uid], prescriptionExerciseIds: pids },
+    appliedRecordKeys: [],
+    history: []
+  };
+  await db.doc('releaseControl/' + fenceId + '/operations/' + window.operationId).set(opDoc);
+  await db.doc('releaseControl/numericPilot/operations/' + window.operationId).set(opDoc);
   const scopedDb = Object.create(db);
   scopedDb.collection = name => name === 'releaseControl' ? { doc: id => db.collection(name).doc(id === 'numericPilot' ? fenceId : id) } : db.collection(name);
   scopedDb.runTransaction = fn => db.runTransaction(fn);

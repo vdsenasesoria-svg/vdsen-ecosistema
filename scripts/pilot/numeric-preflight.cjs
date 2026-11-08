@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const C = require('../../api/_numericPilotContract');
 const { attestRuntime } = require('./numeric-attestation.cjs');
+const canary = require('./ayrton-canary.cjs');
 
 const MAX_WINDOW_HOURS = 24;
 const MAX_WINDOW_MS = MAX_WINDOW_HOURS * 3600 * 1000;
@@ -160,6 +161,61 @@ function validateFences(fences, window, mode = 'preflight') {
 async function runPreflight(opts) {
   opts = opts || {};
   const window = opts.window;
+  if (opts.token && opts.priorOperations === undefined && window && window.operationId) {
+    const targetOpId = window.operationId;
+    const projectId = opts.projectId || process.env.GCP_PROJECT_ID || 'vdsen-ecosistema';
+    const baseUrl = process.env.FIRESTORE_EMULATOR_HOST
+      ? 'http://' + process.env.FIRESTORE_EMULATOR_HOST + '/v1/projects/' + projectId + '/databases/(default)/documents/'
+      : 'https://firestore.googleapis.com/v1/projects/' + projectId + '/databases/(default)/documents/';
+    const docUrl = baseUrl + 'releaseControl/numericPilot/operations/' + encodeURIComponent(targetOpId);
+    try {
+      const fetcher = (opts.io && opts.io.fetcher) || opts.fetcher || globalThis.fetch;
+      const res = await fetcher(docUrl, {
+        method: 'GET',
+        headers: { authorization: 'Bearer ' + opts.token }
+      });
+      if (res.status === 404) {
+        opts = {
+          ...opts,
+          priorOperations: [],
+          priorOperationsSourceVerified: true,
+          priorOperationsCoverageComplete: true,
+          directLookupChecked: true
+        };
+      } else if (res.status === 200) {
+        const text = await res.text();
+        let parsed = null;
+        try { parsed = JSON.parse(text); } catch (_) {}
+        const dec = canary.decDoc ? canary.decDoc(parsed) : parsed;
+        const opStatus = (dec && dec.status) || (dec && dec.fields && dec.fields.status && dec.fields.status.stringValue) || 'EXISTING';
+        opts = {
+          ...opts,
+          priorOperations: [{ operationId: targetOpId, status: opStatus, runId: dec && dec.runId }],
+          priorOperationsSourceVerified: true,
+          priorOperationsCoverageComplete: true,
+          directLookupChecked: true
+        };
+      } else {
+        return {
+          schema: 'vdsen-numeric-preflight-v1',
+          decision: 'BLOCKED',
+          reason: 'OPERATION_LOOKUP_FAILED',
+          message: 'Authoritative Firestore ledger query failed with HTTP ' + res.status + '; cannot verify operation uniqueness.',
+          checks: [],
+          evaluatedAt: new Date(opts.now || Date.now()).toISOString()
+        };
+      }
+    } catch (err) {
+      return {
+        schema: 'vdsen-numeric-preflight-v1',
+        decision: 'BLOCKED',
+        reason: 'OPERATION_LOOKUP_ERROR',
+        message: 'Authoritative Firestore ledger query encountered an error (' + err.message + '); cannot verify operation uniqueness.',
+        checks: [],
+        evaluatedAt: new Date(opts.now || Date.now()).toISOString()
+      };
+    }
+  }
   if (opts.ledgerDb && opts.priorOperations === undefined) {
     if (opts.isEmulator !== true) {
       opts = {

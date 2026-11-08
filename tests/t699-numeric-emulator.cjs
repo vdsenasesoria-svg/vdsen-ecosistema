@@ -33,6 +33,25 @@ test('real contract in emulator: pending -> applied overlay -> effective prescri
     await db.doc('plans/' + C.PLAN).set(sc.plan);
     await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [C.UID], expiresAt: window.expiresAt });
     await db.doc('releaseControl/numericPilot').set({ ...window, enabled: true });
+    const opDoc = {
+      schema: 'vdsen-numeric-operations-ledger-v1',
+      operationId: window.operationId,
+      status: 'RESERVED',
+      reservedAt: new Date().toISOString(),
+      completedAt: null,
+      stoppedAt: null,
+      uid: C.UID,
+      planId: C.PLAN,
+      pid: C.PID,
+      runtimeSha: window.runtimeSha,
+      deploymentId: 'dpl_emulator_test_contract',
+      runId: 'run-contract-1',
+      window: structuredClone(window),
+      scope: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] },
+      appliedRecordKeys: [],
+      history: []
+    };
+    await db.doc('releaseControl/numericPilot/operations/' + window.operationId).set(opDoc);
     await db.doc('logs/' + C.UID).set({ planId: C.PLAN, entries: sc.entries });
     const meso = db.doc('logs/' + C.UID + '/mesos/' + C.PLAN);
     await meso.set({ planId: C.PLAN, entries: sc.entries, progressionApplications: { [sc.rec.key]: sc.rec }, nextExposureOverlays: {} });
@@ -49,14 +68,48 @@ test('real contract in emulator: pending -> applied overlay -> effective prescri
     assert.equal(resolved.provenance, 'CANONICAL_OVERLAY');
     assert.deepEqual((await db.doc('plans/' + C.PLAN).get()).data(), base);
     assert.deepEqual(await executor.applyPending(db, C.UID, C.PLAN, () => new Date().toISOString()), []);
+    // Verify ledger doc recorded the applied key inside the transaction
+    const savedOpDoc = (await db.doc('releaseControl/numericPilot/operations/' + window.operationId).get()).data();
+    assert.ok(Array.isArray(savedOpDoc.appliedRecordKeys) && savedOpDoc.appliedRecordKeys.includes(sc.rec.key));
+    assert.equal(savedOpDoc.status, 'RESERVED', 'Operation remains RESERVED during record applications');
+
     // Reset only synthetic emulator data to test concurrent application of one pending decision.
     const pending = { planId: C.PLAN, entries: sc.entries, progressionApplications: { [sc.rec.key]: sc.rec }, nextExposureOverlays: {} };
     await meso.set(pending);
+    await db.doc('releaseControl/numericPilot/operations/' + window.operationId).update({ appliedRecordKeys: [] });
     const simultaneous = await Promise.all(Array.from({ length: 3 }, () => executor.applyPending(db, C.UID, C.PLAN, () => new Date().toISOString())));
     assert.equal(simultaneous.flat().filter(r => r.written).length, 1);
     const concurrentResult = (await meso.get()).data();
     assert.equal(concurrentResult.progressionApplications[sc.rec.key].state, 'APPLIED');
     assert.equal(Object.keys(concurrentResult.nextExposureOverlays).length, 1);
+
+    // Replay with already applied key in ledger: rejected
+    const replayRes = await executor.applyPending(db, C.UID, C.PLAN, () => new Date().toISOString());
+    assert.deepEqual(replayRes, []); // already in APPLIED state in meso
+
+    // If meso reset to pending but ledger already has the key: must reject without write
+    await meso.set(pending);
+    const ledgerReplay = await executor.applyPending(db, C.UID, C.PLAN, () => new Date().toISOString());
+    assert.equal(ledgerReplay.length, 1);
+    assert.equal(ledgerReplay[0].written, false);
+    assert.equal(ledgerReplay[0].reason, 'ALREADY_APPLIED_FOR_OPERATION');
+
+    // If ledger operation is STOPPED: must reject without write
+    await db.doc('releaseControl/numericPilot/operations/' + window.operationId).update({ status: 'STOPPED', appliedRecordKeys: [] });
+    const stoppedLedgerRes = await executor.applyPending(db, C.UID, C.PLAN, () => new Date().toISOString());
+    assert.equal(stoppedLedgerRes.length, 1);
+    assert.equal(stoppedLedgerRes[0].written, false);
+    assert.equal(stoppedLedgerRes[0].reason, 'NUMERIC_LEDGER_NOT_RESERVED');
+    await db.doc('releaseControl/numericPilot/operations/' + window.operationId).update({ status: 'RESERVED' });
+
+    // If ledger operation document is missing: must reject without write
+    await db.doc('releaseControl/numericPilot/operations/' + window.operationId).delete();
+    const missingLedgerRes = await executor.applyPending(db, C.UID, C.PLAN, () => new Date().toISOString());
+    assert.equal(missingLedgerRes.length, 1);
+    assert.equal(missingLedgerRes[0].written, false);
+    assert.equal(missingLedgerRes[0].reason, 'NUMERIC_LEDGER_MISSING');
+    await db.doc('releaseControl/numericPilot/operations/' + window.operationId).set(opDoc);
+
     await meso.set(pending);
     await db.doc('releaseControl/numericPilot').set({ enabled: false }, { merge: true });
     const stopped = await executor.applyPending(db, C.UID, C.PLAN, () => new Date().toISOString());
@@ -112,6 +165,8 @@ test('real contract in emulator: pending -> applied overlay -> effective prescri
     const rolledBack = (await meso.get()).data();
     assert.equal(rolledBack.progressionApplications[sc.rec.key].state, 'PENDING');
     assert.deepEqual(rolledBack.nextExposureOverlays, {});
+    const ledgerAfterRollback = (await db.doc('releaseControl/numericPilot/operations/' + window.operationId).get()).data();
+    assert.ok(!ledgerAfterRollback.appliedRecordKeys.includes(sc.rec.key), 'Ledger update must roll back atomically with overlay');
   } finally {
     previous.forEach(([k, v]) => { if (v === undefined) delete process.env[k]; else process.env[k] = v; });
   }

@@ -33,11 +33,29 @@ function runtimeAuthorization(env, now) {
     return w;
   } catch (_) { return null; }
 }
-function transactionAllowed(original, current, fence, release, scope, uid, record, plan) {
-  return !!(current && JSON.stringify(current) === JSON.stringify(original) && fence && fence.enabled === true &&
+function ledgerValid(ledgerDoc, current, recordKey) {
+  if (!ledgerDoc || typeof ledgerDoc !== 'object') return false;
+  if (ledgerDoc.schema !== 'vdsen-numeric-operations-ledger-v1' || ledgerDoc.status !== 'RESERVED') return false;
+  if (ledgerDoc.operationId !== current.operationId || ledgerDoc.uid !== current.uid ||
+      ledgerDoc.planId !== current.planId || ledgerDoc.pid !== current.pid ||
+      ledgerDoc.runtimeSha !== current.runtimeSha) return false;
+  if (!ledgerDoc.window || ['schema', 'mode', 'uid', 'planId', 'pid', 'runtimeSha', 'operationId', 'startsAt', 'expiresAt'].some(function(k) { return ledgerDoc.window[k] !== current[k]; })) return false;
+  if (!ledgerDoc.scope || ledgerDoc.scope.enabled !== true ||
+      !Array.isArray(ledgerDoc.scope.clientIds) || ledgerDoc.scope.clientIds.length !== 1 || ledgerDoc.scope.clientIds[0] !== current.uid ||
+      !Array.isArray(ledgerDoc.scope.prescriptionExerciseIds) || ledgerDoc.scope.prescriptionExerciseIds.length !== 1 || ledgerDoc.scope.prescriptionExerciseIds[0] !== current.pid) return false;
+  if (recordKey && Array.isArray(ledgerDoc.appliedRecordKeys) && ledgerDoc.appliedRecordKeys.indexOf(recordKey) >= 0) return false;
+  return true;
+}
+function transactionAllowed(original, current, fence, release, scope, uid, record, plan, ledgerDoc, recordKey) {
+  var base = !!(current && JSON.stringify(current) === JSON.stringify(original) && fence && fence.enabled === true &&
     release && Array.isArray(release.clientIds) && release.clientIds.length === 1 && release.clientIds[0] === current.uid &&
     release.expiresAt === current.expiresAt &&
     ['schema', 'mode', 'uid', 'planId', 'pid', 'runtimeSha', 'operationId', 'startsAt', 'expiresAt'].every(function(k) { return fence[k] === current[k]; }) &&
     record && record.state === 'PENDING' && record.prescriptionExerciseId === current.pid && scopeValid(scope, uid, record.prescriptionExerciseId, plan));
+  if (!base) return false;
+  if (ledgerDoc !== undefined) {
+    return ledgerValid(ledgerDoc, current, recordKey);
+  }
+  return true;
 }
-module.exports = { windowValid: windowValid, scopeValid: scopeValid, runtimeAuthorization: runtimeAuthorization, transactionAllowed: transactionAllowed, UID: UID, PLAN: PLAN, PID: PID };
+module.exports = { windowValid: windowValid, scopeValid: scopeValid, runtimeAuthorization: runtimeAuthorization, transactionAllowed: transactionAllowed, ledgerValid: ledgerValid, UID: UID, PLAN: PLAN, PID: PID };

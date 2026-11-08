@@ -73,6 +73,24 @@ async function setupBaseEnvironment(sc) {
     expiresAt: window.expiresAt
   });
   await db.doc('releaseControl/numericPilot').set({ ...window, enabled: true });
+  await db.doc('releaseControl/numericPilot/operations/' + window.operationId).set({
+    schema: 'vdsen-numeric-operations-ledger-v1',
+    operationId: window.operationId,
+    status: 'RESERVED',
+    reservedAt: new Date().toISOString(),
+    completedAt: null,
+    stoppedAt: null,
+    uid: C.UID,
+    planId: C.PLAN,
+    pid: C.PID,
+    runtimeSha: window.runtimeSha,
+    deploymentId: 'dpl_synthetic_races_699',
+    runId: '123456',
+    window: structuredClone(window),
+    scope: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] },
+    appliedRecordKeys: [],
+    history: []
+  });
   await db.doc('logs/' + C.UID).set({ planId: C.PLAN, entries: sc.entries });
 }
 
@@ -162,6 +180,27 @@ test('transaction races in emulator: exercises all 16 mandatory concurrency case
     nextExposureOverlays: {}
   };
   const mesoRef = db.doc('logs/' + C.UID + '/mesos/' + C.PLAN);
+  const resetPending = async () => {
+    await mesoRef.set(pending);
+    await db.doc('releaseControl/numericPilot/operations/' + window.operationId).set({
+      schema: 'vdsen-numeric-operations-ledger-v1',
+      operationId: window.operationId,
+      status: 'RESERVED',
+      reservedAt: new Date().toISOString(),
+      completedAt: null,
+      stoppedAt: null,
+      uid: C.UID,
+      planId: C.PLAN,
+      pid: C.PID,
+      runtimeSha: window.runtimeSha,
+      deploymentId: 'dpl_synthetic_races_699',
+      runId: '123456',
+      window: structuredClone(window),
+      scope: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] },
+      appliedRecordKeys: [],
+      history: []
+    });
+  };
 
   const keys = [...Object.keys(env), 'CRON_SECRET'];
   const previous = keys.map(k => [k, process.env[k]]);
@@ -172,7 +211,7 @@ test('transaction races in emulator: exercises all 16 mandatory concurrency case
     await setupBaseEnvironment(sc);
 
     // 1. Dos aplicaciones simultáneas del mismo registro
-    await mesoRef.set(pending);
+    await resetPending();
     const twoApps = await Promise.all([
       executor.applyPending(db, C.UID, C.PLAN, () => new Date().toISOString()),
       executor.applyPending(db, C.UID, C.PLAN, () => new Date().toISOString())
@@ -182,7 +221,7 @@ test('transaction races in emulator: exercises all 16 mandatory concurrency case
     assert.equal((await mesoRef.get()).data().progressionApplications[sc.rec.key].state, 'APPLIED');
 
     // 2. Tres aplicaciones simultáneas
-    await mesoRef.set(pending);
+    await resetPending();
     const threeApps = await Promise.all([
       executor.applyPending(db, C.UID, C.PLAN, () => new Date().toISOString()),
       executor.applyPending(db, C.UID, C.PLAN, () => new Date().toISOString()),
@@ -214,7 +253,7 @@ test('transaction races in emulator: exercises all 16 mandatory concurrency case
     assert.equal(matRecords.length, 1, 'Two concurrent materializations must not duplicate records');
 
     // 4. STOP después de la lectura inicial (Escenario A: carrera post-read con barrera de sincronización)
-    await mesoRef.set(pending);
+    await resetPending();
     const stopSync = createPostReadSync('releaseControl/autonomousProgression');
     const txAStopPromise = executor.applyPending(stopSync.makeDb(db), C.UID, C.PLAN, () => new Date().toISOString());
     const stopReadInfo = await stopSync.waitForPostRead();
@@ -236,7 +275,7 @@ test('transaction races in emulator: exercises all 16 mandatory concurrency case
     });
 
     // 5. STOP antes del commit (staged transaction write fails closed)
-    await mesoRef.set(pending);
+    await resetPending();
     const interceptingDb2 = Object.create(db);
     interceptingDb2.collection = name => db.collection(name);
     interceptingDb2.runTransaction = async (fn) => {
@@ -253,7 +292,7 @@ test('transaction races in emulator: exercises all 16 mandatory concurrency case
     assert.equal((await mesoRef.get()).data().progressionApplications[sc.rec.key].state, 'PENDING');
 
     // 6. Revocación de autorización durante una transacción (Escenario B: post-read release revocation)
-    await mesoRef.set(pending);
+    await resetPending();
     const releaseSync = createPostReadSync('releaseControl/autonomousProgression');
     const txAReleasePromise = executor.applyPending(releaseSync.makeDb(db), C.UID, C.PLAN, () => new Date().toISOString());
     await releaseSync.waitForPostRead();
@@ -271,7 +310,7 @@ test('transaction races in emulator: exercises all 16 mandatory concurrency case
     });
 
     // 7. Edición del Coach durante una transacción (Escenario C: post-read Coach priority)
-    await mesoRef.set(pending);
+    await resetPending();
     const coachEditSync = createPostReadSync('plans/' + C.PLAN);
     const txACoachPromise = executor.applyPending(coachEditSync.makeDb(db), C.UID, C.PLAN, () => new Date().toISOString());
     await coachEditSync.waitForPostRead();
@@ -285,7 +324,7 @@ test('transaction races in emulator: exercises all 16 mandatory concurrency case
     await db.doc('plans/' + C.PLAN).set(sc.plan); // restore
 
     // 8. Cambio del plan activo durante una transacción (Escenario D: post-read active plan switch)
-    await mesoRef.set(pending);
+    await resetPending();
     const planSwitchSync = createPostReadSync('clients/' + C.UID);
     const txAPlanPromise = executor.applyPending(planSwitchSync.makeDb(db), C.UID, C.PLAN, () => new Date().toISOString());
     await planSwitchSync.waitForPostRead();
@@ -298,7 +337,7 @@ test('transaction races in emulator: exercises all 16 mandatory concurrency case
     await db.doc('clients/' + C.UID).set({ activePlanId: C.PLAN, coachId: coach }); // restore
 
     // 9. Sustitución del PID autorizado (Escenario E: post-read canary PID substitution)
-    await mesoRef.set(pending);
+    await resetPending();
     const pidSubSync = createPostReadSync('coaches/' + coach);
     const txAPidPromise = executor.applyPending(pidSubSync.makeDb(db), C.UID, C.PLAN, () => new Date().toISOString());
     await pidSubSync.waitForPostRead();
@@ -316,7 +355,7 @@ test('transaction races in emulator: exercises all 16 mandatory concurrency case
 
     // 10. Expiración de ventana durante el proceso (Escenario F: evaluación temporal)
     // 10a. Expiración antes de preparar escrituras
-    await mesoRef.set(pending);
+    await resetPending();
     const expiredClock = () => iso(Date.parse(window.expiresAt) + 1000);
     const resExpired = await executor.applyPending(db, C.UID, C.PLAN, expiredClock);
     assert.ok(resExpired.every(r => !r.written));
@@ -346,7 +385,7 @@ test('transaction races in emulator: exercises all 16 mandatory concurrency case
     }
 
     // 11. Aborto antes del commit
-    await mesoRef.set(pending);
+    await resetPending();
     const abortingDb = Object.create(db);
     abortingDb.collection = name => db.collection(name);
     abortingDb.runTransaction = fn => db.runTransaction(tx => {
@@ -375,7 +414,7 @@ test('transaction races in emulator: exercises all 16 mandatory concurrency case
     );
 
     // 13. Reintento por fallo transitorio
-    await mesoRef.set(pending);
+    await resetPending();
     let attemptsCount = 0;
     const retryDb = Object.create(db);
     retryDb.collection = name => db.collection(name);
@@ -394,7 +433,7 @@ test('transaction races in emulator: exercises all 16 mandatory concurrency case
     }
 
     // 14. Relectura de barreras después de conflicto
-    await mesoRef.set(pending);
+    await resetPending();
     const barrierDb = Object.create(db);
     barrierDb.collection = name => db.collection(name);
     barrierDb.runTransaction = fn => db.runTransaction(async tx => {
@@ -407,7 +446,7 @@ test('transaction races in emulator: exercises all 16 mandatory concurrency case
     assert.equal(barrierRes.filter(r => r.written).length, 1);
 
     // 15. Fallo al persistir el overlay
-    await mesoRef.set(pending);
+    await resetPending();
     const failOverlayDb = Object.create(db);
     failOverlayDb.collection = name => db.collection(name);
     failOverlayDb.runTransaction = fn => db.runTransaction(tx => {
@@ -427,7 +466,7 @@ test('transaction races in emulator: exercises all 16 mandatory concurrency case
     assert.equal((await mesoRef.get()).data().progressionApplications[sc.rec.key].state, 'PENDING');
 
     // 16. Reintento después de éxito con respuesta perdida
-    await mesoRef.set(pending);
+    await resetPending();
     const successRes = await executor.applyPending(db, C.UID, C.PLAN, () => new Date().toISOString());
     assert.equal(successRes.filter(r => r.written).length, 1);
     // Client or caller retries because the response was lost

@@ -240,11 +240,28 @@ async function applyPending(db, clientId, planId, clock) {
       var numericFence = _data(await tx.get(db.collection('releaseControl').doc('numericPilot')));
       var nw = numericPilot.runtimeAuthorization(process.env, Date.now());
       var releaseFence = _data(await tx.get(db.collection('releaseControl').doc('autonomousProgression')));
+      var opRef = db.collection('releaseControl').doc('numericPilot').collection('operations').doc(authorizedWindow.operationId);
+      var opDoc = _data(await tx.get(opRef));
+      if (!opDoc) {
+        return { written: false, reason: 'NUMERIC_LEDGER_MISSING' };
+      }
+      if (opDoc.status !== 'RESERVED') {
+        return { written: false, reason: 'NUMERIC_LEDGER_NOT_RESERVED' };
+      }
+      if (Array.isArray(opDoc.appliedRecordKeys) && opDoc.appliedRecordKeys.indexOf(key) >= 0) {
+        return { written: false, reason: 'ALREADY_APPLIED_FOR_OPERATION' };
+      }
+      if (!numericPilot.ledgerValid(opDoc, nw, key)) {
+        return { written: false, reason: 'NUMERIC_LEDGER_INVALID' };
+      }
       if (precord && !consumer.inCanaryScope(coachDoc && coachDoc.autoApplyCanary, clientId, precord.prescriptionExerciseId)) {
         return { written: false, reason: 'OUT_OF_CANARY_SCOPE' };
       }
+      if (!precord || precord.prescriptionExerciseId !== authorizedWindow.pid) {
+        return { written: false, reason: 'OUT_OF_NUMERIC_PILOT_SCOPE' };
+      }
       if (!numericPilot.transactionAllowed(authorizedWindow, nw, numericFence, releaseFence,
-          coachDoc && coachDoc.autoApplyCanary, clientId, precord, planDoc)) {
+          coachDoc && coachDoc.autoApplyCanary, clientId, precord, planDoc, opDoc, key)) {
         return { written: false, reason: 'NUMERIC_PILOT_NOT_AUTHORIZED' };
       }
       if (precord && precord.magnitude && (precord.magnitude.candidates || []).some(function(c) { return c && c.dimension === 'LOAD'; })) {
@@ -265,9 +282,26 @@ async function applyPending(db, clientId, planId, clock) {
       // The consumer was written against the web SDK, where `snap.exists` is a
       // function; Admin snapshots expose a boolean. Adapt rather than touch the module.
       var webTx = _webTx(tx);
-      return consumer.applyOverlayTransaction(webTx, refs, { recordKey: key, actorId: 'trusted-progressor', now: _now(clock), context: {
+      var appRes = await consumer.applyOverlayTransaction(webTx, refs, { recordKey: key, actorId: 'trusted-progressor', now: _now(clock), context: {
         clientId: clientId, planId: planId, equipmentResolution: equipmentResolution
       } }, { isCurrent: function() { return true; }, trustedServerNumericApply: true });
+      if (appRes && appRes.written === true) {
+        var appliedKeys = Array.isArray(opDoc.appliedRecordKeys) ? opDoc.appliedRecordKeys.slice() : [];
+        if (appliedKeys.indexOf(key) < 0) appliedKeys.push(key);
+        var hist = Array.isArray(opDoc.history) ? opDoc.history.slice() : [];
+        hist.push({
+          sequence: hist.length + 1,
+          action: 'RECORD_APPLIED',
+          recordKey: key,
+          at: _now(clock),
+          actor: 'trusted-progressor'
+        });
+        tx.update(opRef, {
+          appliedRecordKeys: appliedKeys,
+          history: hist
+        });
+      }
+      return appRes;
     });
     var reason = r && r.reason || null;
     results.push({ recordKey: key, written: r && r.written === true, reason: reason, blocked: reason && EQUIPMENT_BLOCKERS.indexOf(reason) >= 0 ? 'BLOCKED_EQUIPMENT_DATA' : (reason === 'ADVISORY_LOAD_UNAVAILABLE' ? 'BLOCKED_LOAD_DATA' : null) });

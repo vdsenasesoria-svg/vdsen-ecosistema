@@ -108,8 +108,44 @@ async function executeStop(opts, io) {
     readbackErrors.push('Failed to read back coaches/' + coachId + ': ' + err.message);
   }
 
+  // Step 5: Durable Ledger Transition (recordStop)
+  let ledgerStopped = false;
+  let ledgerResult = null;
+  let ledgerError = null;
+
+  if (io && typeof io.recordStop === 'function') {
+    try {
+      ledgerResult = await io.recordStop(operationId, { reason, coachId });
+      ledgerStopped = !!(ledgerResult && ledgerResult.success);
+      writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: ledgerStopped, result: ledgerResult });
+    } catch (err) {
+      ledgerError = err.message;
+      writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: false, error: err.message });
+      errors.push('Failed to record STOP in durable ledger: ' + err.message);
+    }
+  } else if (io && typeof io.writeFence === 'function') {
+    try {
+      const stopDoc = {
+        schema: 'vdsen-numeric-operations-ledger-v1',
+        operationId: operationId,
+        status: 'STOPPED',
+        stoppedAt: isoNow,
+        stopReason: reason
+      };
+      await io.writeFence('releaseControl/numericPilot/operations/' + operationId, stopDoc, { merge: true });
+      ledgerStopped = true;
+      ledgerResult = { success: true, status: 'STOPPED' };
+      writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: true });
+    } catch (err) {
+      ledgerError = err.message;
+      writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: false, error: err.message });
+      errors.push('Failed to record STOP in durable ledger: ' + err.message);
+    }
+  }
+
   const allFencesConfirmedDisabled = numericStopped && releaseStopped && coachStopped && (readbackErrors.length === 0);
-  const allDisarmed = allFencesConfirmedDisabled && (errors.length === 0);
+  const fencesDisarmed = allFencesConfirmedDisabled && (errors.filter(e => !e.includes('durable ledger')).length === 0);
+  const allDisarmed = fencesDisarmed && ledgerStopped;
   const status = allDisarmed ? 'STOP_CONFIRMED' : 'STOP_INCOMPLETE';
 
   const report = {
@@ -123,6 +159,10 @@ async function executeStop(opts, io) {
     pid: C.PID,
     windowProvided: !!opts.window,
     allDisarmed: allDisarmed,
+    fencesDisarmed: fencesDisarmed,
+    ledgerStopped: ledgerStopped,
+    ledgerResult: ledgerResult,
+    ledgerError: ledgerError,
     primaryFenceDisarmed: numericStopped,
     writeAttempts: writeAttempts,
     readback: {

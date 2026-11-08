@@ -82,6 +82,7 @@ function unflattenFields(obj) {
  * @returns {object} I/O adapter with writeFence and readFence
  */
 function createEmulatorIo(db) {
+  const ledger = require('./numeric-operations-ledger.cjs');
   return {
     writeFence: async (docPath, fields, writeOpts) => {
       const docRef = db.doc(docPath);
@@ -94,6 +95,9 @@ function createEmulatorIo(db) {
     readFence: async (docPath) => {
       const snap = await db.doc(docPath).get();
       return snap.exists ? snap.data() : null;
+    },
+    recordStop: async (operationId, stopData) => {
+      return ledger.recordStop(db, operationId, stopData);
     }
   };
 }
@@ -203,6 +207,88 @@ async function executeStopRest(projectId, token, opts, customFetcher) {
       let json = null;
       try { json = JSON.parse(text); } catch (_) {}
       return canary.decDoc(json);
+    },
+    recordStop: async (operationId, stopData) => {
+      const docPath = 'releaseControl/numericPilot/operations/' + operationId;
+      const url = baseUrl + docPath;
+      const headers = {};
+      if (token) headers.authorization = 'Bearer ' + token;
+
+      const encVal = (v) => v === null || v === undefined ? { nullValue: null } : typeof v === 'boolean' ? { booleanValue: v } : typeof v === 'number' ? { integerValue: String(v) } : typeof v === 'string' ? { stringValue: v }
+        : Array.isArray(v) ? { arrayValue: { values: v.map(encVal) } } : { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, encVal(x)])) } };
+
+      const readRes = await fetcher(url, { method: 'GET', headers });
+      const nowIso = new Date().toISOString();
+      if (readRes.status === 404) {
+        const sentinelDoc = {
+          schema: 'vdsen-numeric-operations-ledger-v1',
+          operationId: operationId,
+          status: 'STOPPED',
+          stoppedAt: nowIso,
+          stopReason: (stopData && stopData.reason) || 'MANUAL_STOP',
+          history: [{ sequence: 1, action: 'STOPPED', at: nowIso, actor: 'pilot-stop-rest', reason: (stopData && stopData.reason) || 'MANUAL_STOP', previousStatus: null }]
+        };
+        const body = { fields: Object.fromEntries(Object.entries(sentinelDoc).map(([k, v]) => [k, encVal(v)])) };
+        const patchRes = await fetcher(url, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json', ...headers },
+          body: JSON.stringify(body)
+        });
+        if (patchRes.status !== 200) {
+          throw new Error('CREATE_STOP_SENTINEL_FAILED_' + patchRes.status);
+        }
+        return { success: true, operationId, status: 'STOPPED', sentinel: true };
+      }
+      if (readRes.status !== 200) {
+        throw new Error('READ_OPERATION_FAILED_' + readRes.status);
+      }
+
+      const text = await readRes.text();
+      let json = null;
+      try { json = JSON.parse(text); } catch (_) {}
+      const existing = canary.decDoc(json);
+
+      if (existing && existing.status === 'COMPLETED') {
+        return { success: true, operationId, status: 'COMPLETED', modified: false, reason: 'ALREADY_COMPLETED' };
+      }
+      if (existing && existing.status === 'FAILED') {
+        return { success: true, operationId, status: 'FAILED', modified: false, reason: 'ALREADY_FAILED' };
+      }
+      if (existing && existing.status === 'STOPPED') {
+        return { success: true, operationId, status: 'STOPPED', modified: false, duplicate: true };
+      }
+
+      const history = Array.isArray(existing && existing.history) ? [...existing.history] : [];
+      history.push({
+        sequence: history.length + 1,
+        action: 'STOPPED',
+        at: nowIso,
+        actor: 'pilot-stop-rest',
+        reason: (stopData && stopData.reason) || 'MANUAL_STOP',
+        previousStatus: existing ? existing.status : null
+      });
+
+      const updateFields = {
+        status: 'STOPPED',
+        stoppedAt: nowIso,
+        stopReason: (stopData && stopData.reason) || 'MANUAL_STOP',
+        history: history
+      };
+
+      const mask = ['status', 'stoppedAt', 'stopReason', 'history'];
+      const maskParams = mask.map(m => 'updateMask.fieldPaths=' + encodeURIComponent(m)).join('&');
+      const patchUrl = url + '?' + maskParams;
+      const body = { fields: Object.fromEntries(Object.entries(updateFields).map(([k, v]) => [k, encVal(v)])) };
+
+      const patchRes = await fetcher(patchUrl, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify(body)
+      });
+      if (patchRes.status !== 200) {
+        throw new Error('UPDATE_STOP_FAILED_' + patchRes.status);
+      }
+      return { success: true, operationId, status: 'STOPPED', sentinel: false, modified: true };
     }
   };
 
@@ -479,6 +565,17 @@ async function main() {
       }
     }
 
+    let ledgerDb = null;
+    let isEmulator = false;
+    if (process.env.FIRESTORE_EMULATOR_HOST) {
+      try {
+        const admin = require('firebase-admin');
+        const app = admin.apps && admin.apps.length ? admin.apps[0] : admin.initializeApp({ projectId: process.env.GCLOUD_PROJECT || 'demo-vdsen-shadow' });
+        ledgerDb = app.firestore ? app.firestore() : admin.firestore(app);
+        isEmulator = true;
+      } catch (_) {}
+    }
+
     const result = await runPreflight({
       window: windowData,
       deploymentId: deploymentId,
@@ -486,9 +583,13 @@ async function main() {
       fences: fencesData,
       activeRuns: activeRuns,
       currentRunId: currentRunId,
-      priorOperations: priorOperations,
+      priorOperations: priorOperations !== null ? priorOperations : undefined,
       priorOperationsSourceVerified: priorOperationsSourceVerified,
       priorOperationsCoverageComplete: priorOperationsCoverageComplete,
+      token: process.env.GOOGLE_ACCESS_TOKEN,
+      projectId: process.env.GCP_PROJECT_ID || 'vdsen-ecosistema',
+      ledgerDb: ledgerDb,
+      isEmulator: isEmulator,
       readOnly: true
     });
 

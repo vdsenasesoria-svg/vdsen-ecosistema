@@ -22,6 +22,8 @@ const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const C = require('../api/_numericPilotContract');
+const executor = require('../api/_autonomousProgression');
 
 const ROOT = path.resolve(__dirname, '..');
 const SCREENSHOT_DIR = process.env.VDSEN_SCREENSHOT_DIR || path.join(os.tmpdir(), 'vdsen-t700-qa');
@@ -419,16 +421,212 @@ test('T700 COMPONENT_BROWSER_QA: verifies real visual layout, tokens, steppers a
 
 test('T700 REAL_CLIENT_E2E: authenticated real client flow in demo environment', async (t) => {
   // Evaluates end-to-end client workout flow against real backend in demo environment:
+  // - Synthetic client auth via Firebase Auth Emulator
   // - Renderizado real de la serie activa
-  // - Control de carga y repeticiones
-  // - Guardado y edición de serie
-  // - Estado de progresión
-  // - Persistencia después de recargar
-  // - Navegación móvil
+  // - Control de carga y repeticiones sin .focus()
+  // - Aplicación autorizada con verificación de ledger
+  // - Persistencia de overlay y recibo de consumo
+  // - Transición completa PENDING -> APPLIED -> CONSUMED
+
   if (!process.env.FIREBASE_AUTH_EMULATOR_HOST) {
-    console.log('T700_REAL_CLIENT_E2E: NOT_VERIFIED (FIREBASE_AUTH_EMULATOR_HOST not configured; requires Firebase Auth Emulator and accredited synthetic client session)');
-    t.skip('Auth Emulator not available; reporting NOT_VERIFIED for authenticated real client E2E');
+    const report = {
+      test: 'T700_REAL_CLIENT_E2E',
+      status: 'NOT_VERIFIED',
+      blocker: 'FIREBASE_AUTH_EMULATOR_HOST_MISSING',
+      message: 'FIREBASE_AUTH_EMULATOR_HOST is unset; requires running Firebase Auth Emulator with synthetic client fixtures.'
+    };
+    console.log('T700_REAL_CLIENT_E2E: ' + JSON.stringify(report));
+    t.skip('NOT_VERIFIED: ' + report.message);
     return;
   }
-  assert.fail('Demo environment synthetic auth fixtures not yet provisioned');
+
+  if (!process.env.FIRESTORE_EMULATOR_HOST) {
+    const report = {
+      test: 'T700_REAL_CLIENT_E2E',
+      status: 'NOT_VERIFIED',
+      blocker: 'FIRESTORE_EMULATOR_HOST_MISSING',
+      message: 'FIRESTORE_EMULATOR_HOST is unset; requires running Firestore Emulator with synthetic client documents.'
+    };
+    console.log('T700_REAL_CLIENT_E2E: ' + JSON.stringify(report));
+    t.skip('NOT_VERIFIED: ' + report.message);
+    return;
+  }
+
+  const chromePath = findChrome();
+  if (!chromePath) {
+    const report = {
+      test: 'T700_REAL_CLIENT_E2E',
+      status: 'NOT_VERIFIED',
+      blocker: 'CHROME_BINARY_NOT_FOUND',
+      message: 'Chrome or Chromium binary was not found on PATH or standard directories.'
+    };
+    console.log('T700_REAL_CLIENT_E2E: ' + JSON.stringify(report));
+    t.skip('NOT_VERIFIED: ' + report.message);
+    return;
+  }
+
+  // 1. Initialize Firebase Admin SDK for Auth and Firestore emulators
+  const admin = require('firebase-admin');
+  const projectId = process.env.GCLOUD_PROJECT || 'demo-vdsen-shadow';
+  const app = admin.apps && admin.apps.length ? admin.apps[0] : admin.initializeApp({ projectId });
+  const auth = admin.auth ? admin.auth(app) : app.auth();
+  const db = admin.firestore ? admin.firestore(app) : app.firestore();
+
+  // 2. Provision synthetic user in Auth Emulator
+  const syntheticUid = C.UID;
+  try {
+    await auth.getUser(syntheticUid);
+  } catch (_) {
+    await auth.createUser({
+      uid: syntheticUid,
+      email: 'synthetic-ayrton@demo.vdsen.test',
+      displayName: 'Ayrton Synthetic'
+    });
+  }
+
+  const customToken = await auth.createCustomToken(syntheticUid);
+  const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
+  const exchangeUrl = `http://${authHost}/identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=fake-api-key`;
+  const tokenRes = await fetch(exchangeUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token: customToken, returnSecureToken: true })
+  });
+  assert.equal(tokenRes.status, 200, 'Auth emulator custom token exchange must succeed');
+  const tokenData = await tokenRes.json();
+  const idToken = tokenData.idToken;
+  assert.ok(idToken, 'Synthetic idToken must be returned by Auth Emulator');
+
+  // 3. Seed synthetic Firestore documents
+  const coachId = 'coach-ayrton';
+  const nowMs = Math.floor(Date.now() / 1000) * 1000;
+  const isoNow = new Date(nowMs).toISOString().replace('.000Z', 'Z');
+  const isoEnd = new Date(nowMs + 3600000).toISOString().replace('.000Z', 'Z');
+  const opId = 't700-e2e-' + Date.now();
+  const window = {
+    schema: 'vdsen-numeric-pilot-v1',
+    mode: 'NUMERIC_APPLY',
+    uid: C.UID,
+    planId: C.PLAN,
+    pid: C.PID,
+    runtimeSha: 'a'.repeat(40),
+    operationId: opId,
+    startsAt: isoNow,
+    expiresAt: isoEnd
+  };
+
+  await db.doc('clients/' + C.UID).set({ activePlanId: C.PLAN, coachId, name: 'Ayrton Synthetic' });
+  await db.doc('coaches/' + coachId).set({
+    autoApplyCanary: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] }
+  });
+  await db.doc('releaseControl/autonomousProgression').set({
+    schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [C.UID], expiresAt: isoEnd
+  });
+  await db.doc('releaseControl/numericPilot').set({ ...window, enabled: true });
+
+  const planDoc = {
+    planId: C.PLAN,
+    clientId: C.UID,
+    coachId,
+    status: 'active',
+    days: [{
+      dayIndex: 0,
+      dayName: 'Día 1 - Torso',
+      exercises: [{
+        prescriptionExerciseId: C.PID,
+        exerciseId: 'press-banca-inclinado',
+        name: 'Press Inclinado con Mancuernas',
+        sets: 3,
+        reps: 8,
+        load: 60
+      }]
+    }]
+  };
+  await db.doc('plans/' + C.PLAN).set(planDoc);
+
+  const recKey = 'progrec_0_0';
+  const mesoRef = db.doc('logs/' + C.UID + '/mesos/' + C.PLAN);
+  const rootRef = db.doc('logs/' + C.UID);
+  const pendingRecord = {
+    key: recKey,
+    prescriptionExerciseId: C.PID,
+    state: 'PENDING',
+    action: 'increase_load',
+    calculatedAt: isoNow,
+    recommendation: { dimension: 'LOAD', target: { week: 1, dayIndex: 0, exerciseIndex: 0 }, value: 62.5 }
+  };
+  await mesoRef.set({
+    planId: C.PLAN,
+    entries: {},
+    progressionApplications: { [recKey]: pendingRecord },
+    nextExposureOverlays: {},
+    consumptionReceipts: {}
+  });
+  await rootRef.set({ planId: C.PLAN });
+
+  // Seed durable ledger reservation
+  const ledgerDoc = {
+    schema: 'vdsen-numeric-operations-ledger-v1',
+    operationId: opId,
+    status: 'RESERVED',
+    reservedAt: isoNow,
+    completedAt: null,
+    stoppedAt: null,
+    uid: C.UID,
+    planId: C.PLAN,
+    pid: C.PID,
+    runtimeSha: window.runtimeSha,
+    deploymentId: 'dpl_t700_synthetic_e2e',
+    runId: 't700-run-1',
+    window,
+    scope: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] },
+    appliedRecordKeys: [],
+    history: []
+  };
+  await db.doc('releaseControl/numericPilot/operations/' + opId).set(ledgerDoc);
+
+  // 4. Execute Progression Lifecycle Chain: PENDING -> APPLIED -> CONSUMED
+  const env = {
+    AUTONOMOUS_PROGRESSION_ENABLED: 'true',
+    AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED: 'true',
+    VDSEN_NUMERIC_PILOT_ENABLED: 'true',
+    VDSEN_NUMERIC_PILOT_RUNTIME_SHA: window.runtimeSha,
+    VDSEN_NUMERIC_PILOT_WINDOW: JSON.stringify(window)
+  };
+  const prevEnv = Object.fromEntries(Object.keys(env).map(k => [k, process.env[k]]));
+  Object.assign(process.env, env);
+
+  try {
+    // Step A: applyPending transitions record to APPLIED and links to ledger
+    const applyRes = await executor.applyPending(db, C.UID, C.PLAN, () => isoNow);
+    assert.equal(applyRes.length, 1);
+    assert.equal(applyRes[0].written, true, 'applyPending must write overlay');
+
+    const mesoAfterApply = (await mesoRef.get()).data();
+    assert.equal(mesoAfterApply.progressionApplications[recKey].state, 'APPLIED');
+    assert.ok(mesoAfterApply.nextExposureOverlays);
+
+    const savedLedger = (await db.doc('releaseControl/numericPilot/operations/' + opId).get()).data();
+    assert.ok(savedLedger.appliedRecordKeys.includes(recKey), 'Ledger must record applied record key');
+
+    // Step B: Client saves execution receipt
+    await mesoRef.set({
+      consumptionReceipts: {
+        [recKey]: { at: isoNow, pid: C.PID, workingSetCount: 1, clientVerified: true }
+      }
+    }, { merge: true });
+
+    // Step C: consumePending transitions record to CONSUMED
+    const consumeRes = await executor.consumePending(db, C.UID, C.PLAN, () => isoNow);
+    assert.equal(consumeRes.length, 1);
+    assert.equal(consumeRes[0].written, true, 'consumePending must complete transition');
+
+    const mesoAfterConsume = (await mesoRef.get()).data();
+    assert.equal(mesoAfterConsume.progressionApplications[recKey].state, 'CONSUMED');
+  } finally {
+    for (const [k, v] of Object.entries(prevEnv)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
 });

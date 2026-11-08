@@ -201,6 +201,8 @@ jobs:
 
       - name: Execute preflight verification with real evidence
         if: inputs.action == 'preflight-check'
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
         run: |
           node scripts/pilot/numeric-pilot-ops.cjs preflight \
             --window-file "$REPORT_DIR/window.json" \
@@ -209,7 +211,6 @@ jobs:
             --current-run "${{ github.run_id }}" \
             --fences-file "$REPORT_DIR/fences.json" \
             --runs-file "$REPORT_DIR/active-runs.json" \
-            --prior-file "$REPORT_DIR/prior-runs.json" \
             --out "$REPORT_DIR/preflight-result.json"
 
       - name: Upload evidence artifact
