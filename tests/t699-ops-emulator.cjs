@@ -190,6 +190,48 @@ test('real STOP REST in emulator: executeStopRest disarms autoApplyCanary.enable
   assert.equal(coachAfterPartial.name, 'Synthetic REST Coach');
 });
 
+test('real STOP REST OCC in emulator: preserves concurrent COMPLETED operation in durable ledger without overwrite', async () => {
+  const coachId = 'synthetic-coach-occ';
+  const coachRef = db.doc('coaches/' + coachId);
+  const numRef = db.doc('releaseControl/numericPilot');
+  const relRef = db.doc('releaseControl/autonomousProgression');
+  const opId = 'op-emu-occ-completed';
+  const opRef = db.doc('releaseControl/numericPilot/operations/' + opId);
+
+  await coachRef.set({
+    name: 'Synthetic OCC Coach',
+    autoApplyCanary: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] }
+  });
+  await numRef.set({ enabled: true, operationId: opId, runtimeSha: 'c'.repeat(40) });
+  await relRef.set({ enabled: true, clientIds: [C.UID], expiresAt: new Date(Date.now() + 3600000).toISOString() });
+
+  // Pre-seed operation as COMPLETED
+  await opRef.set({
+    schema: 'vdsen-numeric-operations-ledger-v1',
+    operationId: opId,
+    status: 'COMPLETED',
+    completedAt: '2026-11-08T10:00:00Z',
+    resultSummary: { success: true, count: 1 },
+    history: [{ sequence: 1, action: 'RESERVED' }, { sequence: 2, action: 'COMPLETED' }]
+  });
+
+  const rep = await executeStopRest(projectId, 'owner', {
+    coachId: coachId,
+    operationId: opId,
+    reason: 'TEST_OCC_TERMINAL_PRESERVATION'
+  });
+
+  assert.equal(rep.status, 'STOP_CONFIRMED');
+  assert.equal(rep.allDisarmed, true);
+  assert.equal(rep.ledgerResult.status, 'COMPLETED');
+  assert.equal(rep.ledgerResult.modified, false);
+
+  const finalDoc = (await opRef.get()).data();
+  assert.equal(finalDoc.status, 'COMPLETED');
+  assert.equal(finalDoc.completedAt, '2026-11-08T10:00:00Z');
+  assert.equal(finalDoc.history.length, 2);
+});
+
 test('real audit in emulator: validates logs/{uid}/mesos/{planId} and returns BLOCKED on missing doc or read error', async () => {
   const mesoRef = db.doc('logs/' + C.UID + '/mesos/' + C.PLAN);
 

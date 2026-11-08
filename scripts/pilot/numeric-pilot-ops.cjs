@@ -217,78 +217,169 @@ async function executeStopRest(projectId, token, opts, customFetcher) {
       const encVal = (v) => v === null || v === undefined ? { nullValue: null } : typeof v === 'boolean' ? { booleanValue: v } : typeof v === 'number' ? { integerValue: String(v) } : typeof v === 'string' ? { stringValue: v }
         : Array.isArray(v) ? { arrayValue: { values: v.map(encVal) } } : { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, encVal(x)])) } };
 
-      const readRes = await fetcher(url, { method: 'GET', headers });
-      const nowIso = new Date().toISOString();
-      if (readRes.status === 404) {
-        const sentinelDoc = {
-          schema: 'vdsen-numeric-operations-ledger-v1',
-          operationId: operationId,
+      const checkDurableState = async () => {
+        try {
+          const vRes = await fetcher(url, { method: 'GET', headers });
+          if (vRes.status === 200) {
+            const vText = await vRes.text();
+            let vJson = null;
+            try { vJson = JSON.parse(vText); } catch (_) {}
+            const doc = canary.decDoc(vJson);
+            if (doc && doc.operationId === operationId) {
+              if (doc.status === 'STOPPED') {
+                return { success: true, operationId, status: 'STOPPED', sentinel: !doc.runtimeSha, modified: false, verified: true };
+              }
+              if (doc.status === 'COMPLETED') {
+                return { success: true, operationId, status: 'COMPLETED', modified: false, reason: 'ALREADY_COMPLETED', completedAt: doc.completedAt, resultSummary: doc.resultSummary };
+              }
+              if (doc.status === 'FAILED') {
+                return { success: true, operationId, status: 'FAILED', modified: false, reason: 'ALREADY_FAILED', completedAt: doc.completedAt };
+              }
+            }
+          }
+        } catch (_) {}
+        return null;
+      };
+
+      const isConflict = (status, text) => {
+        if (status === 409 || status === 412) return true;
+        if (typeof text === 'string' && (/FAILED_PRECONDITION/i.test(text) || /ALREADY_EXISTS/i.test(text) || /ABORTED/i.test(text))) return true;
+        return false;
+      };
+
+      const MAX_RETRIES = 5;
+      let attempt = 0;
+
+      while (attempt < MAX_RETRIES) {
+        attempt++;
+        const nowIso = (stopData && stopData.now) || new Date().toISOString();
+
+        let readRes;
+        try {
+          readRes = await fetcher(url, { method: 'GET', headers });
+        } catch (netErr) {
+          const verified = await checkDurableState();
+          if (verified) return verified;
+          throw new Error('READ_OPERATION_NETWORK_ERROR: ' + netErr.message);
+        }
+
+        if (readRes.status === 404) {
+          const sentinelDoc = {
+            schema: 'vdsen-numeric-operations-ledger-v1',
+            operationId: operationId,
+            status: 'STOPPED',
+            stoppedAt: nowIso,
+            stopReason: (stopData && stopData.reason) || 'MANUAL_STOP',
+            history: [{ sequence: 1, action: 'STOPPED', at: nowIso, actor: (stopData && stopData.actor) || 'pilot-stop-rest', reason: (stopData && stopData.reason) || 'MANUAL_STOP', previousStatus: null }]
+          };
+          const body = { fields: Object.fromEntries(Object.entries(sentinelDoc).map(([k, v]) => [k, encVal(v)])) };
+          const putUrl = url + '?currentDocument.exists=false';
+
+          let patchRes;
+          try {
+            patchRes = await fetcher(putUrl, {
+              method: 'PATCH',
+              headers: { 'content-type': 'application/json', ...headers },
+              body: JSON.stringify(body)
+            });
+          } catch (writeErr) {
+            const verified = await checkDurableState();
+            if (verified) return verified;
+            throw new Error('CREATE_STOP_SENTINEL_NETWORK_ERROR: ' + writeErr.message);
+          }
+
+          if (patchRes.status === 200) {
+            return { success: true, operationId, status: 'STOPPED', sentinel: true, modified: true };
+          }
+
+          const errText = await patchRes.text().catch(() => '');
+          if (isConflict(patchRes.status, errText)) {
+            // Concurrent creation: retry from fresh GET
+            continue;
+          }
+
+          const verified = await checkDurableState();
+          if (verified) return verified;
+          throw new Error('CREATE_STOP_SENTINEL_FAILED_' + patchRes.status + ': ' + errText);
+        }
+
+        if (readRes.status !== 200) {
+          const errText = await readRes.text().catch(() => '');
+          throw new Error('READ_OPERATION_FAILED_' + readRes.status + ': ' + errText);
+        }
+
+        const text = await readRes.text();
+        let json = null;
+        try { json = JSON.parse(text); } catch (_) {}
+        const existing = canary.decDoc(json);
+        const updateTime = json && json.updateTime;
+
+        if (existing && existing.status === 'COMPLETED') {
+          return { success: true, operationId, status: 'COMPLETED', modified: false, reason: 'ALREADY_COMPLETED', completedAt: existing.completedAt, resultSummary: existing.resultSummary };
+        }
+        if (existing && existing.status === 'FAILED') {
+          return { success: true, operationId, status: 'FAILED', modified: false, reason: 'ALREADY_FAILED', completedAt: existing.completedAt };
+        }
+        if (existing && existing.status === 'STOPPED') {
+          return { success: true, operationId, status: 'STOPPED', modified: false, duplicate: true, stoppedAt: existing.stoppedAt };
+        }
+
+        const history = Array.isArray(existing && existing.history) ? [...existing.history] : [];
+        history.push({
+          sequence: history.length + 1,
+          action: 'STOPPED',
+          at: nowIso,
+          actor: (stopData && stopData.actor) || 'pilot-stop-rest',
+          reason: (stopData && stopData.reason) || 'MANUAL_STOP',
+          previousStatus: existing ? existing.status : null
+        });
+
+        const updateFields = {
           status: 'STOPPED',
           stoppedAt: nowIso,
           stopReason: (stopData && stopData.reason) || 'MANUAL_STOP',
-          history: [{ sequence: 1, action: 'STOPPED', at: nowIso, actor: 'pilot-stop-rest', reason: (stopData && stopData.reason) || 'MANUAL_STOP', previousStatus: null }]
+          history: history
         };
-        const body = { fields: Object.fromEntries(Object.entries(sentinelDoc).map(([k, v]) => [k, encVal(v)])) };
-        const patchRes = await fetcher(url, {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json', ...headers },
-          body: JSON.stringify(body)
-        });
-        if (patchRes.status !== 200) {
-          throw new Error('CREATE_STOP_SENTINEL_FAILED_' + patchRes.status);
+
+        const mask = ['status', 'stoppedAt', 'stopReason', 'history'];
+        const maskParams = mask.map(m => 'updateMask.fieldPaths=' + encodeURIComponent(m)).join('&');
+        const condParam = updateTime
+          ? '&currentDocument.updateTime=' + encodeURIComponent(updateTime)
+          : '&currentDocument.exists=true';
+        const patchUrl = url + '?' + maskParams + condParam;
+        const body = { fields: Object.fromEntries(Object.entries(updateFields).map(([k, v]) => [k, encVal(v)])) };
+
+        let patchRes;
+        try {
+          patchRes = await fetcher(patchUrl, {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json', ...headers },
+            body: JSON.stringify(body)
+          });
+        } catch (writeErr) {
+          const verified = await checkDurableState();
+          if (verified) return verified;
+          throw new Error('UPDATE_STOP_NETWORK_ERROR: ' + writeErr.message);
         }
-        return { success: true, operationId, status: 'STOPPED', sentinel: true };
-      }
-      if (readRes.status !== 200) {
-        throw new Error('READ_OPERATION_FAILED_' + readRes.status);
-      }
 
-      const text = await readRes.text();
-      let json = null;
-      try { json = JSON.parse(text); } catch (_) {}
-      const existing = canary.decDoc(json);
+        if (patchRes.status === 200) {
+          return { success: true, operationId, status: 'STOPPED', sentinel: false, modified: true };
+        }
 
-      if (existing && existing.status === 'COMPLETED') {
-        return { success: true, operationId, status: 'COMPLETED', modified: false, reason: 'ALREADY_COMPLETED' };
-      }
-      if (existing && existing.status === 'FAILED') {
-        return { success: true, operationId, status: 'FAILED', modified: false, reason: 'ALREADY_FAILED' };
-      }
-      if (existing && existing.status === 'STOPPED') {
-        return { success: true, operationId, status: 'STOPPED', modified: false, duplicate: true };
+        const patchErrText = await patchRes.text().catch(() => '');
+        if (isConflict(patchRes.status, patchErrText)) {
+          // Version conflict: retry from fresh GET to observe new state
+          continue;
+        }
+
+        const verified = await checkDurableState();
+        if (verified) return verified;
+        throw new Error('UPDATE_STOP_FAILED_' + patchRes.status + ': ' + patchErrText);
       }
 
-      const history = Array.isArray(existing && existing.history) ? [...existing.history] : [];
-      history.push({
-        sequence: history.length + 1,
-        action: 'STOPPED',
-        at: nowIso,
-        actor: 'pilot-stop-rest',
-        reason: (stopData && stopData.reason) || 'MANUAL_STOP',
-        previousStatus: existing ? existing.status : null
-      });
-
-      const updateFields = {
-        status: 'STOPPED',
-        stoppedAt: nowIso,
-        stopReason: (stopData && stopData.reason) || 'MANUAL_STOP',
-        history: history
-      };
-
-      const mask = ['status', 'stoppedAt', 'stopReason', 'history'];
-      const maskParams = mask.map(m => 'updateMask.fieldPaths=' + encodeURIComponent(m)).join('&');
-      const patchUrl = url + '?' + maskParams;
-      const body = { fields: Object.fromEntries(Object.entries(updateFields).map(([k, v]) => [k, encVal(v)])) };
-
-      const patchRes = await fetcher(patchUrl, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json', ...headers },
-        body: JSON.stringify(body)
-      });
-      if (patchRes.status !== 200) {
-        throw new Error('UPDATE_STOP_FAILED_' + patchRes.status);
-      }
-      return { success: true, operationId, status: 'STOPPED', sentinel: false, modified: true };
+      const finalVerified = await checkDurableState();
+      if (finalVerified) return finalVerified;
+      throw new Error('STOP_RECORD_FAILED_OCC_CONTENTION_MAX_RETRIES: Document updated concurrently during all attempts.');
     }
   };
 

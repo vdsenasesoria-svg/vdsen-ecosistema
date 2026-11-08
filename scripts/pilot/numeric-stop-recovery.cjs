@@ -125,17 +125,57 @@ async function executeStop(opts, io) {
     }
   } else if (io && typeof io.writeFence === 'function') {
     try {
-      const stopDoc = {
-        schema: 'vdsen-numeric-operations-ledger-v1',
-        operationId: operationId,
-        status: 'STOPPED',
-        stoppedAt: isoNow,
-        stopReason: reason
-      };
-      await io.writeFence('releaseControl/numericPilot/operations/' + operationId, stopDoc, { merge: true });
-      ledgerStopped = true;
-      ledgerResult = { success: true, status: 'STOPPED' };
-      writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: true });
+      let existing = null;
+      if (typeof io.readFence === 'function') {
+        try {
+          existing = await io.readFence('releaseControl/numericPilot/operations/' + operationId);
+        } catch (_) {}
+      }
+      if (existing && (existing.status === 'COMPLETED' || existing.status === 'FAILED')) {
+        ledgerStopped = true;
+        ledgerResult = { success: true, operationId, status: existing.status, modified: false, reason: 'ALREADY_' + existing.status };
+        writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: true, result: ledgerResult });
+      } else if (existing && existing.status === 'STOPPED') {
+        ledgerStopped = true;
+        ledgerResult = { success: true, operationId, status: 'STOPPED', modified: false, duplicate: true };
+        writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: true, result: ledgerResult });
+      } else if (!existing) {
+        const stopDoc = {
+          schema: 'vdsen-numeric-operations-ledger-v1',
+          operationId: operationId,
+          status: 'STOPPED',
+          stoppedAt: isoNow,
+          stopReason: reason,
+          history: [{ sequence: 1, action: 'STOPPED', at: isoNow, actor: 'pilot-stop', reason, previousStatus: null }]
+        };
+        await io.writeFence('releaseControl/numericPilot/operations/' + operationId, stopDoc, { merge: true });
+        ledgerStopped = true;
+        ledgerResult = { success: true, status: 'STOPPED', sentinel: true };
+        writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: true, result: ledgerResult });
+      } else {
+        const hist = Array.isArray(existing.history) ? [...existing.history] : [];
+        hist.push({
+          sequence: hist.length + 1,
+          action: 'STOPPED',
+          at: isoNow,
+          actor: 'pilot-stop',
+          reason,
+          previousStatus: existing.status
+        });
+        const updateFields = {
+          status: 'STOPPED',
+          stoppedAt: isoNow,
+          stopReason: reason,
+          history: hist
+        };
+        await io.writeFence('releaseControl/numericPilot/operations/' + operationId, updateFields, {
+          merge: true,
+          mask: ['status', 'stoppedAt', 'stopReason', 'history']
+        });
+        ledgerStopped = true;
+        ledgerResult = { success: true, status: 'STOPPED', sentinel: false, modified: true };
+        writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: true, result: ledgerResult });
+      }
     } catch (err) {
       ledgerError = err.message;
       writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: false, error: err.message });
