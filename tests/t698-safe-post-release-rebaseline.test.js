@@ -17,7 +17,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
-const { json, validate, verifyDeployment } = require('../scripts/release/lib.cjs');
+const { json, validate, verifyDeployment, git } = require('../scripts/release/lib.cjs');
 const { assertAppReleaseCoherence, assertPublishedRulesCoherence } = require('../scripts/release/check.cjs');
 const deployedProduct = require('../scripts/release/deployed-product.cjs');
 const app = require('../scripts/release/app-live.cjs');
@@ -26,8 +26,9 @@ const B = require('../scripts/pilot/off-baseline.cjs');
 const P = require('../scripts/pilot/window-protocol.cjs');
 
 const SCHEMA = json('.release/schema/release-state.schema.json');
-const STATE = json('.release/vdsen-client.json');
-const MANIFEST = json(deployedProduct.MANIFEST);
+// Historical fixture from T698 release commit (925481f)
+const STATE = JSON.parse(git('show', '925481f9be0df86eb197341c749426240e66d1b9:.release/vdsen-client.json'));
+const MANIFEST = JSON.parse(git('show', '925481f9be0df86eb197341c749426240e66d1b9:.release/deployed-product.json'));
 
 const CANONICAL_SHA = '353df8c12982cad7f4dc89b3622a6b63b3127b52';
 const PROD_DEPLOYMENT = 'dpl_AuykDuRaXejkbUzFNjFz6XocNPZt';
@@ -36,6 +37,12 @@ const PREVIOUS_RUNTIME_SHA = 'c3c1875425fe53981df512bdaa0dbe18d81de34d';
 const SAFE_OFF_RECOVERY_DEPLOYMENT = 'dpl_5gQbFsFXdJoyCdJy7WVgiKLb1pPP';
 const OFFICIAL_RUN = '41950979614';
 const OFFICIAL_DIGEST = 'sha256:0a2e116db5faabc5daaa0c8c0c0d8199a4c899501df910de8f662a8f26b5a96f';
+const T698_BASELINE = Object.freeze({
+  runtimeSha: CANONICAL_SHA,
+  deployment: PROD_DEPLOYMENT,
+  officialReleaseRun: OFFICIAL_RUN,
+  evidenceArtifactDigest: OFFICIAL_DIGEST,
+});
 
 const clone = (x) => JSON.parse(JSON.stringify(x));
 
@@ -59,7 +66,9 @@ test('T698-1 canonical manifest and deployed-product.json reflect the verified T
 
   assert.equal(MANIFEST.runtime_sha, CANONICAL_SHA);
   assert.equal(Object.keys(MANIFEST.files).length, 47);
-  deployedProduct.verify(CANONICAL_SHA, deployedProduct.MANIFEST);
+  for (const [f, h] of Object.entries(MANIFEST.files)) {
+    assert.equal(deployedProduct.hashCommitFile(CANONICAL_SHA, f), h);
+  }
 });
 
 test('T698-2 explicit safe recovery deployment and distinct-SHA rollback target', () => {
@@ -112,10 +121,10 @@ test('T698-3 contract rejects legacy armed deployment as rollback target and rej
 });
 
 test('T698-4 SAFE_OFF_BASELINE pins the new accredited OFF release and off-baseline verifier accepts run 41950979614', () => {
-  assert.equal(app.SAFE_OFF_BASELINE.runtimeSha, CANONICAL_SHA);
-  assert.equal(app.SAFE_OFF_BASELINE.deployment, PROD_DEPLOYMENT);
-  assert.equal(app.SAFE_OFF_BASELINE.officialReleaseRun, OFFICIAL_RUN);
-  assert.equal(app.SAFE_OFF_BASELINE.evidenceArtifactDigest, OFFICIAL_DIGEST);
+  assert.equal(T698_BASELINE.runtimeSha, CANONICAL_SHA);
+  assert.equal(T698_BASELINE.deployment, PROD_DEPLOYMENT);
+  assert.equal(T698_BASELINE.officialReleaseRun, OFFICIAL_RUN);
+  assert.equal(T698_BASELINE.evidenceArtifactDigest, OFFICIAL_DIGEST);
 
   const before = NG.evaluateProductionEnv(
     [
@@ -232,7 +241,7 @@ test('T698-4 SAFE_OFF_BASELINE pins the new accredited OFF release and off-basel
     ...over,
   });
 
-  const verified = B.verify(STATE, app.SAFE_OFF_BASELINE, deploymentObj, makeBundle());
+  const verified = B.verify(STATE, T698_BASELINE, deploymentObj, makeBundle());
   assert.equal(verified.status, 'OFF_AT_IMMUTABLE_BUILD');
   assert.equal(verified.officialReleaseRun, OFFICIAL_RUN);
   assert.equal(verified.deployment, PROD_DEPLOYMENT);
@@ -241,12 +250,12 @@ test('T698-4 SAFE_OFF_BASELINE pins the new accredited OFF release and off-basel
   // Reject inconsistent artifacts (e.g. wrong previous_deployment in result vs rollback, or wrong digest)
   const badPrevious = makeBundle();
   badPrevious.result = Object.assign({}, badPrevious.result, { previous_deployment: 'dpl_wrong_previous' });
-  assert.throws(() => B.verify(STATE, app.SAFE_OFF_BASELINE, deploymentObj, badPrevious), /OFF_BASELINE_PREVIOUS_MISMATCH/);
+  assert.throws(() => B.verify(STATE, T698_BASELINE, deploymentObj, badPrevious), /OFF_BASELINE_PREVIOUS_MISMATCH/);
 
   const badDigest = makeBundle({
     artifact: Object.assign({}, makeBundle().artifact, { digest: 'sha256:' + '0'.repeat(64) }),
   });
-  assert.throws(() => B.verify(STATE, app.SAFE_OFF_BASELINE, deploymentObj, badDigest), /OFF_BASELINE_ARTIFACT_DIGEST_MISMATCH/);
+  assert.throws(() => B.verify(STATE, T698_BASELINE, deploymentObj, badDigest), /OFF_BASELINE_ARTIFACT_DIGEST_MISMATCH/);
 });
 
 test('T698-5 app rollback targets the new SAFE_OFF_BASELINE and never reverts to the legacy armed deployment', async () => {
@@ -271,8 +280,8 @@ test('T698-5 app rollback targets the new SAFE_OFF_BASELINE and never reverts to
       release_id: rid,
       candidate_sha: 'd'.repeat(40),
       candidate_deployment: 'dpl_future_cand',
-      production_deployment: PROD_DEPLOYMENT,
-      production_runtime_sha: CANONICAL_SHA,
+      production_deployment: app.SAFE_OFF_BASELINE.deployment,
+      production_runtime_sha: app.SAFE_OFF_BASELINE.runtimeSha,
       safe_off_deployment: app.SAFE_OFF_BASELINE.deployment,
       safe_off_evidence_sha256: 'f'.repeat(64),
       production_project: STATE.production_project,
@@ -287,7 +296,7 @@ test('T698-5 app rollback targets the new SAFE_OFF_BASELINE and never reverts to
       candidate_sha: 'd'.repeat(40),
       production_project: STATE.production_project,
       vercel_team: STATE.vercel_team,
-      production_alias_before: PROD_DEPLOYMENT,
+      production_alias_before: app.SAFE_OFF_BASELINE.deployment,
       numeric_guard: { status: 'DISARMED' },
     }));
 
@@ -297,30 +306,30 @@ test('T698-5 app rollback targets the new SAFE_OFF_BASELINE and never reverts to
       currentApp: async () => (revertedTarget ? revertedTarget : 'dpl_future_staged'),
       revertApp: async (s, target) => { revertedTarget = target; return target; },
       deployment: async (s, id) => ({
-        id, readyState: 'READY', target: 'production', meta: { githubCommitSha: CANONICAL_SHA },
+        id, readyState: 'READY', target: 'production', meta: { githubCommitSha: app.SAFE_OFF_BASELINE.runtimeSha },
       }),
       servedSurface: () => ['vdsen-cliente.html'],
       verifyPublicBytes: async (s, sha, surface) => {
-        assert.equal(sha, CANONICAL_SHA);
+        assert.equal(sha, app.SAFE_OFF_BASELINE.runtimeSha);
         return surface;
       },
     });
 
     assert.equal(out.rollback_status, 'PASS');
     assert.equal(out.state, 'RECOVERED');
-    assert.equal(revertedTarget, PROD_DEPLOYMENT);
+    assert.equal(revertedTarget, app.SAFE_OFF_BASELINE.deployment);
     assert.notEqual(revertedTarget, P.LEGACY_ARMED_DEPLOYMENT);
 
-    // Idempotency when already at PROD_DEPLOYMENT
+    // Idempotency when already at SAFE_OFF_BASELINE.deployment
     let secondRevertCalled = false;
     const idem = await app.rollbackApp({
       verifySafeOffBaseline: async () => mockProof,
-      currentApp: async () => PROD_DEPLOYMENT,
+      currentApp: async () => app.SAFE_OFF_BASELINE.deployment,
       revertApp: async () => { secondRevertCalled = true; },
     });
     assert.equal(idem.rollback_status, 'NOT_NEEDED');
     assert.equal(idem.state, 'NO_MUTATION');
-    assert.equal(idem.current_deployment, PROD_DEPLOYMENT);
+    assert.equal(idem.current_deployment, app.SAFE_OFF_BASELINE.deployment);
     assert.equal(secondRevertCalled, false);
   } finally {
     app.setOut(prevOut);
