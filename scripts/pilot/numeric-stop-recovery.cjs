@@ -273,8 +273,193 @@ function assertFreshAuthorizationRequired(priorReport, newWindow) {
   return true;
 }
 
+/**
+ * T708: Revokes authorization for an individual client without halting the rest of the cohort.
+ * - Disarms the client's window in releaseControl/numericPilot (or marks it enabled: false).
+ * - Removes the client from releaseControl/autonomousProgression.clientIds (retaining the other cohort clients).
+ * - Removes the client from coaches/{coachId}.autoApplyCanary.clientIds (retaining other athletes of that coach).
+ * - Marks the client's operation as STOPPED in the durable ledger.
+ * - Verifies via readback that the target client is decommissioned while global fences remain operational.
+ *
+ * @param {object} opts
+ * @param {string} opts.clientId - Target client UID to revoke
+ * @param {string} opts.operationId - Active operation ID for this client
+ * @param {string} opts.coachId - Coach UID
+ * @param {string} [opts.reason] - Revocation reason
+ * @param {number} [opts.now] - Epoch millis
+ * @param {object} io - I/O adapter for Firestore operations
+ * @returns {Promise<object>} Revocation report
+ */
+async function executeClientRevocation(opts, io) {
+  opts = opts || {};
+  const clientId = opts.clientId;
+  const operationId = opts.operationId;
+  const coachId = opts.coachId || 'unknown-coach';
+  const reason = opts.reason || 'INDIVIDUAL_CLIENT_REVOCATION';
+  const now = opts.now || Date.now();
+  const isoNow = new Date(now).toISOString().replace('.000Z', 'Z');
+
+  assert.ok(clientId, 'clientId is required for individual revocation.');
+  assert.ok(operationId, 'operationId is required for individual revocation.');
+  assert.ok(io && typeof io.writeFence === 'function', 'I/O adapter with writeFence is required.');
+  assert.ok(io && typeof io.readFence === 'function', 'I/O adapter with readFence is required.');
+
+  const writeAttempts = [];
+  const errors = [];
+
+  // Step 1: Disarm client's window in releaseControl/numericPilot
+  let numericClientStopped = false;
+  try {
+    const numDoc = await io.readFence('releaseControl/numericPilot');
+    if (numDoc) {
+      if (numDoc.windows && typeof numDoc.windows === 'object' && numDoc.windows[clientId]) {
+        const updatedWindows = { ...numDoc.windows };
+        updatedWindows[clientId] = {
+          ...updatedWindows[clientId],
+          enabled: false,
+          revokedAt: isoNow,
+          revokeReason: reason
+        };
+        await io.writeFence('releaseControl/numericPilot', {
+          windows: updatedWindows
+        }, { merge: true });
+        writeAttempts.push({ fence: 'numericPilot.windows', path: 'releaseControl/numericPilot', success: true });
+      } else if (numDoc.uid === clientId) {
+        // Single-client fence
+        await io.writeFence('releaseControl/numericPilot', {
+          enabled: false,
+          stoppedAt: isoNow,
+          stoppedOperation: operationId,
+          stopReason: reason
+        }, { merge: true });
+        writeAttempts.push({ fence: 'numericPilot', path: 'releaseControl/numericPilot', success: true });
+      }
+    }
+  } catch (err) {
+    writeAttempts.push({ fence: 'numericPilot', success: false, error: err.message });
+    errors.push('Failed to revoke client in numericPilot fence: ' + err.message);
+  }
+
+  // Step 2: Remove clientId from releaseControl/autonomousProgression (keeping remaining clients!)
+  let releaseClientRemoved = false;
+  try {
+    const relDoc = await io.readFence('releaseControl/autonomousProgression');
+    if (relDoc && Array.isArray(relDoc.clientIds)) {
+      const remainingIds = relDoc.clientIds.filter(id => id !== clientId);
+      await io.writeFence('releaseControl/autonomousProgression', {
+        clientIds: remainingIds
+      }, { merge: true });
+      writeAttempts.push({ fence: 'autonomousProgression', remainingCount: remainingIds.length, success: true });
+    }
+  } catch (err) {
+    writeAttempts.push({ fence: 'autonomousProgression', success: false, error: err.message });
+    errors.push('Failed to remove client from release fence: ' + err.message);
+  }
+
+  // Step 3: Remove clientId from coaches/{coachId}.autoApplyCanary (keeping other athletes of that coach!)
+  let coachClientRemoved = false;
+  try {
+    const coachDoc = await io.readFence('coaches/' + coachId);
+    if (coachDoc && coachDoc.autoApplyCanary && Array.isArray(coachDoc.autoApplyCanary.clientIds)) {
+      const remainingCoachIds = coachDoc.autoApplyCanary.clientIds.filter(id => id !== clientId);
+      await io.writeFence('coaches/' + coachId, {
+        'autoApplyCanary.clientIds': remainingCoachIds
+      }, { merge: true });
+      writeAttempts.push({ fence: 'coachCanary', remainingCount: remainingCoachIds.length, success: true });
+    }
+  } catch (err) {
+    writeAttempts.push({ fence: 'coachCanary', success: false, error: err.message });
+    errors.push('Failed to remove client from coach canary: ' + err.message);
+  }
+
+  // Step 4: Transition durable ledger for this specific operationId
+  let ledgerStopped = false;
+  let ledgerResult = null;
+  let ledgerError = null;
+
+  if (io && typeof io.recordStop === 'function') {
+    try {
+      ledgerResult = await io.recordStop(operationId, { reason, coachId, clientId, actor: 'individual-revocation' });
+      ledgerStopped = !!(ledgerResult && ledgerResult.success);
+      if (!ledgerStopped && ledgerResult && ledgerResult.error) {
+        ledgerError = ledgerResult.error;
+        errors.push('Failed to record STOP in durable ledger: ' + (ledgerResult.message || ledgerResult.error));
+      }
+      writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: ledgerStopped });
+    } catch (err) {
+      ledgerError = err.message;
+      errors.push('Failed to record STOP in durable ledger: ' + err.message);
+    }
+  } else {
+    ledgerStopped = false;
+    ledgerError = 'ADAPTER_MISSING_RECORD_STOP';
+    errors.push('Failed to record STOP in durable ledger: ' + ledgerError);
+  }
+
+  // Step 5: Readback verification
+  let readbackErrors = [];
+  try {
+    const numDocPost = await io.readFence('releaseControl/numericPilot');
+    if (numDocPost) {
+      if (numDocPost.windows && numDocPost.windows[clientId]) {
+        numericClientStopped = numDocPost.windows[clientId].enabled === false;
+      } else if (numDocPost.uid === clientId) {
+        numericClientStopped = numDocPost.enabled === false;
+      } else {
+        numericClientStopped = true;
+      }
+    } else {
+      numericClientStopped = true;
+    }
+  } catch (err) {
+    readbackErrors.push('Readback numericPilot failed: ' + err.message);
+  }
+
+  try {
+    const relDocPost = await io.readFence('releaseControl/autonomousProgression');
+    releaseClientRemoved = !relDocPost || !Array.isArray(relDocPost.clientIds) || relDocPost.clientIds.indexOf(clientId) < 0;
+  } catch (err) {
+    readbackErrors.push('Readback releaseControl failed: ' + err.message);
+  }
+
+  try {
+    const coachDocPost = await io.readFence('coaches/' + coachId);
+    coachClientRemoved = !coachDocPost || !coachDocPost.autoApplyCanary ||
+      !Array.isArray(coachDocPost.autoApplyCanary.clientIds) || coachDocPost.autoApplyCanary.clientIds.indexOf(clientId) < 0;
+  } catch (err) {
+    readbackErrors.push('Readback coachCanary failed: ' + err.message);
+  }
+
+  const allScopedDisabled = numericClientStopped && releaseClientRemoved && coachClientRemoved && (readbackErrors.length === 0);
+  const success = allScopedDisabled && ledgerStopped;
+
+  return {
+    schema: 'vdsen-client-revocation-v1',
+    status: success ? 'REVOCATION_CONFIRMED' : 'REVOCATION_INCOMPLETE',
+    clientId: clientId,
+    operationId: operationId,
+    coachId: coachId,
+    revokedAt: isoNow,
+    reason: reason,
+    success: success,
+    fencesScopedDisarmed: allScopedDisabled,
+    ledgerStopped: ledgerStopped,
+    ledgerResult: ledgerResult,
+    ledgerError: ledgerError,
+    writeAttempts: writeAttempts,
+    readback: {
+      numericClientDisabled: numericClientStopped,
+      releaseClientRemoved: releaseClientRemoved,
+      coachClientRemoved: coachClientRemoved,
+      readbackComplete: readbackErrors.length === 0
+    },
+    errors: errors.concat(readbackErrors)
+  };
+}
+
 module.exports = {
   executeStop,
+  executeClientRevocation,
   auditMesoConsistency,
   assertFreshAuthorizationRequired,
   digest

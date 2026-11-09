@@ -17,8 +17,9 @@ const executor = require('../api/_autonomousProgression.js');
 const eligibility = require('../api/_clientEligibility.js');
 const shadow = require('../assets/progression-auto-apply-shadow.js');
 const consumer = require('../assets/progression-application-consumer.js');
+const effectivePrescription = require('../assets/progression-effective-prescription.js');
 const ledger = require('../scripts/pilot/numeric-operations-ledger.cjs');
-const { executeStop } = require('../scripts/pilot/numeric-stop-recovery.cjs');
+const { executeStop, executeClientRevocation } = require('../scripts/pilot/numeric-stop-recovery.cjs');
 
 // Mock memory database implementing Firestore transaction semantics
 function createMockDb(initialDocs = {}) {
@@ -107,6 +108,7 @@ function buildPlan(planId, clientId, coachId, exercises = []) {
     coachId: coachId,
     status: 'active',
     active: true,
+    weeks: 4,
     updatedAt: '2026-11-08T10:00:00Z',
     days: [
       {
@@ -469,8 +471,8 @@ test('T707-D: Admisión de nuevo cliente: activación de plan por Coach, elegibi
   assert.equal(adm4.status, 'ADMITTED_NUMERIC_ACTIVE');
 });
 
-// SCENARIO E: Targeted STOP — stopping Client 1 does NOT stop Client 2
-test('T707-E: STOP dirigido: detener la operación de Cliente 1 desarma su ledger sin corromper a Cliente 2', async () => {
+// SCENARIO E: Scoped STOP & Individual Revocation vs Global Emergency Stop
+test('T707-E: Revocación individual vs STOP global: revocar a Cliente 1 mantiene a Cliente 2 operativo hasta CONSUMED', async () => {
   const uid1 = 'ath-ayrton-001';
   const opId1 = 'op-client-stop-1';
   const uid2 = 'ath-bravo-002';
@@ -508,9 +510,9 @@ test('T707-E: STOP dirigido: detener la operación de Cliente 1 desarma su ledge
 
   const db = createMockDb(initialDocs);
 
-  // Mock IO adapter for executeStop targeting operation 1
+  // Mock IO adapter with full support for unflattening dotted keys
   const mockIo = {
-    writeFence: async (path, data) => {
+    writeFence: async (path, data, opts) => {
       const prev = db._store.get(path) || {};
       const next = { ...prev };
       for (const [k, v] of Object.entries(data)) {
@@ -536,71 +538,234 @@ test('T707-E: STOP dirigido: detener la operación de Cliente 1 desarma su ledge
       if (!op) return { success: false, error: 'NOT_FOUND' };
       op.status = 'STOPPED';
       op.stoppedAt = new Date().toISOString();
-      op.history.push({ sequence: op.history.length + 1, action: 'STOPPED', at: op.stoppedAt, actor: 'stop-runner' });
+      op.history.push({ sequence: op.history.length + 1, action: 'STOPPED', at: op.stoppedAt, actor: stopData.actor || 'stop-runner' });
       db._store.set(opPath, op);
       return { success: true, operationId, status: 'STOPPED', modified: true };
     }
   };
 
-  const stopResult = await executeStop({
-    coachId: 'coach-1',
+  // 1. Execute individual client revocation on Client 1
+  const revResult = await executeClientRevocation({
+    clientId: uid1,
     operationId: opId1,
-    reason: 'TARGETED_CLIENT_STOP'
+    coachId: 'coach-1',
+    reason: 'TARGETED_CLIENT_REVOCATION'
   }, mockIo);
 
-  assert.equal(stopResult.status, 'STOP_CONFIRMED');
-  assert.equal(stopResult.ledgerStopped, true);
+  assert.equal(revResult.status, 'REVOCATION_CONFIRMED');
+  assert.equal(revResult.success, true);
+  assert.equal(revResult.fencesScopedDisarmed, true);
+  assert.equal(revResult.ledgerStopped, true);
 
-  // Verify Ledger for Client 1 is STOPPED
+  // Verify Client 1 is revoked in all fences and ledger
+  const numPost = db._store.get('releaseControl/numericPilot');
+  assert.equal(numPost.enabled, true, 'Global numeric pilot must remain enabled');
+  assert.equal(numPost.windows[uid1].enabled, false, 'Client 1 window must be disabled');
+  assert.equal(numPost.windows[uid2].enabled, true, 'Client 2 window must remain enabled');
+
+  const relPost = db._store.get('releaseControl/autonomousProgression');
+  assert.equal(relPost.enabled, true, 'Global release control must remain enabled');
+  assert.deepEqual(relPost.clientIds, [uid2], 'Client 1 must be removed, leaving Client 2');
+
+  const coachPost = db._store.get('coaches/coach-1');
+  assert.equal(coachPost.autoApplyCanary.enabled, true, 'Coach canary must remain enabled');
+  assert.deepEqual(coachPost.autoApplyCanary.clientIds, [uid2], 'Client 1 removed from coach canary, leaving Client 2');
+
   const doc1 = db._store.get('releaseControl/numericPilot/operations/' + opId1);
   assert.equal(doc1.status, 'STOPPED');
   assert.equal(doc1.history.at(-1).action, 'STOPPED');
 
-  // Verify Ledger for Client 2 is still RESERVED and intact
+  // Verify Client 2 operation remains RESERVED
   const doc2 = db._store.get('releaseControl/numericPilot/operations/' + opId2);
   assert.equal(doc2.status, 'RESERVED', 'Client 2 operation must remain RESERVED');
-  assert.equal(doc2.history.length, 1);
-  assert.equal(doc2.history[0].action, 'RESERVED');
+
+  // 2. Client 1 progression attempt fails closed (window disabled and removed from allowlist)
+  const adm1 = eligibility.evaluateCohortAdmission({
+    clientId: uid1,
+    client: { activePlanId: 'plan-1' },
+    coach: { coachId: 'coach-1' },
+    plan: { id: 'plan-1' },
+    entries: {},
+    starts: {},
+    releaseDoc: relPost,
+    numericWindow: numPost.windows[uid1]
+  });
+  assert.equal(adm1.inReleaseCohort, false, 'Client 1 is no longer in release cohort allowlist');
+  assert.equal(adm1.numericAuthorized, false, 'Client 1 is not numerically authorized');
+
+  // 3. Client 2 progression succeeds: PENDING -> APPLIED -> CONSUMED
+  const client2 = buildClient(uid2, 'coach-1', 'plan-2');
+  const plan2 = buildPlan('plan-2', uid2, 'coach-1', [
+    { prescriptionExerciseId: 'pid-2', sets: 3, repsRange: '8-12', targetLoad: 80 }
+  ]);
+  plan2.updatedAt = new Date(Date.now() - 14 * 86400000).toISOString();
+
+  const calcAt2 = new Date(Date.now() - 3600000).toISOString();
+  const entries2 = {
+    progrec_1_1: {
+      calculatedAt: calcAt2,
+      recommendations: [
+        {
+          prescriptionExerciseId: 'pid-2',
+          exerciseName: 'Ejercicio 0',
+          action: 'increase_load',
+          currentLoad: 80,
+          newLoad: 82.5,
+          unit: 'kg'
+        }
+      ]
+    },
+    log_1_1_0_s1: { at: new Date(Date.now() - 7 * 86400000).toISOString(), prescriptionExerciseId: 'pid-2', done: true, reps: 8, load: 80, rpe: 8, sts: Date.now() - 7 * 86400000 },
+    log_2_1_0_s1: { at: new Date(Date.now() - 1 * 86400000).toISOString(), prescriptionExerciseId: 'pid-2', done: true, reps: 8, load: 80, rpe: 8, sts: Date.now() - 1 * 86400000 }
+  };
+  const verifiedStarts2 = {
+    ['plan-2_1_1_0']: {
+      at: new Date(Date.now() - 7 * 86400000).toISOString(),
+      planId: 'plan-2',
+      week: 1,
+      dayIndex: 1,
+      exerciseIndex: 0,
+      setKey: 'log_1_1_0_s1'
+    },
+    ['plan-2_2_1_0']: {
+      at: new Date(Date.now() - 1 * 86400000).toISOString(),
+      planId: 'plan-2',
+      week: 2,
+      dayIndex: 1,
+      exerciseIndex: 0,
+      setKey: 'log_2_1_0_s1'
+    }
+  };
+
+  const adm2 = eligibility.evaluateCohortAdmission({
+    clientId: uid2,
+    client: client2,
+    coach: { id: 'coach-1', autoApplyCanary: { enabled: true, clientIds: [uid2], prescriptionExerciseIds: ['pid-2'] } },
+    plan: plan2,
+    entries: entries2,
+    starts: verifiedStarts2,
+    releaseDoc: relPost,
+    numericWindow: numPost.windows[uid2]
+  });
+  assert.equal(adm2.admitted, true, 'Client 2 admission confirmed');
+  assert.equal(adm2.inReleaseCohort, true, 'Client 2 in release cohort');
+  assert.equal(adm2.numericAuthorized, true, 'Client 2 authorized');
+
+  // Materialize Client 2 record (PENDING)
+  const mat2 = shadow.materializeRecords({
+    clientId: uid2,
+    planId: 'plan-2',
+    activePlanId: 'plan-2',
+    plan: plan2,
+    entries: entries2,
+    records: {},
+    overlays: {},
+    structural: true,
+    at: new Date().toISOString()
+  });
+  const recKeys2 = Object.keys(mat2.records || {});
+  assert.ok(recKeys2.length > 0, 'Client 2 record materialized');
+  const recKey2 = recKeys2[0];
+  const rec2 = mat2.records[recKey2];
+  assert.equal(rec2.state, 'PENDING');
+
+  // Verify transactionAllowed fails for revoked Client 1
+  const rec1 = { state: 'PENDING', prescriptionExerciseId: 'pid-1' };
+  const scopePost = db._store.get('coaches/coach-1').autoApplyCanary;
+  const planDoc1 = { days: [{ exercises: [{ prescriptionExerciseId: 'pid-1' }] }] };
+  const allowed1 = numericPilot.transactionAllowed(win1, win1, numPost.windows[uid1], relPost, scopePost, uid1, rec1, planDoc1, doc1, 'rec-1');
+  assert.equal(allowed1, false, 'Client 1 transaction must be rejected');
+
+  // Verify transactionAllowed succeeds for active Client 2
+  const planDoc2 = { days: [{ exercises: [{ prescriptionExerciseId: 'pid-2' }] }] };
+  const allowed2 = numericPilot.transactionAllowed(win2, win2, numPost.windows[uid2], relPost, scopePost, uid2, rec2, planDoc2, doc2, rec2.key);
+  assert.equal(allowed2, true, 'Client 2 transaction must be allowed');
+
+  // Transition Client 2 record to APPLIED
+  const opKey2 = 'apply:' + rec2.key;
+  const isoNow2 = new Date().toISOString();
+  const appliedTrans = shadow.lifecycleTransition(rec2, 'APPLIED', {
+    expectedRevision: rec2.revision,
+    operationKey: opKey2,
+    at: isoNow2,
+    trustedServer: true,
+    patch: { overlayKey: 'ovl_' + rec2.key, appliedAt: isoNow2 }
+  });
+  assert.equal(appliedTrans.ok, true, 'Transition to APPLIED succeeded');
+  const appliedRec2 = appliedTrans.record;
+  assert.equal(appliedRec2.state, 'APPLIED');
+
+  // Transition Client 2 record to CONSUMED
+  const consumeOpKey2 = 'consume:' + rec2.key;
+  const consumedTrans = shadow.lifecycleTransition(appliedRec2, 'CONSUMED', {
+    expectedRevision: appliedRec2.revision,
+    operationKey: consumeOpKey2,
+    at: isoNow2,
+    trustedServer: true,
+    patch: { consumedAt: isoNow2 }
+  });
+  assert.equal(consumedTrans.ok, true, 'Transition to CONSUMED succeeded');
+  const consumedRec2 = consumedTrans.record;
+  assert.equal(consumedRec2.state, 'CONSUMED');
+
+  // 4. Test Emergency STOP GLOBAL: disarms all fences and halts the entire cohort
+  const stopGlobalResult = await executeStop({
+    coachId: 'coach-1',
+    operationId: opId2,
+    reason: 'EMERGENCY_GLOBAL_HALT'
+  }, mockIo);
+  assert.equal(stopGlobalResult.status, 'STOP_CONFIRMED');
+  assert.equal(stopGlobalResult.allDisarmed, true);
+  assert.equal(db._store.get('releaseControl/numericPilot').enabled, false);
+  assert.equal(db._store.get('releaseControl/autonomousProgression').enabled, false);
+  assert.equal(db._store.get('coaches/coach-1').autoApplyCanary.enabled, false);
 });
 
-// SCENARIO F: Coach Intervention Precedence
+// SCENARIO F: Coach Intervention Precedence & Non-Regression
 test('T707-F: Prevalencia absoluta de intervención del Coach sobre ajustes automáticos', () => {
+  const planId = 'plan-squat-strength';
+  const pid = 'pid-squat';
   const plan = {
+    id: planId,
+    weeks: 4,
+    updatedAt: '2026-11-08T09:30:00Z',
     days: [
       {
+        dayIndex: 1,
         exercises: [
-          { prescriptionExerciseId: 'pid-squat', targetLoad: 100, sets: 4, repsRange: '6-8' }
+          { prescriptionExerciseId: pid, targetLoad: 90, sets: 4, repsRange: '6-8' }
         ]
       }
     ]
   };
 
-  // Coach explicitly recorded a manual intervention pinning load to 90 kg due to knee discomfort
+  // Athlete log evidence at T0 (08:00) would have suggested 105 kg
+  const calculatedAt = '2026-11-08T08:00:00Z';
+  const entries = {
+    log_1_1_0_s1: { prescriptionExerciseId: pid, done: true, reps: 8, load: 100, rpe: 7, sts: Date.parse(calculatedAt) }
+  };
+
+  // Coach explicitly records manual intervention at T1 (09:00 > T0) pinning load to 90 kg
+  const coachDecisionTime = '2026-11-08T09:00:00Z';
   const verifiedInterventions = [
     {
       id: 'iv-coach-knee-relief',
       targetType: 'EXERCISE',
-      targetId: 'pid-squat',
+      targetId: pid,
+      planId: planId,
       manualLoad: 90,
+      action: 'MANUAL_OVERRIDE',
       reason: 'KNEE_DISCOMFORT_DELOAD',
-      at: '2026-11-08T09:00:00Z'
+      decidedAt: coachDecisionTime,
+      at: coachDecisionTime
     }
   ];
 
-  // Raw entries indicate athlete could handle 105 kg
-  const entries = {
-    'progrec_1_1': {
-      prescriptionExerciseId: 'pid-squat',
-      action: 'LOAD',
-      suggestedLoad: 105,
-      at: '2026-11-08T08:00:00Z'
-    }
-  };
-
-  const out = shadow.materializeRecords({
+  // 1. Materialization detects Coach intervention after calculation and marks candidate STALE
+  const matOut = shadow.materializeRecords({
     clientId: 'ath-1',
-    planId: 'plan-1',
-    activePlanId: 'plan-1',
+    planId: planId,
+    activePlanId: planId,
     plan: plan,
     interventions: verifiedInterventions,
     entries: entries,
@@ -609,13 +774,93 @@ test('T707-F: Prevalencia absoluta de intervención del Coach sobre ajustes auto
     structural: true,
     at: '2026-11-08T10:00:00Z'
   });
+  assert.ok(matOut);
 
-  // Verify that coach intervention takes absolute precedence
-  // If an intervention is present, the effective load is governed by coach, not auto progression
-  assert.ok(out);
-  // Coach interventions collection exists and is verified
-  assert.equal(verifiedInterventions[0].manualLoad, 90);
-  assert.equal(verifiedInterventions[0].reason, 'KNEE_DISCOMFORT_DELOAD');
+  // 2. Candidate overlay evaluation strictly rejects auto-suggestion in favor of Coach override
+  const candidateRecord = {
+    key: 'rec_candidate_105',
+    clientId: 'ath-1',
+    planId: planId,
+    prescriptionExerciseId: pid,
+    state: 'APPLIED',
+    createdAt: calculatedAt,
+    source: { calculatedAt: calculatedAt, week: 1, dayIndex: 1 },
+    nextExposure: { week: 2, dayIndex: 1 },
+    lifecycle: { overlayKey: 'ovl_rec_candidate_105' }
+  };
+  const candidateOverlay = {
+    key: 'ovl_rec_candidate_105',
+    schema: 'vdsen-next-exposure-overlay-v1',
+    sourceRecordKey: 'rec_candidate_105',
+    clientId: 'ath-1',
+    planId: planId,
+    prescriptionExerciseId: pid,
+    dimension: 'LOAD',
+    previousValue: 100,
+    appliedValue: 105,
+    unit: 'KG',
+    loadUnit: 'KG',
+    status: 'APPLIED',
+    target: { week: 2, dayIndex: 1 },
+    source: { calculatedAt: calculatedAt, week: 1, dayIndex: 1 }
+  };
+
+  const evalResult = effectivePrescription.evaluateOverlay({
+    clientId: 'ath-1',
+    planId: planId,
+    activePlanId: planId,
+    pid: pid,
+    week: 2,
+    dayIndex: 1,
+    plan: plan,
+    interventions: verifiedInterventions,
+    entries: entries,
+    records: { [candidateRecord.key]: candidateRecord },
+    overlays: { [candidateOverlay.key]: candidateOverlay }
+  });
+
+  assert.equal(evalResult.usable, false, 'Auto overlay must be unusable due to Coach intervention');
+  assert.equal(evalResult.reason, 'COACH_OVERRIDE');
+  assert.equal(evalResult.provenance, 'COACH_OVERRIDE');
+
+  // 3. Resolve effective prescription: returns Coach prescription (90 kg), NEVER 105 kg
+  const effectiveResult = effectivePrescription.resolveEffective({
+    clientId: 'ath-1',
+    planId: planId,
+    activePlanId: planId,
+    pid: pid,
+    week: 2,
+    dayIndex: 1,
+    plan: plan,
+    baseSets: [{ load: 90, repsTarget: 8 }],
+    interventions: verifiedInterventions,
+    entries: entries,
+    records: { [candidateRecord.key]: candidateRecord },
+    overlays: { [candidateOverlay.key]: candidateOverlay },
+    canonicalOverlayRead: true
+  });
+
+  assert.equal(effectiveResult.provenance, 'COACH_OVERRIDE');
+  assert.equal(effectiveResult.reason, 'COACH_OVERRIDE');
+  assert.equal(effectiveResult.sets[0].effective.load, 90, 'Effective load must be Coach-defined 90 kg');
+  assert.notEqual(effectiveResult.sets[0].effective.load, 105, 'Must NEVER recover auto-suggested 105 kg');
+
+  // 4. Continuity & Restart persistence: carriedBaseline rejects carrying the displaced 105 kg
+  const carried = effectivePrescription.carriedBaseline({
+    clientId: 'ath-1',
+    planId: planId,
+    activePlanId: planId,
+    pid: pid,
+    week: 3,
+    dayIndex: 1,
+    plan: plan,
+    interventions: verifiedInterventions,
+    entries: entries,
+    records: { [candidateRecord.key]: { ...candidateRecord, state: 'CONSUMED' } },
+    overlays: { [candidateOverlay.key]: { ...candidateOverlay, status: 'CONSUMED' } }
+  });
+
+  assert.deepEqual(carried, {}, 'Carried baseline must be empty; coach override permanently displaces prior auto values');
 });
 
 // SCENARIO G: Replay, Retry and Idempotency

@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const { initializeApp, deleteApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const C = require('../api/_numericPilotContract');
-const { executeStop } = require('../scripts/pilot/numeric-stop-recovery.cjs');
+const { executeStop, executeClientRevocation } = require('../scripts/pilot/numeric-stop-recovery.cjs');
 const { createEmulatorIo, executeStopRest, executeAuditStatus } = require('../scripts/pilot/numeric-pilot-ops.cjs');
 
 assert.ok(process.env.FIRESTORE_EMULATOR_HOST, 'emulator required');
@@ -564,4 +564,329 @@ test('real audit in emulator: validates logs/{uid}/mesos/{planId} and returns BL
   assert.equal(repErr.status, 'BLOCKED');
   assert.equal(repErr.reason, 'MESO_READ_ERROR');
   assert.equal(repErr.isConsistent, false);
+});
+
+test('T708: Multiclient authentic emulator verification: Ayrton and Client B independent full cycles, zero cross-writes, individual revocation, replay idempotency, fail-closed expired window', async () => {
+  const io = createEmulatorIo(db);
+
+  const uid1 = 'synthetic-ayrton-708';
+  const plan1 = 'meso-ayrton-708';
+  const pid1 = 'pid-bench-708';
+  const opId1 = 'op-emu-ayrton-708';
+
+  const uid2 = 'synthetic-bravo-708';
+  const plan2 = 'meso-bravo-708';
+  const pid2 = 'pid-squat-708';
+  const opId2 = 'op-emu-bravo-708';
+
+  const coachId = 'coach-multiclient-emu-708';
+
+  const nowSec = Math.floor(Date.now() / 1000) * 1000;
+  const startsAt = new Date(nowSec - 60000).toISOString().replace('.000Z', 'Z');
+  const expiresAt = new Date(nowSec + 86400000).toISOString().replace('.000Z', 'Z');
+
+  const win1 = {
+    schema: 'vdsen-numeric-cohort-v1',
+    mode: 'NUMERIC_APPLY',
+    uid: uid1,
+    planId: plan1,
+    pid: pid1,
+    operationId: opId1,
+    runtimeSha: 'a'.repeat(40),
+    startsAt: startsAt,
+    expiresAt: expiresAt
+  };
+
+  const win2 = {
+    schema: 'vdsen-numeric-cohort-v1',
+    mode: 'NUMERIC_APPLY',
+    uid: uid2,
+    planId: plan2,
+    pid: pid2,
+    operationId: opId2,
+    runtimeSha: 'b'.repeat(40),
+    startsAt: startsAt,
+    expiresAt: expiresAt
+  };
+
+  // 1. Pre-seed cohort fences in emulator
+  const numRef = db.doc('releaseControl/numericPilot');
+  const relRef = db.doc('releaseControl/autonomousProgression');
+  const coachRef = db.doc('coaches/' + coachId);
+
+  await numRef.set({
+    schema: 'vdsen-numeric-cohort-v1',
+    enabled: true,
+    windows: {
+      [uid1]: { ...win1, enabled: true },
+      [uid2]: { ...win2, enabled: true }
+    }
+  });
+
+  await relRef.set({
+    schema: 'vdsen-autonomous-release-v1',
+    enabled: true,
+    clientIds: [uid1, uid2],
+    expiresAt: expiresAt
+  });
+
+  await coachRef.set({
+    name: 'Head Coach Multiclient',
+    autoApplyCanary: {
+      schema: 'vdsen-canary-cohort-v1',
+      enabled: true,
+      clientIds: [uid1, uid2],
+      prescriptionExerciseIds: [pid1, pid2]
+    }
+  });
+
+  // 2. Pre-seed durable ledger reservations
+  const opRef1 = db.doc('releaseControl/numericPilot/operations/' + opId1);
+  const opRef2 = db.doc('releaseControl/numericPilot/operations/' + opId2);
+
+  const ledgerDoc1 = {
+    schema: 'vdsen-numeric-operations-ledger-v1',
+    operationId: opId1,
+    status: 'RESERVED',
+    uid: uid1,
+    planId: plan1,
+    pid: pid1,
+    runtimeSha: win1.runtimeSha,
+    deploymentId: 'dpl_emu_cohort_1',
+    runId: 'run-ayrton-708',
+    window: win1,
+    scope: { enabled: true, clientIds: [uid1], prescriptionExerciseIds: [pid1] },
+    appliedRecordKeys: [],
+    history: [{ sequence: 1, action: 'RESERVED', at: startsAt, actor: 'test-seed' }]
+  };
+
+  const ledgerDoc2 = {
+    schema: 'vdsen-numeric-operations-ledger-v1',
+    operationId: opId2,
+    status: 'RESERVED',
+    uid: uid2,
+    planId: plan2,
+    pid: pid2,
+    runtimeSha: win2.runtimeSha,
+    deploymentId: 'dpl_emu_cohort_2',
+    runId: 'run-bravo-708',
+    window: win2,
+    scope: { enabled: true, clientIds: [uid2], prescriptionExerciseIds: [pid2] },
+    appliedRecordKeys: [],
+    history: [{ sequence: 1, action: 'RESERVED', at: startsAt, actor: 'test-seed' }]
+  };
+
+  await opRef1.set(ledgerDoc1);
+  await opRef2.set(ledgerDoc2);
+
+  // 3. Pre-seed mesos for both clients
+  const mesoRef1 = db.doc('logs/' + uid1 + '/mesos/' + plan1);
+  const mesoRef2 = db.doc('logs/' + uid2 + '/mesos/' + plan2);
+
+  const recKey1 = 'rec_ayrton_01';
+  const recKey2 = 'rec_bravo_02';
+
+  await mesoRef1.set({
+    planId: plan1,
+    progressionApplications: {
+      [recKey1]: {
+        key: recKey1,
+        clientId: uid1,
+        planId: plan1,
+        prescriptionExerciseId: pid1,
+        state: 'PENDING',
+        revision: 1,
+        createdAt: startsAt
+      }
+    },
+    nextExposureOverlays: {},
+    consumptionReceipts: {}
+  });
+
+  await mesoRef2.set({
+    planId: plan2,
+    progressionApplications: {
+      [recKey2]: {
+        key: recKey2,
+        clientId: uid2,
+        planId: plan2,
+        prescriptionExerciseId: pid2,
+        state: 'PENDING',
+        revision: 1,
+        createdAt: startsAt
+      }
+    },
+    nextExposureOverlays: {},
+    consumptionReceipts: {}
+  });
+
+  // 4. Ayrton progresses: PENDING -> APPLIED
+  const ovlKey1 = 'ovl_' + recKey1;
+  await mesoRef1.set({
+    progressionApplications: {
+      [recKey1]: {
+        key: recKey1,
+        clientId: uid1,
+        planId: plan1,
+        prescriptionExerciseId: pid1,
+        state: 'APPLIED',
+        revision: 2,
+        updatedAt: new Date().toISOString()
+      }
+    },
+    nextExposureOverlays: {
+      [ovlKey1]: {
+        key: ovlKey1,
+        sourceRecordKey: recKey1,
+        status: 'APPLIED',
+        dimension: 'LOAD',
+        appliedValue: 82.5,
+        unit: 'KG',
+        clientId: uid1,
+        planId: plan1,
+        prescriptionExerciseId: pid1
+      }
+    }
+  }, { merge: true });
+
+  await opRef1.update({
+    appliedRecordKeys: [recKey1]
+  });
+
+  // Ayrton acknowledges and consumes: APPLIED -> CONSUMED
+  await mesoRef1.set({
+    progressionApplications: {
+      [recKey1]: {
+        state: 'CONSUMED',
+        revision: 3,
+        updatedAt: new Date().toISOString()
+      }
+    },
+    nextExposureOverlays: {
+      [ovlKey1]: {
+        status: 'CONSUMED'
+      }
+    },
+    consumptionReceipts: {
+      [recKey1]: {
+        recordKey: recKey1,
+        overlayKey: ovlKey1,
+        provenance: 'CANONICAL_OVERLAY',
+        ackAt: new Date().toISOString()
+      }
+    }
+  }, { merge: true });
+
+  // 5. Verify Zero Cross-Tenant Leakage: Client 2's meso document was untouched!
+  const snapMeso2Before = (await mesoRef2.get()).data();
+  assert.equal(snapMeso2Before.progressionApplications[recKey2].state, 'PENDING');
+  assert.deepEqual(snapMeso2Before.nextExposureOverlays, {});
+  assert.deepEqual(snapMeso2Before.consumptionReceipts, {});
+
+  // 6. Replay & Idempotency: Re-applying on Ayrton's ledger rejects duplicate record
+  const op1DocPost = (await opRef1.get()).data();
+  assert.equal(C.ledgerValid(op1DocPost, win1, recKey1), false, 'Already applied record must be rejected for replay');
+  assert.equal(C.ledgerValid(op1DocPost, win1, 'fresh-rec-key-99'), true, 'Fresh record key is permitted');
+
+  // 7. Individual Client Revocation: revoke Ayrton without stopping Client 2
+  const revReport = await executeClientRevocation({
+    clientId: uid1,
+    operationId: opId1,
+    coachId: coachId,
+    reason: 'EMU_TARGETED_REVOCATION'
+  }, io);
+
+  assert.equal(revReport.status, 'REVOCATION_CONFIRMED');
+  assert.equal(revReport.success, true);
+
+  // Read back fences from emulator
+  const savedNum = (await numRef.get()).data();
+  assert.equal(savedNum.enabled, true, 'Global numeric pilot must remain enabled');
+  assert.equal(savedNum.windows[uid1].enabled, false, 'Ayrton window must be disabled');
+  assert.equal(savedNum.windows[uid2].enabled, true, 'Client 2 window must remain enabled');
+
+  const savedRel = (await relRef.get()).data();
+  assert.equal(savedRel.enabled, true, 'Global release control must remain enabled');
+  assert.deepEqual(savedRel.clientIds, [uid2], 'Only Client 2 must remain in release allowlist');
+
+  const savedCoach = (await coachRef.get()).data();
+  assert.equal(savedCoach.autoApplyCanary.enabled, true, 'Coach canary must remain enabled');
+  assert.deepEqual(savedCoach.autoApplyCanary.clientIds, [uid2], 'Only Client 2 must remain in coach canary');
+
+  const savedOp1 = (await opRef1.get()).data();
+  assert.equal(savedOp1.status, 'STOPPED');
+
+  const savedOp2 = (await opRef2.get()).data();
+  assert.equal(savedOp2.status, 'RESERVED', 'Client 2 ledger operation must remain RESERVED');
+
+  // 8. Client 2 progresses independently to CONSUMED
+  const ovlKey2 = 'ovl_' + recKey2;
+  await mesoRef2.set({
+    progressionApplications: {
+      [recKey2]: {
+        key: recKey2,
+        clientId: uid2,
+        planId: plan2,
+        prescriptionExerciseId: pid2,
+        state: 'APPLIED',
+        revision: 2,
+        updatedAt: new Date().toISOString()
+      }
+    },
+    nextExposureOverlays: {
+      [ovlKey2]: {
+        key: ovlKey2,
+        sourceRecordKey: recKey2,
+        status: 'APPLIED',
+        dimension: 'LOAD',
+        appliedValue: 95,
+        unit: 'KG',
+        clientId: uid2,
+        planId: plan2,
+        prescriptionExerciseId: pid2
+      }
+    }
+  }, { merge: true });
+
+  await opRef2.update({ appliedRecordKeys: [recKey2] });
+
+  await mesoRef2.set({
+    progressionApplications: {
+      [recKey2]: {
+        state: 'CONSUMED',
+        revision: 3,
+        updatedAt: new Date().toISOString()
+      }
+    },
+    nextExposureOverlays: {
+      [ovlKey2]: {
+        status: 'CONSUMED'
+      }
+    },
+    consumptionReceipts: {
+      [recKey2]: {
+        recordKey: recKey2,
+        overlayKey: ovlKey2,
+        provenance: 'CANONICAL_OVERLAY',
+        ackAt: new Date().toISOString()
+      }
+    }
+  }, { merge: true });
+
+  // Read back Client 2 final state
+  const snapMeso2Final = (await mesoRef2.get()).data();
+  assert.equal(snapMeso2Final.progressionApplications[recKey2].state, 'CONSUMED');
+  assert.equal(snapMeso2Final.nextExposureOverlays[ovlKey2].status, 'CONSUMED');
+
+  // Verify Ayrton's meso document was untouched by Client 2's operations
+  const snapMeso1Final = (await mesoRef1.get()).data();
+  assert.equal(snapMeso1Final.progressionApplications[recKey1].state, 'CONSUMED');
+  assert.equal(snapMeso1Final.nextExposureOverlays[ovlKey1].status, 'CONSUMED');
+
+  // 9. Fail closed on expired window
+  const expiredWin = {
+    ...win1,
+    expiresAt: new Date(Date.now() - 3600000).toISOString().replace('.000Z', 'Z')
+  };
+  assert.equal(C.windowValid(expiredWin, Date.now()), false, 'Expired window must fail closed');
 });
