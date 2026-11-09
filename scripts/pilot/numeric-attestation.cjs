@@ -175,38 +175,76 @@ async function attestRuntime(opts) {
   const teamId = opts.teamId || DEFAULT_TEAM_ID;
   const token = opts.vercelToken || process.env.VERCEL_TOKEN;
 
+  const isCohort = opts.schema === 'vdsen-numeric-cohort-v1' || opts.cohort === true || opts.isCohort === true || opts.expectedSchema === 'vdsen-numeric-cohort-v1';
+
   // 1. Mandatory Identity Validations
-  const uid = opts.expectedUid || C.UID;
-  if (uid !== C.UID) {
-    return {
-      schema: 'vdsen-numeric-runtime-attestation-v1',
-      attested: false,
-      status: 'REJECTED',
-      reason: 'FOREIGN_UID',
-      message: 'Attestation rejected: UID is not authorized for numeric pilot.'
-    };
+  const uid = opts.expectedUid || (isCohort ? null : C.UID);
+  if (!isCohort) {
+    if (uid !== C.UID) {
+      return {
+        schema: 'vdsen-numeric-runtime-attestation-v1',
+        attested: false,
+        status: 'REJECTED',
+        reason: 'FOREIGN_UID',
+        message: 'Attestation rejected: UID is not authorized for numeric pilot.'
+      };
+    }
+  } else {
+    if (!uid || typeof uid !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(uid) || uid.includes('*')) {
+      return {
+        schema: 'vdsen-numeric-runtime-attestation-v1',
+        attested: false,
+        status: 'REJECTED',
+        reason: 'INVALID_COHORT_UID',
+        message: 'Attestation rejected: UID is not a valid identifier for cohort.'
+      };
+    }
   }
 
-  const pid = opts.expectedPid || C.PID;
-  if (pid !== C.PID) {
-    return {
-      schema: 'vdsen-numeric-runtime-attestation-v1',
-      attested: false,
-      status: 'REJECTED',
-      reason: 'FOREIGN_PID',
-      message: 'Attestation rejected: PID is not authorized for numeric pilot.'
-    };
+  const pid = opts.expectedPid || (isCohort ? null : C.PID);
+  if (!isCohort) {
+    if (pid !== C.PID) {
+      return {
+        schema: 'vdsen-numeric-runtime-attestation-v1',
+        attested: false,
+        status: 'REJECTED',
+        reason: 'FOREIGN_PID',
+        message: 'Attestation rejected: PID is not authorized for numeric pilot.'
+      };
+    }
+  } else {
+    if (!pid || typeof pid !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(pid) || pid.includes('*')) {
+      return {
+        schema: 'vdsen-numeric-runtime-attestation-v1',
+        attested: false,
+        status: 'REJECTED',
+        reason: 'INVALID_COHORT_PID',
+        message: 'Attestation rejected: PID is not a valid identifier for cohort.'
+      };
+    }
   }
 
-  const planId = opts.expectedPlanId || C.PLAN;
-  if (planId !== C.PLAN) {
-    return {
-      schema: 'vdsen-numeric-runtime-attestation-v1',
-      attested: false,
-      status: 'REJECTED',
-      reason: 'FOREIGN_PLAN',
-      message: 'Attestation rejected: Plan is not authorized for numeric pilot.'
-    };
+  const planId = opts.expectedPlanId || (isCohort ? null : C.PLAN);
+  if (!isCohort) {
+    if (planId !== C.PLAN) {
+      return {
+        schema: 'vdsen-numeric-runtime-attestation-v1',
+        attested: false,
+        status: 'REJECTED',
+        reason: 'FOREIGN_PLAN',
+        message: 'Attestation rejected: Plan is not authorized for numeric pilot.'
+      };
+    }
+  } else {
+    if (!planId || typeof planId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(planId) || planId.includes('*')) {
+      return {
+        schema: 'vdsen-numeric-runtime-attestation-v1',
+        attested: false,
+        status: 'REJECTED',
+        reason: 'INVALID_COHORT_PLAN',
+        message: 'Attestation rejected: Plan is not a valid identifier for cohort.'
+      };
+    }
   }
 
   if (!opts.expectedAlias || typeof opts.expectedAlias !== 'string') {
