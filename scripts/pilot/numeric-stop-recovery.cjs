@@ -332,24 +332,68 @@ async function executeClientRevocation(opts, io) {
           tx.get(opRef)
         ]);
 
-        // 1. numericPilot fence
-        if (numSnap.exists) {
-          const numData = numSnap.data() || {};
-          if (numData.windows && typeof numData.windows === 'object' && numData.windows[clientId]) {
-            const updatedWindows = { ...numData.windows };
-            updatedWindows[clientId] = {
-              ...updatedWindows[clientId],
-              enabled: false,
-              revokedAt: isoNow,
-              revokeReason: reason
-            };
-            tx.set(numRef, { windows: updatedWindows }, { merge: true });
-          } else if (numData.uid === clientId) {
-            tx.set(numRef, { enabled: false, stoppedAt: isoNow, stoppedOperation: operationId, stopReason: reason }, { merge: true });
-          }
+        // 1. Authoritative window verification in releaseControl/numericPilot
+        if (!numSnap.exists) {
+          throw new Error('NUMERIC_PILOT_FENCE_MISSING: releaseControl/numericPilot document does not exist.');
+        }
+        const numData = numSnap.data() || {};
+        const targetWindow = (numData.windows && typeof numData.windows === 'object' && numData.windows[clientId])
+          || (numData.uid === clientId ? (numData.window || numData) : null);
+
+        if (!targetWindow) {
+          throw new Error('WINDOW_NOT_FOUND: No authorized window exists for client ' + clientId);
         }
 
-        // 2. releaseControl/autonomousProgression (atomic remove, preserving all concurrent clients)
+        // Validate window identity
+        if (targetWindow.uid && targetWindow.uid !== clientId) {
+          throw new Error('IDENTITY_MISMATCH: Window UID ' + targetWindow.uid + ' does not match clientId ' + clientId);
+        }
+        if (targetWindow.operationId && targetWindow.operationId !== operationId) {
+          throw new Error('OPERATION_MISMATCH: Window operationId ' + targetWindow.operationId + ' does not match requested ' + operationId);
+        }
+        if (targetWindow.coachId && coachId !== 'unknown-coach' && targetWindow.coachId !== coachId) {
+          throw new Error('COACH_MISMATCH: Window coachId ' + targetWindow.coachId + ' does not match ' + coachId);
+        }
+
+        // 2. Authoritative operations ledger verification
+        if (!opSnap.exists) {
+          throw new Error('LEDGER_RECORD_MISSING: Operations ledger record does not exist for operationId ' + operationId);
+        }
+        const opData = opSnap.data() || {};
+
+        // Cross-client defense: an operation belonging to another client must NEVER be stopped via a different clientId
+        if (opData.uid && opData.uid !== clientId) {
+          throw new Error('CROSS_CLIENT_OPERATION_DENIED: Operation ' + operationId + ' belongs to client ' + opData.uid + ', not ' + clientId);
+        }
+        if (opData.operationId && opData.operationId !== operationId) {
+          throw new Error('OPERATION_ID_MISMATCH: Ledger operationId ' + opData.operationId + ' does not match requested ' + operationId);
+        }
+        if (targetWindow.planId && opData.planId && opData.planId !== targetWindow.planId) {
+          throw new Error('PLAN_MISMATCH: Ledger planId ' + opData.planId + ' does not match window planId ' + targetWindow.planId);
+        }
+        if (targetWindow.pid && opData.pid && opData.pid !== targetWindow.pid) {
+          throw new Error('PID_MISMATCH: Ledger pid ' + opData.pid + ' does not match window pid ' + targetWindow.pid);
+        }
+        const ledgerCoachId = opData.coachId || (opData.window && opData.window.coachId);
+        if (ledgerCoachId && coachId !== 'unknown-coach' && ledgerCoachId !== coachId) {
+          throw new Error('COACH_MISMATCH: Ledger coachId ' + ledgerCoachId + ' does not match requested ' + coachId);
+        }
+
+        // 3. Update numericPilot fence
+        if (numData.windows && typeof numData.windows === 'object' && numData.windows[clientId]) {
+          const updatedWindows = { ...numData.windows };
+          updatedWindows[clientId] = {
+            ...updatedWindows[clientId],
+            enabled: false,
+            revokedAt: isoNow,
+            revokeReason: reason
+          };
+          tx.set(numRef, { windows: updatedWindows }, { merge: true });
+        } else if (numData.uid === clientId) {
+          tx.set(numRef, { enabled: false, stoppedAt: isoNow, stoppedOperation: operationId, stopReason: reason }, { merge: true });
+        }
+
+        // 4. Update releaseControl/autonomousProgression (remove clientId while strictly preserving all other concurrent clients)
         if (relSnap.exists) {
           const relData = relSnap.data() || {};
           if (Array.isArray(relData.clientIds)) {
@@ -358,125 +402,188 @@ async function executeClientRevocation(opts, io) {
           }
         }
 
-        // 3. coaches/{coachId} (atomic remove, preserving other coach clients)
+        // 5. Update coaches/{coachId} (remove clientId while strictly preserving other clients)
         if (coachSnap.exists) {
           const coachData = coachSnap.data() || {};
           if (coachData.autoApplyCanary && Array.isArray(coachData.autoApplyCanary.clientIds)) {
             const remainingCoach = coachData.autoApplyCanary.clientIds.filter(id => id !== clientId);
-            tx.set(coachRef, { autoApplyCanary: { clientIds: remainingCoach } }, { merge: true });
+            const updatedCanary = { ...coachData.autoApplyCanary, clientIds: remainingCoach };
+            tx.set(coachRef, { autoApplyCanary: updatedCanary }, { merge: true });
           }
         }
 
-        // 4. Ledger record
+        // 6. Transition ledger if active, or preserve existing terminal state idempotently without duplicate STOP events
         let opStopped = false;
-        if (opSnap.exists) {
-          const opData = opSnap.data() || {};
-          if (opData.status !== 'COMPLETED' && opData.status !== 'FAILED') {
-            const history = Array.isArray(opData.history) ? [...opData.history] : [];
-            history.push({ sequence: history.length + 1, action: 'STOPPED', at: isoNow, actor: 'individual-revocation', reason });
-            tx.update(opRef, { status: 'STOPPED', stoppedAt: isoNow, stopReason: reason, history });
-            opStopped = true;
-          } else {
-            opStopped = true;
-          }
+        const isTerminal = opData.status === 'STOPPED' || opData.status === 'COMPLETED' || opData.status === 'FAILED' || opData.status === 'EXPIRED';
+
+        if (isTerminal) {
+          // Terminal state exists: do NOT add duplicate STOP event to history
+          opStopped = true;
         } else {
-          const stopDoc = {
-            schema: 'vdsen-numeric-operations-ledger-v1',
-            operationId: operationId,
+          // Active state (RESERVED / PENDING): transition to STOPPED
+          const history = Array.isArray(opData.history) ? [...opData.history] : [];
+          history.push({
+            sequence: history.length + 1,
+            action: 'STOPPED',
+            at: isoNow,
+            actor: 'individual-revocation',
+            reason
+          });
+          tx.update(opRef, {
             status: 'STOPPED',
             stoppedAt: isoNow,
             stopReason: reason,
-            history: [{ sequence: 1, action: 'STOPPED', at: isoNow, actor: 'individual-revocation', reason }]
-          };
-          tx.set(opRef, stopDoc);
+            history
+          });
           opStopped = true;
         }
 
-        return { success: true, opStopped };
+        return {
+          success: true,
+          opStopped,
+          isTerminal,
+          finalStatus: isTerminal ? opData.status : 'STOPPED'
+        };
       });
 
       numericClientStopped = true;
       releaseClientRemoved = true;
       coachClientRemoved = true;
       ledgerStopped = !!(txRes && txRes.opStopped);
-      ledgerResult = { success: ledgerStopped, operationId, status: 'STOPPED' };
+      ledgerResult = { success: ledgerStopped, operationId, status: txRes && txRes.finalStatus };
       writeAttempts.push({ fence: 'atomicTransaction', success: true });
     } catch (txErr) {
-      errors.push('Atomic transaction failed during individual revocation: ' + txErr.message);
+      errors.push('Atomic transaction rejected during individual revocation: ' + txErr.message);
       writeAttempts.push({ fence: 'atomicTransaction', success: false, error: txErr.message });
+      return {
+        schema: 'vdsen-client-revocation-v1',
+        status: 'REVOCATION_INCOMPLETE',
+        clientId: clientId,
+        operationId: operationId,
+        coachId: coachId,
+        revokedAt: isoNow,
+        reason: reason,
+        success: false,
+        fencesScopedDisarmed: false,
+        ledgerStopped: false,
+        ledgerResult: null,
+        ledgerError: txErr.message,
+        writeAttempts: writeAttempts,
+        readback: {
+          numericClientDisabled: false,
+          releaseClientRemoved: false,
+          coachClientRemoved: false,
+          readbackComplete: false
+        },
+        errors: errors
+      };
     }
   } else {
-    // Path B: Optimistic Concurrency Control with retry loop (for REST adapters and mocks)
-    // Step 1: Disarm client's window in releaseControl/numericPilot
+    // Path B: Fallback when atomic transaction runner is not available
+    const hasOccPreconditions = (io.supportsOCC === true || typeof io.writeFenceWithPrecondition === 'function')
+      && typeof io.readFenceWithVersion === 'function';
+
+    if (!hasOccPreconditions) {
+      // Insecure fallback rejected: adapter lacks atomic transactions and OCC version preconditions
+      errors.push('ADAPTER_UNSUPPORTED_CONCURRENCY_GUARANTEES: Adapter lacks atomic transaction and OCC version precondition guarantees; refusing insecure writes.');
+      return {
+        schema: 'vdsen-client-revocation-v1',
+        status: 'REVOCATION_INCOMPLETE',
+        clientId: clientId,
+        operationId: operationId,
+        coachId: coachId,
+        revokedAt: isoNow,
+        reason: reason,
+        success: false,
+        fencesScopedDisarmed: false,
+        ledgerStopped: false,
+        ledgerResult: null,
+        ledgerError: 'ADAPTER_UNSUPPORTED_CONCURRENCY_GUARANTEES',
+        writeAttempts: [],
+        readback: {
+          numericClientDisabled: false,
+          releaseClientRemoved: false,
+          coachClientRemoved: false,
+          readbackComplete: false
+        },
+        errors: errors
+      };
+    }
+
+    // OCC Loop with verified preconditions
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const numDoc = await io.readFence('releaseControl/numericPilot');
-        if (numDoc) {
-          if (numDoc.windows && typeof numDoc.windows === 'object' && numDoc.windows[clientId]) {
-            const updatedWindows = { ...numDoc.windows };
-            updatedWindows[clientId] = {
-              ...updatedWindows[clientId],
-              enabled: false,
-              revokedAt: isoNow,
-              revokeReason: reason
-            };
-            await io.writeFence('releaseControl/numericPilot', { windows: updatedWindows }, { merge: true });
-          } else if (numDoc.uid === clientId) {
-            await io.writeFence('releaseControl/numericPilot', {
-              enabled: false,
-              stoppedAt: isoNow,
-              stoppedOperation: operationId,
-              stopReason: reason
-            }, { merge: true });
-          }
+        const { doc: numDoc, updateTime: numUpdateTime } = await io.readFenceWithVersion('releaseControl/numericPilot');
+        if (!numUpdateTime) {
+          throw new Error('MISSING_VERSION_PRECONDITION: numericPilot updateTime missing.');
         }
-        writeAttempts.push({ fence: 'numericPilot.windows', path: 'releaseControl/numericPilot', attempt, success: true });
+        const targetWindow = (numDoc.windows && typeof numDoc.windows === 'object' && numDoc.windows[clientId])
+          || (numDoc.uid === clientId ? (numDoc.window || numDoc) : null);
+        if (!targetWindow) {
+          throw new Error('WINDOW_NOT_FOUND: No authorized window exists for client ' + clientId);
+        }
+        if (targetWindow.uid && targetWindow.uid !== clientId) {
+          throw new Error('IDENTITY_MISMATCH: Window UID does not match client.');
+        }
+        if (targetWindow.operationId && targetWindow.operationId !== operationId) {
+          throw new Error('OPERATION_MISMATCH: Window operationId does not match.');
+        }
+
+        const updatedWindows = { ...numDoc.windows };
+        updatedWindows[clientId] = {
+          ...updatedWindows[clientId],
+          enabled: false,
+          revokedAt: isoNow,
+          revokeReason: reason
+        };
+        await io.writeFenceWithPrecondition('releaseControl/numericPilot', { windows: updatedWindows }, { updateTime: numUpdateTime });
+        writeAttempts.push({ fence: 'numericPilot.windows', attempt, success: true });
         break;
       } catch (err) {
         if (attempt === MAX_RETRIES) {
-          writeAttempts.push({ fence: 'numericPilot', success: false, error: err.message });
-          errors.push('Failed to revoke client in numericPilot fence after retries: ' + err.message);
+          errors.push('OCC numericPilot failed after retries: ' + err.message);
         }
       }
     }
 
-    // Step 2: Remove clientId from releaseControl/autonomousProgression with retry loop
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const relDoc = await io.readFence('releaseControl/autonomousProgression');
+        const { doc: relDoc, updateTime: relUpdateTime } = await io.readFenceWithVersion('releaseControl/autonomousProgression');
+        if (!relUpdateTime) {
+          throw new Error('MISSING_VERSION_PRECONDITION: autonomousProgression updateTime missing.');
+        }
         if (relDoc && Array.isArray(relDoc.clientIds)) {
           const remainingIds = relDoc.clientIds.filter(id => id !== clientId);
-          await io.writeFence('releaseControl/autonomousProgression', { clientIds: remainingIds }, { merge: true });
+          await io.writeFenceWithPrecondition('releaseControl/autonomousProgression', { clientIds: remainingIds }, { updateTime: relUpdateTime });
         }
         writeAttempts.push({ fence: 'autonomousProgression', attempt, success: true });
         break;
       } catch (err) {
         if (attempt === MAX_RETRIES) {
-          writeAttempts.push({ fence: 'autonomousProgression', success: false, error: err.message });
-          errors.push('Failed to remove client from release fence after retries: ' + err.message);
+          errors.push('OCC autonomousProgression failed after retries: ' + err.message);
         }
       }
     }
 
-    // Step 3: Remove clientId from coaches/{coachId}.autoApplyCanary with retry loop
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const coachDoc = await io.readFence('coaches/' + coachId);
+        const { doc: coachDoc, updateTime: coachUpdateTime } = await io.readFenceWithVersion('coaches/' + coachId);
+        if (!coachUpdateTime) {
+          throw new Error('MISSING_VERSION_PRECONDITION: coach updateTime missing.');
+        }
         if (coachDoc && coachDoc.autoApplyCanary && Array.isArray(coachDoc.autoApplyCanary.clientIds)) {
           const remainingCoachIds = coachDoc.autoApplyCanary.clientIds.filter(id => id !== clientId);
-          await io.writeFence('coaches/' + coachId, { 'autoApplyCanary.clientIds': remainingCoachIds }, { merge: true });
+          await io.writeFenceWithPrecondition('coaches/' + coachId, { 'autoApplyCanary.clientIds': remainingCoachIds }, { updateTime: coachUpdateTime });
         }
         writeAttempts.push({ fence: 'coachCanary', attempt, success: true });
         break;
       } catch (err) {
         if (attempt === MAX_RETRIES) {
-          writeAttempts.push({ fence: 'coachCanary', success: false, error: err.message });
-          errors.push('Failed to remove client from coach canary after retries: ' + err.message);
+          errors.push('OCC coachCanary failed after retries: ' + err.message);
         }
       }
     }
 
-    // Step 4: Transition durable ledger for this specific operationId
     if (io && typeof io.recordStop === 'function') {
       try {
         ledgerResult = await io.recordStop(operationId, { reason, coachId, clientId, actor: 'individual-revocation' });
@@ -490,10 +597,6 @@ async function executeClientRevocation(opts, io) {
         ledgerError = err.message;
         errors.push('Failed to record STOP in durable ledger: ' + err.message);
       }
-    } else {
-      ledgerStopped = false;
-      ledgerError = 'ADAPTER_MISSING_RECORD_STOP';
-      errors.push('Failed to record STOP in durable ledger: ' + ledgerError);
     }
   }
 
@@ -507,10 +610,10 @@ async function executeClientRevocation(opts, io) {
       } else if (numDocPost.uid === clientId) {
         numericClientStopped = numDocPost.enabled === false;
       } else {
-        numericClientStopped = true;
+        numericClientStopped = false;
       }
     } else {
-      numericClientStopped = true;
+      numericClientStopped = false;
     }
   } catch (err) {
     readbackErrors.push('Readback numericPilot failed: ' + err.message);
@@ -529,6 +632,17 @@ async function executeClientRevocation(opts, io) {
       !Array.isArray(coachDocPost.autoApplyCanary.clientIds) || coachDocPost.autoApplyCanary.clientIds.indexOf(clientId) < 0;
   } catch (err) {
     readbackErrors.push('Readback coachCanary failed: ' + err.message);
+  }
+
+  try {
+    const opDocPost = await io.readFence('releaseControl/numericPilot/operations/' + operationId);
+    if (opDocPost) {
+      ledgerStopped = opDocPost.status === 'STOPPED' || opDocPost.status === 'COMPLETED' || opDocPost.status === 'FAILED';
+    } else {
+      ledgerStopped = false;
+    }
+  } catch (err) {
+    readbackErrors.push('Readback operationsLedger failed: ' + err.message);
   }
 
   const allScopedDisabled = numericClientStopped && releaseClientRemoved && coachClientRemoved && (readbackErrors.length === 0);

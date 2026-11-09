@@ -1049,7 +1049,8 @@ test('T709: Multiclient authentic emulator verification: Ayrton and Client B 8-s
     assert.equal(meso1Final.progressionApplications[ayrtonRecKey].state, 'CONSUMED');
     assert.equal(meso1Final.nextExposureOverlays[ovl1.key].status, 'CONSUMED');
 
-    // 12. Concurrent Revocation Resilience (No lost updates)
+    // 12. T710 Focused Security Battery against real Firestore Emulator
+    // 12A. Revocar un cliente con el operationId de otro: rechazo, cero mutaciones indebidas
     const cA = 'synth-conc-a', cB = 'synth-conc-b';
     const opA = 'op-conc-a-709', opB = 'op-conc-b-709';
     const cCoach = 'coach-conc-rev-709';
@@ -1060,8 +1061,8 @@ test('T709: Multiclient authentic emulator verification: Ayrton and Client B 8-s
       schema: 'vdsen-numeric-cohort-v1',
       enabled: true,
       windows: {
-        [cA]: { ...win1, uid: cA, operationId: opA, enabled: true },
-        [cB]: { ...win2, uid: cB, operationId: opB, enabled: true }
+        [cA]: { ...win1, uid: cA, coachId: cCoach, operationId: opA, enabled: true },
+        [cB]: { ...win2, uid: cB, coachId: cCoach, operationId: opB, enabled: true }
       }
     });
     await db.doc('releaseControl/autonomousProgression').set({
@@ -1071,12 +1072,59 @@ test('T709: Multiclient authentic emulator verification: Ayrton and Client B 8-s
       expiresAt: expiresAt
     });
     await db.doc('releaseControl/numericPilot/operations/' + opA).set({
-      schema: 'vdsen-numeric-operations-ledger-v1', operationId: opA, status: 'RESERVED', history: [{ sequence: 1, action: 'RESERVED', at: startsAt }]
+      schema: 'vdsen-numeric-operations-ledger-v1',
+      operationId: opA,
+      uid: cA,
+      coachId: cCoach,
+      planId: win1.planId,
+      pid: win1.pid,
+      status: 'RESERVED',
+      history: [{ sequence: 1, action: 'RESERVED', at: startsAt }]
     });
     await db.doc('releaseControl/numericPilot/operations/' + opB).set({
-      schema: 'vdsen-numeric-operations-ledger-v1', operationId: opB, status: 'RESERVED', history: [{ sequence: 1, action: 'RESERVED', at: startsAt }]
+      schema: 'vdsen-numeric-operations-ledger-v1',
+      operationId: opB,
+      uid: cB,
+      coachId: cCoach,
+      planId: win2.planId,
+      pid: win2.pid,
+      status: 'RESERVED',
+      history: [{ sequence: 1, action: 'RESERVED', at: startsAt }]
     });
 
+    // Cross-client revocation attempt: cA attempts to revoke opB
+    const crossRev = await executeClientRevocation({
+      clientId: cA,
+      operationId: opB,
+      coachId: cCoach,
+      reason: 'MALICIOUS_CROSS_STOP'
+    }, io);
+
+    assert.equal(crossRev.status, 'REVOCATION_INCOMPLETE');
+    assert.equal(crossRev.success, false);
+    assert.ok(crossRev.errors.some(e => e.includes('CROSS_CLIENT_OPERATION_DENIED') || e.includes('OPERATION_MISMATCH')));
+
+    // Verify ZERO mutations on opB and fences
+    const opBPre = (await db.doc('releaseControl/numericPilot/operations/' + opB).get()).data();
+    assert.equal(opBPre.status, 'RESERVED', 'Client B operation must remain RESERVED after cross-client attempt');
+    assert.equal(opBPre.history.length, 1);
+    const numPre = (await db.doc('releaseControl/numericPilot').get()).data();
+    assert.equal(numPre.windows[cA].enabled, true);
+    assert.equal(numPre.windows[cB].enabled, true);
+    const relPre = (await db.doc('releaseControl/autonomousProgression').get()).data();
+    assert.deepEqual(relPre.clientIds, [cA, cB]);
+
+    // 12B. Revocar un cliente cuya ventana no existe: resultado incompleto
+    const ghostRev = await executeClientRevocation({
+      clientId: 'ghost-non-existent-uid',
+      operationId: 'op-ghost-99',
+      coachId: cCoach
+    }, io);
+    assert.equal(ghostRev.status, 'REVOCATION_INCOMPLETE');
+    assert.equal(ghostRev.success, false);
+    assert.ok(ghostRev.errors.some(e => e.includes('WINDOW_NOT_FOUND')));
+
+    // 12C. Dos revocaciones concurrentes con intercalación controlada: sin pérdida de cambios
     const [revA, revB] = await Promise.all([
       executeClientRevocation({ clientId: cA, operationId: opA, coachId: cCoach, reason: 'CONCURRENT_A' }, io),
       executeClientRevocation({ clientId: cB, operationId: opB, coachId: cCoach, reason: 'CONCURRENT_B' }, io)
@@ -1088,6 +1136,97 @@ test('T709: Multiclient authentic emulator verification: Ayrton and Client B 8-s
     assert.deepEqual(finalConcRel.clientIds, [], 'Both clients removed without lost update');
     const finalConcCoach = (await db.doc('coaches/' + cCoach).get()).data();
     assert.deepEqual(finalConcCoach.autoApplyCanary.clientIds, [], 'Both clients removed from coach canary without lost update');
+
+    // 12D. Admisión y revocación concurrentes: conservar miembros autorizados y excluir al revocado
+    const cKeep = 'synth-keep-d', cRev = 'synth-rev-d', cNew = 'synth-new-admitted-d';
+    const opKeep = 'op-keep-d', opRev = 'op-rev-d';
+    await db.doc('coaches/' + cCoach).set({
+      autoApplyCanary: { enabled: true, clientIds: [cKeep, cRev], prescriptionExerciseIds: ['pK', 'pR'] }
+    });
+    await db.doc('releaseControl/numericPilot').set({
+      schema: 'vdsen-numeric-cohort-v1',
+      enabled: true,
+      windows: {
+        [cKeep]: { ...win1, uid: cKeep, coachId: cCoach, operationId: opKeep, enabled: true },
+        [cRev]: { ...win2, uid: cRev, coachId: cCoach, operationId: opRev, enabled: true }
+      }
+    });
+    await db.doc('releaseControl/autonomousProgression').set({
+      schema: 'vdsen-autonomous-release-v1',
+      enabled: true,
+      clientIds: [cKeep, cRev],
+      expiresAt: expiresAt
+    });
+    await db.doc('releaseControl/numericPilot/operations/' + opRev).set({
+      schema: 'vdsen-numeric-operations-ledger-v1',
+      operationId: opRev,
+      uid: cRev,
+      coachId: cCoach,
+      planId: win2.planId,
+      pid: win2.pid,
+      status: 'RESERVED',
+      history: [{ sequence: 1, action: 'RESERVED', at: startsAt }]
+    });
+
+    const admissionTask = db.runTransaction(async tx => {
+      const relRef = db.doc('releaseControl/autonomousProgression');
+      const coachRef = db.doc('coaches/' + cCoach);
+      const [rSnap, cSnap] = await Promise.all([tx.get(relRef), tx.get(coachRef)]);
+      const rData = rSnap.data(), cData = cSnap.data();
+      tx.set(relRef, { clientIds: [...rData.clientIds, cNew] }, { merge: true });
+      tx.set(coachRef, { autoApplyCanary: { ...cData.autoApplyCanary, clientIds: [...cData.autoApplyCanary.clientIds, cNew] } }, { merge: true });
+      return true;
+    });
+    const revocationTask = executeClientRevocation({
+      clientId: cRev,
+      operationId: opRev,
+      coachId: cCoach,
+      reason: 'CONCURRENT_REV_TEST'
+    }, io);
+
+    const [admittedD, revReportD] = await Promise.all([admissionTask, revocationTask]);
+    assert.equal(admittedD, true);
+    assert.equal(revReportD.status, 'REVOCATION_CONFIRMED');
+
+    const mixedRel = (await db.doc('releaseControl/autonomousProgression').get()).data();
+    assert.ok(mixedRel.clientIds.includes(cKeep), 'Existing client preserved');
+    assert.ok(mixedRel.clientIds.includes(cNew), 'Newly admitted client preserved');
+    assert.ok(!mixedRel.clientIds.includes(cRev), 'Revoked client excluded');
+
+    // 12E. Adaptador REST sin precondiciones OCC: rechazo seguro, sin escritura
+    let insecureWrites = 0;
+    const insecureIo = {
+      readFence: async () => ({ enabled: true }),
+      writeFence: async () => { insecureWrites++; return true; },
+      recordStop: async () => ({ success: true })
+    };
+    const insecureRes = await executeClientRevocation({
+      clientId: cKeep,
+      operationId: opKeep,
+      coachId: cCoach
+    }, insecureIo);
+    assert.equal(insecureRes.status, 'REVOCATION_INCOMPLETE');
+    assert.equal(insecureRes.success, false);
+    assert.equal(insecureWrites, 0, 'Zero writes on insecure adapter');
+    assert.ok(insecureRes.errors.some(e => e.includes('ADAPTER_UNSUPPORTED_CONCURRENCY_GUARANTEES')));
+
+    // 12F. STOP repetido y estados terminales: integridad e idempotencia
+    const repOpDocPre = (await db.doc('releaseControl/numericPilot/operations/' + opRev).get()).data();
+    assert.equal(repOpDocPre.status, 'STOPPED');
+    const historyCount = repOpDocPre.history.length;
+
+    // Second revocation on already STOPPED operation
+    const repeatRev = await executeClientRevocation({
+      clientId: cRev,
+      operationId: opRev,
+      coachId: cCoach,
+      reason: 'REPEAT_STOP'
+    }, io);
+    assert.equal(repeatRev.status, 'REVOCATION_CONFIRMED');
+
+    const repOpDocPost = (await db.doc('releaseControl/numericPilot/operations/' + opRev).get()).data();
+    assert.equal(repOpDocPost.status, 'STOPPED');
+    assert.equal(repOpDocPost.history.length, historyCount, 'No duplicate STOPPED event appended to history');
 
     // 13. Fail closed on expired window
     const expiredWin = {

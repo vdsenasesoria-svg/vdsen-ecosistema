@@ -29,6 +29,7 @@ function createMockDb(initialDocs = {}) {
   }
 
   function getDoc(path) {
+    if (!path) return { id: null, exists: false, data: () => null };
     return {
       id: path.split('/').pop(),
       exists: store.has(path),
@@ -39,6 +40,7 @@ function createMockDb(initialDocs = {}) {
   const db = {
     _store: store,
     doc: (p) => ({
+      _path: p,
       id: p.split('/').pop(),
       get: async () => getDoc(p),
       set: async (d, opts) => {
@@ -510,8 +512,10 @@ test('T707-E: Revocación individual vs STOP global: revocar a Cliente 1 mantien
 
   const db = createMockDb(initialDocs);
 
-  // Mock IO adapter with full support for unflattening dotted keys
+  // Mock IO adapter with full support for unflattening dotted keys and transaction execution
   const mockIo = {
+    db: db,
+    runTransaction: (fn) => db.runTransaction(fn),
     writeFence: async (path, data, opts) => {
       const prev = db._store.get(path) || {};
       const next = { ...prev };
@@ -981,4 +985,338 @@ test('T707-H2: prepareCohortStaging genera especificación de cohorte segura, in
   assert.equal(staging.safetyGuarantees.wildcardsForbidden, true);
   assert.ok(staging.operationalCriteria.expansionRules.length > 0);
   assert.ok(staging.operationalCriteria.haltTriggers.length > 0);
+});
+
+// SCENARIO I: Targeted Revocation Security & OCC Concurrency Guarantees (T710)
+test('T710-A: Revocar un cliente con operationId ajeno resulta en rechazo inmediato y cero mutaciones indebidas', async () => {
+  const uid1 = 'ath-ayrton-001';
+  const opId1 = 'op-client-1';
+  const uid2 = 'ath-bravo-002';
+  const opId2 = 'op-client-2';
+
+  const win1 = buildCohortWindow(uid1, 'plan-1', 'pid-1', opId1);
+  const win2 = buildCohortWindow(uid2, 'plan-2', 'pid-2', opId2);
+
+  const initialDocs = {
+    ['releaseControl/numericPilot/operations/' + opId1]: buildLedgerDoc(win1),
+    ['releaseControl/numericPilot/operations/' + opId2]: buildLedgerDoc(win2),
+    'releaseControl/numericPilot': {
+      schema: 'vdsen-numeric-cohort-v1',
+      enabled: true,
+      windows: {
+        [uid1]: { ...win1, enabled: true },
+        [uid2]: { ...win2, enabled: true }
+      }
+    },
+    'releaseControl/autonomousProgression': {
+      schema: 'vdsen-autonomous-release-v1',
+      enabled: true,
+      clientIds: [uid1, uid2],
+      expiresAt: win1.expiresAt
+    },
+    'coaches/coach-1': {
+      autoApplyCanary: {
+        schema: 'vdsen-canary-cohort-v1',
+        enabled: true,
+        clientIds: [uid1, uid2],
+        prescriptionExerciseIds: ['pid-1', 'pid-2']
+      }
+    }
+  };
+
+  const db = createMockDb(initialDocs);
+  const io = {
+    db: db,
+    runTransaction: (fn) => db.runTransaction(fn),
+    writeFence: async (path, data) => true,
+    readFence: async (path) => db._store.get(path)
+  };
+
+  // Attempt cross-client revocation: Client 1 attempting to revoke Client 2's operationId
+  const result = await executeClientRevocation({
+    clientId: uid1,
+    operationId: opId2,
+    coachId: 'coach-1',
+    reason: 'MALICIOUS_CROSS_CLIENT_STOP'
+  }, io);
+
+  assert.equal(result.status, 'REVOCATION_INCOMPLETE');
+  assert.equal(result.success, false);
+  assert.ok(result.errors.some(e => e.includes('CROSS_CLIENT_OPERATION_DENIED') || e.includes('OPERATION_MISMATCH')));
+
+  // Case 2: Window without operationId restriction, ledger uid mismatch triggers CROSS_CLIENT_OPERATION_DENIED directly
+  const winNoOp = { ...buildCohortWindow(uid1, 'plan-1', 'pid-1', null), enabled: true };
+  delete winNoOp.operationId;
+  db._store.get('releaseControl/numericPilot').windows[uid1] = winNoOp;
+
+  const result2 = await executeClientRevocation({
+    clientId: uid1,
+    operationId: opId2,
+    coachId: 'coach-1',
+    reason: 'ATTEMPT_CROSS_CLIENT_LEDGER_STOP'
+  }, io);
+
+  assert.equal(result2.status, 'REVOCATION_INCOMPLETE');
+  assert.equal(result2.success, false);
+  assert.ok(result2.errors.some(e => e.includes('CROSS_CLIENT_OPERATION_DENIED')));
+
+  // ZERO mutations: verify Client 2 operation remains RESERVED
+  const op2Doc = db._store.get('releaseControl/numericPilot/operations/' + opId2);
+  assert.equal(op2Doc.status, 'RESERVED');
+  assert.equal(op2Doc.history.length, 1);
+
+  // Both windows remain enabled
+  const numDoc = db._store.get('releaseControl/numericPilot');
+  assert.equal(numDoc.windows[uid1].enabled, true);
+  assert.equal(numDoc.windows[uid2].enabled, true);
+
+  // Both clients remain in allowlists
+  const relDoc = db._store.get('releaseControl/autonomousProgression');
+  assert.deepEqual(relDoc.clientIds, [uid1, uid2]);
+});
+
+test('T710-B: Revocar cliente cuya ventana no existe produce REVOCATION_INCOMPLETE y cero mutaciones', async () => {
+  const initialDocs = {
+    'releaseControl/numericPilot': {
+      schema: 'vdsen-numeric-cohort-v1',
+      enabled: true,
+      windows: {
+        'ath-known': { enabled: true, uid: 'ath-known' }
+      }
+    },
+    'releaseControl/autonomousProgression': {
+      schema: 'vdsen-autonomous-release-v1',
+      enabled: true,
+      clientIds: ['ath-known']
+    },
+    'coaches/coach-1': {
+      autoApplyCanary: { enabled: true, clientIds: ['ath-known'] }
+    }
+  };
+
+  const db = createMockDb(initialDocs);
+  const io = {
+    db: db,
+    runTransaction: (fn) => db.runTransaction(fn),
+    writeFence: async (path, data) => true,
+    readFence: async (path) => db._store.get(path)
+  };
+
+  const result = await executeClientRevocation({
+    clientId: 'ath-unknown-ghost',
+    operationId: 'op-ghost-01',
+    coachId: 'coach-1'
+  }, io);
+
+  assert.equal(result.status, 'REVOCATION_INCOMPLETE');
+  assert.equal(result.success, false);
+  assert.ok(result.errors.some(e => e.includes('WINDOW_NOT_FOUND')));
+
+  // Fences remain untouched
+  const relDoc = db._store.get('releaseControl/autonomousProgression');
+  assert.deepEqual(relDoc.clientIds, ['ath-known']);
+});
+
+test('T710-C: Dos revocaciones concurrentes con adaptadores atómicos no producen pérdida de cambios', async () => {
+  const uid1 = 'ath-ayrton-001', uid2 = 'ath-bravo-002', uid3 = 'ath-charlie-003';
+  const opId1 = 'op-c1', opId2 = 'op-c2', opId3 = 'op-c3';
+
+  const win1 = buildCohortWindow(uid1, 'p1', 'pid1', opId1);
+  const win2 = buildCohortWindow(uid2, 'p2', 'pid2', opId2);
+  const win3 = buildCohortWindow(uid3, 'p3', 'pid3', opId3);
+
+  const initialDocs = {
+    ['releaseControl/numericPilot/operations/' + opId1]: buildLedgerDoc(win1),
+    ['releaseControl/numericPilot/operations/' + opId2]: buildLedgerDoc(win2),
+    ['releaseControl/numericPilot/operations/' + opId3]: buildLedgerDoc(win3),
+    'releaseControl/numericPilot': {
+      schema: 'vdsen-numeric-cohort-v1',
+      enabled: true,
+      windows: {
+        [uid1]: { ...win1, enabled: true },
+        [uid2]: { ...win2, enabled: true },
+        [uid3]: { ...win3, enabled: true }
+      }
+    },
+    'releaseControl/autonomousProgression': {
+      schema: 'vdsen-autonomous-release-v1',
+      enabled: true,
+      clientIds: [uid1, uid2, uid3]
+    },
+    'coaches/coach-1': {
+      autoApplyCanary: {
+        enabled: true,
+        clientIds: [uid1, uid2, uid3],
+        prescriptionExerciseIds: ['pid1', 'pid2', 'pid3']
+      }
+    }
+  };
+
+  const db = createMockDb(initialDocs);
+  const io = {
+    db: db,
+    runTransaction: (fn) => db.runTransaction(fn),
+    writeFence: async (path, data) => true,
+    readFence: async (path) => db._store.get(path)
+  };
+
+  const [res1, res2] = await Promise.all([
+    executeClientRevocation({ clientId: uid1, operationId: opId1, coachId: 'coach-1', reason: 'REV_1' }, io),
+    executeClientRevocation({ clientId: uid2, operationId: opId2, coachId: 'coach-1', reason: 'REV_2' }, io)
+  ]);
+
+  assert.equal(res1.status, 'REVOCATION_CONFIRMED');
+  assert.equal(res2.status, 'REVOCATION_CONFIRMED');
+
+  const finalRel = db._store.get('releaseControl/autonomousProgression');
+  assert.deepEqual(finalRel.clientIds, [uid3], 'Both uid1 and uid2 excluded; uid3 retained without lost updates');
+
+  const finalCoach = db._store.get('coaches/coach-1');
+  assert.deepEqual(finalCoach.autoApplyCanary.clientIds, [uid3], 'Both clients removed from coach canary');
+
+  const finalNum = db._store.get('releaseControl/numericPilot');
+  assert.equal(finalNum.windows[uid1].enabled, false);
+  assert.equal(finalNum.windows[uid2].enabled, false);
+  assert.equal(finalNum.windows[uid3].enabled, true);
+});
+
+test('T710-D: Admisión y revocación concurrentes: conservar miembros autorizados y excluir al revocado', async () => {
+  const uid1 = 'ath-c1', uid2 = 'ath-c2', uidNew = 'ath-admitted-new';
+  const opId1 = 'op-c1', opId2 = 'op-c2';
+
+  const win1 = buildCohortWindow(uid1, 'p1', 'pid1', opId1);
+  const win2 = buildCohortWindow(uid2, 'p2', 'pid2', opId2);
+
+  const initialDocs = {
+    ['releaseControl/numericPilot/operations/' + opId1]: buildLedgerDoc(win1),
+    ['releaseControl/numericPilot/operations/' + opId2]: buildLedgerDoc(win2),
+    'releaseControl/numericPilot': {
+      schema: 'vdsen-numeric-cohort-v1',
+      enabled: true,
+      windows: {
+        [uid1]: { ...win1, enabled: true },
+        [uid2]: { ...win2, enabled: true }
+      }
+    },
+    'releaseControl/autonomousProgression': {
+      schema: 'vdsen-autonomous-release-v1',
+      enabled: true,
+      clientIds: [uid1, uid2]
+    },
+    'coaches/coach-1': {
+      autoApplyCanary: {
+        enabled: true,
+        clientIds: [uid1, uid2],
+        prescriptionExerciseIds: ['pid1', 'pid2']
+      }
+    }
+  };
+
+  const db = createMockDb(initialDocs);
+  const io = {
+    db: db,
+    runTransaction: (fn) => db.runTransaction(fn),
+    writeFence: async (path, data) => true,
+    readFence: async (path) => db._store.get(path)
+  };
+
+  // Concurrently: revoke uid1 while an admission process adds uidNew
+  const admissionTask = db.runTransaction(async (tx) => {
+    const relRef = db.doc('releaseControl/autonomousProgression');
+    const coachRef = db.doc('coaches/coach-1');
+    const [relSnap, coachSnap] = await Promise.all([tx.get(relRef), tx.get(coachRef)]);
+    const relData = relSnap.data();
+    const coachData = coachSnap.data();
+
+    const newRelIds = [...relData.clientIds, uidNew];
+    const newCoachIds = [...coachData.autoApplyCanary.clientIds, uidNew];
+
+    tx.set(relRef, { clientIds: newRelIds }, { merge: true });
+    tx.set(coachRef, { autoApplyCanary: { ...coachData.autoApplyCanary, clientIds: newCoachIds } }, { merge: true });
+    return true;
+  });
+
+  const revocationTask = executeClientRevocation({
+    clientId: uid1,
+    operationId: opId1,
+    coachId: 'coach-1',
+    reason: 'TARGETED_STOP'
+  }, io);
+
+  const [admitted, revResult] = await Promise.all([admissionTask, revocationTask]);
+  assert.equal(admitted, true);
+  assert.equal(revResult.status, 'REVOCATION_CONFIRMED');
+
+  const finalRel = db._store.get('releaseControl/autonomousProgression');
+  assert.ok(finalRel.clientIds.includes(uid2), 'Existing client 2 preserved');
+  assert.ok(finalRel.clientIds.includes(uidNew), 'Newly admitted client preserved');
+  assert.ok(!finalRel.clientIds.includes(uid1), 'Revoked client excluded');
+});
+
+test('T710-E: Adaptador sin precondiciones OCC ni transacción atómica falla cerrado sin realizar escrituras', async () => {
+  let writesAttempted = 0;
+  const insecureIo = {
+    readFence: async (p) => ({ enabled: true }),
+    writeFence: async (p, d) => { writesAttempted++; return true; },
+    recordStop: async () => ({ success: true })
+  };
+
+  const result = await executeClientRevocation({
+    clientId: 'ath-1',
+    operationId: 'op-1',
+    coachId: 'coach-1'
+  }, insecureIo);
+
+  assert.equal(result.status, 'REVOCATION_INCOMPLETE');
+  assert.equal(result.success, false);
+  assert.equal(writesAttempted, 0, 'Zero writes must be performed on adapters without concurrency guarantees');
+  assert.ok(result.errors.some(e => e.includes('ADAPTER_UNSUPPORTED_CONCURRENCY_GUARANTEES')));
+});
+
+test('T710-F: STOP repetido sobre ledger en estado terminal preserva integridad e idempotencia sin eventos duplicados', async () => {
+  const uid = 'ath-ayrton-001';
+  const opId = 'op-terminal-01';
+  const win = buildCohortWindow(uid, 'plan-1', 'pid-1', opId);
+
+  const initialDocs = {
+    ['releaseControl/numericPilot/operations/' + opId]: buildLedgerDoc(win),
+    'releaseControl/numericPilot': {
+      schema: 'vdsen-numeric-cohort-v1',
+      enabled: true,
+      windows: { [uid]: { ...win, enabled: true } }
+    },
+    'releaseControl/autonomousProgression': {
+      schema: 'vdsen-autonomous-release-v1',
+      enabled: true,
+      clientIds: [uid]
+    },
+    'coaches/coach-1': {
+      autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: ['pid-1'] }
+    }
+  };
+
+  const db = createMockDb(initialDocs);
+  const io = {
+    db: db,
+    runTransaction: (fn) => db.runTransaction(fn),
+    writeFence: async (path, data) => true,
+    readFence: async (path) => db._store.get(path)
+  };
+
+  // First revocation: transitions ledger from RESERVED to STOPPED
+  const firstRev = await executeClientRevocation({ clientId: uid, operationId: opId, coachId: 'coach-1' }, io);
+  assert.equal(firstRev.status, 'REVOCATION_CONFIRMED');
+
+  const docAfterFirst = db._store.get('releaseControl/numericPilot/operations/' + opId);
+  assert.equal(docAfterFirst.status, 'STOPPED');
+  const historyLenAfterFirst = docAfterFirst.history.length;
+  assert.equal(docAfterFirst.history.at(-1).action, 'STOPPED');
+
+  // Second revocation with same parameters: idempotent, must NOT add duplicate STOP action
+  const secondRev = await executeClientRevocation({ clientId: uid, operationId: opId, coachId: 'coach-1' }, io);
+  assert.equal(secondRev.status, 'REVOCATION_CONFIRMED');
+
+  const docAfterSecond = db._store.get('releaseControl/numericPilot/operations/' + opId);
+  assert.equal(docAfterSecond.status, 'STOPPED');
+  assert.equal(docAfterSecond.history.length, historyLenAfterFirst, 'Duplicate STOP event must not be appended to history');
 });
