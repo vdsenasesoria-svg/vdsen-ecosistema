@@ -802,7 +802,7 @@ test('T685.13 Scenario 13: Safe error recovery in sweep, browser startup/empty-s
   // 13c) Pilot runtime OFF baseline aligns with canonical release
   var releaseState = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.release', 'vdsen-client.json'), 'utf8'));
   assert.equal(pilotRuntime.T671, appLive.SAFE_OFF_BASELINE.runtimeSha);
-  assert.equal(pilotRuntime.OFF_BASELINE_SHA, '353df8c12982cad7f4dc89b3622a6b63b3127b52');
+  assert.equal(pilotRuntime.OFF_BASELINE_SHA, 'ec3b30f99d095c90fc8e1d54cf05366a0427205a');
   assert.equal(pilotRuntime.T671, releaseState.runtime_sha);
   assert.equal(pilotRuntime.LEGACY_T671_SHA, 'a8cf462c78c4bd795cc9f485a82f64429c179f00');
 });
