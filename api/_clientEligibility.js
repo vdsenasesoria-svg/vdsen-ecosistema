@@ -797,6 +797,170 @@ function planCohortActivation(items, opts) {
   };
 }
 
+/**
+ * T707: Evaluates admission of a client into the active progression ecosystem.
+ * Separates:
+ * 1. Coach relationship & active plan validation
+ * 2. Training evidence & eligibility classification
+ * 3. Cohort admission (presence in release fence)
+ * 4. Numeric authorization (cryptographic window)
+ */
+function evaluateCohortAdmission(opts) {
+  opts = opts || {};
+  var client = opts.client;
+  var coach = opts.coach;
+  var plan = opts.plan;
+  var clientId = opts.clientId || (client && client.id) || null;
+  var releaseDoc = opts.releaseDoc;
+  var numericWindow = opts.numericWindow;
+  var now = opts.now || new Date().toISOString();
+
+  // 1. Identity & coach relationship
+  if (!clientId || !client || typeof client !== 'object') {
+    return {
+      schema: 'vdsen-client-admission-v1',
+      clientId: clientId,
+      admitted: false,
+      status: 'NO_CLIENT_IDENTITY',
+      reason: 'NO_CLIENT_IDENTITY',
+      planReady: false,
+      eligible: false,
+      inReleaseCohort: false,
+      numericAuthorized: false
+    };
+  }
+  if (!isClientStatusValid(client)) {
+    return {
+      schema: 'vdsen-client-admission-v1',
+      clientId: clientId,
+      admitted: false,
+      status: 'CLIENT_INACTIVE',
+      reason: 'CLIENT_SUSPENDED_OR_INACTIVE',
+      planReady: false,
+      eligible: false,
+      inReleaseCohort: false,
+      numericAuthorized: false
+    };
+  }
+  var coachId = client.coachId;
+  if (!coachId) {
+    return {
+      schema: 'vdsen-client-admission-v1',
+      clientId: clientId,
+      admitted: false,
+      status: 'COACH_UNASSIGNED',
+      reason: 'NO_COACH_ASSIGNED',
+      planReady: false,
+      eligible: false,
+      inReleaseCohort: false,
+      numericAuthorized: false
+    };
+  }
+  if (coach && coach.id && coach.id !== coachId) {
+    return {
+      schema: 'vdsen-client-admission-v1',
+      clientId: clientId,
+      coachId: coachId,
+      admitted: false,
+      status: 'COACH_MISMATCH',
+      reason: 'COACH_RELATIONSHIP_MISMATCH',
+      planReady: false,
+      eligible: false,
+      inReleaseCohort: false,
+      numericAuthorized: false
+    };
+  }
+
+  // 2. Active plan validation
+  var planVal = validateActivePlan(client, plan, client.activePlanId, clientId);
+  if (!planVal.valid) {
+    return {
+      schema: 'vdsen-client-admission-v1',
+      clientId: clientId,
+      coachId: coachId,
+      planId: client.activePlanId || null,
+      admitted: false,
+      status: planVal.reason === 'NEEDS_PLAN_PREP' ? 'PLAN_PREPARATION_REQUIRED' : 'PLAN_INVALID',
+      reason: planVal.reason,
+      planReady: false,
+      eligible: false,
+      inReleaseCohort: false,
+      numericAuthorized: false,
+      planDetails: planVal
+    };
+  }
+
+  // 3. Training evidence & eligibility evaluation
+  var cleanEntries = sanitizeClientEntries((opts.entries || (opts.root && opts.root.entries) || {}), plan, client.activePlanId);
+  var eligEval = evaluateClientEligibility({
+    clientId: clientId,
+    client: client,
+    clientCreateTime: opts.clientCreateTime,
+    plan: plan,
+    requestedPlanId: client.activePlanId,
+    meso: opts.meso,
+    root: opts.root,
+    entries: cleanEntries,
+    starts: opts.starts || {},
+    receipts: opts.receipts || (opts.meso && opts.meso.consumptionReceipts) || null,
+    releaseDoc: releaseDoc,
+    coachDoc: coach,
+    now: now
+  });
+
+  // 4. Cohort membership & numeric authorization checks
+  var inReleaseCohort = !!(releaseDoc && releaseDoc.enabled === true &&
+    Array.isArray(releaseDoc.clientIds) && releaseDoc.clientIds.indexOf(clientId) >= 0 &&
+    releaseUnexpired(releaseDoc.expiresAt, now));
+
+  var numericAuthorized = false;
+  if (numericWindow) {
+    var nwValid = typeof numericWindow === 'object' &&
+      numericWindow.mode === 'NUMERIC_APPLY' &&
+      numericWindow.uid === clientId &&
+      numericWindow.planId === client.activePlanId;
+    var nwStart = Date.parse(numericWindow.startsAt);
+    var nwEnd = Date.parse(numericWindow.expiresAt);
+    var nowMs = Date.parse(now);
+    if (nwValid && Number.isFinite(nwStart) && Number.isFinite(nwEnd) && Number.isFinite(nowMs) &&
+        nwStart <= nowMs && nowMs < nwEnd) {
+      numericAuthorized = true;
+    }
+  }
+
+  var admissionStatus;
+  if (!eligEval.eligible) {
+    admissionStatus = (eligEval.reason === 'AWAITING_FIRST_ACTIVITY' ||
+      eligEval.reason === 'NEW_CLIENT_AWAITING_FIRST_ACTIVITY' ||
+      eligEval.reason === 'NO_VERIFIABLE_APP_USAGE')
+      ? 'AWAITING_TRAINING_ACTIVITY'
+      : (eligEval.reason || 'NOT_ELIGIBLE');
+  } else if (!inReleaseCohort) {
+    admissionStatus = 'ELIGIBLE_AWAITING_COHORT';
+  } else if (numericAuthorized) {
+    admissionStatus = 'ADMITTED_NUMERIC_ACTIVE';
+  } else {
+    admissionStatus = 'ADMITTED_COHORT_READY';
+  }
+
+  return {
+    schema: 'vdsen-client-admission-v1',
+    clientId: clientId,
+    coachId: coachId,
+    planId: client.activePlanId,
+    admitted: eligEval.eligible && inReleaseCohort,
+    status: admissionStatus,
+    reason: eligEval.reason || 'ADMITTED',
+    priority: eligEval.priority || null,
+    planReady: true,
+    eligible: eligEval.eligible,
+    inReleaseCohort: inReleaseCohort,
+    numericAuthorized: numericAuthorized,
+    activity: eligEval.activity || null,
+    evaluation: eligEval
+  };
+}
+
 module.exports = {
   RELEASE_SCHEMA: RELEASE_SCHEMA,
   RELEASE_MAX_CLIENTS: RELEASE_MAX_CLIENTS,
@@ -820,5 +984,6 @@ module.exports = {
   evaluateClientEligibility: evaluateClientEligibility,
   validateStartMarker: validateStartMarker,
   entryVerifiedWallClockMs: entryVerifiedWallClockMs,
-  planCohortActivation: planCohortActivation
+  planCohortActivation: planCohortActivation,
+  evaluateCohortAdmission: evaluateCohortAdmission
 };

@@ -74,7 +74,7 @@ async function materialize(db, clientId, requestedPlanId, clock, opts) {
   // A configured numeric lane never falls back to the general/shadow scope.
   var numericMode = process.env.VDSEN_NUMERIC_PILOT_WINDOW !== undefined || process.env.VDSEN_NUMERIC_PILOT_ENABLED === 'true' ||
     process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED === 'true';
-  var numericWindow = numericMode ? numericPilot.runtimeAuthorization(process.env, Date.now()) : null;
+  var numericWindow = numericMode ? numericPilot.runtimeAuthorization(process.env, Date.now(), clientId) : null;
   if (numericMode && (!numericWindow || clientId !== numericWindow.uid || requestedPlanId !== numericWindow.planId)) return { status: 'OUT_OF_NUMERIC_PILOT' };
   return db.runTransaction(async function(tx) {
     var clientRef = db.collection('clients').doc(clientId);
@@ -93,14 +93,20 @@ async function materialize(db, clientId, requestedPlanId, clock, opts) {
     var plan = _data(snaps[0]), meso = _data(snaps[1]), root = _data(snaps[2]);
     if (!plan || !root || !eligibility.isPlanStatusValid(plan, client) || (plan.clientId && plan.clientId !== clientId) || root.planId !== requestedPlanId || (meso && meso.planId !== requestedPlanId)) return { status: 'SOURCE_INVALID' };
     if (numericMode) {
-      var freshWindow = numericPilot.runtimeAuthorization(process.env, Date.now());
+      var freshWindow = numericPilot.runtimeAuthorization(process.env, Date.now(), clientId);
       var numericFence = _data(await tx.get(db.collection('releaseControl').doc('numericPilot')));
       var releaseFence = _data(await tx.get(db.collection('releaseControl').doc('autonomousProgression')));
+      var fenceForClient = (numericFence && numericFence.windows && numericFence.windows[clientId]) || numericFence;
+      var isCohort = freshWindow && freshWindow.schema === numericPilot.COHORT_SCHEMA;
+      var releaseAllowed = releaseFence && Array.isArray(releaseFence.clientIds) &&
+        (isCohort
+          ? (releaseFence.clientIds.length >= 1 && releaseFence.clientIds.length <= 10 && releaseFence.clientIds.indexOf(clientId) >= 0)
+          : (releaseFence.clientIds.length === 1 && releaseFence.clientIds[0] === clientId));
       if (!freshWindow || JSON.stringify(freshWindow) !== JSON.stringify(numericWindow) || !numericFence || numericFence.enabled !== true ||
-          !releaseFence || !Array.isArray(releaseFence.clientIds) || releaseFence.clientIds.length !== 1 || releaseFence.clientIds[0] !== clientId ||
-          releaseFence.expiresAt !== freshWindow.expiresAt ||
-          ['schema', 'mode', 'uid', 'planId', 'pid', 'runtimeSha', 'operationId', 'startsAt', 'expiresAt'].some(function(k) { return numericFence[k] !== freshWindow[k]; }) ||
-          !numericPilot.scopeValid(coachData && coachData.autoApplyCanary, clientId, freshWindow.pid, plan)) return { status: 'OUT_OF_NUMERIC_PILOT' };
+          !fenceForClient || fenceForClient.enabled !== true ||
+          !releaseAllowed || releaseFence.expiresAt !== freshWindow.expiresAt ||
+          ['schema', 'mode', 'uid', 'planId', 'pid', 'runtimeSha', 'operationId', 'startsAt', 'expiresAt'].some(function(k) { return fenceForClient[k] !== freshWindow[k]; }) ||
+          !numericPilot.scopeValid(coachData && coachData.autoApplyCanary, clientId, freshWindow.pid, plan, { cohort: isCohort })) return { status: 'OUT_OF_NUMERIC_PILOT' };
     }
     var authority = shadow.selectLogAuthority(meso, root, requestedPlanId);
     if (!authority) return { status: 'SOURCE_INVALID' };
@@ -206,7 +212,7 @@ async function materialize(db, clientId, requestedPlanId, clock, opts) {
 
 async function applyPending(db, clientId, planId, clock) {
   // A direct call must not bypass the independently authorized numeric lane.
-  var authorizedWindow = numericPilot.runtimeAuthorization(process.env, Date.now());
+  var authorizedWindow = numericPilot.runtimeAuthorization(process.env, Date.now(), clientId);
   if (!authorizedWindow || clientId !== authorizedWindow.uid || planId !== authorizedWindow.planId) return [];
   var snap = await db.collection('logs').doc(clientId).collection('mesos').doc(planId).get();
   var meso = _data(snap);
@@ -238,8 +244,9 @@ async function applyPending(db, clientId, planId, clock) {
       var pre = _data(await tx.get(refs.meso)), precord = pre && pre.progressionApplications && pre.progressionApplications[key];
       // Re-read both fences and the canonical record in the same transaction as the write.
       var numericFence = _data(await tx.get(db.collection('releaseControl').doc('numericPilot')));
-      var nw = numericPilot.runtimeAuthorization(process.env, Date.now());
+      var nw = numericPilot.runtimeAuthorization(process.env, Date.now(), clientId);
       var releaseFence = _data(await tx.get(db.collection('releaseControl').doc('autonomousProgression')));
+      var fenceForClient = (numericFence && numericFence.windows && numericFence.windows[clientId]) || numericFence;
       var opRef = db.collection('releaseControl').doc('numericPilot').collection('operations').doc(authorizedWindow.operationId);
       var opDoc = _data(await tx.get(opRef));
       if (!opDoc) {
@@ -257,7 +264,7 @@ async function applyPending(db, clientId, planId, clock) {
       if (precord && !consumer.inCanaryScope(coachDoc && coachDoc.autoApplyCanary, clientId, precord.prescriptionExerciseId)) {
         return { written: false, reason: 'OUT_OF_CANARY_SCOPE' };
       }
-      if (!numericPilot.transactionAllowed(authorizedWindow, nw, numericFence, releaseFence,
+      if (!numericPilot.transactionAllowed(authorizedWindow, nw, fenceForClient, releaseFence,
           coachDoc && coachDoc.autoApplyCanary, clientId, precord, planDoc, opDoc, key)) {
         return { written: false, reason: 'NUMERIC_PILOT_NOT_AUTHORIZED' };
       }

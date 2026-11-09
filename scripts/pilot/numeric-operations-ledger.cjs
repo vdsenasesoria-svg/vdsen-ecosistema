@@ -66,11 +66,8 @@ function validateOperationData(data) {
 
   // 2. Identity authorization
   if (!uid || typeof uid !== 'string') throw new Error('INVALID_OPERATION_DATA: uid is required');
-  if (uid !== C.UID) throw new Error('UNAUTHORIZED_IDENTIFIER: UID mismatch with numeric pilot contract');
   if (!planId || typeof planId !== 'string') throw new Error('INVALID_OPERATION_DATA: planId is required');
-  if (planId !== C.PLAN) throw new Error('UNAUTHORIZED_IDENTIFIER: Plan mismatch with numeric pilot contract');
   if (!pid || typeof pid !== 'string') throw new Error('INVALID_OPERATION_DATA: pid is required');
-  if (pid !== C.PID) throw new Error('UNAUTHORIZED_IDENTIFIER: PID mismatch with numeric pilot contract');
 
   // 3. runtimeSha
   if (!runtimeSha || typeof runtimeSha !== 'string' || !/^[a-f0-9]{40}$/.test(runtimeSha)) {
@@ -94,8 +91,17 @@ function validateOperationData(data) {
   if (!window || typeof window !== 'object') {
     throw new Error('INVALID_OPERATION_DATA: window is required');
   }
-  if (window.schema !== 'vdsen-numeric-pilot-v1') {
-    throw new Error('INVALID_OPERATION_DATA: window schema must be vdsen-numeric-pilot-v1');
+  if (window.schema !== 'vdsen-numeric-pilot-v1' && window.schema !== 'vdsen-numeric-cohort-v1') {
+    throw new Error('INVALID_OPERATION_DATA: window schema must be vdsen-numeric-pilot-v1 or vdsen-numeric-cohort-v1');
+  }
+  if (window.schema === 'vdsen-numeric-pilot-v1') {
+    if (uid !== C.UID) throw new Error('UNAUTHORIZED_IDENTIFIER: UID mismatch with numeric pilot contract');
+    if (planId !== C.PLAN) throw new Error('UNAUTHORIZED_IDENTIFIER: Plan mismatch with numeric pilot contract');
+    if (pid !== C.PID) throw new Error('UNAUTHORIZED_IDENTIFIER: PID mismatch with numeric pilot contract');
+  } else {
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid)) throw new Error('INVALID_OPERATION_DATA: uid must be a valid identifier');
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(planId)) throw new Error('INVALID_OPERATION_DATA: planId must be a valid identifier');
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(pid)) throw new Error('INVALID_OPERATION_DATA: pid must be a valid identifier');
   }
   if (window.mode !== 'NUMERIC_APPLY') {
     throw new Error('INVALID_OPERATION_DATA: window mode must be NUMERIC_APPLY');
@@ -130,11 +136,20 @@ function validateOperationData(data) {
   if (!scope || typeof scope !== 'object' || scope.enabled !== true) {
     throw new Error('INVALID_OPERATION_DATA: scope must be an enabled object');
   }
-  if (!Array.isArray(scope.clientIds) || scope.clientIds.length !== 1 || scope.clientIds[0] !== C.UID) {
-    throw new Error('INVALID_OPERATION_DATA: scope.clientIds must contain exactly the single authorized UID');
-  }
-  if (!Array.isArray(scope.prescriptionExerciseIds) || scope.prescriptionExerciseIds.length !== 1 || scope.prescriptionExerciseIds[0] !== C.PID) {
-    throw new Error('INVALID_OPERATION_DATA: scope.prescriptionExerciseIds must contain exactly the single authorized PID');
+  if (window.schema === 'vdsen-numeric-pilot-v1') {
+    if (!Array.isArray(scope.clientIds) || scope.clientIds.length !== 1 || scope.clientIds[0] !== C.UID) {
+      throw new Error('INVALID_OPERATION_DATA: scope.clientIds must contain exactly the single authorized UID');
+    }
+    if (!Array.isArray(scope.prescriptionExerciseIds) || scope.prescriptionExerciseIds.length !== 1 || scope.prescriptionExerciseIds[0] !== C.PID) {
+      throw new Error('INVALID_OPERATION_DATA: scope.prescriptionExerciseIds must contain exactly the single authorized PID');
+    }
+  } else {
+    if (!Array.isArray(scope.clientIds) || scope.clientIds.indexOf(uid) < 0) {
+      throw new Error('INVALID_OPERATION_DATA: scope.clientIds must contain the authorized uid');
+    }
+    if (!Array.isArray(scope.prescriptionExerciseIds) || scope.prescriptionExerciseIds.indexOf(pid) < 0) {
+      throw new Error('INVALID_OPERATION_DATA: scope.prescriptionExerciseIds must contain the authorized pid');
+    }
   }
 
   return true;
