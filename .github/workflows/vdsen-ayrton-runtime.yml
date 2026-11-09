@@ -8,7 +8,7 @@ on:
         type: string
       prescription_exercise_id:
         description: Explicit PID for STAGE1_SHADOW (single PID only)
-        default: '831ccbbe-ab09-4669-a0ef-4c652ca84b7a'
+        default: 'ab150537-0d02-423b-a7e0-2b2f1a8a9a83'
         type: string
       runtime_sha:
         description: Exact reviewed pilot SHA including the read-only runtime probe (arm only)
@@ -103,7 +103,7 @@ jobs:
       - name: Prepare the explicit absolute window (no Firestore writes)
         if: inputs.restore_run == ''
         run: |
-          node -e "const fs=require('fs');fs.mkdirSync('release-output',{recursive:true});const w={schema:'vdsen-ayrton-window-v1',mode:process.env.INPUT_MODE||'STAGE1_SHADOW',pid:process.env.INPUT_PID||'831ccbbe-ab09-4669-a0ef-4c652ca84b7a',uid:process.env.INPUT_UID,coachId:process.env.INPUT_COACH,planId:process.env.INPUT_PLAN,runtimeSha:process.env.INPUT_RUNTIME,deployment:require('./.release/vdsen-client.json').production_deployment,expiresAt:process.env.INPUT_EXPIRY,operationId:process.env.INPUT_OPERATION};require('./scripts/pilot/window-protocol.cjs').windowSpec(w);fs.writeFileSync(process.env.PILOT_WINDOW_FILE,JSON.stringify(w));"
+          node -e "const fs=require('fs');fs.mkdirSync('release-output',{recursive:true});const w={schema:'vdsen-ayrton-window-v1',mode:process.env.INPUT_MODE||'STAGE1_SHADOW',pid:process.env.INPUT_PID||'ab150537-0d02-423b-a7e0-2b2f1a8a9a83',uid:process.env.INPUT_UID,coachId:process.env.INPUT_COACH,planId:process.env.INPUT_PLAN,runtimeSha:process.env.INPUT_RUNTIME,deployment:require('./.release/vdsen-client.json').production_deployment,expiresAt:process.env.INPUT_EXPIRY,operationId:process.env.INPUT_OPERATION};require('./scripts/pilot/window-protocol.cjs').windowSpec(w);fs.writeFileSync(process.env.PILOT_WINDOW_FILE,JSON.stringify(w));"
       - name: One pilot deployment with both fences closed, then promote the same ID
         if: inputs.restore_run == ''
         env:

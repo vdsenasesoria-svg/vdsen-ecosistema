@@ -58,7 +58,7 @@ async function main(argv, deps = {}) {
   const targetPid = mode === 'stop' ? undefined : (arg('pid') || w.pid || w.prescriptionExerciseId);
   if (w.mode === 'STAGE1_SHADOW' && mode !== 'stop') {
     assert.ok(targetPid, 'STAGE1_SHADOW requires an explicit single PID (--pid)');
-    assert.equal(targetPid, '831ccbbe-ab09-4669-a0ef-4c652ca84b7a', 'ONLY_AUTHORIZED_PID');
+    assert.equal(targetPid, 'ab150537-0d02-423b-a7e0-2b2f1a8a9a83', 'ONLY_AUTHORIZED_PID');
   }
   const canaryArgs = [
     '--uid', w.uid,

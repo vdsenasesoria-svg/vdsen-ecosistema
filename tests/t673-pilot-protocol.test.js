@@ -1,12 +1,12 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict');
-const fs = require('node:fs');
+const fs = require('node:fs'), path = require('node:path');
 const P = require('../scripts/pilot/window-protocol.cjs'), C = require('../scripts/pilot/ayrton-canary.cjs');
 const R = require('../scripts/pilot/ayrton-runtime.cjs'), G = require('../scripts/release/numeric-guard.cjs');
 const makeHandler = require('../api/autonomous-progression-trigger.js').makeHandler;
 // Identity only; every document, deployment and adapter below is isolated in memory. No network or credentials.
 const UID = 'z82EDPvsCaabfMN3eGAP3rpxeMt1';
-const PID = '831ccbbe-ab09-4669-a0ef-4c652ca84b7a';
+const PID = 'ab150537-0d02-423b-a7e0-2b2f1a8a9a83';
 const w = () => ({ schema: 'vdsen-ayrton-window-v1', mode: 'STAGE1_SHADOW', pid: PID, uid: UID, coachId: 'test-coach', planId: 'test-plan',
   runtimeSha: 'a'.repeat(40), deployment: 'dpl_pilot', operationId: 'isolated-window-01', expiresAt: new Date(Date.now() + 3600e3).toISOString().replace(/\.\d{3}Z$/, 'Z') });
 const snapshot = () => ({ uid: UID, coachId: 'test-coach', client: { coachId: 'test-coach', activePlanId: 'test-plan' }, release: { enabled: false, clientIds: [UID] }, coach: { autoApplyCanary: { enabled: false, clientIds: [UID] } } });
@@ -176,7 +176,7 @@ test('T673 a legacy armed runtime must be retired; permissions and transport err
   for (const message of ['HTTP 403', 'HTTP 500', 'timeout']) await assert.rejects(() => check({}, async () => { throw Error(message); }), /UNVERIFIED/);
 });
 test('T696 STAGE1_SHADOW requires explicit single PID, enforces numericApplyEnabled=false, and verifies shadow arming', async () => {
-  const PID = '831ccbbe-ab09-4669-a0ef-4c652ca84b7a';
+  const PID = 'ab150537-0d02-423b-a7e0-2b2f1a8a9a83';
   const shadowWindow = () => ({
     schema: 'vdsen-ayrton-window-v1',
     mode: 'STAGE1_SHADOW',
@@ -241,6 +241,29 @@ test('T696 STAGE1_SHADOW requires explicit single PID, enforces numericApplyEnab
   assert.equal(rep.status, 'RUNTIME_READY_FENCES_CLOSED_NOT_ACTIVATED');
   assert.equal(rep.mode, 'STAGE1_SHADOW');
   assert.equal(rep.pid, PID);
+
+  // 5. PID validation in window script: active PID accepted, old or foreign PID rejected
+  const W = require('../scripts/pilot/ayrton-window.cjs');
+  assert.equal(PID, 'ab150537-0d02-423b-a7e0-2b2f1a8a9a83');
+  const oldPid = '831ccbbe-ab09-4669-a0ef-4c652ca84b7a';
+  const foreignPid = 'foreign-client-pid-12345';
+  const tmpWindowFile = path.join(__dirname, '..', 'release-output', 'test-pid-validation-window.json');
+  fs.mkdirSync(path.dirname(tmpWindowFile), { recursive: true });
+  fs.writeFileSync(tmpWindowFile, JSON.stringify(shadowWindow()));
+  try {
+    // Old PID explicitly rejected
+    await assert.rejects(
+      () => W.main(['--window', tmpWindowFile, '--mode', 'enable', '--pid', oldPid]),
+      /ONLY_AUTHORIZED_PID/
+    );
+    // Foreign PID explicitly rejected
+    await assert.rejects(
+      () => W.main(['--window', tmpWindowFile, '--mode', 'enable', '--pid', foreignPid]),
+      /ONLY_AUTHORIZED_PID/
+    );
+  } finally {
+    try { fs.unlinkSync(tmpWindowFile); } catch (_) {}
+  }
 });
 
 test('T696 rejection of APPLY mode and disarmed numeric execution before creating any deployment', async () => {
