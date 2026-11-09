@@ -315,18 +315,50 @@ async function reserveOperation(db, opData, opts = {}) {
         throw err;
       }
 
-      // 2. Numeric pilot release gate verification (exact 9 mandatory fields matching contract)
+      // 2. Numeric pilot release gate verification (supports vdsen-numeric-pilot-v1 and vdsen-numeric-cohort-v1)
       const releaseSnap = await tx.get(releaseRef);
       if (!releaseSnap.exists || releaseSnap.data().enabled !== true) {
         throw new Error('RELEASE_CONTROL_DISARMED: Numeric pilot release control is not enabled');
       }
       const numFence = releaseSnap.data() || {};
-      for (const k of REQUIRED_NUMERIC_FENCE_FIELDS) {
-        if (numFence[k] === undefined || numFence[k] === null || numFence[k] === '') {
-          throw new Error(`FENCE_FIELD_MISSING: numericPilot fence is missing required field "${k}"`);
+      const isCohortMode = numFence.schema === 'vdsen-numeric-cohort-v1' || (opData.window && opData.window.schema === 'vdsen-numeric-cohort-v1');
+
+      if (isCohortMode) {
+        if (!numFence.windows || typeof numFence.windows !== 'object') {
+          throw new Error('FENCE_FIELD_MISSING: numericPilot cohort fence is missing windows map');
         }
-        if (numFence[k] !== opData.window[k]) {
-          throw new Error(`FENCE_MISMATCH: numericPilot fence ${k} "${numFence[k]}" does not match window "${opData.window[k]}"`);
+        const clientKeys = Object.keys(numFence.windows);
+        if (clientKeys.length > 10) {
+          throw new Error('COHORT_CAPACITY_EXCEEDED: Maximum 10 clients allowed in numeric cohort');
+        }
+        for (const k of clientKeys) {
+          if (k.includes('*')) {
+            throw new Error('FORBIDDEN_WILDCARD: Wildcard in client identifier is forbidden');
+          }
+        }
+        const clientWin = numFence.windows[opData.uid];
+        if (!clientWin || typeof clientWin !== 'object') {
+          throw new Error(`CLIENT_WINDOW_NOT_FOUND: No window found for client "${opData.uid}" in numeric cohort`);
+        }
+        if (clientWin.enabled === false) {
+          throw new Error(`CLIENT_REVOKED: Window for client "${opData.uid}" is revoked`);
+        }
+        for (const k of REQUIRED_NUMERIC_FENCE_FIELDS) {
+          if (clientWin[k] === undefined || clientWin[k] === null || clientWin[k] === '') {
+            throw new Error(`FENCE_FIELD_MISSING: numericPilot cohort window for "${opData.uid}" is missing required field "${k}"`);
+          }
+          if (clientWin[k] !== opData.window[k]) {
+            throw new Error(`FENCE_MISMATCH: numericPilot cohort window ${k} "${clientWin[k]}" does not match window "${opData.window[k]}"`);
+          }
+        }
+      } else {
+        for (const k of REQUIRED_NUMERIC_FENCE_FIELDS) {
+          if (numFence[k] === undefined || numFence[k] === null || numFence[k] === '') {
+            throw new Error(`FENCE_FIELD_MISSING: numericPilot fence is missing required field "${k}"`);
+          }
+          if (numFence[k] !== opData.window[k]) {
+            throw new Error(`FENCE_MISMATCH: numericPilot fence ${k} "${numFence[k]}" does not match window "${opData.window[k]}"`);
+          }
         }
       }
 
@@ -339,14 +371,32 @@ async function reserveOperation(db, opData, opts = {}) {
       if (autoData.enabled !== true) {
         throw new Error('RELEASE_CONTROL_DISARMED: Autonomous progression general release is disabled');
       }
-      if (!Array.isArray(autoData.clientIds) || autoData.clientIds.length !== 1 || autoData.clientIds[0] !== opData.uid) {
-        throw new Error('UNAUTHORIZED_IDENTIFIER: Autonomous progression release clientIds must contain strictly the single authorized UID');
-      }
-      if (!autoData.expiresAt || autoData.expiresAt !== opData.window.expiresAt) {
-        throw new Error(`FENCE_MISMATCH: Autonomous progression release expiresAt "${autoData.expiresAt}" does not match window "${opData.window.expiresAt}"`);
-      }
-      if (Date.parse(autoData.expiresAt) <= parsedNow) {
-        throw new Error('RELEASE_CONTROL_DISARMED: Autonomous progression general release has expired');
+      if (isCohortMode || autoData.schema === 'vdsen-autonomous-release-v1') {
+        if (!Array.isArray(autoData.clientIds)) {
+          throw new Error('UNAUTHORIZED_IDENTIFIER: Autonomous progression release clientIds must be an array');
+        }
+        if (autoData.clientIds.length > 10) {
+          throw new Error('COHORT_CAPACITY_EXCEEDED: Maximum 10 clients allowed in autonomous progression release allowlist');
+        }
+        if (autoData.clientIds.some(id => typeof id !== 'string' || id.includes('*'))) {
+          throw new Error('FORBIDDEN_WILDCARD: Wildcard in release allowlist is forbidden');
+        }
+        if (autoData.clientIds.indexOf(opData.uid) < 0) {
+          throw new Error(`UNAUTHORIZED_IDENTIFIER: Client "${opData.uid}" is not in autonomous progression release allowlist`);
+        }
+        if (autoData.expiresAt && Date.parse(autoData.expiresAt) <= parsedNow) {
+          throw new Error('RELEASE_CONTROL_DISARMED: Autonomous progression general release has expired');
+        }
+      } else {
+        if (!Array.isArray(autoData.clientIds) || autoData.clientIds.length !== 1 || autoData.clientIds[0] !== opData.uid) {
+          throw new Error('UNAUTHORIZED_IDENTIFIER: Autonomous progression release clientIds must contain strictly the single authorized UID');
+        }
+        if (!autoData.expiresAt || autoData.expiresAt !== opData.window.expiresAt) {
+          throw new Error(`FENCE_MISMATCH: Autonomous progression release expiresAt "${autoData.expiresAt}" does not match window "${opData.window.expiresAt}"`);
+        }
+        if (Date.parse(autoData.expiresAt) <= parsedNow) {
+          throw new Error('RELEASE_CONTROL_DISARMED: Autonomous progression general release has expired');
+        }
       }
 
       // 4. Client and Coach Canary fence verification
@@ -378,11 +428,29 @@ async function reserveOperation(db, opData, opts = {}) {
       if (canary.enabled !== true) {
         throw new Error('COACH_CANARY_DISARMED: Coach autoApplyCanary is disabled');
       }
-      if (!Array.isArray(canary.clientIds) || canary.clientIds.length !== 1 || canary.clientIds[0] !== opData.uid) {
-        throw new Error('COACH_CANARY_MISMATCH: Coach canary clientIds must contain exactly the single authorized UID');
-      }
-      if (!Array.isArray(canary.prescriptionExerciseIds) || canary.prescriptionExerciseIds.length !== 1 || canary.prescriptionExerciseIds[0] !== opData.pid) {
-        throw new Error('COACH_CANARY_MISMATCH: Coach canary prescriptionExerciseIds must contain exactly the single authorized PID');
+      if (isCohortMode || canary.schema === 'vdsen-canary-cohort-v1') {
+        if (!Array.isArray(canary.clientIds)) {
+          throw new Error('COACH_CANARY_MISMATCH: Coach canary clientIds must be an array');
+        }
+        if (canary.clientIds.length > 10) {
+          throw new Error('COHORT_CAPACITY_EXCEEDED: Maximum 10 clients allowed in coach canary');
+        }
+        if (canary.clientIds.some(id => typeof id !== 'string' || id.includes('*'))) {
+          throw new Error('FORBIDDEN_WILDCARD: Wildcard in coach canary clientIds is forbidden');
+        }
+        if (canary.clientIds.indexOf(opData.uid) < 0) {
+          throw new Error(`COACH_CANARY_MISMATCH: Client "${opData.uid}" is not in coach canary clientIds`);
+        }
+        if (!Array.isArray(canary.prescriptionExerciseIds) || canary.prescriptionExerciseIds.indexOf(opData.pid) < 0) {
+          throw new Error(`COACH_CANARY_MISMATCH: PID "${opData.pid}" is not in coach canary prescriptionExerciseIds`);
+        }
+      } else {
+        if (!Array.isArray(canary.clientIds) || canary.clientIds.length !== 1 || canary.clientIds[0] !== opData.uid) {
+          throw new Error('COACH_CANARY_MISMATCH: Coach canary clientIds must contain exactly the single authorized UID');
+        }
+        if (!Array.isArray(canary.prescriptionExerciseIds) || canary.prescriptionExerciseIds.length !== 1 || canary.prescriptionExerciseIds[0] !== opData.pid) {
+          throw new Error('COACH_CANARY_MISMATCH: Coach canary prescriptionExerciseIds must contain exactly the single authorized PID');
+        }
       }
 
       const reservationDoc = {
@@ -482,11 +550,13 @@ async function reserveOperation(db, opData, opts = {}) {
           const isScopeMatch = docData.scope &&
             docData.scope.enabled === opData.scope.enabled &&
             Array.isArray(docData.scope.clientIds) &&
-            docData.scope.clientIds.length === 1 &&
-            docData.scope.clientIds[0] === opData.uid &&
+            (opData.window.schema === 'vdsen-numeric-cohort-v1'
+              ? (docData.scope.clientIds.indexOf(opData.uid) >= 0)
+              : (docData.scope.clientIds.length === 1 && docData.scope.clientIds[0] === opData.uid)) &&
             Array.isArray(docData.scope.prescriptionExerciseIds) &&
-            docData.scope.prescriptionExerciseIds.length === 1 &&
-            docData.scope.prescriptionExerciseIds[0] === opData.pid;
+            (opData.window.schema === 'vdsen-numeric-cohort-v1'
+              ? (docData.scope.prescriptionExerciseIds.indexOf(opData.pid) >= 0)
+              : (docData.scope.prescriptionExerciseIds.length === 1 && docData.scope.prescriptionExerciseIds[0] === opData.pid));
 
           if (isSchemaMatch && isUidMatch && isPlanMatch && isPidMatch && isShaMatch && isDeploymentMatch &&
               isRunIdMatch && isOperationIdMatch && isStatusReserved && isWindowMatch && isScopeMatch) {

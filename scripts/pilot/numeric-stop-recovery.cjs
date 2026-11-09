@@ -306,94 +306,195 @@ async function executeClientRevocation(opts, io) {
 
   const writeAttempts = [];
   const errors = [];
+  const MAX_RETRIES = 5;
 
-  // Step 1: Disarm client's window in releaseControl/numericPilot
   let numericClientStopped = false;
-  try {
-    const numDoc = await io.readFence('releaseControl/numericPilot');
-    if (numDoc) {
-      if (numDoc.windows && typeof numDoc.windows === 'object' && numDoc.windows[clientId]) {
-        const updatedWindows = { ...numDoc.windows };
-        updatedWindows[clientId] = {
-          ...updatedWindows[clientId],
-          enabled: false,
-          revokedAt: isoNow,
-          revokeReason: reason
-        };
-        await io.writeFence('releaseControl/numericPilot', {
-          windows: updatedWindows
-        }, { merge: true });
-        writeAttempts.push({ fence: 'numericPilot.windows', path: 'releaseControl/numericPilot', success: true });
-      } else if (numDoc.uid === clientId) {
-        // Single-client fence
-        await io.writeFence('releaseControl/numericPilot', {
-          enabled: false,
-          stoppedAt: isoNow,
-          stoppedOperation: operationId,
-          stopReason: reason
-        }, { merge: true });
-        writeAttempts.push({ fence: 'numericPilot', path: 'releaseControl/numericPilot', success: true });
-      }
-    }
-  } catch (err) {
-    writeAttempts.push({ fence: 'numericPilot', success: false, error: err.message });
-    errors.push('Failed to revoke client in numericPilot fence: ' + err.message);
-  }
-
-  // Step 2: Remove clientId from releaseControl/autonomousProgression (keeping remaining clients!)
   let releaseClientRemoved = false;
-  try {
-    const relDoc = await io.readFence('releaseControl/autonomousProgression');
-    if (relDoc && Array.isArray(relDoc.clientIds)) {
-      const remainingIds = relDoc.clientIds.filter(id => id !== clientId);
-      await io.writeFence('releaseControl/autonomousProgression', {
-        clientIds: remainingIds
-      }, { merge: true });
-      writeAttempts.push({ fence: 'autonomousProgression', remainingCount: remainingIds.length, success: true });
-    }
-  } catch (err) {
-    writeAttempts.push({ fence: 'autonomousProgression', success: false, error: err.message });
-    errors.push('Failed to remove client from release fence: ' + err.message);
-  }
-
-  // Step 3: Remove clientId from coaches/{coachId}.autoApplyCanary (keeping other athletes of that coach!)
   let coachClientRemoved = false;
-  try {
-    const coachDoc = await io.readFence('coaches/' + coachId);
-    if (coachDoc && coachDoc.autoApplyCanary && Array.isArray(coachDoc.autoApplyCanary.clientIds)) {
-      const remainingCoachIds = coachDoc.autoApplyCanary.clientIds.filter(id => id !== clientId);
-      await io.writeFence('coaches/' + coachId, {
-        'autoApplyCanary.clientIds': remainingCoachIds
-      }, { merge: true });
-      writeAttempts.push({ fence: 'coachCanary', remainingCount: remainingCoachIds.length, success: true });
-    }
-  } catch (err) {
-    writeAttempts.push({ fence: 'coachCanary', success: false, error: err.message });
-    errors.push('Failed to remove client from coach canary: ' + err.message);
-  }
-
-  // Step 4: Transition durable ledger for this specific operationId
   let ledgerStopped = false;
   let ledgerResult = null;
   let ledgerError = null;
 
-  if (io && typeof io.recordStop === 'function') {
+  // Path A: If atomic transaction runner is available, execute all fence updates atomically
+  if (typeof io.runTransaction === 'function' && io.db) {
+    const db = io.db;
     try {
-      ledgerResult = await io.recordStop(operationId, { reason, coachId, clientId, actor: 'individual-revocation' });
-      ledgerStopped = !!(ledgerResult && ledgerResult.success);
-      if (!ledgerStopped && ledgerResult && ledgerResult.error) {
-        ledgerError = ledgerResult.error;
-        errors.push('Failed to record STOP in durable ledger: ' + (ledgerResult.message || ledgerResult.error));
-      }
-      writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: ledgerStopped });
-    } catch (err) {
-      ledgerError = err.message;
-      errors.push('Failed to record STOP in durable ledger: ' + err.message);
+      const txRes = await io.runTransaction(async (tx) => {
+        const numRef = db.doc('releaseControl/numericPilot');
+        const relRef = db.doc('releaseControl/autonomousProgression');
+        const coachRef = db.doc('coaches/' + coachId);
+        const opRef = db.doc('releaseControl/numericPilot/operations/' + operationId);
+
+        const [numSnap, relSnap, coachSnap, opSnap] = await Promise.all([
+          tx.get(numRef),
+          tx.get(relRef),
+          tx.get(coachRef),
+          tx.get(opRef)
+        ]);
+
+        // 1. numericPilot fence
+        if (numSnap.exists) {
+          const numData = numSnap.data() || {};
+          if (numData.windows && typeof numData.windows === 'object' && numData.windows[clientId]) {
+            const updatedWindows = { ...numData.windows };
+            updatedWindows[clientId] = {
+              ...updatedWindows[clientId],
+              enabled: false,
+              revokedAt: isoNow,
+              revokeReason: reason
+            };
+            tx.set(numRef, { windows: updatedWindows }, { merge: true });
+          } else if (numData.uid === clientId) {
+            tx.set(numRef, { enabled: false, stoppedAt: isoNow, stoppedOperation: operationId, stopReason: reason }, { merge: true });
+          }
+        }
+
+        // 2. releaseControl/autonomousProgression (atomic remove, preserving all concurrent clients)
+        if (relSnap.exists) {
+          const relData = relSnap.data() || {};
+          if (Array.isArray(relData.clientIds)) {
+            const remaining = relData.clientIds.filter(id => id !== clientId);
+            tx.set(relRef, { clientIds: remaining }, { merge: true });
+          }
+        }
+
+        // 3. coaches/{coachId} (atomic remove, preserving other coach clients)
+        if (coachSnap.exists) {
+          const coachData = coachSnap.data() || {};
+          if (coachData.autoApplyCanary && Array.isArray(coachData.autoApplyCanary.clientIds)) {
+            const remainingCoach = coachData.autoApplyCanary.clientIds.filter(id => id !== clientId);
+            tx.set(coachRef, { autoApplyCanary: { clientIds: remainingCoach } }, { merge: true });
+          }
+        }
+
+        // 4. Ledger record
+        let opStopped = false;
+        if (opSnap.exists) {
+          const opData = opSnap.data() || {};
+          if (opData.status !== 'COMPLETED' && opData.status !== 'FAILED') {
+            const history = Array.isArray(opData.history) ? [...opData.history] : [];
+            history.push({ sequence: history.length + 1, action: 'STOPPED', at: isoNow, actor: 'individual-revocation', reason });
+            tx.update(opRef, { status: 'STOPPED', stoppedAt: isoNow, stopReason: reason, history });
+            opStopped = true;
+          } else {
+            opStopped = true;
+          }
+        } else {
+          const stopDoc = {
+            schema: 'vdsen-numeric-operations-ledger-v1',
+            operationId: operationId,
+            status: 'STOPPED',
+            stoppedAt: isoNow,
+            stopReason: reason,
+            history: [{ sequence: 1, action: 'STOPPED', at: isoNow, actor: 'individual-revocation', reason }]
+          };
+          tx.set(opRef, stopDoc);
+          opStopped = true;
+        }
+
+        return { success: true, opStopped };
+      });
+
+      numericClientStopped = true;
+      releaseClientRemoved = true;
+      coachClientRemoved = true;
+      ledgerStopped = !!(txRes && txRes.opStopped);
+      ledgerResult = { success: ledgerStopped, operationId, status: 'STOPPED' };
+      writeAttempts.push({ fence: 'atomicTransaction', success: true });
+    } catch (txErr) {
+      errors.push('Atomic transaction failed during individual revocation: ' + txErr.message);
+      writeAttempts.push({ fence: 'atomicTransaction', success: false, error: txErr.message });
     }
   } else {
-    ledgerStopped = false;
-    ledgerError = 'ADAPTER_MISSING_RECORD_STOP';
-    errors.push('Failed to record STOP in durable ledger: ' + ledgerError);
+    // Path B: Optimistic Concurrency Control with retry loop (for REST adapters and mocks)
+    // Step 1: Disarm client's window in releaseControl/numericPilot
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const numDoc = await io.readFence('releaseControl/numericPilot');
+        if (numDoc) {
+          if (numDoc.windows && typeof numDoc.windows === 'object' && numDoc.windows[clientId]) {
+            const updatedWindows = { ...numDoc.windows };
+            updatedWindows[clientId] = {
+              ...updatedWindows[clientId],
+              enabled: false,
+              revokedAt: isoNow,
+              revokeReason: reason
+            };
+            await io.writeFence('releaseControl/numericPilot', { windows: updatedWindows }, { merge: true });
+          } else if (numDoc.uid === clientId) {
+            await io.writeFence('releaseControl/numericPilot', {
+              enabled: false,
+              stoppedAt: isoNow,
+              stoppedOperation: operationId,
+              stopReason: reason
+            }, { merge: true });
+          }
+        }
+        writeAttempts.push({ fence: 'numericPilot.windows', path: 'releaseControl/numericPilot', attempt, success: true });
+        break;
+      } catch (err) {
+        if (attempt === MAX_RETRIES) {
+          writeAttempts.push({ fence: 'numericPilot', success: false, error: err.message });
+          errors.push('Failed to revoke client in numericPilot fence after retries: ' + err.message);
+        }
+      }
+    }
+
+    // Step 2: Remove clientId from releaseControl/autonomousProgression with retry loop
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const relDoc = await io.readFence('releaseControl/autonomousProgression');
+        if (relDoc && Array.isArray(relDoc.clientIds)) {
+          const remainingIds = relDoc.clientIds.filter(id => id !== clientId);
+          await io.writeFence('releaseControl/autonomousProgression', { clientIds: remainingIds }, { merge: true });
+        }
+        writeAttempts.push({ fence: 'autonomousProgression', attempt, success: true });
+        break;
+      } catch (err) {
+        if (attempt === MAX_RETRIES) {
+          writeAttempts.push({ fence: 'autonomousProgression', success: false, error: err.message });
+          errors.push('Failed to remove client from release fence after retries: ' + err.message);
+        }
+      }
+    }
+
+    // Step 3: Remove clientId from coaches/{coachId}.autoApplyCanary with retry loop
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const coachDoc = await io.readFence('coaches/' + coachId);
+        if (coachDoc && coachDoc.autoApplyCanary && Array.isArray(coachDoc.autoApplyCanary.clientIds)) {
+          const remainingCoachIds = coachDoc.autoApplyCanary.clientIds.filter(id => id !== clientId);
+          await io.writeFence('coaches/' + coachId, { 'autoApplyCanary.clientIds': remainingCoachIds }, { merge: true });
+        }
+        writeAttempts.push({ fence: 'coachCanary', attempt, success: true });
+        break;
+      } catch (err) {
+        if (attempt === MAX_RETRIES) {
+          writeAttempts.push({ fence: 'coachCanary', success: false, error: err.message });
+          errors.push('Failed to remove client from coach canary after retries: ' + err.message);
+        }
+      }
+    }
+
+    // Step 4: Transition durable ledger for this specific operationId
+    if (io && typeof io.recordStop === 'function') {
+      try {
+        ledgerResult = await io.recordStop(operationId, { reason, coachId, clientId, actor: 'individual-revocation' });
+        ledgerStopped = !!(ledgerResult && ledgerResult.success);
+        if (!ledgerStopped && ledgerResult && ledgerResult.error) {
+          ledgerError = ledgerResult.error;
+          errors.push('Failed to record STOP in durable ledger: ' + (ledgerResult.message || ledgerResult.error));
+        }
+        writeAttempts.push({ fence: 'operationsLedger', path: 'releaseControl/numericPilot/operations/' + operationId, success: ledgerStopped });
+      } catch (err) {
+        ledgerError = err.message;
+        errors.push('Failed to record STOP in durable ledger: ' + err.message);
+      }
+    } else {
+      ledgerStopped = false;
+      ledgerError = 'ADAPTER_MISSING_RECORD_STOP';
+      errors.push('Failed to record STOP in durable ledger: ' + ledgerError);
+    }
   }
 
   // Step 5: Readback verification

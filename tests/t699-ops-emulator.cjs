@@ -8,6 +8,12 @@ const { getFirestore } = require('firebase-admin/firestore');
 const C = require('../api/_numericPilotContract');
 const { executeStop, executeClientRevocation } = require('../scripts/pilot/numeric-stop-recovery.cjs');
 const { createEmulatorIo, executeStopRest, executeAuditStatus } = require('../scripts/pilot/numeric-pilot-ops.cjs');
+const { reserveOperation } = require('../scripts/pilot/numeric-operations-ledger.cjs');
+const { attestRuntime } = require('../scripts/pilot/numeric-attestation.cjs');
+const executor = require('../api/_autonomousProgression');
+const effective = require('../assets/progression-effective-prescription');
+const consumer = require('../assets/progression-application-consumer');
+const F = require('./helpers/lifecycle-fixture');
 
 assert.ok(process.env.FIRESTORE_EMULATOR_HOST, 'emulator required');
 const projectId = process.env.GCLOUD_PROJECT || 'demo-vdsen-shadow';
@@ -566,24 +572,113 @@ test('real audit in emulator: validates logs/{uid}/mesos/{planId} and returns BL
   assert.equal(repErr.isConsistent, false);
 });
 
-test('T708: Multiclient authentic emulator verification: Ayrton and Client B independent full cycles, zero cross-writes, individual revocation, replay idempotency, fail-closed expired window', async () => {
+function createMockFetcher(opData) {
+  return async (url) => {
+    if (url.includes('/aliases/')) {
+      return {
+        status: 200,
+        json: async () => ({
+          alias: 'vdsen-ecosistema.vercel.app',
+          deploymentId: opData.deploymentId,
+          projectId: 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN'
+        })
+      };
+    }
+    const deploymentObj = {
+      id: opData.deploymentId,
+      projectId: 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN',
+      teamId: 'team_VZc5H7Q1DBIJ3g0mwrSBz1o8',
+      target: 'production',
+      readyState: 'READY',
+      alias: ['vdsen-ecosistema.vercel.app'],
+      meta: {
+        githubCommitSha: opData.runtimeSha,
+        vdsenPilotOperation: opData.operationId
+      },
+      envNames: ['AUTONOMOUS_PROGRESSION_ENABLED']
+    };
+    return {
+      status: 200,
+      json: async () => deploymentObj
+    };
+  };
+}
+
+function webTx(tx) {
+  return {
+    get: async (ref) => {
+      const s = await tx.get(ref);
+      return {
+        exists: () => s.exists === true,
+        data: () => s.data(),
+        updateTime: () => {
+          const t = s.updateTime;
+          return t && typeof t.toMillis === 'function' ? t.toMillis() : null;
+        }
+      };
+    },
+    set: (ref, data, opts) => opts ? tx.set(ref, data, opts) : tx.set(ref, data)
+  };
+}
+
+async function makeValidAttestation(opData, now) {
+  return await attestRuntime({
+    cohort: opData.window && opData.window.schema === 'vdsen-numeric-cohort-v1',
+    schema: opData.window && opData.window.schema,
+    deploymentId: opData.deploymentId,
+    expectedSha: opData.runtimeSha,
+    expectedOperationId: opData.operationId,
+    expectedAlias: 'vdsen-ecosistema.vercel.app',
+    expectedUid: opData.uid,
+    expectedPlanId: opData.planId,
+    expectedPid: opData.pid,
+    fetcher: createMockFetcher(opData),
+    now
+  });
+}
+
+test('T709: Multiclient authentic emulator verification: Ayrton and Client B 8-step canonical cycle, concurrent revocation safety, zero cross-writes, replay idempotency, fail-closed expired window', async () => {
   const io = createEmulatorIo(db);
 
-  const uid1 = 'synthetic-ayrton-708';
-  const plan1 = 'meso-ayrton-708';
-  const pid1 = 'pid-bench-708';
-  const opId1 = 'op-emu-ayrton-708';
+  const uid1 = 'synthetic-ayrton-709';
+  const plan1 = 'meso-ayrton-709';
+  const pid1 = 'pid-bench-709';
+  const opId1 = 'op-emu-ayrton-709';
+  const sha = 'a'.repeat(40);
 
-  const uid2 = 'synthetic-bravo-708';
-  const plan2 = 'meso-bravo-708';
-  const pid2 = 'pid-squat-708';
-  const opId2 = 'op-emu-bravo-708';
+  const uid2 = 'synthetic-bravo-709';
+  const plan2 = 'meso-bravo-709';
+  const pid2 = 'pid-squat-709';
+  const opId2 = 'op-emu-bravo-709';
 
-  const coachId = 'coach-multiclient-emu-708';
+  const coachId = 'coach-multiclient-emu-709';
+
+  const sc1 = F.scenario({ pid: pid1, clientId: uid1, planId: plan1 });
+  const sc2 = F.scenario({ pid: pid2, clientId: uid2, planId: plan2 });
+
+  // 1. Coach prescribes and activates base plans first so serverPlanUpdatedAt is strictly prior to evidence calculation
+  await db.doc('coaches/' + coachId).set({
+    name: 'Head Coach Multiclient',
+    autoApplyCanary: {
+      schema: 'vdsen-canary-cohort-v1',
+      enabled: true,
+      clientIds: [uid1, uid2],
+      prescriptionExerciseIds: [pid1, pid2]
+    }
+  });
+
+  await db.doc('clients/' + uid1).set({ coachId, activePlanId: plan1, coachInterventions: [] });
+  await db.doc('clients/' + uid2).set({ coachId, activePlanId: plan2, coachInterventions: [] });
+
+  await db.doc('plans/' + plan1).set(Object.assign({}, sc1.plan, { coachId, status: 'active' }));
+  await db.doc('plans/' + plan2).set(Object.assign({}, sc2.plan, { coachId, status: 'active' }));
+
+  // Ensure serverPlanUpdatedAt committed on Firestore clock is strictly prior to calculation timestamp
+  await new Promise(r => setTimeout(r, 1100));
 
   const nowSec = Math.floor(Date.now() / 1000) * 1000;
-  const startsAt = new Date(nowSec - 60000).toISOString().replace('.000Z', 'Z');
-  const expiresAt = new Date(nowSec + 86400000).toISOString().replace('.000Z', 'Z');
+  const startsAt = new Date(nowSec).toISOString().replace('.000Z', 'Z');
+  const expiresAt = new Date(nowSec + 3600000).toISOString().replace('.000Z', 'Z');
 
   const win1 = {
     schema: 'vdsen-numeric-cohort-v1',
@@ -592,7 +687,7 @@ test('T708: Multiclient authentic emulator verification: Ayrton and Client B ind
     planId: plan1,
     pid: pid1,
     operationId: opId1,
-    runtimeSha: 'a'.repeat(40),
+    runtimeSha: sha,
     startsAt: startsAt,
     expiresAt: expiresAt
   };
@@ -604,289 +699,403 @@ test('T708: Multiclient authentic emulator verification: Ayrton and Client B ind
     planId: plan2,
     pid: pid2,
     operationId: opId2,
-    runtimeSha: 'b'.repeat(40),
+    runtimeSha: sha,
     startsAt: startsAt,
     expiresAt: expiresAt
   };
 
-  // 1. Pre-seed cohort fences in emulator
-  const numRef = db.doc('releaseControl/numericPilot');
-  const relRef = db.doc('releaseControl/autonomousProgression');
-  const coachRef = db.doc('coaches/' + coachId);
+  const env = {
+    AUTONOMOUS_PROGRESSION_ENABLED: 'true',
+    AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED: 'true',
+    VDSEN_NUMERIC_PILOT_ENABLED: 'true',
+    VDSEN_NUMERIC_PILOT_RUNTIME_SHA: sha,
+    VDSEN_NUMERIC_COHORT_WINDOWS: JSON.stringify([win1, win2])
+  };
+  const prevEnv = Object.keys(env).map(k => [k, process.env[k]]);
+  Object.assign(process.env, env);
+  delete process.env.CRON_SECRET;
 
-  await numRef.set({
-    schema: 'vdsen-numeric-cohort-v1',
-    enabled: true,
-    windows: {
-      [uid1]: { ...win1, enabled: true },
-      [uid2]: { ...win2, enabled: true }
-    }
-  });
+  try {
+    const evidence1 = structuredClone(sc1.entries);
+    evidence1.progrec_1_2 = {
+      calculatedAt: startsAt,
+      recommendations: [{
+        prescriptionExerciseId: pid1,
+        exerciseId: sc1.exerciseId,
+        exerciseName: 'Bench Press',
+        action: 'increase_load',
+        newLoad: 5,
+        newReps: 10
+      }]
+    };
 
-  await relRef.set({
-    schema: 'vdsen-autonomous-release-v1',
-    enabled: true,
-    clientIds: [uid1, uid2],
-    expiresAt: expiresAt
-  });
+    const evidence2 = structuredClone(sc2.entries);
+    evidence2.progrec_1_2 = {
+      calculatedAt: startsAt,
+      recommendations: [{
+        prescriptionExerciseId: pid2,
+        exerciseId: sc2.exerciseId,
+        exerciseName: 'Squat',
+        action: 'increase_load',
+        newLoad: 5,
+        newReps: 10
+      }]
+    };
 
-  await coachRef.set({
-    name: 'Head Coach Multiclient',
-    autoApplyCanary: {
-      schema: 'vdsen-canary-cohort-v1',
+    await db.doc('releaseControl/numericPilot').set({
+      schema: 'vdsen-numeric-cohort-v1',
+      enabled: true,
+      windows: {
+        [uid1]: { ...win1, enabled: true },
+        [uid2]: { ...win2, enabled: true }
+      }
+    });
+
+    await db.doc('releaseControl/autonomousProgression').set({
+      schema: 'vdsen-autonomous-release-v1',
       enabled: true,
       clientIds: [uid1, uid2],
-      prescriptionExerciseIds: [pid1, pid2]
-    }
-  });
+      expiresAt: expiresAt
+    });
 
-  // 2. Pre-seed durable ledger reservations
-  const opRef1 = db.doc('releaseControl/numericPilot/operations/' + opId1);
-  const opRef2 = db.doc('releaseControl/numericPilot/operations/' + opId2);
+    // 2. Client generates valid evidence
+    await db.doc('logs/' + uid1).set({ planId: plan1, entries: evidence1 });
+    await db.doc('logs/' + uid2).set({ planId: plan2, entries: evidence2 });
 
-  const ledgerDoc1 = {
-    schema: 'vdsen-numeric-operations-ledger-v1',
-    operationId: opId1,
-    status: 'RESERVED',
-    uid: uid1,
-    planId: plan1,
-    pid: pid1,
-    runtimeSha: win1.runtimeSha,
-    deploymentId: 'dpl_emu_cohort_1',
-    runId: 'run-ayrton-708',
-    window: win1,
-    scope: { enabled: true, clientIds: [uid1], prescriptionExerciseIds: [pid1] },
-    appliedRecordKeys: [],
-    history: [{ sequence: 1, action: 'RESERVED', at: startsAt, actor: 'test-seed' }]
-  };
+    await db.doc('logs/' + uid1 + '/mesos/' + plan1).set({
+      planId: plan1,
+      entries: evidence1,
+      progressionApplications: {},
+      nextExposureOverlays: {},
+      consumptionReceipts: {}
+    });
 
-  const ledgerDoc2 = {
-    schema: 'vdsen-numeric-operations-ledger-v1',
-    operationId: opId2,
-    status: 'RESERVED',
-    uid: uid2,
-    planId: plan2,
-    pid: pid2,
-    runtimeSha: win2.runtimeSha,
-    deploymentId: 'dpl_emu_cohort_2',
-    runId: 'run-bravo-708',
-    window: win2,
-    scope: { enabled: true, clientIds: [uid2], prescriptionExerciseIds: [pid2] },
-    appliedRecordKeys: [],
-    history: [{ sequence: 1, action: 'RESERVED', at: startsAt, actor: 'test-seed' }]
-  };
+    await db.doc('logs/' + uid2 + '/mesos/' + plan2).set({
+      planId: plan2,
+      entries: evidence2,
+      progressionApplications: {},
+      nextExposureOverlays: {},
+      consumptionReceipts: {}
+    });
 
-  await opRef1.set(ledgerDoc1);
-  await opRef2.set(ledgerDoc2);
+    // 3. Motor materializes PENDING via canonical handler
+    const mat1 = await executor.materialize(db, uid1, plan1, () => startsAt);
+    assert.equal(mat1.status, 'MATERIALIZED');
+    const meso1PostMat = (await db.doc('logs/' + uid1 + '/mesos/' + plan1).get()).data();
+    const recs1 = Object.values(meso1PostMat.progressionApplications || {});
+    assert.equal(recs1.length, 1);
+    assert.equal(recs1[0].state, 'PENDING');
+    assert.equal(recs1[0].prescriptionExerciseId, pid1);
+    const ayrtonRecKey = recs1[0].key;
 
-  // 3. Pre-seed mesos for both clients
-  const mesoRef1 = db.doc('logs/' + uid1 + '/mesos/' + plan1);
-  const mesoRef2 = db.doc('logs/' + uid2 + '/mesos/' + plan2);
+    const mat2 = await executor.materialize(db, uid2, plan2, () => startsAt);
+    assert.equal(mat2.status, 'MATERIALIZED');
+    const meso2PostMat = (await db.doc('logs/' + uid2 + '/mesos/' + plan2).get()).data();
+    const recs2 = Object.values(meso2PostMat.progressionApplications || {});
+    assert.equal(recs2.length, 1);
+    assert.equal(recs2[0].state, 'PENDING');
+    assert.equal(recs2[0].prescriptionExerciseId, pid2);
+    const bravoRecKey = recs2[0].key;
 
-  const recKey1 = 'rec_ayrton_01';
-  const recKey2 = 'rec_bravo_02';
+    // Zero cross-pollution after materialization
+    assert.equal(meso1PostMat.progressionApplications[bravoRecKey], undefined);
+    assert.equal(meso2PostMat.progressionApplications[ayrtonRecKey], undefined);
 
-  await mesoRef1.set({
-    planId: plan1,
-    progressionApplications: {
-      [recKey1]: {
-        key: recKey1,
+    // 4. Operation obtains accredited reservation via reserveOperation
+    const opData1 = {
+      schema: 'vdsen-numeric-operations-ledger-v1',
+      operationId: opId1,
+      uid: uid1,
+      planId: plan1,
+      pid: pid1,
+      runtimeSha: sha,
+      deploymentId: 'dpl_emu_cohort_1',
+      runId: 'run-ayrton-709',
+      window: win1,
+      scope: { enabled: true, clientIds: [uid1], prescriptionExerciseIds: [pid1] }
+    };
+    const att1 = await makeValidAttestation(opData1, startsAt);
+    const res1 = await reserveOperation(db, opData1, { attestation: att1, now: startsAt });
+    assert.equal(res1.status, 'RESERVED');
+
+    const opData2 = {
+      schema: 'vdsen-numeric-operations-ledger-v1',
+      operationId: opId2,
+      uid: uid2,
+      planId: plan2,
+      pid: pid2,
+      runtimeSha: sha,
+      deploymentId: 'dpl_emu_cohort_2',
+      runId: 'run-bravo-709',
+      window: win2,
+      scope: { enabled: true, clientIds: [uid2], prescriptionExerciseIds: [pid2] }
+    };
+    const att2 = await makeValidAttestation(opData2, startsAt);
+    const res2 = await reserveOperation(db, opData2, { attestation: att2, now: startsAt });
+    assert.equal(res2.status, 'RESERVED');
+
+    // 5. Servidor ejecuta applyPending con reserva válida
+    const applyRes1 = await executor.applyPending(db, uid1, plan1, () => startsAt);
+    assert.equal(applyRes1.length, 1);
+    assert.equal(applyRes1[0].written, true);
+
+    const meso1PostApply = (await db.doc('logs/' + uid1 + '/mesos/' + plan1).get()).data();
+    assert.equal(meso1PostApply.progressionApplications[ayrtonRecKey].state, 'APPLIED');
+    const ovl1 = meso1PostApply.nextExposureOverlays['ovl_' + ayrtonRecKey];
+    assert.ok(ovl1, 'Overlay created for Ayrton');
+    assert.equal(ovl1.status, 'APPLIED');
+
+    // Verify Ayrton's ledger updated with RECORD_APPLIED
+    const op1PostApply = (await db.doc('releaseControl/numericPilot/operations/' + opId1).get()).data();
+    assert.deepEqual(op1PostApply.appliedRecordKeys, [ayrtonRecKey]);
+    assert.equal(op1PostApply.history.some(h => h.action === 'RECORD_APPLIED' && h.recordKey === ayrtonRecKey), true);
+
+    // Client 2's meso and ledger remain completely untouched
+    const meso2PreApply = (await db.doc('logs/' + uid2 + '/mesos/' + plan2).get()).data();
+    assert.equal(meso2PreApply.progressionApplications[bravoRecKey].state, 'PENDING');
+    assert.deepEqual(meso2PreApply.nextExposureOverlays, {});
+    const op2PostApply1 = (await db.doc('releaseControl/numericPilot/operations/' + opId2).get()).data();
+    assert.ok(!op2PostApply1.appliedRecordKeys || op2PostApply1.appliedRecordKeys.length === 0, 'Client 2 ledger has no applied records');
+
+    // 6. Cliente obtiene prescripción efectiva con overlay
+    const eff1 = await effective.resolveEffective({
+      clientId: uid1,
+      planId: plan1,
+      activePlanId: plan1,
+      pid: pid1,
+      week: ovl1.target.week,
+      dayIndex: ovl1.target.dayIndex,
+      records: meso1PostApply.progressionApplications,
+      overlays: meso1PostApply.nextExposureOverlays,
+      interventions: [],
+      plan: sc1.plan,
+      entries: meso1PostApply.entries,
+      baseSets: F.baseSets(),
+      canonicalOverlayRead: true
+    });
+    assert.equal(eff1.provenance, 'CANONICAL_OVERLAY');
+    assert.ok(eff1.sets.some(s => s.effective && s.effective.load === ovl1.appliedValue));
+
+    // 7. Cliente registra ejecución con consumption receipt
+    const tgtLogKey1 = 'log_' + ovl1.target.week + '_' + ovl1.target.dayIndex + '_0_s0';
+    const targetEntry1 = {
+      carga: String(ovl1.appliedValue),
+      reps: '10',
+      unit: 'KG',
+      done: true,
+      rir: 2,
+      rir_real: 2,
+      prescriptionExerciseId: pid1,
+      ts: Date.parse(startsAt) + 1000,
+      sts: Date.parse(startsAt) + 1000
+    };
+    await db.doc('logs/' + uid1 + '/mesos/' + plan1).update({ ['entries.' + tgtLogKey1]: targetEntry1 });
+    await db.doc('logs/' + uid1).update({ ['entries.' + tgtLogKey1]: targetEntry1 });
+
+    // Canonical T603 exposure start marker (at exposure start, after evidence calculation)
+    const exposureStartAt1 = new Date(Date.parse(startsAt) + 1000).toISOString().replace('.000Z', 'Z');
+    await db.doc('logs/' + uid1 + '/starts/' + plan1 + '_' + ovl1.target.week + '_' + ovl1.target.dayIndex + '_0').set({
+      at: exposureStartAt1,
+      planId: plan1,
+      week: ovl1.target.week,
+      dayIndex: ovl1.target.dayIndex,
+      exerciseIndex: 0
+    });
+
+    const refs1 = {
+      meso: db.doc('logs/' + uid1 + '/mesos/' + plan1),
+      root: db.doc('logs/' + uid1)
+    };
+    const rAck1 = await db.runTransaction(async tx => {
+      return consumer.recordConsumptionReceiptTransaction(webTx(tx), refs1, {
+        recordKey: ayrtonRecKey,
         clientId: uid1,
-        planId: plan1,
-        prescriptionExerciseId: pid1,
-        state: 'PENDING',
-        revision: 1,
-        createdAt: startsAt
-      }
-    },
-    nextExposureOverlays: {},
-    consumptionReceipts: {}
-  });
+        now: exposureStartAt1,
+        shown: {
+          provenance: 'CANONICAL_OVERLAY',
+          overlayKey: ovl1.key,
+          dimension: ovl1.dimension,
+          appliedValue: ovl1.appliedValue
+        }
+      }, { isCurrent: () => true, canonicalOverlayRead: true });
+    });
+    assert.equal(rAck1.written, true);
 
-  await mesoRef2.set({
-    planId: plan2,
-    progressionApplications: {
-      [recKey2]: {
-        key: recKey2,
+    // 8. Servidor valida recibo y consume ajuste
+    const consumeRes1 = await executor.consumePending(db, uid1, plan1, () => new Date(Date.parse(startsAt) + 2000).toISOString().replace('.000Z', 'Z'));
+    assert.equal(consumeRes1.length, 1);
+    assert.equal(consumeRes1[0].written, true);
+
+    const meso1PostConsume = (await db.doc('logs/' + uid1 + '/mesos/' + plan1).get()).data();
+    assert.equal(meso1PostConsume.progressionApplications[ayrtonRecKey].state, 'CONSUMED');
+    assert.equal(meso1PostConsume.nextExposureOverlays[ovl1.key].status, 'CONSUMED');
+
+    // 9. Replay & Idempotency: Re-applying on Ayrton's ledger rejects duplicate record
+    assert.equal(C.ledgerValid(op1PostApply, win1, ayrtonRecKey), false, 'Already applied record must be rejected for replay');
+    assert.equal(C.ledgerValid(op1PostApply, win1, 'fresh-rec-key-99'), true, 'Fresh record key is permitted');
+
+    // 10. Individual Client Revocation: revoke Ayrton without stopping Client 2
+    const revReport = await executeClientRevocation({
+      clientId: uid1,
+      operationId: opId1,
+      coachId: coachId,
+      reason: 'EMU_TARGETED_REVOCATION'
+    }, io);
+
+    assert.equal(revReport.status, 'REVOCATION_CONFIRMED');
+    assert.equal(revReport.success, true);
+
+    // Read back fences from emulator
+    const savedNum = (await db.doc('releaseControl/numericPilot').get()).data();
+    assert.equal(savedNum.enabled, true, 'Global numeric pilot must remain enabled');
+    assert.equal(savedNum.windows[uid1].enabled, false, 'Ayrton window must be disabled');
+    assert.equal(savedNum.windows[uid2].enabled, true, 'Client 2 window must remain enabled');
+
+    const savedRel = (await db.doc('releaseControl/autonomousProgression').get()).data();
+    assert.equal(savedRel.enabled, true, 'Global release control must remain enabled');
+    assert.deepEqual(savedRel.clientIds, [uid2], 'Only Client 2 must remain in release allowlist');
+
+    const savedCoach = (await db.doc('coaches/' + coachId).get()).data();
+    assert.equal(savedCoach.autoApplyCanary.enabled, true, 'Coach canary must remain enabled');
+    assert.deepEqual(savedCoach.autoApplyCanary.clientIds, [uid2], 'Only Client 2 must remain in coach canary');
+
+    const savedOp1 = (await db.doc('releaseControl/numericPilot/operations/' + opId1).get()).data();
+    assert.equal(savedOp1.status, 'STOPPED');
+
+    const savedOp2 = (await db.doc('releaseControl/numericPilot/operations/' + opId2).get()).data();
+    assert.equal(savedOp2.status, 'RESERVED', 'Client 2 ledger operation must remain RESERVED');
+
+    // 11. Client 2 progresses independently to CONSUMED
+    const applyRes2 = await executor.applyPending(db, uid2, plan2, () => startsAt);
+    assert.equal(applyRes2.length, 1);
+    assert.equal(applyRes2[0].written, true);
+
+    const meso2PostApply = (await db.doc('logs/' + uid2 + '/mesos/' + plan2).get()).data();
+    assert.equal(meso2PostApply.progressionApplications[bravoRecKey].state, 'APPLIED');
+    const ovl2 = meso2PostApply.nextExposureOverlays['ovl_' + bravoRecKey];
+    assert.ok(ovl2);
+
+    const eff2 = await effective.resolveEffective({
+      clientId: uid2,
+      planId: plan2,
+      activePlanId: plan2,
+      pid: pid2,
+      week: ovl2.target.week,
+      dayIndex: ovl2.target.dayIndex,
+      records: meso2PostApply.progressionApplications,
+      overlays: meso2PostApply.nextExposureOverlays,
+      interventions: [],
+      plan: sc2.plan,
+      entries: meso2PostApply.entries,
+      baseSets: F.baseSets(),
+      canonicalOverlayRead: true
+    });
+    assert.equal(eff2.provenance, 'CANONICAL_OVERLAY');
+
+    const tgtLogKey2 = 'log_' + ovl2.target.week + '_' + ovl2.target.dayIndex + '_0_s0';
+    const targetEntry2 = {
+      carga: String(ovl2.appliedValue),
+      reps: '10',
+      unit: 'KG',
+      done: true,
+      rir: 2,
+      rir_real: 2,
+      prescriptionExerciseId: pid2,
+      ts: Date.parse(startsAt) + 1000,
+      sts: Date.parse(startsAt) + 1000
+    };
+    await db.doc('logs/' + uid2 + '/mesos/' + plan2).update({ ['entries.' + tgtLogKey2]: targetEntry2 });
+    await db.doc('logs/' + uid2).update({ ['entries.' + tgtLogKey2]: targetEntry2 });
+
+    // Canonical T603 exposure start marker (at exposure start, after evidence calculation)
+    const exposureStartAt2 = new Date(Date.parse(startsAt) + 1000).toISOString().replace('.000Z', 'Z');
+    await db.doc('logs/' + uid2 + '/starts/' + plan2 + '_' + ovl2.target.week + '_' + ovl2.target.dayIndex + '_0').set({
+      at: exposureStartAt2,
+      planId: plan2,
+      week: ovl2.target.week,
+      dayIndex: ovl2.target.dayIndex,
+      exerciseIndex: 0
+    });
+
+    const refs2 = {
+      meso: db.doc('logs/' + uid2 + '/mesos/' + plan2),
+      root: db.doc('logs/' + uid2)
+    };
+    const rAck2 = await db.runTransaction(async tx => {
+      return consumer.recordConsumptionReceiptTransaction(webTx(tx), refs2, {
+        recordKey: bravoRecKey,
         clientId: uid2,
-        planId: plan2,
-        prescriptionExerciseId: pid2,
-        state: 'PENDING',
-        revision: 1,
-        createdAt: startsAt
+        now: exposureStartAt2,
+        shown: {
+          provenance: 'CANONICAL_OVERLAY',
+          overlayKey: ovl2.key,
+          dimension: ovl2.dimension,
+          appliedValue: ovl2.appliedValue
+        }
+      }, { isCurrent: () => true, canonicalOverlayRead: true });
+    });
+    assert.equal(rAck2.written, true);
+
+    const consumeRes2 = await executor.consumePending(db, uid2, plan2, () => new Date(Date.parse(startsAt) + 2000).toISOString().replace('.000Z', 'Z'));
+    assert.equal(consumeRes2.length, 1);
+    assert.equal(consumeRes2[0].written, true);
+
+    const meso2Final = (await db.doc('logs/' + uid2 + '/mesos/' + plan2).get()).data();
+    assert.equal(meso2Final.progressionApplications[bravoRecKey].state, 'CONSUMED');
+    assert.equal(meso2Final.nextExposureOverlays[ovl2.key].status, 'CONSUMED');
+
+    // Ayrton's meso was completely untouched throughout Client 2's operations
+    const meso1Final = (await db.doc('logs/' + uid1 + '/mesos/' + plan1).get()).data();
+    assert.equal(meso1Final.progressionApplications[ayrtonRecKey].state, 'CONSUMED');
+    assert.equal(meso1Final.nextExposureOverlays[ovl1.key].status, 'CONSUMED');
+
+    // 12. Concurrent Revocation Resilience (No lost updates)
+    const cA = 'synth-conc-a', cB = 'synth-conc-b';
+    const opA = 'op-conc-a-709', opB = 'op-conc-b-709';
+    const cCoach = 'coach-conc-rev-709';
+    await db.doc('coaches/' + cCoach).set({
+      autoApplyCanary: { enabled: true, clientIds: [cA, cB], prescriptionExerciseIds: ['pA', 'pB'] }
+    });
+    await db.doc('releaseControl/numericPilot').set({
+      schema: 'vdsen-numeric-cohort-v1',
+      enabled: true,
+      windows: {
+        [cA]: { ...win1, uid: cA, operationId: opA, enabled: true },
+        [cB]: { ...win2, uid: cB, operationId: opB, enabled: true }
       }
-    },
-    nextExposureOverlays: {},
-    consumptionReceipts: {}
-  });
+    });
+    await db.doc('releaseControl/autonomousProgression').set({
+      schema: 'vdsen-autonomous-release-v1',
+      enabled: true,
+      clientIds: [cA, cB],
+      expiresAt: expiresAt
+    });
+    await db.doc('releaseControl/numericPilot/operations/' + opA).set({
+      schema: 'vdsen-numeric-operations-ledger-v1', operationId: opA, status: 'RESERVED', history: [{ sequence: 1, action: 'RESERVED', at: startsAt }]
+    });
+    await db.doc('releaseControl/numericPilot/operations/' + opB).set({
+      schema: 'vdsen-numeric-operations-ledger-v1', operationId: opB, status: 'RESERVED', history: [{ sequence: 1, action: 'RESERVED', at: startsAt }]
+    });
 
-  // 4. Ayrton progresses: PENDING -> APPLIED
-  const ovlKey1 = 'ovl_' + recKey1;
-  await mesoRef1.set({
-    progressionApplications: {
-      [recKey1]: {
-        key: recKey1,
-        clientId: uid1,
-        planId: plan1,
-        prescriptionExerciseId: pid1,
-        state: 'APPLIED',
-        revision: 2,
-        updatedAt: new Date().toISOString()
-      }
-    },
-    nextExposureOverlays: {
-      [ovlKey1]: {
-        key: ovlKey1,
-        sourceRecordKey: recKey1,
-        status: 'APPLIED',
-        dimension: 'LOAD',
-        appliedValue: 82.5,
-        unit: 'KG',
-        clientId: uid1,
-        planId: plan1,
-        prescriptionExerciseId: pid1
-      }
-    }
-  }, { merge: true });
+    const [revA, revB] = await Promise.all([
+      executeClientRevocation({ clientId: cA, operationId: opA, coachId: cCoach, reason: 'CONCURRENT_A' }, io),
+      executeClientRevocation({ clientId: cB, operationId: opB, coachId: cCoach, reason: 'CONCURRENT_B' }, io)
+    ]);
+    assert.equal(revA.status, 'REVOCATION_CONFIRMED');
+    assert.equal(revB.status, 'REVOCATION_CONFIRMED');
 
-  await opRef1.update({
-    appliedRecordKeys: [recKey1]
-  });
+    const finalConcRel = (await db.doc('releaseControl/autonomousProgression').get()).data();
+    assert.deepEqual(finalConcRel.clientIds, [], 'Both clients removed without lost update');
+    const finalConcCoach = (await db.doc('coaches/' + cCoach).get()).data();
+    assert.deepEqual(finalConcCoach.autoApplyCanary.clientIds, [], 'Both clients removed from coach canary without lost update');
 
-  // Ayrton acknowledges and consumes: APPLIED -> CONSUMED
-  await mesoRef1.set({
-    progressionApplications: {
-      [recKey1]: {
-        state: 'CONSUMED',
-        revision: 3,
-        updatedAt: new Date().toISOString()
-      }
-    },
-    nextExposureOverlays: {
-      [ovlKey1]: {
-        status: 'CONSUMED'
-      }
-    },
-    consumptionReceipts: {
-      [recKey1]: {
-        recordKey: recKey1,
-        overlayKey: ovlKey1,
-        provenance: 'CANONICAL_OVERLAY',
-        ackAt: new Date().toISOString()
-      }
-    }
-  }, { merge: true });
-
-  // 5. Verify Zero Cross-Tenant Leakage: Client 2's meso document was untouched!
-  const snapMeso2Before = (await mesoRef2.get()).data();
-  assert.equal(snapMeso2Before.progressionApplications[recKey2].state, 'PENDING');
-  assert.deepEqual(snapMeso2Before.nextExposureOverlays, {});
-  assert.deepEqual(snapMeso2Before.consumptionReceipts, {});
-
-  // 6. Replay & Idempotency: Re-applying on Ayrton's ledger rejects duplicate record
-  const op1DocPost = (await opRef1.get()).data();
-  assert.equal(C.ledgerValid(op1DocPost, win1, recKey1), false, 'Already applied record must be rejected for replay');
-  assert.equal(C.ledgerValid(op1DocPost, win1, 'fresh-rec-key-99'), true, 'Fresh record key is permitted');
-
-  // 7. Individual Client Revocation: revoke Ayrton without stopping Client 2
-  const revReport = await executeClientRevocation({
-    clientId: uid1,
-    operationId: opId1,
-    coachId: coachId,
-    reason: 'EMU_TARGETED_REVOCATION'
-  }, io);
-
-  assert.equal(revReport.status, 'REVOCATION_CONFIRMED');
-  assert.equal(revReport.success, true);
-
-  // Read back fences from emulator
-  const savedNum = (await numRef.get()).data();
-  assert.equal(savedNum.enabled, true, 'Global numeric pilot must remain enabled');
-  assert.equal(savedNum.windows[uid1].enabled, false, 'Ayrton window must be disabled');
-  assert.equal(savedNum.windows[uid2].enabled, true, 'Client 2 window must remain enabled');
-
-  const savedRel = (await relRef.get()).data();
-  assert.equal(savedRel.enabled, true, 'Global release control must remain enabled');
-  assert.deepEqual(savedRel.clientIds, [uid2], 'Only Client 2 must remain in release allowlist');
-
-  const savedCoach = (await coachRef.get()).data();
-  assert.equal(savedCoach.autoApplyCanary.enabled, true, 'Coach canary must remain enabled');
-  assert.deepEqual(savedCoach.autoApplyCanary.clientIds, [uid2], 'Only Client 2 must remain in coach canary');
-
-  const savedOp1 = (await opRef1.get()).data();
-  assert.equal(savedOp1.status, 'STOPPED');
-
-  const savedOp2 = (await opRef2.get()).data();
-  assert.equal(savedOp2.status, 'RESERVED', 'Client 2 ledger operation must remain RESERVED');
-
-  // 8. Client 2 progresses independently to CONSUMED
-  const ovlKey2 = 'ovl_' + recKey2;
-  await mesoRef2.set({
-    progressionApplications: {
-      [recKey2]: {
-        key: recKey2,
-        clientId: uid2,
-        planId: plan2,
-        prescriptionExerciseId: pid2,
-        state: 'APPLIED',
-        revision: 2,
-        updatedAt: new Date().toISOString()
-      }
-    },
-    nextExposureOverlays: {
-      [ovlKey2]: {
-        key: ovlKey2,
-        sourceRecordKey: recKey2,
-        status: 'APPLIED',
-        dimension: 'LOAD',
-        appliedValue: 95,
-        unit: 'KG',
-        clientId: uid2,
-        planId: plan2,
-        prescriptionExerciseId: pid2
-      }
-    }
-  }, { merge: true });
-
-  await opRef2.update({ appliedRecordKeys: [recKey2] });
-
-  await mesoRef2.set({
-    progressionApplications: {
-      [recKey2]: {
-        state: 'CONSUMED',
-        revision: 3,
-        updatedAt: new Date().toISOString()
-      }
-    },
-    nextExposureOverlays: {
-      [ovlKey2]: {
-        status: 'CONSUMED'
-      }
-    },
-    consumptionReceipts: {
-      [recKey2]: {
-        recordKey: recKey2,
-        overlayKey: ovlKey2,
-        provenance: 'CANONICAL_OVERLAY',
-        ackAt: new Date().toISOString()
-      }
-    }
-  }, { merge: true });
-
-  // Read back Client 2 final state
-  const snapMeso2Final = (await mesoRef2.get()).data();
-  assert.equal(snapMeso2Final.progressionApplications[recKey2].state, 'CONSUMED');
-  assert.equal(snapMeso2Final.nextExposureOverlays[ovlKey2].status, 'CONSUMED');
-
-  // Verify Ayrton's meso document was untouched by Client 2's operations
-  const snapMeso1Final = (await mesoRef1.get()).data();
-  assert.equal(snapMeso1Final.progressionApplications[recKey1].state, 'CONSUMED');
-  assert.equal(snapMeso1Final.nextExposureOverlays[ovlKey1].status, 'CONSUMED');
-
-  // 9. Fail closed on expired window
-  const expiredWin = {
-    ...win1,
-    expiresAt: new Date(Date.now() - 3600000).toISOString().replace('.000Z', 'Z')
-  };
-  assert.equal(C.windowValid(expiredWin, Date.now()), false, 'Expired window must fail closed');
+    // 13. Fail closed on expired window
+    const expiredWin = {
+      ...win1,
+      expiresAt: new Date(Date.now() - 3600000).toISOString().replace('.000Z', 'Z')
+    };
+    assert.equal(C.windowValid(expiredWin, Date.now()), false, 'Expired window must fail closed');
+  } finally {
+    prevEnv.forEach(([k, v]) => { if (v === undefined) delete process.env[k]; else process.env[k] = v; });
+  }
 });

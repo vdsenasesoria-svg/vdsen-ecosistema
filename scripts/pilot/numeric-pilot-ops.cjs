@@ -84,6 +84,8 @@ function unflattenFields(obj) {
 function createEmulatorIo(db) {
   const ledger = require('./numeric-operations-ledger.cjs');
   return {
+    db: db,
+    runTransaction: (fn) => db.runTransaction(fn),
     writeFence: async (docPath, fields, writeOpts) => {
       const docRef = db.doc(docPath);
       const nested = unflattenFields(fields);

@@ -880,3 +880,105 @@ test('T707-G: Idempotencia estricta en reintentos y consumo único', () => {
   // 3. Different recordKey in the same operation is allowed
   assert.equal(numericPilot.ledgerValid(ledgerDoc, win, 'rec-key-2'), true, 'Allows fresh recordKey');
 });
+
+// SCENARIO H: Cohort Readiness & Operational Staging
+const {
+  COHORT_SCHEMA,
+  MAX_COHORT_CAPACITY,
+  INVARIANT_APPLY_ENABLED,
+  assessCohortClientEligibility,
+  prepareCohortStaging
+} = require('../scripts/pilot/cohort-readiness.cjs');
+
+test('T707-H1: assessCohortClientEligibility clasifica correctamente elegibilidad de cliente', () => {
+  const plan = { id: 'plan-ready-1', days: [{ dayIndex: 0, exercises: [{ prescriptionExerciseId: 'pid-1' }] }] };
+  const entries = {
+    'log_1_0_0_s0': { done: true, prescriptionExerciseId: 'pid-1' },
+    'log_2_0_0_s0': { done: true, prescriptionExerciseId: 'pid-1' }
+  };
+  const starts = {
+    'st_1': { at: '2026-11-01T10:00:00Z', planId: 'plan-ready-1', week: 1, dayIndex: 0, exerciseIndex: 0 },
+    'st_2': { at: '2026-11-08T10:00:00Z', planId: 'plan-ready-1', week: 2, dayIndex: 0, exerciseIndex: 0 }
+  };
+
+  const eligibleClient = {
+    clientId: 'ath-cohort-01',
+    coachId: 'coach-01',
+    plan,
+    entries,
+    starts,
+    priorityRank: 1
+  };
+
+  const res = assessCohortClientEligibility(eligibleClient);
+  assert.equal(res.clientId, 'ath-cohort-01');
+  assert.equal(res.planReady, true);
+  assert.equal(res.status, 'NEEDS_VERIFIED_ACTIVITY');
+  assert.equal(res.isAyrton, false);
+
+  // Ayrton identification
+  const ayrtonClient = {
+    clientId: numericPilot.UID,
+    coachId: 'coach-ayrton',
+    plan: { id: numericPilot.PLAN },
+    priorityRank: 0
+  };
+  const resAyrton = assessCohortClientEligibility(ayrtonClient);
+  assert.equal(resAyrton.isAyrton, true);
+
+  // Wildcards rejected
+  assert.equal(assessCohortClientEligibility({ clientId: 'ath-*', coachId: 'c', plan }).eligible, false);
+  assert.equal(assessCohortClientEligibility({ clientId: 'ath-1', coachId: 'coach-*', plan }).eligible, false);
+  assert.equal(assessCohortClientEligibility({ clientId: 'ath-1', coachId: 'c', plan: { id: 'plan-*' } }).eligible, false);
+});
+
+test('T707-H2: prepareCohortStaging genera especificación de cohorte segura, inicialmente apagada y con tope de 10 clientes', () => {
+  const ayrtonPilot0 = {
+    clientId: numericPilot.UID,
+    coachId: 'coach-ayrton',
+    plan: { id: numericPilot.PLAN, days: [{ dayIndex: 0, exercises: [{ prescriptionExerciseId: numericPilot.PID }] }] },
+    entries: {},
+    starts: {},
+    priorityRank: 0
+  };
+
+  // 12 candidates to test capacity limit (max 10)
+  const candidates = [];
+  for (let i = 1; i <= 12; i++) {
+    const cid = 'ath-cand-' + String(i).padStart(2, '0');
+    const pid = 'pid-cand-' + i;
+    const planId = 'plan-cand-' + i;
+    candidates.push({
+      clientId: cid,
+      coachId: 'coach-01',
+      plan: { id: planId, days: [{ dayIndex: 0, exercises: [{ prescriptionExerciseId: pid }] }] },
+      entries: {
+        'log_1_0_0_s0': { done: true, prescriptionExerciseId: pid },
+        'log_2_0_0_s0': { done: true, prescriptionExerciseId: pid }
+      },
+      starts: {
+        'st_1': { at: '2026-11-01T10:00:00Z', planId, week: 1, dayIndex: 0, exerciseIndex: 0 },
+        'st_2': { at: '2026-11-08T10:00:00Z', planId, week: 2, dayIndex: 0, exerciseIndex: 0 }
+      },
+      priorityRank: i
+    });
+  }
+
+  const staging = prepareCohortStaging({
+    pilot0: ayrtonPilot0,
+    candidates
+  });
+
+  assert.equal(staging.schema, COHORT_SCHEMA);
+  assert.equal(staging.status, 'COHORT_STAGED_OFF');
+  assert.equal(staging.applyEnabled, false);
+  assert.equal(staging.capacity.max, 10);
+  assert.equal(staging.capacity.totalAdmitted, 10, 'Strict capacity limit of 10 enforced');
+  assert.equal(staging.capacity.overflowCount, 3, 'Overflow candidates queued');
+  assert.equal(staging.admittedClients[0].clientId, numericPilot.UID, 'Pilot 0 is Ayrton at rank 0');
+  assert.equal(staging.safetyGuarantees.globalStopAvailable, true);
+  assert.equal(staging.safetyGuarantees.individualRevocationAvailable, true);
+  assert.equal(staging.safetyGuarantees.wildcardsForbidden, true);
+  assert.ok(staging.operationalCriteria.expansionRules.length > 0);
+  assert.ok(staging.operationalCriteria.haltTriggers.length > 0);
+});
