@@ -10,7 +10,7 @@ const projectId = process.env.GCLOUD_PROJECT || 'demo-vdsen-shadow';
 assert.match(projectId, /^demo-/);
 const app = admin.initializeApp({ projectId }, 't587-stop-admin');
 const db = admin.firestore(app);
-const executor = require('../api/_autonomousProgression');
+const { createHistoricalFixture } = require('./helpers/t699-synthetic-executor');
 const canary = require('../scripts/pilot/ayrton-canary.cjs');
 const { importLikeCoach } = require('./helpers/coach-plan-import.js');
 test.after(async () => { await app.delete(); });
@@ -25,13 +25,14 @@ async function athlete() {
   entries.progrec_2_0 = { calculatedAt: new Date(T0 + 2e6 + 6e4).toISOString(), recommendations: [{ prescriptionExerciseId: pid, exerciseName: 'Press de pecho', action: 'increase_load', newLoad: 105, newReps: 10 }] };
   await db.doc('clients/' + uid).set({ coachId, activePlanId: planId, coachInterventions: [] });
   await db.doc('plans/' + planId).set(plan); await db.doc('logs/' + uid).set({ planId, entries }); await db.doc('logs/' + uid + '/mesos/' + planId).set({ planId, entries });
-  return { uid, planId, coachId, pid, entries };
+  const scoped = await createHistoricalFixture(db, uid, planId, pid);
+  return { uid, planId, coachId, pid, entries, ...scoped };
 }
 const fences = async (a, rel, can) => {
   await db.doc('releaseControl/autonomousProgression').set(rel); await db.doc('coaches/' + a.coachId).set({ autoApplyCanary: can });
 };
-const OPEN = (a) => [canary.releaseDoc(a.uid, true, '2026-10-01T01:00:00Z'), canary.canaryField(a.uid, true)], STOPPED = (a) => [canary.releaseDoc(a.uid, false, '2026-10-01T00:00:00Z'), canary.canaryField(a.uid, false)];
-const run = (a, extra) => executor.processProgression(Object.assign({ db, clientId: a.uid, planId: a.planId, enabled: true, numericApplyEnabled: true, clock }, extra || {}));
+const OPEN = (a) => [canary.releaseDoc(a.uid, true, '2026-10-01T01:00:00Z'), canary.canaryField(a.uid, true, [a.pid])], STOPPED = (a) => [canary.releaseDoc(a.uid, false, '2026-10-01T00:00:00Z'), canary.canaryField(a.uid, false)];
+const run = (a, extra) => a.executor.processProgression(Object.assign({ db: a.db, clientId: a.uid, planId: a.planId, enabled: true, numericApplyEnabled: true, clock }, extra || {}));
 const dump = async (a) => JSON.stringify(await Promise.all(['clients/' + a.uid, 'plans/' + a.planId, 'coaches/' + a.coachId, 'logs/' + a.uid, 'logs/' + a.uid + '/mesos/' + a.planId, 'releaseControl/autonomousProgression'].map(async (p) => (await db.doc(p).get()).data())));
 const meso = async (a) => (await db.doc('logs/' + a.uid + '/mesos/' + a.planId).get()).data() || {};
 const ov = (m) => Object.values(m.nextExposureOverlays || {}), rec = (m) => Object.values(m.progressionApplications || {});
@@ -68,7 +69,7 @@ test('T587-S3 kill switches: DISARMED writes nothing; numeric apply OFF only mat
 test('T587-S4 the stop is per athlete: stopping one athlete does not touch another listed in the same allowlist; a second athlete still processes normally', async () => {
   const a = await athlete(), b = await athlete();
   await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: '2026-10-01T01:00:00Z', clientIds: [a.uid, b.uid] });
-  await db.doc('coaches/' + a.coachId).set({ autoApplyCanary: canary.canaryField(a.uid, false) }); await db.doc('coaches/' + b.coachId).set({ autoApplyCanary: canary.canaryField(b.uid, true) });
+  await db.doc('coaches/' + a.coachId).set({ autoApplyCanary: canary.canaryField(a.uid, false) }); await db.doc('coaches/' + b.coachId).set({ autoApplyCanary: canary.canaryField(b.uid, true, [b.pid]) });
   const da = await dump(a); assert.equal((await run(a)).status, 'OUT_OF_CANARY'); assert.equal(await dump(a), da);
   assert.equal((await run(b)).status, 'MATERIALIZED'); assert.equal(ov(await meso(b)).length, 1);
 });

@@ -255,8 +255,16 @@ test('T691 — Circuito integral E2E: Coach prescribe -> Cliente ejecuta -> Moto
   mesoData.progressionApplications[recordKey] = progressionRecord;
   db._docs.set('logs/' + clientId + '/mesos/' + planId, mesoData);
 
+  // Isolated synthetic authority keeps this general-engine fixture independent of the pilot identity.
+  var window = { schema: 'vdsen-numeric-pilot-v1', mode: 'NUMERIC_APPLY', uid: clientId, planId, pid,
+    runtimeSha: 'a'.repeat(40), operationId: 'synthetic-691', startsAt: '2026-11-03T13:00:00Z', expiresAt: '2026-11-03T19:00:00Z' };
+  var syntheticExecutor = require('./helpers/t699-synthetic-executor.js').createSyntheticExecutor(window);
+  db._docs.get('coaches/' + coachId).autoApplyCanary.prescriptionExerciseIds = [pid];
+  db._docs.get('releaseControl/autonomousProgression').expiresAt = window.expiresAt;
+  db._docs.set('releaseControl/numericPilot', { ...window, enabled: true });
+  db._docs.set('releaseControl/numericPilot/operations/' + window.operationId, require('./helpers/t699-synthetic-executor.js').createSyntheticLedgerDoc(window));
   // Aplicación autorizada (PENDING -> APPLIED)
-  var appliedRes = await executor.applyPending(db, clientId, planId, () => T1_ISO);
+  var appliedRes = await syntheticExecutor.applyPending(db, clientId, planId, () => T1_ISO);
   assert.equal(appliedRes.length, 1);
   assert.equal(appliedRes[0].written, true, 'Pending progression must transition to APPLIED');
 

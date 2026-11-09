@@ -1,0 +1,61 @@
+'use strict';
+
+// Independent numeric pilot contract. This validator grants no authority by itself.
+var UID = 'z82EDPvsCaabfMN3eGAP3rpxeMt1';
+var PLAN = '2wywK0y0pKtXRzGS8dNx';
+var PID = '831ccbbe-ab09-4669-a0ef-4c652ca84b7a';
+var ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+function timestamp(value) {
+  if (typeof value !== 'string' || !ISO.test(value)) return NaN;
+  var n = Date.parse(value);
+  return Number.isFinite(n) && new Date(n).toISOString() === value.replace('Z', '.000Z') ? n : NaN;
+}
+function windowValid(w, now) {
+  if (!w || w.schema !== 'vdsen-numeric-pilot-v1' || w.mode !== 'NUMERIC_APPLY' ||
+      w.uid !== UID || w.planId !== PLAN || w.pid !== PID ||
+      !/^[a-f0-9]{40}$/.test(w.runtimeSha || '') || !/^[A-Za-z0-9-]{8,80}$/.test(w.operationId || '')) return false;
+  var start = timestamp(w.startsAt), end = timestamp(w.expiresAt), t = typeof now === 'number' ? now : Date.parse(now);
+  return Number.isFinite(start) && Number.isFinite(end) && Number.isFinite(t) && start <= t && t < end && end > start && end - start <= 24 * 3600000;
+}
+function scopeValid(scope, uid, pid, plan) {
+  if (!scope || scope.enabled !== true || uid !== UID || pid !== PID ||
+      !Array.isArray(scope.clientIds) || scope.clientIds.length !== 1 || scope.clientIds[0] !== UID ||
+      !Array.isArray(scope.prescriptionExerciseIds) || scope.prescriptionExerciseIds.length !== 1 || scope.prescriptionExerciseIds[0] !== PID ||
+      !plan || !Array.isArray(plan.days)) return false;
+  return plan.days.some(function(day) { return day && Array.isArray(day.exercises) && day.exercises.some(function(ex) { return ex && ex.prescriptionExerciseId === PID; }); });
+}
+function runtimeAuthorization(env, now) {
+  if (env.AUTONOMOUS_PROGRESSION_ENABLED !== 'true' || env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED !== 'true' ||
+      env.VDSEN_NUMERIC_PILOT_ENABLED !== 'true' || env.CRON_SECRET) return null;
+  try {
+    var w = JSON.parse(env.VDSEN_NUMERIC_PILOT_WINDOW);
+    if (!windowValid(w, now) || env.VDSEN_NUMERIC_PILOT_RUNTIME_SHA !== w.runtimeSha) return null;
+    return w;
+  } catch (_) { return null; }
+}
+function ledgerValid(ledgerDoc, current, recordKey) {
+  if (!ledgerDoc || typeof ledgerDoc !== 'object') return false;
+  if (ledgerDoc.schema !== 'vdsen-numeric-operations-ledger-v1' || ledgerDoc.status !== 'RESERVED') return false;
+  if (ledgerDoc.operationId !== current.operationId || ledgerDoc.uid !== current.uid ||
+      ledgerDoc.planId !== current.planId || ledgerDoc.pid !== current.pid ||
+      ledgerDoc.runtimeSha !== current.runtimeSha) return false;
+  if (!ledgerDoc.window || ['schema', 'mode', 'uid', 'planId', 'pid', 'runtimeSha', 'operationId', 'startsAt', 'expiresAt'].some(function(k) { return ledgerDoc.window[k] !== current[k]; })) return false;
+  if (!ledgerDoc.scope || ledgerDoc.scope.enabled !== true ||
+      !Array.isArray(ledgerDoc.scope.clientIds) || ledgerDoc.scope.clientIds.length !== 1 || ledgerDoc.scope.clientIds[0] !== current.uid ||
+      !Array.isArray(ledgerDoc.scope.prescriptionExerciseIds) || ledgerDoc.scope.prescriptionExerciseIds.length !== 1 || ledgerDoc.scope.prescriptionExerciseIds[0] !== current.pid) return false;
+  if (recordKey && Array.isArray(ledgerDoc.appliedRecordKeys) && ledgerDoc.appliedRecordKeys.indexOf(recordKey) >= 0) return false;
+  return true;
+}
+function transactionAllowed(original, current, fence, release, scope, uid, record, plan, ledgerDoc, recordKey) {
+  var base = !!(current && JSON.stringify(current) === JSON.stringify(original) && fence && fence.enabled === true &&
+    release && Array.isArray(release.clientIds) && release.clientIds.length === 1 && release.clientIds[0] === current.uid &&
+    release.expiresAt === current.expiresAt &&
+    ['schema', 'mode', 'uid', 'planId', 'pid', 'runtimeSha', 'operationId', 'startsAt', 'expiresAt'].every(function(k) { return fence[k] === current[k]; }) &&
+    record && record.state === 'PENDING' && record.prescriptionExerciseId === current.pid && scopeValid(scope, uid, record.prescriptionExerciseId, plan));
+  if (!base) return false;
+  if (ledgerDoc !== undefined) {
+    return ledgerValid(ledgerDoc, current, recordKey);
+  }
+  return true;
+}
+module.exports = { windowValid: windowValid, scopeValid: scopeValid, runtimeAuthorization: runtimeAuthorization, transactionAllowed: transactionAllowed, ledgerValid: ledgerValid, UID: UID, PLAN: PLAN, PID: PID };

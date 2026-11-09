@@ -45,6 +45,34 @@ const snapshot = page => page.evaluate(() => {
 });
 async function shape(a, spec) {
   const ref = db.doc('plans/' + a.planId), p = (await ref.get()).data();
+  // Explicit demo-only server authority for this scenario; the browser cannot write these fences.
+  const t = Math.floor(Date.now() / 1000) * 1000, iso = n => new Date(n).toISOString().replace('.000Z', 'Z');
+  const window = { schema: 'vdsen-numeric-pilot-v1', mode: 'NUMERIC_APPLY', uid: a.uid, planId: a.planId, pid: a.pids[0],
+    runtimeSha: 'a'.repeat(40), operationId: 't599-' + spec.label + '-' + t, startsAt: iso(t - 1000), expiresAt: iso(t + 3600000) };
+  const batch = db.batch();
+  batch.set(db.doc('releaseControl/autonomousProgression'), { schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [a.uid], expiresAt: window.expiresAt });
+  batch.set(db.doc('coaches/' + p.coachId), { autoApplyCanary: { enabled: true, clientIds: [a.uid], prescriptionExerciseIds: [a.pids[0]] } }, { merge: true });
+  batch.set(db.doc('releaseControl/numericPilot'), { ...window, enabled: true });
+  const opDoc = {
+    schema: 'vdsen-numeric-operations-ledger-v1',
+    operationId: window.operationId,
+    status: 'RESERVED',
+    reservedAt: new Date().toISOString(),
+    completedAt: null,
+    stoppedAt: null,
+    uid: a.uid,
+    planId: a.planId,
+    pid: a.pids[0],
+    runtimeSha: window.runtimeSha,
+    deploymentId: 'dpl_t599_sandbox',
+    runId: 't599-run-' + spec.label,
+    window: structuredClone(window),
+    scope: { enabled: true, clientIds: [a.uid], prescriptionExerciseIds: [a.pids[0]] },
+    appliedRecordKeys: [],
+    history: []
+  };
+  batch.set(db.doc('releaseControl/numericPilot/operations/' + window.operationId), opDoc);
+  await batch.commit();
   // The Coach prescribes no numerical load; longitudinal history supplies 10 KG.
   p.days[0].exercises = p.days[0].exercises.slice(0, 1);
   const ex = p.days[0].exercises[0]; ex.rir = spec.rir; ex.muscleGroup = 'pectoral'; delete ex.repsRange;
@@ -71,7 +99,7 @@ const specs = [
   try {
     for (const [port, numeric] of [[5199, '0'], [5200, '1']]) {
       const fd = fs.openSync(path.join(OUT, 'server-' + port + '.log'), 'w');
-      const p = spawn(process.execPath, [path.join(__dirname, 'serve.cjs'), ROOT, String(port)], { env: { ...process.env, E2E_NUMERIC: numeric }, stdio: ['ignore', fd, fd] }); servers.push(p);
+      const p = spawn(process.execPath, [path.join(__dirname, 'serve.cjs'), ROOT, String(port)], { env: { ...process.env, E2E_NUMERIC: numeric, E2E_SYNTHETIC_PILOT: '1' }, stdio: ['ignore', fd, fd] }); servers.push(p);
       let ready = false;
       for (let i = 0; i < 80 && !ready; i++) { await sleep(250); try { ready = (await fetch('http://localhost:' + port + '/__trigger-log')).ok; } catch (_) {} }
       if (!ready) throw new Error('local test server not ready ' + port);

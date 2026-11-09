@@ -440,8 +440,16 @@ test('T692.2: complete 10-step automatic progression lifecycle from authentic lo
   assert.ok(autoPendingRec.sraTrace, 'SRA trace attached automatically');
   assert.match(autoPendingRec.key, /^v1_[a-f0-9]{16}$/, 'valid canonical idempotency key');
 
+  // Synthetic authorization is isolated to this motor lifecycle fixture.
+  const window = { schema: 'vdsen-numeric-pilot-v1', mode: 'NUMERIC_APPLY', uid: clientId, planId, pid,
+    runtimeSha: 'a'.repeat(40), operationId: 'synthetic-692', startsAt: '2026-10-20T11:00:00Z', expiresAt: '2026-10-20T23:00:00Z' };
+  const syntheticExecutor = require('./helpers/t699-synthetic-executor.js').createSyntheticExecutor(window);
+  await db.doc('coaches/' + coachId).set({ autoApplyCanary: { enabled: true, clientIds: [clientId], prescriptionExerciseIds: [pid] } }, { merge: true });
+  await db.doc('releaseControl/autonomousProgression').set({ expiresAt: window.expiresAt }, { merge: true });
+  await db.doc('releaseControl/numericPilot').set({ ...window, enabled: true });
+  await db.doc('releaseControl/numericPilot/operations/' + window.operationId).set(require('./helpers/t699-synthetic-executor.js').createSyntheticLedgerDoc(window));
   // Paso 6: Aplicar el resultado mediante applyPending
-  const applyResults = await autonomous.applyPending(db, clientId, planId, CLOCK_FN);
+  const applyResults = await syntheticExecutor.applyPending(db, clientId, planId, CLOCK_FN);
   assert.ok(applyResults.length > 0, 'applyPending applies pending records');
   assert.equal(applyResults[0].written, true);
 
@@ -510,7 +518,7 @@ test('T692.2: complete 10-step automatic progression lifecycle from authentic lo
   assert.equal(mesoAfterConsume.progressionApplications[recordKey].state, 'CONSUMED');
 
   // Paso 10: Verificar idempotencia y replay
-  const replayApply = await autonomous.applyPending(db, clientId, planId, CLOCK_FN);
+  const replayApply = await syntheticExecutor.applyPending(db, clientId, planId, CLOCK_FN);
   assert.equal(replayApply.length, 0, 'replay apply does not create duplicates or reapply consumed records');
   const replayConsume = await autonomous.consumePending(db, clientId, planId, CLOCK_FN);
   assert.ok(replayConsume.every(c => c.written === false), 'replay consume does not re-consume or double write');

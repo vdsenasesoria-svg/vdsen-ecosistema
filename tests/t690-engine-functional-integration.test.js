@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const executor = require('../api/_autonomousProgression.js');
+const { createSyntheticExecutor, createSyntheticLedgerDoc } = require('./helpers/t699-synthetic-executor.js');
 const consumer = require('../assets/progression-application-consumer.js');
 const shadow = require('../assets/progression-auto-apply-shadow.js');
 const effective = require('../assets/progression-effective-prescription.js');
@@ -11,6 +12,11 @@ const equipment = require('../assets/progression-equipment-resolver.js');
 
 const NOW_ISO = '2026-11-03T16:00:00.000Z';
 const NOW_MS = Date.parse(NOW_ISO);
+function numericAuthorization(uid, planId, pid) {
+  const window = { schema: 'vdsen-numeric-pilot-v1', mode: 'NUMERIC_APPLY', uid, planId, pid, runtimeSha: 'a'.repeat(40),
+    operationId: 'synthetic-690', startsAt: '2026-11-03T15:00:00Z', expiresAt: '2026-11-03T17:00:00Z' };
+  return { enabled: true, numericApplyEnabled: true, runtimeSha: window.runtimeSha, window };
+}
 
 function makeFakeDb(docs) {
   var map = new Map(Object.entries(docs || {}));
@@ -123,10 +129,16 @@ test('T690.1 - Ciclo PENDING -> APPLIED -> CONSUMED para progresión de CARGA (L
     }
   };
 
+  var auth = numericAuthorization(clientId, planId, pid);
+  var syntheticExecutor = createSyntheticExecutor(auth.window);
+  seed['coaches/' + coachId].autoApplyCanary.prescriptionExerciseIds = [pid];
+  seed['releaseControl/numericPilot'] = { ...auth.window, enabled: true };
+  seed['releaseControl/numericPilot/operations/' + auth.window.operationId] = createSyntheticLedgerDoc(auth.window);
+  seed['releaseControl/autonomousProgression'].expiresAt = auth.window.expiresAt;
   var db = makeFakeDb(seed);
 
   // 1. PENDING -> APPLIED
-  var applied = await executor.applyPending(db, clientId, planId, () => NOW_ISO);
+  var applied = await syntheticExecutor.applyPending(db, clientId, planId, () => NOW_ISO);
   assert.equal(applied.length, 1);
   assert.equal(applied[0].written, true, 'PENDING record should transition to APPLIED');
 
@@ -201,10 +213,16 @@ test('T690.2 - Progresión de DESCANSO (REST): reps incompletas con RIR previsto
     }
   };
 
+  var auth = numericAuthorization(clientId, planId, pid);
+  var syntheticExecutor = createSyntheticExecutor(auth.window);
+  seed['coaches/' + coachId].autoApplyCanary.prescriptionExerciseIds = [pid];
+  seed['releaseControl/numericPilot'] = { ...auth.window, enabled: true };
+  seed['releaseControl/numericPilot/operations/' + auth.window.operationId] = createSyntheticLedgerDoc(auth.window);
+  seed['releaseControl/autonomousProgression'].expiresAt = auth.window.expiresAt;
   var db = makeFakeDb(seed);
 
   // Apply REST progression
-  var applied = await executor.applyPending(db, clientId, planId, () => NOW_ISO);
+  var applied = await syntheticExecutor.applyPending(db, clientId, planId, () => NOW_ISO);
   assert.equal(applied.length, 1);
   assert.equal(applied[0].written, true, 'REST progression should transition to APPLIED');
 

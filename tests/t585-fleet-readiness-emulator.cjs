@@ -12,6 +12,7 @@ assert.match(projectId, /^demo-/);
 const app = admin.initializeApp({ projectId }, 't585-fleet-admin');
 const db = admin.firestore(app);
 const executor = require('../api/_autonomousProgression');
+const { createHistoricalFixture } = require('./helpers/t699-synthetic-executor');
 const { importLikeCoach, coachSandbox } = require('./helpers/coach-plan-import.js');
 test.after(async () => { await app.delete(); });
 
@@ -40,14 +41,15 @@ async function athlete(o) {
   if (o.post) logs['postsession_' + last + '_0'] = Object.assign({ eimd: 2, articularPain: { present: false, pattern: '' }, sleepHours: 7.5, rpeAverage: 7, ts: T0 + last * 1e6 + 9e5 }, o.post);
   if (o.action) logs['progrec_' + last + '_0'] = { calculatedAt: new Date(T0 + last * 1e6 + 60000).toISOString(), recommendations: names.map((n, e) => Object.assign({ exerciseName: n, action: o.action, newLoad: o.newLoad || load + 5, newReps: o.newReps || 10 }, pids[e] ? { prescriptionExerciseId: pids[e] } : {})) };
   await db.doc('clients/' + uid).set({ coachId, activePlanId: planId, coachInterventions: [] });
-  await db.doc('coaches/' + coachId).set({ autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: [] } });
+  await db.doc('coaches/' + coachId).set({ autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: pids } });
   await db.doc('plans/' + planId).set(plan);
   await db.doc('logs/' + uid).set({ planId, entries: logs });
   await db.doc('logs/' + uid + '/mesos/' + planId).set({ planId, entries: logs });
-  return { uid, planId, coachId, plan, pids, logs, names, unit, load };
+  const scoped = pids.length ? await createHistoricalFixture(db, uid, planId, pids) : { db, executor };
+  return { uid, planId, coachId, plan, pids, logs, names, unit, load, ...scoped };
 }
 const open = (ids) => db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.parse(clock()) + 36e5).toISOString(), clientIds: ids });
-const run = (s, extra) => executor.processProgression(Object.assign({ db, clientId: s.uid, planId: s.planId, enabled: true, numericApplyEnabled: true, clock }, extra || {}));
+const run = (s, extra) => s.executor.processProgression(Object.assign({ db: s.db, clientId: s.uid, planId: s.planId, enabled: true, numericApplyEnabled: true, clock }, extra || {}));
 const meso = async (s) => (await db.doc('logs/' + s.uid + '/mesos/' + s.planId).get()).data();
 const overlays = (m) => Object.values((m && m.nextExposureOverlays) || {});
 const records = (m) => Object.values((m && m.progressionApplications) || {});
@@ -109,6 +111,8 @@ test('FLEET-03 production-shaped LEGACY plan (old generate-and-activate route: n
   assert.equal(new Set(stamped.flatMap((d) => d.exercises.map((e) => e.prescriptionExerciseId))).size, 4, 'unique per exercise per day');
   const pidsD0 = stamped[0].exercises.map((e) => e.prescriptionExerciseId);
   await db.doc('plans/' + s.planId).update({ days: stamped, updatedAt: '2026-09-26T00:00:00.000Z' });
+  await db.doc('coaches/' + s.coachId).set({ autoApplyCanary: { enabled: true, clientIds: [s.uid], prescriptionExerciseIds: pidsD0 } }, { merge: true });
+  Object.assign(s, await createHistoricalFixture(db, s.uid, s.planId, pidsD0));
   // From the save onward the athlete trains W1 + W2 on the stamped plan (new evidence carries the PID, as the Client writes it).
   const fresh = {}, rec = [];
   [1, 2].forEach((w) => pidsD0.forEach((pid, e) => [0, 1, 2].forEach((x) => { fresh['log_' + w + '_0_' + e + '_s' + x] = { done: true, carga: '100', reps: '10', unit: 'KG', rir: 2, rir_real: 4, ics: 8, prescriptionExerciseId: pid, ts: T0 + w * 1e6 + e * 100 + x }; })));

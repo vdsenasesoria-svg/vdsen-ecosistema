@@ -13,6 +13,7 @@ var visualCatalog = require('../assets/exercise-visual-catalog.js');
 // require it is absent from the deployed function and applyPending throws MODULE_NOT_FOUND (hosted-only; see _functionBundleTrace.test.js).
 var effective = require('../assets/progression-effective-prescription.js');
 var eligibility = require('./_clientEligibility.js');
+var numericPilot = require('./_numericPilotContract.js');
 // T586: same reason for the structural / fatigue rules (loaded lazily by the magnitude policy through a literal require).
 require('../assets/progression-structural-policy.js');
 
@@ -70,6 +71,11 @@ function _webTx(tx) {
 
 async function materialize(db, clientId, requestedPlanId, clock, opts) {
   opts = opts || {};
+  // A configured numeric lane never falls back to the general/shadow scope.
+  var numericMode = process.env.VDSEN_NUMERIC_PILOT_WINDOW !== undefined || process.env.VDSEN_NUMERIC_PILOT_ENABLED === 'true' ||
+    process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED === 'true';
+  var numericWindow = numericMode ? numericPilot.runtimeAuthorization(process.env, Date.now()) : null;
+  if (numericMode && (!numericWindow || clientId !== numericWindow.uid || requestedPlanId !== numericWindow.planId)) return { status: 'OUT_OF_NUMERIC_PILOT' };
   return db.runTransaction(async function(tx) {
     var clientRef = db.collection('clients').doc(clientId);
     var clientSnap = await tx.get(clientRef), client = _data(clientSnap);
@@ -86,6 +92,16 @@ async function materialize(db, clientId, requestedPlanId, clock, opts) {
     var snaps = await Promise.all([tx.get(refs.plan), tx.get(refs.meso), tx.get(refs.root)]);
     var plan = _data(snaps[0]), meso = _data(snaps[1]), root = _data(snaps[2]);
     if (!plan || !root || !eligibility.isPlanStatusValid(plan, client) || (plan.clientId && plan.clientId !== clientId) || root.planId !== requestedPlanId || (meso && meso.planId !== requestedPlanId)) return { status: 'SOURCE_INVALID' };
+    if (numericMode) {
+      var freshWindow = numericPilot.runtimeAuthorization(process.env, Date.now());
+      var numericFence = _data(await tx.get(db.collection('releaseControl').doc('numericPilot')));
+      var releaseFence = _data(await tx.get(db.collection('releaseControl').doc('autonomousProgression')));
+      if (!freshWindow || JSON.stringify(freshWindow) !== JSON.stringify(numericWindow) || !numericFence || numericFence.enabled !== true ||
+          !releaseFence || !Array.isArray(releaseFence.clientIds) || releaseFence.clientIds.length !== 1 || releaseFence.clientIds[0] !== clientId ||
+          releaseFence.expiresAt !== freshWindow.expiresAt ||
+          ['schema', 'mode', 'uid', 'planId', 'pid', 'runtimeSha', 'operationId', 'startsAt', 'expiresAt'].some(function(k) { return numericFence[k] !== freshWindow[k]; }) ||
+          !numericPilot.scopeValid(coachData && coachData.autoApplyCanary, clientId, freshWindow.pid, plan)) return { status: 'OUT_OF_NUMERIC_PILOT' };
+    }
     var authority = shadow.selectLogAuthority(meso, root, requestedPlanId);
     if (!authority) return { status: 'SOURCE_INVALID' };
     var cleanEntries = eligibility.sanitizeClientEntries(authority.entries || {}, plan, requestedPlanId);
@@ -158,11 +174,20 @@ async function materialize(db, clientId, requestedPlanId, clock, opts) {
     // PID-level scope: a record for a PID outside the canary is never created.
     var createdBefore = out.created.length;
     out.created = out.created.filter(function(key) {
-      var inScope = consumer.inCanaryScope(coachData.autoApplyCanary, clientId, out.records[key].prescriptionExerciseId);
+      var pid = out.records[key].prescriptionExerciseId;
+      var inScope = consumer.inCanaryScope(coachData.autoApplyCanary, clientId, pid) && (!numericMode || pid === numericWindow.pid);
       if (!inScope) delete out.records[key];
       return inScope;
     });
-    if (createdBefore && !out.created.length) out.changed = false;
+    if (numericMode) {
+      // A numeric pilot may neither create nor alter lifecycle records for other PIDs.
+      out.staled = out.staled.filter(function(key) {
+        var prior = existingRecords[key];
+        if (prior && prior.prescriptionExerciseId !== numericWindow.pid) { out.records[key] = prior; return false; }
+        return true;
+      });
+      out.changed = out.created.length > 0 || out.staled.length > 0;
+    } else if (createdBefore && !out.created.length) out.changed = false;
     var sessionMonitoring = out.created.length ? sra.sessionMonitoring({ clientId: clientId, planDoc: plan, entries: cleanEntries }) : null;
     out.created.forEach(function(key) {
       var record = out.records[key];
@@ -180,6 +205,9 @@ async function materialize(db, clientId, requestedPlanId, clock, opts) {
 }
 
 async function applyPending(db, clientId, planId, clock) {
+  // A direct call must not bypass the independently authorized numeric lane.
+  var authorizedWindow = numericPilot.runtimeAuthorization(process.env, Date.now());
+  if (!authorizedWindow || clientId !== authorizedWindow.uid || planId !== authorizedWindow.planId) return [];
   var snap = await db.collection('logs').doc(clientId).collection('mesos').doc(planId).get();
   var meso = _data(snap);
   var clientDoc = _data(await db.collection('clients').doc(clientId).get());
@@ -208,6 +236,31 @@ async function applyPending(db, clientId, planId, clock) {
       // T582: a verified equipment increment is used when available; otherwise the LOAD target is advisory (never a guessed machine increment).
       var equipmentResolution = null;
       var pre = _data(await tx.get(refs.meso)), precord = pre && pre.progressionApplications && pre.progressionApplications[key];
+      // Re-read both fences and the canonical record in the same transaction as the write.
+      var numericFence = _data(await tx.get(db.collection('releaseControl').doc('numericPilot')));
+      var nw = numericPilot.runtimeAuthorization(process.env, Date.now());
+      var releaseFence = _data(await tx.get(db.collection('releaseControl').doc('autonomousProgression')));
+      var opRef = db.collection('releaseControl').doc('numericPilot').collection('operations').doc(authorizedWindow.operationId);
+      var opDoc = _data(await tx.get(opRef));
+      if (!opDoc) {
+        return { written: false, reason: 'NUMERIC_LEDGER_MISSING' };
+      }
+      if (opDoc.status !== 'RESERVED') {
+        return { written: false, reason: 'NUMERIC_LEDGER_NOT_RESERVED' };
+      }
+      if (Array.isArray(opDoc.appliedRecordKeys) && opDoc.appliedRecordKeys.indexOf(key) >= 0) {
+        return { written: false, reason: 'ALREADY_APPLIED_FOR_OPERATION' };
+      }
+      if (!numericPilot.ledgerValid(opDoc, nw, key)) {
+        return { written: false, reason: 'NUMERIC_LEDGER_INVALID' };
+      }
+      if (precord && !consumer.inCanaryScope(coachDoc && coachDoc.autoApplyCanary, clientId, precord.prescriptionExerciseId)) {
+        return { written: false, reason: 'OUT_OF_CANARY_SCOPE' };
+      }
+      if (!numericPilot.transactionAllowed(authorizedWindow, nw, numericFence, releaseFence,
+          coachDoc && coachDoc.autoApplyCanary, clientId, precord, planDoc, opDoc, key)) {
+        return { written: false, reason: 'NUMERIC_PILOT_NOT_AUTHORIZED' };
+      }
       if (precord && precord.magnitude && (precord.magnitude.candidates || []).some(function(c) { return c && c.dimension === 'LOAD'; })) {
         // Increments come only from verified, already-configured sources (coach equipmentIncrements config + the catalog's canonical equipment
         // identity). Nothing is inferred from the equipment type or the exercise name; no data => BLOCKED_EQUIPMENT_DATA for LOAD only.
@@ -226,9 +279,33 @@ async function applyPending(db, clientId, planId, clock) {
       // The consumer was written against the web SDK, where `snap.exists` is a
       // function; Admin snapshots expose a boolean. Adapt rather than touch the module.
       var webTx = _webTx(tx);
-      return consumer.applyOverlayTransaction(webTx, refs, { recordKey: key, actorId: 'trusted-progressor', now: _now(clock), context: {
+      var appRes = await consumer.applyOverlayTransaction(webTx, refs, { recordKey: key, actorId: 'trusted-progressor', now: _now(clock), context: {
         clientId: clientId, planId: planId, equipmentResolution: equipmentResolution
       } }, { isCurrent: function() { return true; }, trustedServerNumericApply: true });
+      if (appRes && appRes.written === true) {
+        var appliedKeys = Array.isArray(opDoc.appliedRecordKeys) ? opDoc.appliedRecordKeys.slice() : [];
+        if (appliedKeys.indexOf(key) < 0) appliedKeys.push(key);
+        var hist = Array.isArray(opDoc.history) ? opDoc.history.slice() : [];
+        hist.push({
+          sequence: hist.length + 1,
+          action: 'RECORD_APPLIED',
+          recordKey: key,
+          at: _now(clock),
+          actor: 'trusted-progressor'
+        });
+        if (typeof tx.update === 'function') {
+          tx.update(opRef, {
+            appliedRecordKeys: appliedKeys,
+            history: hist
+          });
+        } else {
+          tx.set(opRef, {
+            appliedRecordKeys: appliedKeys,
+            history: hist
+          }, { merge: true });
+        }
+      }
+      return appRes;
     });
     var reason = r && r.reason || null;
     results.push({ recordKey: key, written: r && r.written === true, reason: reason, blocked: reason && EQUIPMENT_BLOCKERS.indexOf(reason) >= 0 ? 'BLOCKED_EQUIPMENT_DATA' : (reason === 'ADVISORY_LOAD_UNAVAILABLE' ? 'BLOCKED_LOAD_DATA' : null) });
@@ -409,7 +486,7 @@ async function processProgression(input) {
     'INACTIVE_CLIENT', 'NO_VERIFIABLE_APP_USAGE', 'AWAITING_FIRST_ACTIVITY',
     'NEW_CLIENT_AWAITING_FIRST_ACTIVITY', 'NEEDS_VERIFIED_ACTIVITY',
     'NO_TEMPORAL_EVIDENCE', 'SAFETY_HOLD', 'NOT_ELIGIBLE',
-    'READ_FAILED', 'STARTS_READ_FAILED'
+    'READ_FAILED', 'STARTS_READ_FAILED', 'OUT_OF_NUMERIC_PILOT'
   ];
   if (terminalStatuses.indexOf(m.status) >= 0 || !input.numericApplyEnabled) return Object.assign({}, m, { applied: [], consumed: [] });
   var hasPending = !(m.summary && m.summary.counts && m.summary.counts.PENDING === 0);

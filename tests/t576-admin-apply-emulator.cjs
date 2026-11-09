@@ -28,16 +28,17 @@ const mesoOf = async (db, s) => (await db.doc('logs/' + s.uid + '/mesos/' + s.pl
 test('T576 Admin SDK: PENDING -> APPLIED (REPS overlay) and idempotent repeat', async () => {
   const admin = require('firebase-admin');
   const app = admin.initializeApp({ projectId: process.env.GCLOUD_PROJECT || 'demo-vdsen-shadow' }, 't576-a');
-  const db = admin.firestore(app), executor = require('../api/_autonomousProgression');
+  const db = admin.firestore(app);
   const s = await seed(db);
-  const out = await executor.processProgression({ db, clientId: s.uid, planId: s.planId, enabled: true, numericApplyEnabled: true, clock });
+  const scoped = await require('./helpers/t699-synthetic-executor').createHistoricalFixture(db, s.uid, s.planId, s.pid);
+  const out = await scoped.executor.processProgression({ db: scoped.db, clientId: s.uid, planId: s.planId, enabled: true, numericApplyEnabled: true, clock });
   assert.equal(out.status, 'MATERIALIZED');
   assert.equal(out.applied.length, 1);
   assert.equal(out.applied[0].written, true, JSON.stringify(out.applied));
   const m = await mesoOf(db, s);
   const rec = Object.values(m.progressionApplications)[0], ov = Object.values(m.nextExposureOverlays)[0];
   assert.equal(rec.state, 'APPLIED'); assert.equal(ov.dimension, 'REPS'); assert.equal(ov.status, 'APPLIED');
-  const again = await executor.processProgression({ db, clientId: s.uid, planId: s.planId, enabled: true, numericApplyEnabled: true, clock });
+  const again = await scoped.executor.processProgression({ db: scoped.db, clientId: s.uid, planId: s.planId, enabled: true, numericApplyEnabled: true, clock });
   assert.equal(Object.keys((await mesoOf(db, s)).nextExposureOverlays).length, 1, 'repeat does not create a second overlay');
   assert.ok(again);
 });

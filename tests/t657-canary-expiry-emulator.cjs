@@ -7,6 +7,7 @@ const { randomUUID } = require('node:crypto');
 const { initializeApp: initAdmin, deleteApp: deleteAdmin } = require('firebase-admin/app');
 const { getFirestore: getAdminFirestore } = require('firebase-admin/firestore');
 const executor = require('../api/_autonomousProgression.js');
+const { createHistoricalFixture } = require('./helpers/t699-synthetic-executor');
 const canaryTool = require('../scripts/pilot/ayrton-canary.cjs');
 
 assert.ok(process.env.FIRESTORE_EMULATOR_HOST, 'Firestore emulator is required');
@@ -32,24 +33,24 @@ async function client(coachId, uid) {
   await db.doc('plans/' + planId).set(planDoc(uid, coachId));
   await db.doc('logs/' + uid).set({ planId, entries: logs });
   await db.doc('logs/' + uid + '/mesos/' + planId).set({ planId, entries: logs });
-  return { uid, planId };
+  return { uid, planId, ...await createHistoricalFixture(db, uid, planId, PID) };
 }
 async function applyTool(mode, uid, coachId, opts) {
   const rel = (await db.doc(canaryTool.RELEASE_PATH).get()).data() || null, coach = (await db.doc('coaches/' + coachId).get()).data() || {};
-  const { writes, refusals } = canaryTool.planWrites(mode, uid, { release: rel, coach, coachId }, opts);
+  const { writes, refusals } = canaryTool.planWrites(mode, uid, { release: rel, coach, coachId }, mode === 'enable' ? { ...opts, pid: PID } : opts);
   for (const w of writes) await db.doc(w.path).set(w.fields, { merge: true });
   return { writes, refusals };
 }
 const T_NOW = Date.parse('2026-11-01T10:00:00.000Z');
 const at = ms => () => new Date(ms).toISOString();
-const run = (c, o) => executor.processProgression(Object.assign({ db, clientId: c.uid, planId: c.planId, enabled: true, numericApplyEnabled: true, clock: at(T_NOW) }, o || {}));
+const run = (c, o) => c.executor.processProgression(Object.assign({ db: c.db, clientId: c.uid, planId: c.planId, enabled: true, numericApplyEnabled: true, clock: at(T_NOW) }, o || {}));
 const meso = async c => (await db.doc('logs/' + c.uid + '/mesos/' + c.planId).get()).data();
 const snapshot = async c => JSON.stringify([await meso(c), (await db.doc('logs/' + c.uid).get()).data(), (await db.doc('clients/' + c.uid).get()).data(), (await db.doc('plans/' + c.planId).get()).data()]);
 const recs = async c => Object.values((await meso(c)).progressionApplications || {});
 const ovls = async c => Object.values((await meso(c)).nextExposureOverlays || {});
 async function arm(c, coachId, relPatch) {
   await db.doc(canaryTool.RELEASE_PATH).delete().catch(() => {});
-  await db.doc('coaches/' + coachId).set({ role: 'coach', autoApplyCanary: { enabled: true, clientIds: [c.uid], prescriptionExerciseIds: [] } });
+  await db.doc('coaches/' + coachId).set({ role: 'coach', autoApplyCanary: { enabled: true, clientIds: [c.uid], prescriptionExerciseIds: [PID] } });
   const doc = Object.assign({ schema: canaryTool.RELEASE_SCHEMA, enabled: true, clientIds: [c.uid], expiresAt: new Date(T_NOW + 3600e3).toISOString() }, relPatch || {});
   if (doc.expiresAt === undefined) delete doc.expiresAt;   // 'absent' case
   await db.doc(canaryTool.RELEASE_PATH).set(doc);
@@ -105,7 +106,7 @@ test('T657.4 expiry between materialize and apply: the PENDING record is never a
   const late = await run(c, { clock: at(Date.parse('2026-11-01T11:00:00Z')) });
   assert.equal(late.status, 'OUT_OF_ALLOWLIST'); assert.equal(await snapshot(c), snap); assert.equal((await ovls(c)).length, 0);
   // direct calls to the lower-level entry points are fenced as well (not only processProgression)
-  const direct = await executor.applyPending(db, c.uid, c.planId, at(Date.parse('2026-11-01T11:00:00Z')));
+  const direct = await c.executor.applyPending(c.db, c.uid, c.planId, at(Date.parse('2026-11-01T11:00:00Z')));
   assert.deepEqual(direct.map(x => [x.written, x.reason]), [[false, 'OUT_OF_ALLOWLIST']]); assert.equal(await snapshot(c), snap);
   // apply while valid, then expire: the APPLIED record and its overlay stay exactly as they were
   const ok = await run(c); assert.deepEqual(ok.applied.map(x => x.written), [true]);
