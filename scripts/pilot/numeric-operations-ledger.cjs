@@ -415,6 +415,11 @@ async function reserveOperation(db, opData, opts = {}) {
         throw new Error('COACH_NOT_AUTHORIZED: Client document does not contain an accredited coachId');
       }
 
+      // If window specifies coachId, it must strictly match the client's accredited coachId
+      if (opData.window && opData.window.coachId && opData.window.coachId !== coachId) {
+        throw new Error(`COACH_MISMATCH: Window coachId "${opData.window.coachId}" does not match accredited client coachId "${coachId}"`);
+      }
+
       const coachRef = db.doc('coaches/' + coachId);
       const coachSnap = await tx.get(coachRef);
       if (!coachSnap.exists) {
@@ -458,6 +463,7 @@ async function reserveOperation(db, opData, opts = {}) {
         contractVersion: opData.window.schema || 'vdsen-numeric-pilot-v1',
         operationId: opData.operationId,
         uid: opData.uid,
+        coachId: coachId,
         planId: opData.planId,
         pid: opData.pid,
         runtimeSha: opData.runtimeSha,

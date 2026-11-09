@@ -145,13 +145,14 @@ function buildClient(clientId, coachId, activePlanId) {
 }
 
 // Helper to build a cohort window
-function buildCohortWindow(uid, planId, pid, opId) {
+function buildCohortWindow(uid, planId, pid, opId, coachId = 'coach-1') {
   const nowMs = Date.now();
   const nowSec = Math.floor(nowMs / 1000) * 1000;
   return {
     schema: 'vdsen-numeric-cohort-v1',
     mode: 'NUMERIC_APPLY',
     uid: uid,
+    coachId: coachId,
     planId: planId,
     pid: pid,
     operationId: opId,
@@ -168,6 +169,7 @@ function buildLedgerDoc(win) {
     operationId: win.operationId,
     status: 'RESERVED',
     uid: win.uid,
+    coachId: win.coachId || 'coach-1',
     planId: win.planId,
     pid: win.pid,
     runtimeSha: win.runtimeSha,
@@ -1319,4 +1321,378 @@ test('T710-F: STOP repetido sobre ledger en estado terminal preserva integridad 
   const docAfterSecond = db._store.get('releaseControl/numericPilot/operations/' + opId);
   assert.equal(docAfterSecond.status, 'STOPPED');
   assert.equal(docAfterSecond.history.length, historyLenAfterFirst, 'Duplicate STOP event must not be appended to history');
+});
+
+// ============================================================================
+// SCENARIO J: VALIDACIÓN OBLIGATORIA DE IDENTIDAD Y PROCEDENCIA COACH (T712)
+// ============================================================================
+
+test('T712-A: Ledger sin UID es rechazado inmediatamente con REVOCATION_INCOMPLETE y cero escrituras', async () => {
+  const uid = 'ath-t712-a';
+  const opId = 'op-t712-a';
+  const win = buildCohortWindow(uid, 'plan-a', 'pid-a', opId);
+  const ledgerDoc = buildLedgerDoc(win);
+  delete ledgerDoc.uid; // Ledger sin UID
+
+  const initialDocs = {
+    ['releaseControl/numericPilot/operations/' + opId]: ledgerDoc,
+    'releaseControl/numericPilot': {
+      schema: 'vdsen-numeric-cohort-v1',
+      enabled: true,
+      windows: { [uid]: { ...win, enabled: true } }
+    },
+    'releaseControl/autonomousProgression': {
+      schema: 'vdsen-autonomous-release-v1',
+      enabled: true,
+      clientIds: [uid]
+    },
+    'coaches/coach-1': {
+      autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: ['pid-a'] }
+    }
+  };
+
+  const db = createMockDb(initialDocs);
+  const io = {
+    db: db,
+    runTransaction: (fn) => db.runTransaction(fn),
+    writeFence: async () => true,
+    readFence: async (path) => db._store.get(path)
+  };
+
+  const res = await executeClientRevocation({ clientId: uid, operationId: opId, coachId: 'coach-1' }, io);
+  assert.equal(res.status, 'REVOCATION_INCOMPLETE');
+  assert.equal(res.success, false);
+  assert.ok(res.errors.some(e => e.includes('LEDGER_IDENTITY_INCOMPLETE')));
+
+  // Fences intact: zero mutations
+  assert.equal(db._store.get('releaseControl/numericPilot').windows[uid].enabled, true);
+  assert.deepEqual(db._store.get('releaseControl/autonomousProgression').clientIds, [uid]);
+  assert.deepEqual(db._store.get('coaches/coach-1').autoApplyCanary.clientIds, [uid]);
+});
+
+test('T712-B: Ledger sin planId, PID u operationId es rechazado con REVOCATION_INCOMPLETE y cero escrituras', async () => {
+  const uid = 'ath-t712-b';
+  const opId = 'op-t712-b';
+  const win = buildCohortWindow(uid, 'plan-b', 'pid-b', opId);
+
+  // Subcase B1: Ledger sin planId
+  const l1 = buildLedgerDoc(win);
+  delete l1.planId;
+  const db1 = createMockDb({
+    ['releaseControl/numericPilot/operations/' + opId]: l1,
+    'releaseControl/numericPilot': { schema: 'vdsen-numeric-cohort-v1', enabled: true, windows: { [uid]: { ...win, enabled: true } } },
+    'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [uid] },
+    'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: ['pid-b'] } }
+  });
+  const io1 = { db: db1, runTransaction: (fn) => db1.runTransaction(fn), writeFence: async () => true, readFence: async (p) => db1._store.get(p) };
+  const res1 = await executeClientRevocation({ clientId: uid, operationId: opId, coachId: 'coach-1' }, io1);
+  assert.equal(res1.status, 'REVOCATION_INCOMPLETE');
+  assert.ok(res1.errors.some(e => e.includes('LEDGER_IDENTITY_INCOMPLETE') || e.includes('PLAN_MISMATCH')));
+  assert.equal(db1._store.get('releaseControl/numericPilot').windows[uid].enabled, true);
+
+  // Subcase B2: Ledger sin pid
+  const l2 = buildLedgerDoc(win);
+  delete l2.pid;
+  const db2 = createMockDb({
+    ['releaseControl/numericPilot/operations/' + opId]: l2,
+    'releaseControl/numericPilot': { schema: 'vdsen-numeric-cohort-v1', enabled: true, windows: { [uid]: { ...win, enabled: true } } },
+    'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [uid] },
+    'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: ['pid-b'] } }
+  });
+  const io2 = { db: db2, runTransaction: (fn) => db2.runTransaction(fn), writeFence: async () => true, readFence: async (p) => db2._store.get(p) };
+  const res2 = await executeClientRevocation({ clientId: uid, operationId: opId, coachId: 'coach-1' }, io2);
+  assert.equal(res2.status, 'REVOCATION_INCOMPLETE');
+  assert.ok(res2.errors.some(e => e.includes('LEDGER_IDENTITY_INCOMPLETE') || e.includes('PID_MISMATCH')));
+  assert.equal(db2._store.get('releaseControl/numericPilot').windows[uid].enabled, true);
+
+  // Subcase B3: Ledger sin operationId
+  const l3 = buildLedgerDoc(win);
+  delete l3.operationId;
+  const db3 = createMockDb({
+    ['releaseControl/numericPilot/operations/' + opId]: l3,
+    'releaseControl/numericPilot': { schema: 'vdsen-numeric-cohort-v1', enabled: true, windows: { [uid]: { ...win, enabled: true } } },
+    'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [uid] },
+    'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: ['pid-b'] } }
+  });
+  const io3 = { db: db3, runTransaction: (fn) => db3.runTransaction(fn), writeFence: async () => true, readFence: async (p) => db3._store.get(p) };
+  const res3 = await executeClientRevocation({ clientId: uid, operationId: opId, coachId: 'coach-1' }, io3);
+  assert.equal(res3.status, 'REVOCATION_INCOMPLETE');
+  assert.ok(res3.errors.some(e => e.includes('LEDGER_IDENTITY_INCOMPLETE')));
+  assert.equal(db3._store.get('releaseControl/numericPilot').windows[uid].enabled, true);
+});
+
+test('T712-C: Ledger perteneciente a otro cliente es rechazado con CROSS_CLIENT_OPERATION_DENIED y cero escrituras', async () => {
+  const uid1 = 'ath-client-1';
+  const uid2 = 'ath-client-2';
+  const opId2 = 'op-client-2';
+  const win1 = buildCohortWindow(uid1, 'plan-c', 'pid-c', 'op-client-1');
+  const win2 = buildCohortWindow(uid2, 'plan-c', 'pid-c', opId2);
+
+  const initialDocs = {
+    ['releaseControl/numericPilot/operations/' + opId2]: buildLedgerDoc(win2), // Pertenece a client-2
+    'releaseControl/numericPilot': {
+      schema: 'vdsen-numeric-cohort-v1',
+      enabled: true,
+      windows: {
+        [uid1]: { ...win1, enabled: true },
+        [uid2]: { ...win2, enabled: true }
+      }
+    },
+    'releaseControl/autonomousProgression': {
+      schema: 'vdsen-autonomous-release-v1',
+      enabled: true,
+      clientIds: [uid1, uid2]
+    },
+    'coaches/coach-1': {
+      autoApplyCanary: { enabled: true, clientIds: [uid1, uid2], prescriptionExerciseIds: ['pid-c'] }
+    }
+  };
+
+  const db = createMockDb(initialDocs);
+  const io = {
+    db: db,
+    runTransaction: (fn) => db.runTransaction(fn),
+    writeFence: async () => true,
+    readFence: async (p) => db._store.get(p)
+  };
+
+  // Client 1 intenta revocar la operacion de Client 2
+  const res = await executeClientRevocation({ clientId: uid1, operationId: opId2, coachId: 'coach-1' }, io);
+  assert.equal(res.status, 'REVOCATION_INCOMPLETE');
+  assert.equal(res.success, false);
+  assert.ok(res.errors.some(e => e.includes('CROSS_CLIENT_OPERATION_DENIED')));
+
+  // Cero escrituras en la operacion ajena y en las ventanas
+  const op2Post = db._store.get('releaseControl/numericPilot/operations/' + opId2);
+  assert.equal(op2Post.status, 'RESERVED');
+  assert.equal(db._store.get('releaseControl/numericPilot').windows[uid1].enabled, true);
+  assert.equal(db._store.get('releaseControl/numericPilot').windows[uid2].enabled, true);
+});
+
+test('T712-D: Coach ausente, inconsistente o no autorizado es rechazado sin mutaciones', async () => {
+  const uid = 'ath-t712-d';
+  const opId = 'op-t712-d';
+  const win = buildCohortWindow(uid, 'plan-d', 'pid-d', opId);
+
+  const initialDocs = {
+    ['releaseControl/numericPilot/operations/' + opId]: buildLedgerDoc(win),
+    'releaseControl/numericPilot': {
+      schema: 'vdsen-numeric-cohort-v1',
+      enabled: true,
+      windows: { [uid]: { ...win, enabled: true } }
+    },
+    'releaseControl/autonomousProgression': {
+      schema: 'vdsen-autonomous-release-v1',
+      enabled: true,
+      clientIds: [uid]
+    },
+    'coaches/coach-1': {
+      autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: ['pid-d'] }
+    }
+  };
+
+  const db = createMockDb(initialDocs);
+  const io = { db, runTransaction: (fn) => db.runTransaction(fn), writeFence: async () => true, readFence: async (p) => db._store.get(p) };
+
+  // D1: coachId ausente o invalido
+  const res1 = await executeClientRevocation({ clientId: uid, operationId: opId, coachId: '' }, io);
+  assert.equal(res1.status, 'REVOCATION_INCOMPLETE');
+  assert.ok(res1.errors.some(e => e.includes('COACH_IDENTITY_UNACCREDITED')));
+
+  // D2: coachId inconsistente con ventana / ledger
+  const res2 = await executeClientRevocation({ clientId: uid, operationId: opId, coachId: 'coach-impostor' }, io);
+  assert.equal(res2.status, 'REVOCATION_INCOMPLETE');
+  assert.ok(res2.errors.some(e => e.includes('COACH_MISMATCH')));
+
+  // D3: coach existe pero cliente no esta en su scope de canary
+  const db3 = createMockDb({
+    ...initialDocs,
+    'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: ['other-client'], prescriptionExerciseIds: ['pid-d'] } }
+  });
+  const io3 = { db: db3, runTransaction: (fn) => db3.runTransaction(fn), writeFence: async () => true, readFence: async (p) => db3._store.get(p) };
+  const res3 = await executeClientRevocation({ clientId: uid, operationId: opId, coachId: 'coach-1' }, io3);
+  assert.equal(res3.status, 'REVOCATION_INCOMPLETE');
+  assert.ok(res3.errors.some(e => e.includes('CLIENT_NOT_IN_COACH_SCOPE')));
+
+  // Fences intact
+  assert.equal(db._store.get('releaseControl/numericPilot').windows[uid].enabled, true);
+});
+
+test('T712-E: Ventana con identidades incompletas (sin UID, operationId, planId, pid o coachId) es rechazada con WINDOW_IDENTITY_INCOMPLETE', async () => {
+  const uid = 'ath-t712-e';
+  const opId = 'op-t712-e';
+  const win = buildCohortWindow(uid, 'plan-e', 'pid-e', opId);
+
+  // Subcase E1: Ventana sin planId
+  const winNoPlan = { ...win, enabled: true };
+  delete winNoPlan.planId;
+  const db1 = createMockDb({
+    ['releaseControl/numericPilot/operations/' + opId]: buildLedgerDoc(win),
+    'releaseControl/numericPilot': { schema: 'vdsen-numeric-cohort-v1', enabled: true, windows: { [uid]: winNoPlan } },
+    'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [uid] },
+    'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: ['pid-e'] } }
+  });
+  const io1 = { db: db1, runTransaction: (fn) => db1.runTransaction(fn), writeFence: async () => true, readFence: async (p) => db1._store.get(p) };
+  const res1 = await executeClientRevocation({ clientId: uid, operationId: opId, coachId: 'coach-1' }, io1);
+  assert.equal(res1.status, 'REVOCATION_INCOMPLETE');
+  assert.ok(res1.errors.some(e => e.includes('WINDOW_IDENTITY_INCOMPLETE')));
+
+  // Subcase E2: Ventana sin pid
+  const winNoPid = { ...win, enabled: true };
+  delete winNoPid.pid;
+  const db2 = createMockDb({
+    ['releaseControl/numericPilot/operations/' + opId]: buildLedgerDoc(win),
+    'releaseControl/numericPilot': { schema: 'vdsen-numeric-cohort-v1', enabled: true, windows: { [uid]: winNoPid } },
+    'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [uid] },
+    'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: ['pid-e'] } }
+  });
+  const io2 = { db: db2, runTransaction: (fn) => db2.runTransaction(fn), writeFence: async () => true, readFence: async (p) => db2._store.get(p) };
+  const res2 = await executeClientRevocation({ clientId: uid, operationId: opId, coachId: 'coach-1' }, io2);
+  assert.equal(res2.status, 'REVOCATION_INCOMPLETE');
+  assert.ok(res2.errors.some(e => e.includes('WINDOW_IDENTITY_INCOMPLETE')));
+
+  // Subcase E3: Ventana sin coachId
+  const winNoCoach = { ...win, enabled: true };
+  delete winNoCoach.coachId;
+  const db3 = createMockDb({
+    ['releaseControl/numericPilot/operations/' + opId]: buildLedgerDoc(win),
+    'releaseControl/numericPilot': { schema: 'vdsen-numeric-cohort-v1', enabled: true, windows: { [uid]: winNoCoach } },
+    'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [uid] },
+    'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: ['pid-e'] } }
+  });
+  const io3 = { db: db3, runTransaction: (fn) => db3.runTransaction(fn), writeFence: async () => true, readFence: async (p) => db3._store.get(p) };
+  const res3 = await executeClientRevocation({ clientId: uid, operationId: opId, coachId: 'coach-1' }, io3);
+  assert.equal(res3.status, 'REVOCATION_INCOMPLETE');
+  assert.ok(res3.errors.some(e => e.includes('WINDOW_IDENTITY_INCOMPLETE')));
+});
+
+test('T712-F: Operación correctamente acreditada completa revocación exitosa (REVOCATION_CONFIRMED)', async () => {
+  const uid = 'ath-t712-f';
+  const opId = 'op-t712-f';
+  const win = buildCohortWindow(uid, 'plan-f', 'pid-f', opId);
+
+  const initialDocs = {
+    ['releaseControl/numericPilot/operations/' + opId]: buildLedgerDoc(win),
+    'releaseControl/numericPilot': {
+      schema: 'vdsen-numeric-cohort-v1',
+      enabled: true,
+      windows: { [uid]: { ...win, enabled: true } }
+    },
+    'releaseControl/autonomousProgression': {
+      schema: 'vdsen-autonomous-release-v1',
+      enabled: true,
+      clientIds: [uid, 'ath-other']
+    },
+    'coaches/coach-1': {
+      autoApplyCanary: { enabled: true, clientIds: [uid, 'ath-other'], prescriptionExerciseIds: ['pid-f'] }
+    }
+  };
+
+  const db = createMockDb(initialDocs);
+  const io = {
+    db: db,
+    runTransaction: (fn) => db.runTransaction(fn),
+    writeFence: async () => true,
+    readFence: async (p) => db._store.get(p)
+  };
+
+  const res = await executeClientRevocation({ clientId: uid, operationId: opId, coachId: 'coach-1', reason: 'ACCREDITED_REVOCATION' }, io);
+  assert.equal(res.status, 'REVOCATION_CONFIRMED');
+  assert.equal(res.success, true);
+  assert.equal(res.fencesScopedDisarmed, true);
+  assert.equal(res.ledgerStopped, true);
+
+  // Readback confirmations
+  assert.equal(db._store.get('releaseControl/numericPilot').windows[uid].enabled, false);
+  assert.deepEqual(db._store.get('releaseControl/autonomousProgression').clientIds, ['ath-other']);
+  assert.deepEqual(db._store.get('coaches/coach-1').autoApplyCanary.clientIds, ['ath-other']);
+  assert.equal(db._store.get('releaseControl/numericPilot/operations/' + opId).status, 'STOPPED');
+});
+
+test('T712-G: Reserva de esquema anterior: compatibilidad segura acreditada por clients/{clientId} o fallo cerrado documentado', async () => {
+  const uid = 'ath-t712-g';
+  const opId = 'op-t712-g';
+  const win = buildCohortWindow(uid, 'plan-g', 'pid-g', opId);
+
+  // Legacy ledger without coachId
+  const legacyLedger = buildLedgerDoc(win);
+  delete legacyLedger.coachId;
+  delete legacyLedger.window.coachId;
+
+  // Subcase G1: clients/{uid} acreditado con coachId concuerda -> Revocacion confirmada
+  const db1 = createMockDb({
+    ['releaseControl/numericPilot/operations/' + opId]: legacyLedger,
+    ['clients/' + uid]: { schema: 'vdsen-client-v1', uid, coachId: 'coach-1' },
+    'releaseControl/numericPilot': { schema: 'vdsen-numeric-cohort-v1', enabled: true, windows: { [uid]: { ...win, enabled: true } } },
+    'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [uid] },
+    'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: ['pid-g'] } }
+  });
+  const io1 = { db: db1, runTransaction: (fn) => db1.runTransaction(fn), writeFence: async () => true, readFence: async (p) => db1._store.get(p) };
+  const res1 = await executeClientRevocation({ clientId: uid, operationId: opId, coachId: 'coach-1' }, io1);
+  assert.equal(res1.status, 'REVOCATION_CONFIRMED');
+  assert.equal(res1.success, true);
+  assert.equal(db1._store.get('releaseControl/numericPilot/operations/' + opId).status, 'STOPPED');
+
+  // Subcase G2: clients/{uid} inexistente o coachId diferente -> Fallo cerrado COACH_IDENTITY_UNACCREDITED y cero escrituras
+  const db2 = createMockDb({
+    ['releaseControl/numericPilot/operations/' + opId]: legacyLedger,
+    'releaseControl/numericPilot': { schema: 'vdsen-numeric-cohort-v1', enabled: true, windows: { [uid]: { ...win, enabled: true } } },
+    'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [uid] },
+    'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: [uid], prescriptionExerciseIds: ['pid-g'] } }
+  });
+  const io2 = { db: db2, runTransaction: (fn) => db2.runTransaction(fn), writeFence: async () => true, readFence: async (p) => db2._store.get(p) };
+  const res2 = await executeClientRevocation({ clientId: uid, operationId: opId, coachId: 'coach-1' }, io2);
+  assert.equal(res2.status, 'REVOCATION_INCOMPLETE');
+  assert.equal(res2.success, false);
+  assert.ok(res2.errors.some(e => e.includes('COACH_IDENTITY_UNACCREDITED')));
+  // Zero writes: operation remains RESERVED
+  assert.equal(db2._store.get('releaseControl/numericPilot/operations/' + opId).status, 'RESERVED');
+  assert.equal(db2._store.get('releaseControl/numericPilot').windows[uid].enabled, true);
+});
+
+test('T712-H: Ruta REST / OCC sin validación autoritativa completa produce cero escrituras', async () => {
+  const uid = 'ath-t712-h';
+  const opId = 'op-t712-h';
+  const win = buildCohortWindow(uid, 'plan-h', 'pid-h', opId);
+  const winIncomplete = { ...win, enabled: true };
+  delete winIncomplete.pid; // Window identity incomplete
+
+  let writeCount = 0;
+  const occIo = {
+    supportsOCC: true,
+    readFenceWithVersion: async (path) => {
+      if (path === 'releaseControl/numericPilot') {
+        return {
+          doc: { schema: 'vdsen-numeric-cohort-v1', enabled: true, windows: { [uid]: winIncomplete } },
+          updateTime: '2026-11-09T00:00:00.000000Z'
+        };
+      }
+      if (path === 'releaseControl/numericPilot/operations/' + opId) {
+        return {
+          doc: buildLedgerDoc(win),
+          updateTime: '2026-11-09T00:00:00.000000Z'
+        };
+      }
+      if (path === 'coaches/coach-1') {
+        return {
+          doc: { autoApplyCanary: { enabled: true, clientIds: [uid] } },
+          updateTime: '2026-11-09T00:00:00.000000Z'
+        };
+      }
+      return { doc: null, updateTime: null };
+    },
+    writeFenceWithPrecondition: async () => {
+      writeCount++;
+      return true;
+    },
+    readFence: async () => null,
+    writeFence: async () => { writeCount++; return true; }
+  };
+
+  const res = await executeClientRevocation({ clientId: uid, operationId: opId, coachId: 'coach-1' }, occIo);
+  assert.equal(res.status, 'REVOCATION_INCOMPLETE');
+  assert.equal(res.success, false);
+  assert.equal(writeCount, 0, 'Must produce strictly 0 writes when authoritative validation fails');
+  assert.equal(res.writeAttempts.length, 0);
+  assert.ok(res.errors.some(e => e.includes('WINDOW_IDENTITY_INCOMPLETE') || e.includes('OCC pre-validation failed')));
 });

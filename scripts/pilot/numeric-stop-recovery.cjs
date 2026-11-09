@@ -294,15 +294,10 @@ async function executeClientRevocation(opts, io) {
   opts = opts || {};
   const clientId = opts.clientId;
   const operationId = opts.operationId;
-  const coachId = opts.coachId || 'unknown-coach';
+  const coachId = opts.coachId;
   const reason = opts.reason || 'INDIVIDUAL_CLIENT_REVOCATION';
   const now = opts.now || Date.now();
   const isoNow = new Date(now).toISOString().replace('.000Z', 'Z');
-
-  assert.ok(clientId, 'clientId is required for individual revocation.');
-  assert.ok(operationId, 'operationId is required for individual revocation.');
-  assert.ok(io && typeof io.writeFence === 'function', 'I/O adapter with writeFence is required.');
-  assert.ok(io && typeof io.readFence === 'function', 'I/O adapter with readFence is required.');
 
   const writeAttempts = [];
   const errors = [];
@@ -315,6 +310,87 @@ async function executeClientRevocation(opts, io) {
   let ledgerResult = null;
   let ledgerError = null;
 
+  if (!clientId || typeof clientId !== 'string' || clientId.trim() === '') {
+    errors.push('INVALID_CLIENT_ID: clientId must be a non-empty string.');
+    return {
+      schema: 'vdsen-client-revocation-v1',
+      status: 'REVOCATION_INCOMPLETE',
+      clientId: clientId || null,
+      operationId: operationId || null,
+      coachId: coachId || null,
+      revokedAt: isoNow,
+      reason: reason,
+      success: false,
+      fencesScopedDisarmed: false,
+      ledgerStopped: false,
+      ledgerResult: null,
+      ledgerError: 'INVALID_CLIENT_ID',
+      writeAttempts: [],
+      readback: {
+        numericClientDisabled: false,
+        releaseClientRemoved: false,
+        coachClientRemoved: false,
+        readbackComplete: false
+      },
+      errors: errors
+    };
+  }
+
+  if (!operationId || typeof operationId !== 'string' || operationId.trim() === '') {
+    errors.push('INVALID_OPERATION_ID: operationId must be a non-empty string.');
+    return {
+      schema: 'vdsen-client-revocation-v1',
+      status: 'REVOCATION_INCOMPLETE',
+      clientId: clientId,
+      operationId: operationId || null,
+      coachId: coachId || null,
+      revokedAt: isoNow,
+      reason: reason,
+      success: false,
+      fencesScopedDisarmed: false,
+      ledgerStopped: false,
+      ledgerResult: null,
+      ledgerError: 'INVALID_OPERATION_ID',
+      writeAttempts: [],
+      readback: {
+        numericClientDisabled: false,
+        releaseClientRemoved: false,
+        coachClientRemoved: false,
+        readbackComplete: false
+      },
+      errors: errors
+    };
+  }
+
+  if (!coachId || typeof coachId !== 'string' || coachId === 'unknown-coach' || coachId.trim() === '') {
+    errors.push('COACH_IDENTITY_UNACCREDITED: Valid coachId is required for individual client revocation.');
+    return {
+      schema: 'vdsen-client-revocation-v1',
+      status: 'REVOCATION_INCOMPLETE',
+      clientId: clientId,
+      operationId: operationId,
+      coachId: coachId || null,
+      revokedAt: isoNow,
+      reason: reason,
+      success: false,
+      fencesScopedDisarmed: false,
+      ledgerStopped: false,
+      ledgerResult: null,
+      ledgerError: 'COACH_IDENTITY_UNACCREDITED',
+      writeAttempts: [],
+      readback: {
+        numericClientDisabled: false,
+        releaseClientRemoved: false,
+        coachClientRemoved: false,
+        readbackComplete: false
+      },
+      errors: errors
+    };
+  }
+
+  assert.ok(io && typeof io.writeFence === 'function', 'I/O adapter with writeFence is required.');
+  assert.ok(io && typeof io.readFence === 'function', 'I/O adapter with readFence is required.');
+
   // Path A: If atomic transaction runner is available, execute all fence updates atomically
   if (typeof io.runTransaction === 'function' && io.db) {
     const db = io.db;
@@ -324,12 +400,14 @@ async function executeClientRevocation(opts, io) {
         const relRef = db.doc('releaseControl/autonomousProgression');
         const coachRef = db.doc('coaches/' + coachId);
         const opRef = db.doc('releaseControl/numericPilot/operations/' + operationId);
+        const clientRef = db.doc('clients/' + clientId);
 
-        const [numSnap, relSnap, coachSnap, opSnap] = await Promise.all([
+        const [numSnap, relSnap, coachSnap, opSnap, clientSnap] = await Promise.all([
           tx.get(numRef),
           tx.get(relRef),
           tx.get(coachRef),
-          tx.get(opRef)
+          tx.get(opRef),
+          tx.get(clientRef)
         ]);
 
         // 1. Authoritative window verification in releaseControl/numericPilot
@@ -344,15 +422,12 @@ async function executeClientRevocation(opts, io) {
           throw new Error('WINDOW_NOT_FOUND: No authorized window exists for client ' + clientId);
         }
 
-        // Validate window identity
-        if (targetWindow.uid && targetWindow.uid !== clientId) {
+        // Validate window UID
+        if (!targetWindow.uid || typeof targetWindow.uid !== 'string' || targetWindow.uid.trim() === '') {
+          throw new Error('WINDOW_IDENTITY_INCOMPLETE: Window UID is required and must not be empty.');
+        }
+        if (targetWindow.uid !== clientId) {
           throw new Error('IDENTITY_MISMATCH: Window UID ' + targetWindow.uid + ' does not match clientId ' + clientId);
-        }
-        if (targetWindow.operationId && targetWindow.operationId !== operationId) {
-          throw new Error('OPERATION_MISMATCH: Window operationId ' + targetWindow.operationId + ' does not match requested ' + operationId);
-        }
-        if (targetWindow.coachId && coachId !== 'unknown-coach' && targetWindow.coachId !== coachId) {
-          throw new Error('COACH_MISMATCH: Window coachId ' + targetWindow.coachId + ' does not match ' + coachId);
         }
 
         // 2. Authoritative operations ledger verification
@@ -361,25 +436,80 @@ async function executeClientRevocation(opts, io) {
         }
         const opData = opSnap.data() || {};
 
-        // Cross-client defense: an operation belonging to another client must NEVER be stopped via a different clientId
-        if (opData.uid && opData.uid !== clientId) {
+        // Cross-client defense & mandatory ledger UID validation (falla cerrada inmediata si la operacion pertenece a otro cliente)
+        if (!opData.uid || typeof opData.uid !== 'string' || opData.uid.trim() === '') {
+          throw new Error('LEDGER_IDENTITY_INCOMPLETE: Ledger UID is required and must not be empty.');
+        }
+        if (opData.uid !== clientId) {
           throw new Error('CROSS_CLIENT_OPERATION_DENIED: Operation ' + operationId + ' belongs to client ' + opData.uid + ', not ' + clientId);
         }
-        if (opData.operationId && opData.operationId !== operationId) {
-          throw new Error('OPERATION_ID_MISMATCH: Ledger operationId ' + opData.operationId + ' does not match requested ' + operationId);
+
+        // Validate remaining mandatory window identity fields (operationId, planId, pid, coachId)
+        if (!targetWindow.operationId || typeof targetWindow.operationId !== 'string' || targetWindow.operationId.trim() === '') {
+          throw new Error('WINDOW_IDENTITY_INCOMPLETE: Window operationId is required and must not be empty.');
         }
-        if (targetWindow.planId && opData.planId && opData.planId !== targetWindow.planId) {
-          throw new Error('PLAN_MISMATCH: Ledger planId ' + opData.planId + ' does not match window planId ' + targetWindow.planId);
+        if (targetWindow.operationId !== operationId) {
+          throw new Error('OPERATION_MISMATCH: Window operationId ' + targetWindow.operationId + ' does not match requested ' + operationId);
         }
-        if (targetWindow.pid && opData.pid && opData.pid !== targetWindow.pid) {
-          throw new Error('PID_MISMATCH: Ledger pid ' + opData.pid + ' does not match window pid ' + targetWindow.pid);
+        if (!targetWindow.planId || typeof targetWindow.planId !== 'string' || targetWindow.planId.trim() === '') {
+          throw new Error('WINDOW_IDENTITY_INCOMPLETE: Window planId is required and must not be empty.');
         }
-        const ledgerCoachId = opData.coachId || (opData.window && opData.window.coachId);
-        if (ledgerCoachId && coachId !== 'unknown-coach' && ledgerCoachId !== coachId) {
-          throw new Error('COACH_MISMATCH: Ledger coachId ' + ledgerCoachId + ' does not match requested ' + coachId);
+        if (!targetWindow.pid || typeof targetWindow.pid !== 'string' || targetWindow.pid.trim() === '') {
+          throw new Error('WINDOW_IDENTITY_INCOMPLETE: Window pid is required and must not be empty.');
+        }
+        if (!targetWindow.coachId || typeof targetWindow.coachId !== 'string' || targetWindow.coachId.trim() === '') {
+          throw new Error('WINDOW_IDENTITY_INCOMPLETE: Window coachId is required and must not be empty.');
+        }
+        if (targetWindow.coachId !== coachId) {
+          throw new Error('COACH_MISMATCH: Window coachId ' + targetWindow.coachId + ' does not match ' + coachId);
         }
 
-        // 3. Update numericPilot fence
+        // Validate remaining mandatory ledger identity fields (operationId, planId, pid)
+        if (!opData.operationId || typeof opData.operationId !== 'string' || opData.operationId.trim() === '') {
+          throw new Error('LEDGER_IDENTITY_INCOMPLETE: Ledger operationId is required and must not be empty.');
+        }
+        if (opData.operationId !== operationId) {
+          throw new Error('OPERATION_ID_MISMATCH: Ledger operationId ' + opData.operationId + ' does not match requested ' + operationId);
+        }
+        if (!opData.planId || typeof opData.planId !== 'string' || opData.planId.trim() === '') {
+          throw new Error('LEDGER_IDENTITY_INCOMPLETE: Ledger planId is required and must not be empty.');
+        }
+        if (opData.planId !== targetWindow.planId) {
+          throw new Error('PLAN_MISMATCH: Ledger planId ' + opData.planId + ' does not match window planId ' + targetWindow.planId);
+        }
+        if (!opData.pid || typeof opData.pid !== 'string' || opData.pid.trim() === '') {
+          throw new Error('LEDGER_IDENTITY_INCOMPLETE: Ledger pid is required and must not be empty.');
+        }
+        if (opData.pid !== targetWindow.pid) {
+          throw new Error('PID_MISMATCH: Ledger pid ' + opData.pid + ' does not match window pid ' + targetWindow.pid);
+        }
+
+        // 3. Coach relationship and provenance verification
+        const ledgerCoachId = opData.coachId || (opData.window && opData.window.coachId);
+        if (ledgerCoachId) {
+          if (ledgerCoachId !== coachId) {
+            throw new Error('COACH_MISMATCH: Ledger coachId ' + ledgerCoachId + ' does not match requested ' + coachId);
+          }
+        } else {
+          // Backward compatibility check for legacy T699 reservations without coachId in ledger:
+          // Validate whether client record in clients/{clientId} authoritatively confirms coachId
+          const clientData = clientSnap && clientSnap.exists ? (clientSnap.data() || {}) : null;
+          if (!clientData || clientData.coachId !== coachId) {
+            throw new Error('COACH_IDENTITY_UNACCREDITED: Legacy reservation lacks coachId and client coach relationship cannot be accredited; individual revocation rejected, global STOP required.');
+          }
+        }
+
+        // 4. Verify Coach document exists and canary scope includes clientId (or operation is already terminal)
+        if (!coachSnap.exists) {
+          throw new Error('COACH_NOT_FOUND: Coach document coaches/' + coachId + ' does not exist.');
+        }
+        const coachData = coachSnap.data() || {};
+        const isTerminal = opData.status === 'STOPPED' || opData.status === 'COMPLETED' || opData.status === 'FAILED' || opData.status === 'EXPIRED';
+        if (!isTerminal && (!coachData.autoApplyCanary || !Array.isArray(coachData.autoApplyCanary.clientIds) || !coachData.autoApplyCanary.clientIds.includes(clientId))) {
+          throw new Error('CLIENT_NOT_IN_COACH_SCOPE: Client ' + clientId + ' is not in coach ' + coachId + ' canary scope.');
+        }
+
+        // 5. Update numericPilot fence
         if (numData.windows && typeof numData.windows === 'object' && numData.windows[clientId]) {
           const updatedWindows = { ...numData.windows };
           updatedWindows[clientId] = {
@@ -393,7 +523,7 @@ async function executeClientRevocation(opts, io) {
           tx.set(numRef, { enabled: false, stoppedAt: isoNow, stoppedOperation: operationId, stopReason: reason }, { merge: true });
         }
 
-        // 4. Update releaseControl/autonomousProgression (remove clientId while strictly preserving all other concurrent clients)
+        // 6. Update releaseControl/autonomousProgression (remove clientId while strictly preserving all other concurrent clients)
         if (relSnap.exists) {
           const relData = relSnap.data() || {};
           if (Array.isArray(relData.clientIds)) {
@@ -402,9 +532,8 @@ async function executeClientRevocation(opts, io) {
           }
         }
 
-        // 5. Update coaches/{coachId} (remove clientId while strictly preserving other clients)
+        // 7. Update coaches/{coachId} (remove clientId while strictly preserving other clients)
         if (coachSnap.exists) {
-          const coachData = coachSnap.data() || {};
           if (coachData.autoApplyCanary && Array.isArray(coachData.autoApplyCanary.clientIds)) {
             const remainingCoach = coachData.autoApplyCanary.clientIds.filter(id => id !== clientId);
             const updatedCanary = { ...coachData.autoApplyCanary, clientIds: remainingCoach };
@@ -412,9 +541,8 @@ async function executeClientRevocation(opts, io) {
           }
         }
 
-        // 6. Transition ledger if active, or preserve existing terminal state idempotently without duplicate STOP events
+        // 8. Transition ledger if active, or preserve existing terminal state idempotently without duplicate STOP events
         let opStopped = false;
-        const isTerminal = opData.status === 'STOPPED' || opData.status === 'COMPLETED' || opData.status === 'FAILED' || opData.status === 'EXPIRED';
 
         if (isTerminal) {
           // Terminal state exists: do NOT add duplicate STOP event to history
@@ -510,10 +638,152 @@ async function executeClientRevocation(opts, io) {
       };
     }
 
+    // Authoritative pre-validation of all identities before attempting ANY OCC write
+    let prevalidationSuccess = false;
+    let initialNumDoc = null;
+    let initialNumUpdateTime = null;
+
+    try {
+      const numRes = await io.readFenceWithVersion('releaseControl/numericPilot');
+      initialNumDoc = numRes && numRes.doc;
+      initialNumUpdateTime = numRes && numRes.updateTime;
+      if (!initialNumUpdateTime) {
+        throw new Error('MISSING_VERSION_PRECONDITION: numericPilot updateTime missing.');
+      }
+      if (!initialNumDoc) {
+        throw new Error('NUMERIC_PILOT_FENCE_MISSING: releaseControl/numericPilot document missing.');
+      }
+
+      const targetWindow = (initialNumDoc.windows && typeof initialNumDoc.windows === 'object' && initialNumDoc.windows[clientId])
+        || (initialNumDoc.uid === clientId ? (initialNumDoc.window || initialNumDoc) : null);
+      if (!targetWindow) {
+        throw new Error('WINDOW_NOT_FOUND: No authorized window exists for client ' + clientId);
+      }
+
+      // Mandatory window UID
+      if (!targetWindow.uid || typeof targetWindow.uid !== 'string' || targetWindow.uid.trim() === '') {
+        throw new Error('WINDOW_IDENTITY_INCOMPLETE: Window UID is required.');
+      }
+      if (targetWindow.uid !== clientId) {
+        throw new Error('IDENTITY_MISMATCH: Window UID ' + targetWindow.uid + ' does not match clientId ' + clientId);
+      }
+
+      // Mandatory operations ledger verification before window operation checks
+      const opReadResult = await (typeof io.readFenceWithVersion === 'function'
+        ? io.readFenceWithVersion('releaseControl/numericPilot/operations/' + operationId)
+        : io.readFence('releaseControl/numericPilot/operations/' + operationId));
+      const opData = (opReadResult && opReadResult.doc) || opReadResult;
+      if (!opData) {
+        throw new Error('LEDGER_RECORD_MISSING: Operations ledger record does not exist for operationId ' + operationId);
+      }
+
+      // Cross-client defense
+      if (!opData.uid || typeof opData.uid !== 'string' || opData.uid.trim() === '') {
+        throw new Error('LEDGER_IDENTITY_INCOMPLETE: Ledger UID is required.');
+      }
+      if (opData.uid !== clientId) {
+        throw new Error('CROSS_CLIENT_OPERATION_DENIED: Operation ' + operationId + ' belongs to client ' + opData.uid + ', not ' + clientId);
+      }
+
+      // Mandatory remaining window identities
+      if (!targetWindow.operationId || typeof targetWindow.operationId !== 'string' || targetWindow.operationId.trim() === '') {
+        throw new Error('WINDOW_IDENTITY_INCOMPLETE: Window operationId is required.');
+      }
+      if (targetWindow.operationId !== operationId) {
+        throw new Error('OPERATION_MISMATCH: Window operationId ' + targetWindow.operationId + ' does not match requested ' + operationId);
+      }
+      if (!targetWindow.planId || typeof targetWindow.planId !== 'string' || targetWindow.planId.trim() === '') {
+        throw new Error('WINDOW_IDENTITY_INCOMPLETE: Window planId is required.');
+      }
+      if (!targetWindow.pid || typeof targetWindow.pid !== 'string' || targetWindow.pid.trim() === '') {
+        throw new Error('WINDOW_IDENTITY_INCOMPLETE: Window pid is required.');
+      }
+      if (!targetWindow.coachId || typeof targetWindow.coachId !== 'string' || targetWindow.coachId.trim() === '') {
+        throw new Error('WINDOW_IDENTITY_INCOMPLETE: Window coachId is required.');
+      }
+      if (targetWindow.coachId !== coachId) {
+        throw new Error('COACH_MISMATCH: Window coachId ' + targetWindow.coachId + ' does not match ' + coachId);
+      }
+      if (!opData.operationId || typeof opData.operationId !== 'string' || opData.operationId.trim() === '') {
+        throw new Error('LEDGER_IDENTITY_INCOMPLETE: Ledger operationId is required.');
+      }
+      if (opData.operationId !== operationId) {
+        throw new Error('OPERATION_ID_MISMATCH: Ledger operationId ' + opData.operationId + ' does not match requested ' + operationId);
+      }
+      if (!opData.planId || typeof opData.planId !== 'string' || opData.planId.trim() === '') {
+        throw new Error('LEDGER_IDENTITY_INCOMPLETE: Ledger planId is required.');
+      }
+      if (opData.planId !== targetWindow.planId) {
+        throw new Error('PLAN_MISMATCH: Ledger planId ' + opData.planId + ' does not match window planId ' + targetWindow.planId);
+      }
+      if (!opData.pid || typeof opData.pid !== 'string' || opData.pid.trim() === '') {
+        throw new Error('LEDGER_IDENTITY_INCOMPLETE: Ledger pid is required.');
+      }
+      if (opData.pid !== targetWindow.pid) {
+        throw new Error('PID_MISMATCH: Ledger pid ' + opData.pid + ' does not match window pid ' + targetWindow.pid);
+      }
+
+      // Coach identity provenance
+      const ledgerCoachId = opData.coachId || (opData.window && opData.window.coachId);
+      if (ledgerCoachId) {
+        if (ledgerCoachId !== coachId) {
+          throw new Error('COACH_MISMATCH: Ledger coachId ' + ledgerCoachId + ' does not match requested ' + coachId);
+        }
+      } else {
+        // Legacy reservation fallback
+        let clientData = null;
+        try {
+          const clientRes = await (typeof io.readFenceWithVersion === 'function'
+            ? io.readFenceWithVersion('clients/' + clientId)
+            : io.readFence('clients/' + clientId));
+          clientData = (clientRes && clientRes.doc) || clientRes;
+        } catch (_) {}
+        if (!clientData || clientData.coachId !== coachId) {
+          throw new Error('COACH_IDENTITY_UNACCREDITED: Legacy reservation lacks coachId and client coach relationship cannot be accredited; individual revocation rejected, global STOP required.');
+        }
+      }
+
+      // Coach document and canary scope check
+      const coachRes = await io.readFenceWithVersion('coaches/' + coachId);
+      const coachDoc = coachRes && coachRes.doc;
+      const isTerminal = opData.status === 'STOPPED' || opData.status === 'COMPLETED' || opData.status === 'FAILED' || opData.status === 'EXPIRED';
+      if (!coachDoc || (!isTerminal && (!coachDoc.autoApplyCanary || !Array.isArray(coachDoc.autoApplyCanary.clientIds) || !coachDoc.autoApplyCanary.clientIds.includes(clientId)))) {
+        throw new Error('CLIENT_NOT_IN_COACH_SCOPE: Client ' + clientId + ' is not in coach ' + coachId + ' canary scope.');
+      }
+
+      prevalidationSuccess = true;
+    } catch (preErr) {
+      errors.push('OCC pre-validation failed: ' + preErr.message);
+      return {
+        schema: 'vdsen-client-revocation-v1',
+        status: 'REVOCATION_INCOMPLETE',
+        clientId: clientId,
+        operationId: operationId,
+        coachId: coachId,
+        revokedAt: isoNow,
+        reason: reason,
+        success: false,
+        fencesScopedDisarmed: false,
+        ledgerStopped: false,
+        ledgerResult: null,
+        ledgerError: preErr.message,
+        writeAttempts: [], // Zero writes on failed authoritative pre-validation
+        readback: {
+          numericClientDisabled: false,
+          releaseClientRemoved: false,
+          coachClientRemoved: false,
+          readbackComplete: false
+        },
+        errors: errors
+      };
+    }
+
     // OCC Loop with verified preconditions
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const { doc: numDoc, updateTime: numUpdateTime } = await io.readFenceWithVersion('releaseControl/numericPilot');
+        const { doc: numDoc, updateTime: numUpdateTime } = attempt === 1
+          ? { doc: initialNumDoc, updateTime: initialNumUpdateTime }
+          : await io.readFenceWithVersion('releaseControl/numericPilot');
         if (!numUpdateTime) {
           throw new Error('MISSING_VERSION_PRECONDITION: numericPilot updateTime missing.');
         }
@@ -521,12 +791,6 @@ async function executeClientRevocation(opts, io) {
           || (numDoc.uid === clientId ? (numDoc.window || numDoc) : null);
         if (!targetWindow) {
           throw new Error('WINDOW_NOT_FOUND: No authorized window exists for client ' + clientId);
-        }
-        if (targetWindow.uid && targetWindow.uid !== clientId) {
-          throw new Error('IDENTITY_MISMATCH: Window UID does not match client.');
-        }
-        if (targetWindow.operationId && targetWindow.operationId !== operationId) {
-          throw new Error('OPERATION_MISMATCH: Window operationId does not match.');
         }
 
         const updatedWindows = { ...numDoc.windows };
