@@ -1,0 +1,69 @@
+name: VDSEN retire legacy armed deployment (single-target)
+
+# CONTROLLED RETIREMENT OF THE LEGACY ARMED DEPLOYMENT (T732).
+#
+# Strictly deletes exactly ONE single deployment (dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K)
+# after exhaustive preflight of production and rollback baselines, followed by
+# authoritative post-verification.
+#
+# Safety:
+#   - environment: Production
+#   - only secret: VERCEL_TOKEN
+#   - manual dispatch with strict confirmation input
+#   - never prints tokens, authorization headers or sensitive bodies
+#   - single DELETE request (no loops, no multiple deletions)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_deployment_id:
+        description: 'Type exact ID to confirm retirement: dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K'
+        required: true
+        type: string
+      reason:
+        description: 'Mandate or tracking note (e.g. T732)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  retire:
+    environment: Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Validate confirmation input
+        env:
+          CONFIRM_ID: ${{ inputs.confirm_deployment_id }}
+        run: |
+          if [ "$CONFIRM_ID" != "dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K" ]; then
+            echo "::error::Input confirm_deployment_id must match exactly dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K"
+            exit 1
+          fi
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Execute controlled retirement
+        env:
+          CONFIRM_DEPLOYMENT_ID: ${{ inputs.confirm_deployment_id }}
+        run: node scripts/release/retire-legacy-deployment.cjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: legacy-retirement-${{ github.run_id }}
+          path: release-output/legacy-retirement.json
+          if-no-files-found: warn
+          retention-days: 30
