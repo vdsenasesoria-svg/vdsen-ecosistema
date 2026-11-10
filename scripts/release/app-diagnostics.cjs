@@ -8,10 +8,154 @@
 // name, the HTTP status, and a short shape summary (counts / field names).
 const fs = require('node:fs');
 const { json, git } = require('./lib.cjs');
+const P = require('../pilot/window-protocol.cjs');
 
+const LEGACY_ARMED_DEPLOYMENT = P.LEGACY_ARMED_DEPLOYMENT;
 const PROJECT_ENV = '/v9/projects/{id}/env';
 
 function state() { return json('.release/vdsen-client.json'); }
+
+function validateControlDeployment(d, s) {
+  if (!d || typeof d !== 'object') return false;
+  const id = d.id || d.uid;
+  const projectId = d.projectId;
+  const teamId = d.teamId || d.ownerId;
+  return id === s.production_deployment && projectId === s.production_project && teamId === s.vercel_team;
+}
+
+async function fetchDeployment(deploymentId, s, token, customFetch = fetch) {
+  if (!deploymentId || typeof deploymentId !== 'string' || !/^dpl_[A-Za-z0-9]+$/.test(deploymentId)) {
+    return { status: 'INVALID_ID', ok: false, error: 'Invalid deployment ID format' };
+  }
+  const url = 'https://api.vercel.com/v13/deployments/' + encodeURIComponent(deploymentId) + '?teamId=' + encodeURIComponent(s.vercel_team);
+  try {
+    const r = await customFetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: 'Bearer ' + token,
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(30000),
+      redirect: 'error',
+    });
+    if (r.status === 200) {
+      let data = null;
+      try {
+        if (typeof r.json === 'function') {
+          data = await r.json();
+        } else if (typeof r.text === 'function') {
+          const text = await r.text();
+          data = text ? JSON.parse(text) : {};
+        }
+      } catch (e) {
+        return { status: 'INVALID_JSON', ok: false };
+      }
+      return { status: 200, ok: true, data };
+    }
+    return { status: r.status, ok: false };
+  } catch (err) {
+    return { status: 'NETWORK', ok: false, error: (err && err.message ? err.message : String(err)).slice(0, 120) };
+  }
+}
+
+async function verifyLegacyDeploymentRetirement(s, token, opts = {}) {
+  const customFetch = opts.fetch || fetch;
+  const legacyId = opts.legacyId !== undefined ? opts.legacyId : LEGACY_ARMED_DEPLOYMENT;
+  const controlId = s && s.production_deployment;
+
+  if (!token) {
+    return {
+      verdict: 'UNVERIFIED',
+      reason: 'NO_TOKEN',
+      legacy_deployment: legacyId,
+      control_deployment: controlId,
+    };
+  }
+
+  if (!controlId || !s.production_project || !s.vercel_team) {
+    return {
+      verdict: 'UNVERIFIED',
+      reason: 'INVALID_STATE_MANIFEST',
+      legacy_deployment: legacyId,
+      control_deployment: controlId,
+    };
+  }
+
+  if (!legacyId || typeof legacyId !== 'string' || !/^dpl_[A-Za-z0-9]+$/.test(legacyId)) {
+    return {
+      verdict: 'UNVERIFIED',
+      reason: 'INVALID_LEGACY_ID',
+      legacy_deployment: legacyId,
+      control_deployment: controlId,
+    };
+  }
+
+  // 1. Control check BEFORE: must be HTTP 200 and match project, team, deployment
+  const controlBefore = await fetchDeployment(controlId, s, token, customFetch);
+  const controlBeforeValid = controlBefore.status === 200 && validateControlDeployment(controlBefore.data, s);
+
+  if (!controlBeforeValid) {
+    return {
+      verdict: 'UNVERIFIED',
+      reason: 'CONTROL_BEFORE_INVALID',
+      control_before: { status: controlBefore.status, valid: false },
+      legacy_deployment: legacyId,
+      control_deployment: controlId,
+    };
+  }
+
+  // 2. Query legacy deployment using same token and scope
+  const legacyResult = await fetchDeployment(legacyId, s, token, customFetch);
+
+  // 3. Control check AFTER: must be HTTP 200 and match project, team, deployment
+  const controlAfter = await fetchDeployment(controlId, s, token, customFetch);
+  const controlAfterValid = controlAfter.status === 200 && validateControlDeployment(controlAfter.data, s);
+
+  if (!controlAfterValid) {
+    return {
+      verdict: 'UNVERIFIED',
+      reason: 'CONTROL_AFTER_INVALID',
+      control_before: { status: controlBefore.status, valid: true },
+      legacy: { status: legacyResult.status },
+      control_after: { status: controlAfter.status, valid: false },
+      legacy_deployment: legacyId,
+      control_deployment: controlId,
+    };
+  }
+
+  // 4. Both controls are strictly valid. Emit verdict based on legacy response status:
+  if (legacyResult.status === 404) {
+    return {
+      verdict: 'RETIRED_VERIFIED',
+      legacy_deployment: legacyId,
+      control_deployment: controlId,
+      control_before: { status: 200, valid: true },
+      legacy: { status: 404 },
+      control_after: { status: 200, valid: true },
+    };
+  }
+
+  if (legacyResult.status === 200) {
+    return {
+      verdict: 'STILL_EXISTS',
+      legacy_deployment: legacyId,
+      control_deployment: controlId,
+      control_before: { status: 200, valid: true },
+      legacy: { status: 200 },
+      control_after: { status: 200, valid: true },
+    };
+  }
+
+  return {
+    verdict: 'UNVERIFIED',
+    reason: 'LEGACY_STATUS_' + legacyResult.status,
+    legacy_deployment: legacyId,
+    control_deployment: controlId,
+    control_before: { status: 200, valid: true },
+    legacy: { status: legacyResult.status },
+    control_after: { status: 200, valid: true },
+  };
+}
 
 async function probe(label, url, token) {
   const started = Date.now();
@@ -77,15 +221,28 @@ async function diagnose() {
   // booleans/names only: field names are not secret, values are never printed.
   const shape = await deploymentShape(s, token, base, team, project);
 
+  // Strict GET-only accreditation of the legacy armed deployment retirement.
+  const legacyCheck = await verifyLegacyDeploymentRetirement(s, token);
+
   const lines = ['## App lane read diagnostics', '', '| read | status | ms | detail |', '|---|---|---|---|'];
   for (const r of results) lines.push('| ' + r.label + ' | ' + r.status + ' | ' + r.ms + ' | ' + String(r.detail).replace(/\|/g, '/') + ' |');
   lines.push('', '### contract fields present on a production deployment', '', '| field | value |', '|---|---|');
   for (const [k, v] of Object.entries(shape)) lines.push('| ' + k + ' | ' + String(v).slice(0, 240) + ' |');
+  lines.push('', '### Legacy armed deployment accreditation', '',
+    '| check | result |',
+    '|---|---|',
+    '| legacy deployment ID | ' + legacyCheck.legacy_deployment + ' |',
+    '| control deployment ID | ' + legacyCheck.control_deployment + ' |',
+    '| control before status | ' + (legacyCheck.control_before ? legacyCheck.control_before.status : '(not reached)') + ' |',
+    '| legacy status | ' + (legacyCheck.legacy ? legacyCheck.legacy.status : '(not reached)') + ' |',
+    '| control after status | ' + (legacyCheck.control_after ? legacyCheck.control_after.status : '(not reached)') + ' |',
+    '| verdict | **' + legacyCheck.verdict + '** |'
+  );
   lines.push('', 'No token, variable value or response body is printed. Candidate: ' + (process.env.APP_RUNTIME_SHA || '(none)'));
   const summary = lines.join('\n');
 
   fs.mkdirSync('release-output', { recursive: true });
-  fs.writeFileSync('release-output/app-diagnostics.json', JSON.stringify({ sdk_version: sdkVersion, results, shape }, null, 2) + '\n');
+  fs.writeFileSync('release-output/app-diagnostics.json', JSON.stringify({ sdk_version: sdkVersion, results, shape, legacy_deployment_check: legacyCheck }, null, 2) + '\n');
   try { if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary + '\n'); } catch (e) {}
   console.log(summary);
 }
@@ -133,4 +290,12 @@ async function deploymentShape(s, token, base, team, project) {
 if (require.main === module) {
   diagnose().catch((e) => { console.error('DIAGNOSE FAILED: ' + e.message); process.exitCode = 1; });
 }
-module.exports = { diagnose, probe };
+module.exports = {
+  diagnose,
+  probe,
+  state,
+  fetchDeployment,
+  validateControlDeployment,
+  verifyLegacyDeploymentRetirement,
+  LEGACY_ARMED_DEPLOYMENT,
+};
