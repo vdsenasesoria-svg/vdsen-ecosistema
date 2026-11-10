@@ -129,6 +129,7 @@ test('T733 alias: any alias tied to the legacy deployment blocks (legacy list, p
   await blocked(world({ prodAlias: { alias: 'vdsen-ecosistema.vercel.app', projectId: PROJECT, deployment: { id: LEGACY } } }), /LEGACY_IS_PRODUCTION_ALIAS_TARGET/);
   await blocked(world({ prodAlias: { alias: 'vdsen-ecosistema.vercel.app', projectId: PROJECT, deployment: { id: 'dpl_other' } } }), /PROD_ALIAS_TARGET_MISMATCH/);
   await blocked(world({ prodAlias: { alias: 'vdsen-ecosistema.vercel.app', projectId: 'prj_other', deployment: { id: PROD } } }), /PROD_ALIAS_PROJECT_MISMATCH/);
+  assert.equal((await run(world({ prodAlias: { alias: 'vdsen-ecosistema.vercel.app', deployment: { id: PROD } } }))).verdict, 'LEGACY_RETIRED_VERIFIED', 'projectId may be omitted by the API; the target deployment is verified separately');
 });
 
 test('T733 identity: absent/invalid githubCommitSha is not evidence; state, target, SHA and rollback provenance are enforced', async () => {

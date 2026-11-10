@@ -149,7 +149,8 @@ async function readAliases(ctx) {
   if (!pa.ok) return block('PROD_ALIAS_READ_FAILED_' + pa.status);
   const a = pa.data, aliasDep = isObj(a.deployment) ? (a.deployment.id || a.deployment.uid) : undefined;
   if (a.alias !== host || typeof aliasDep !== 'string') return block('PROD_ALIAS_MALFORMED');
-  if (a.projectId !== s.production_project) return block('PROD_ALIAS_PROJECT_MISMATCH');
+  // The alias payload may omit projectId (app-live.cjs tolerates that); when present it must match. The target deployment's own project is verified separately.
+  if (a.projectId !== undefined && a.projectId !== s.production_project) return block('PROD_ALIAS_PROJECT_MISMATCH');
   if (aliasDep === LEGACY_ARMED_DEPLOYMENT) return block('LEGACY_IS_PRODUCTION_ALIAS_TARGET');
   if (aliasDep !== s.production_deployment) return block('PROD_ALIAS_TARGET_MISMATCH');
   // Aliases attached to the legacy deployment itself.
