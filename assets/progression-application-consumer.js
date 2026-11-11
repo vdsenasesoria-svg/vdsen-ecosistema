@@ -298,12 +298,17 @@
       var key = overlayKey(record);
       // one overlay per exact target exposure, whatever its state: a new candidate never stacks on / resurrects an earlier application
       var eo = ctx.existingOverlays;
+      var targetExec = record.executionExerciseId || pid;
       if (eo && (eo[key] || Object.keys(eo).some(function(k) {
-        var x = eo[k]; return x && x.clientId === record.clientId && x.planId === record.planId && x.prescriptionExerciseId === pid && x.target && x.target.week === t.week && x.target.dayIndex === t.dayIndex; })))
+        var x = eo[k];
+        var xExec = x && (x.executionExerciseId || x.prescriptionExerciseId);
+        return x && x.clientId === record.clientId && x.planId === record.planId && x.prescriptionExerciseId === pid &&
+          xExec === targetExec && x.target && x.target.week === t.week && x.target.dayIndex === t.dayIndex; })))
         blockers.push(BLOCKERS.ALREADY_RECORDED);
       if (!blockers.length && cand) {
         out.wouldApply = true;
         out.overlay = { key: key, schema: SCHEMA, clientId: record.clientId, planId: record.planId, prescriptionExerciseId: pid,
+          executionExerciseId: targetExec,
           sourceRecordKey: record.key, sourceRevision: record.revision,
           source: { week: record.source.week, dayIndex: record.source.dayIndex, calculatedAt: record.source.calculatedAt },
           target: { week: t.week, dayIndex: t.dayIndex }, dimension: cand.dimension, previousValue: cand.previousValue,

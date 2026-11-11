@@ -20,6 +20,11 @@
     if (req) { try { return req('./progression-magnitude-policy.js'); } catch (e) { /* fall through */ } }
     return root && root.VDSEN_MAGNITUDE_POLICY || null;
   }
+  // T758: variant identity resolution for autonomous progression of original and authorized substitutions.
+  function _variantIdentity() {
+    if (req) { try { return req('./progression-variant-identity.js'); } catch (e) { /* fall through */ } }
+    return root && root.VDSEN_VARIANT_IDENTITY || null;
+  }
   function _time(v) {
     if (typeof v === 'string') { var t = Date.parse(v); return Number.isFinite(t) ? t : null; }
     return _ms(v);
@@ -27,16 +32,20 @@
   function _num(v) { var n = typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN); return Number.isFinite(n) ? n : null; }
   function _kind(x) { var p = _policy(); return p && p.explicitSetKind ? p.explicitSetKind(x) : null; }
 
-  // TARGET EXPOSURE START (single definition): the first legitimate PERSISTED working-set execution of the exact PID in the exact
-  // week/day = a done log entry for that PID that is not autofilled, not express / expressFinal and not an explicitly tagged warm-up / drop /
+  // TARGET EXPOSURE START (single definition): the first legitimate PERSISTED working-set execution of the exact PID (or variant) in the exact
+  // week/day = a done log entry for that target that is not autofilled, not express / expressFinal and not an explicitly tagged warm-up / drop /
   // intensification set. Rendering or opening the page never counts.
-  function pidExposureStarted(entries, pid, week, dayIndex) {
+  function pidExposureStarted(entries, pid, week, dayIndex, executionExerciseId) {
     if (!pid || !entries) return false;
+    var targetId = executionExerciseId || pid;
+    var vi = _variantIdentity();
     var re = new RegExp('^log_' + week + '_' + dayIndex + '_\\d+_s\\d+$');
     return Object.keys(entries).some(function(k) {
       var e = entries[k];
-      return re.test(k) && e && typeof e === 'object' && e.prescriptionExerciseId === pid && e.done === true &&
-        e.autoFilled !== true && e.express !== true && e.expressFinal !== true && !_kind(e);
+      if (!(re.test(k) && e && typeof e === 'object' && e.done === true &&
+        e.autoFilled !== true && e.express !== true && e.expressFinal !== true && !_kind(e))) return false;
+      if (vi && typeof vi.entryMatchesTarget === 'function') return vi.entryMatchesTarget(e, targetId);
+      return e.prescriptionExerciseId === pid;
     });
   }
 
@@ -55,12 +64,16 @@
   }
   // T603: `trust` = { markers: [{ at }] } is supplied by SERVER callers. Then ONLY the exposure start markers (immutable documents whose `at` the Firestore Rules force to be request.time)
   // decide WHEN the exposure started; `entries.<key>.sts` is a free-form map value an athlete could write with the SDK and is ignored. No marker for a started exposure = unknown order.
-  function exposureStart(entries, pid, week, dayIndex, trust) {
+  function exposureStart(entries, pid, week, dayIndex, trust, executionExerciseId) {
     if (!pid || !entries) return { started: false, at: null };
+    var targetId = executionExerciseId || pid;
+    var vi = _variantIdentity();
     var re = new RegExp('^log_' + week + '_' + dayIndex + '_\\d+_s\\d+$'), at = null, started = false, unknown = false;
     Object.keys(entries).forEach(function(k) {
       var e = entries[k];
-      if (!(re.test(k) && e && typeof e === 'object' && e.prescriptionExerciseId === pid && e.done === true && e.autoFilled !== true && e.express !== true && e.expressFinal !== true && !_kind(e))) return;
+      if (!(re.test(k) && e && typeof e === 'object' && e.done === true && e.autoFilled !== true && e.express !== true && e.expressFinal !== true && !_kind(e))) return;
+      var matches = vi && typeof vi.entryMatchesTarget === 'function' ? vi.entryMatchesTarget(e, targetId) : (e.prescriptionExerciseId === pid);
+      if (!matches) return;
       started = true;
       var t = _ms(e.sts);
       if (t === null) unknown = true; else if (at === null || t < at) at = t;
@@ -120,11 +133,14 @@
   function evaluateOverlay(input) {
     input = input || {};
     var pid = input.pid, week = input.week, day = input.dayIndex;
+    var targetExec = input.executionExerciseId || pid;
     function no(reason, prov, extra) { return Object.assign({ usable: false, reason: reason, provenance: prov || PROVENANCE.BASE_PLAN, overlay: null, record: null, state: null }, extra || {}); }
     if (!input.clientId || !input.planId || !pid || !Number.isInteger(week) || !Number.isInteger(day)) return no('IDENTITY_MISSING');
     var found = _values(input.overlays).filter(function(o) {
-      return o && o.schema === OVERLAY_SCHEMA && o.clientId === input.clientId && o.planId === input.planId && o.prescriptionExerciseId === pid &&
-        o.target && o.target.week === week && o.target.dayIndex === day;
+      var matchPid = o && o.prescriptionExerciseId === pid;
+      var matchExec = (o.executionExerciseId || o.prescriptionExerciseId) === targetExec;
+      return o && o.schema === OVERLAY_SCHEMA && o.clientId === input.clientId && o.planId === input.planId &&
+        matchPid && matchExec && o.target && o.target.week === week && o.target.dayIndex === day;
     });
     if (!found.length) return no('NO_OVERLAY');
     if (found.length > 1) return no('AMBIGUOUS_OVERLAYS');
@@ -144,7 +160,7 @@
     // T599-R (D-02): a started exposure keeps the prescription it STARTED with — but an invalidation (Coach decision, plan revision) that happened BEFORE the first persisted
     // working set already ended the overlay's authority, and executing the exposure afterwards must not revive it. Order of persisted events decides; a tie or an unknown
     // order (no timestamp) fails closed. An invalidation AFTER the first set is not retroactive.
-    var start = exposureStart(input.entries, pid, week, day, input.trustedStarts === true ? { markers: input.startMarkers } : null);
+    var start = exposureStart(input.entries, pid, week, day, input.trustedStarts === true ? { markers: input.startMarkers } : null, targetExec);
     function beforeStart(at) { return !start.started || start.at === null || at === null || at <= start.at; }
     // Any exact Coach decision since the source calculation counts: the apply gate refused every decision it could SEE at commit, so a
     // decision visible now was necessarily written after the commit (independent of clock skew between devices).

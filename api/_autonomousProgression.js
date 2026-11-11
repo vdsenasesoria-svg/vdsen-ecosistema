@@ -370,7 +370,7 @@ async function consumePending(db, clientId, planId, clock) {
         if (startMarker.planId !== planId || Number(startMarker.week) !== tgt.week || Number(startMarker.dayIndex) !== tgt.dayIndex || Number(startMarker.exerciseIndex) !== exIdx) {
           return { written: false, reason: 'PLAN_MISMATCH' };
         }
-        if (!effective.pidExposureStarted(entries, rec.prescriptionExerciseId, tgt.week, tgt.dayIndex)) {
+        if (!effective.pidExposureStarted(entries, rec.prescriptionExerciseId, tgt.week, tgt.dayIndex, rec.executionExerciseId)) {
           return { written: false, reason: 'PLAN_MISMATCH' };
         }
         // T688 / T689: Look for plan replacement timestamp.

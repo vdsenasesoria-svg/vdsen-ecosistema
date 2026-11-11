@@ -1572,6 +1572,7 @@ html.rc-open{overflow:hidden}
 </div>
 
 <script src="assets/exercise-visual-catalog.js"></script>
+<script src="assets/progression-variant-identity.js"></script>
 <script src="assets/sra-context.js"></script>
 <script src="assets/progression-magnitude-policy.js"></script>
 <script src="assets/progression-auto-apply-shadow.js"></script>
@@ -6797,9 +6798,13 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var _exSubData = LOGS[_exSubKey] || null;
   var _originalNombre = ej.nombre || ej.exerciseName || '';
   if (_exSubData && _exSubData.nombre) ej = Object.assign({}, ej, { nombre: _exSubData.nombre, exerciseName: _exSubData.nombre });
+  var _vi = typeof window !== 'undefined' ? window.VDSEN_VARIANT_IDENTITY : null;
+  var _execId = _vi ? _vi.deriveExecutionId(ej.prescriptionExerciseId, _exSubData ? _exSubData.nombre : null, ej.alternatives, _originalNombre) : ej.prescriptionExerciseId;
+  var _isUnauthSub = _vi && _vi.parseExecutionId(_execId).isAuthorized === false;
   // T533: effective prescription = base plan + eligible APPLIED/CONSUMED overlay (exact PID/week/day). Base plan when anything is off.
   // A substituted or Y3T exercise never consumes an overlay. Executed LOGS are never touched by this.
   var _ovEff = (_exSubData || isY3TExercise(ej)) ? null : _resolveOverlayForExercise(ej, di, getExUnit(di, ei));
+  if (!_ovEff && _exSubData && !_isUnauthSub) _ovEff = _resolveOverlayForExercise(ej, di, getExUnit(di, ei), _execId);
   if (_ovEff) ej = Object.assign({}, ej, { sets: _ovEff.sets.map(function(x){ return x.effective; }), _overlay: _ovEff });
   var nombre = ej.nombre || ej.exerciseName || ('Ejercicio '+(ei+1));
   var machine = getMachineForExercise(nombre);
@@ -10275,12 +10280,16 @@ async function completeSet(key, di, ei, si, unit) {
   var _ejMetaBase = _coachRIR(_ejMeta);
   // T506: an athlete substitution (exsub_*) is execution of a DIFFERENT exercise: its sets are never attributed to
   // the plan exercise's PID/exerciseId (no PID evidence, PID history or PR contamination); provenance is kept.
+  // T758: decouple prescription identity from execution identity so authorized substitutions progress independently.
   var _subEx = LOGS['exsub_'+CURRENT_WEEK+'_'+di+'_'+ei];
   var _subName = (_subEx && _subEx.nombre) ? String(_subEx.nombre) : '';
   var _logPid = _subName ? null : (_ejMeta.prescriptionExerciseId || null);
+  var _vi = typeof window !== 'undefined' ? window.VDSEN_VARIANT_IDENTITY : null;
+  var _execId = _vi ? _vi.deriveExecutionId(_ejMeta.prescriptionExerciseId, _subName, _ejMeta.alternatives, _ejMetaName) : (_logPid || undefined);
   // T515: the prescribed RIR is logged only when the Coach authored it (a display default is never evidence).
   LOGS[key] = { carga, reps, unit, done, rir: _ejMeta.rirDefaulted === true ? undefined : getAdjustedRIR(_ejMetaBase, CURRENT_WEEK, _ejMetaName), rir_real: rirReal, ics, pump, ts: Date.now(),
     prescriptionExerciseId: _logPid || undefined,
+    executionExerciseId: _execId || undefined,
     exerciseId: _subName ? undefined : (_ejMeta.exerciseId || undefined),
     exerciseNameSnapshot: (_subName || _ejMetaName) || undefined
   };
@@ -12183,12 +12192,12 @@ function _captureLifecycleState(uid, planId, planData, clientData, mesoSnap) {
   LIFECYCLE_STATE.receipts = m.consumptionReceipts || {};
   LIFECYCLE_STATE.interventions = Array.isArray(clientData && clientData.coachInterventions) ? clientData.coachInterventions : [];
 }
-function _resolveOverlayForExercise(ej, di, unit) {
+function _resolveOverlayForExercise(ej, di, unit, executionExerciseId) {
   if (!USER || !ej || !ej.prescriptionExerciseId) return null;
   var st = LIFECYCLE_STATE;
   if (!st || st.uid !== USER.uid || st.planId !== ACTIVE_PLAN_ID || !st.planDoc) return null;
   var r = window.VDSEN_EFFECTIVE_PRESCRIPTION.resolveEffective({ clientId: USER.uid, planId: ACTIVE_PLAN_ID, activePlanId: ACTIVE_PLAN_ID,
-    pid: ej.prescriptionExerciseId, week: CURRENT_WEEK, dayIndex: di, records: st.records, overlays: st.overlays, interventions: st.interventions,
+    pid: ej.prescriptionExerciseId, executionExerciseId: executionExerciseId, week: CURRENT_WEEK, dayIndex: di, records: st.records, overlays: st.overlays, interventions: st.interventions,
     plan: st.planDoc, entries: LOGS, baseSets: ej.sets || [], unit: unit, canonicalOverlayRead: true });
   // T586: an application that was CONSUMED keeps governing later exposures (CARRIED_OVERLAY): adjustments never silently fall back to the plan.
   return (r.provenance === 'CANONICAL_OVERLAY' || r.provenance === 'CARRIED_OVERLAY') ? r : null;
@@ -12268,8 +12277,12 @@ function _withEffectiveSessions(list, source) {
     var out = list.map(function(ses, di) {
       if (!ses || !Array.isArray(ses.exercises)) return ses;
       var changed = false, exs = ses.exercises.map(function(ej, ei) {
-        if (!ej || !ej.prescriptionExerciseId || _getExType(ej) !== 'fuerza' || isY3TExercise(ej) || LOGS['exsub_' + CURRENT_WEEK + '_' + di + '_' + ei]) return ej;
-        var r = _resolveOverlayForExercise(ej, di, getExUnit(di, ei));
+        var _sub = LOGS['exsub_' + CURRENT_WEEK + '_' + di + '_' + ei];
+        var _vi = typeof window !== 'undefined' ? window.VDSEN_VARIANT_IDENTITY : null;
+        var _execId = _vi ? _vi.deriveExecutionId(ej.prescriptionExerciseId, _sub ? _sub.nombre : null, ej.alternatives, ej.nombre || ej.exerciseName) : ej.prescriptionExerciseId;
+        var _isUnauth = _vi && _vi.parseExecutionId(_execId).isAuthorized === false;
+        if (!ej || !ej.prescriptionExerciseId || _getExType(ej) !== 'fuerza' || isY3TExercise(ej) || _isUnauth) return ej;
+        var r = _resolveOverlayForExercise(ej, di, getExUnit(di, ei), _execId);
         if (!r) return ej;
         changed = true;
         var sets = r.sets.map(function(x) { return x.effective; });
@@ -12283,8 +12296,12 @@ function _withEffectiveSessions(list, source) {
 }
 // Rest timers follow the effective prescription too (REST overlay). Returns the SAME object when no overlay applies (flag off => always).
 function _withOverlayRest(ej, di, ei) {
-  if (!ej || isY3TExercise(ej) || LOGS['exsub_'+CURRENT_WEEK+'_'+di+'_'+ei]) return ej;
-  var r = _resolveOverlayForExercise(ej, di, getExUnit(di, ei));
+  var _sub = LOGS['exsub_'+CURRENT_WEEK+'_'+di+'_'+ei];
+  var _vi = typeof window !== 'undefined' ? window.VDSEN_VARIANT_IDENTITY : null;
+  var _execId = _vi ? _vi.deriveExecutionId(ej.prescriptionExerciseId, _sub ? _sub.nombre : null, ej.alternatives, ej.nombre || ej.exerciseName) : ej.prescriptionExerciseId;
+  var _isUnauth = _vi && _vi.parseExecutionId(_execId).isAuthorized === false;
+  if (!ej || isY3TExercise(ej) || _isUnauth) return ej;
+  var r = _resolveOverlayForExercise(ej, di, getExUnit(di, ei), _execId);
   return r && r.dimension === 'REST' ? Object.assign({}, ej, { sets: r.sets.map(function(x){ return x.effective; }) }) : ej;
 }
 // T593: the suggestion reads as three plain numbers ("82.5 kg · 8 reps · RIR 2"): the first standard working set of the effective prescription. A part the plan does not have is
@@ -16823,28 +16840,38 @@ function _getProgRecForExercise(di, ei, exName, prescriptionExerciseId) {
 
 // ── FASE 6 — EXERCISE HISTORY HELPERS ──────────────────────────────────
 
+function _resolveTargetExecId(pid, di, ei, executionExerciseId) {
+  if (executionExerciseId) return executionExerciseId;
+  var sub = (di !== undefined && ei !== undefined) ? LOGS['exsub_' + CURRENT_WEEK + '_' + di + '_' + ei] : null;
+  var vi = typeof window !== 'undefined' ? window.VDSEN_VARIANT_IDENTITY : null;
+  if (!sub || !vi || !pid) return null;
+  var ej = (_EJERCICIOS_DIA || [])[ei] || {};
+  return vi.deriveExecutionId(pid, sub.nombre, ej.alternatives, ej.exerciseName || ej.nombre);
+}
+
 // Returns last N comparable exposures (most-recent first), respecting stable identity.
 // Each exposure: { week, confidence, sets:[{carga,reps,rir_real,ics}] }
-function _getExposures(prescriptionExerciseId, di, ei, nombre, maxExposures) {
+function _getExposures(prescriptionExerciseId, di, ei, nombre, maxExposures, executionExerciseId) {
   maxExposures = maxExposures || 5;
-  var exposures = [];
-  var startWeek = REAL_WEEK; // always scan real history, not viewed week
+  var exposures = [], startWeek = REAL_WEEK;
+  var _tId = _resolveTargetExecId(prescriptionExerciseId, di, ei, executionExerciseId);
+  var _vi = typeof window !== 'undefined' ? window.VDSEN_VARIANT_IDENTITY : null;
 
   for (var w = startWeek; w >= 1; w--) {
-    var sets = [];
-    var confidence = 'LOW';
+    var sets = [], confidence = 'LOW';
 
     if (prescriptionExerciseId) {
-      var positions = {};
-      var candidateSets = [];
+      var positions = {}, candidateSets = [];
       (LOGS_BY_WEEK.log[w] || []).forEach(function(k) {
         var entry = LOGS[k];
         if (!entry || !entry.done || entry.autoFilled) return;
-        if (entry.prescriptionExerciseId !== prescriptionExerciseId) return;
+        var matches = _tId && _vi
+          ? _vi.entryMatchesTarget(entry, _tId)
+          : (entry.prescriptionExerciseId === prescriptionExerciseId && !entry.substitutedFrom);
+        if (!matches) return;
         var parts = k.split('_');
         if (parts.length >= 5) positions[parts[2]+'_'+parts[3]] = true;
-        var setIdx = parts.length >= 5 ? (parseInt(parts[4].replace('s','')) || 0) : 0;
-        candidateSets.push({ entry: entry, setIdx: setIdx });
+        candidateSets.push({ entry: entry, setIdx: parts.length >= 5 ? (parseInt(parts[4].replace('s','')) || 0) : 0 });
       });
       if (candidateSets.length && Object.keys(positions).length === 1) {
         candidateSets.sort(function(a,b){ return a.setIdx - b.setIdx; });
@@ -17737,7 +17764,12 @@ function calculateProgression(di, postData) {
     }
     if (!sets.length) return null;
 
-    var exName = ej.nombre || ej.exerciseName || '';
+    var _subEx = LOGS['exsub_'+CURRENT_WEEK+'_'+di+'_'+ei];
+    var _subName = (_subEx && _subEx.nombre) ? String(_subEx.nombre) : '';
+    var _vi = typeof window !== 'undefined' ? window.VDSEN_VARIANT_IDENTITY : null;
+    var _execId = _vi ? _vi.deriveExecutionId(ej.prescriptionExerciseId, _subName, ej.alternatives, ej.nombre || ej.exerciseName) : ej.prescriptionExerciseId;
+    var _isAuth = _vi ? _vi.parseExecutionId(_execId).isAuthorized : true;
+    var exName = _subName || ej.nombre || ej.exerciseName || '';
     var catData = _getCatalogData(exName);
 
     // ── Unidad del ejercicio: leer del set registrado → fallback a getExUnit ──
@@ -17991,7 +18023,11 @@ function calculateProgression(di, postData) {
       // already used for history matching above, so downstream consumers (Coach
       // monitor, Generator) can match this recommendation to the exact prescribed
       // instance instead of falling back to array position.
+      // T758: decouple prescription identity from execution identity.
       prescriptionExerciseId: ej.prescriptionExerciseId || undefined,
+      executionExerciseId: _execId || undefined,
+      isSubstitution: !!_subName,
+      authorizedSubstitution: _isAuth,
       exerciseId: ej.exerciseId || undefined,
       action: action,
       newLoad: newLoad,

@@ -61,7 +61,7 @@
     var rec = input.recommendation || {};
     return _fingerprint([input.clientId, input.planId, input.week, input.dayIndex,
       input.calculatedAt || null, rec.prescriptionExerciseId || null,
-      rec.exerciseName || null, rec.action || null, rec.newLoad, rec.newReps]);
+      rec.executionExerciseId || rec.exerciseName || null, rec.action || null, rec.newLoad, rec.newReps]);
   }
   function _latestIntervention(interventions, planId, pid, calculatedAt) {
     var relevant = (Array.isArray(interventions) ? interventions : []).filter(function(iv) {
@@ -139,6 +139,7 @@
     if (decision.state !== STATES.PENDING) return policy.reject(pid, decision.reasonCode);
     var plan = input.plan || {}, day = (Array.isArray(plan.days) ? plan.days : []).find(function(d) { return d.dayIndex === input.dayIndex; });
     var ex = ((day && day.exercises) || []).filter(function(e) { return e.prescriptionExerciseId === pid; })[0];
+    var targetExec = rec.executionExerciseId || pid;
     // T586: structural context (trusted callers only): the logbook (post-session / weekly check-in live in the same entries), the target week and the carried set counts of
     // every exercise (so the weekly muscle volume reflects what is really in force, not the original plan).
     var eff = _effective(), carriedSets = {};
@@ -152,7 +153,7 @@
     }
     return policy.evaluate({ clientId: input.clientId, planId: input.planId, prescriptionExerciseId: pid, plan: plan,
       prescription: ex ? { prescriptionExerciseId: pid, sets: ex.sets, repsRange: ex.repsRange, muscleGroup: ex.muscleGroup, fatigueCost: ex.fatigueCost } : null,
-      exposures: policy.extractExposures(input.entries, pid, { planId: input.planId, clientId: input.clientId }),
+      exposures: policy.extractExposures(input.entries, targetExec, { planId: input.planId, clientId: input.clientId }),
       context: { readinessVeto: input.readinessVeto === true,
         structural: input.structural === true ? { entries: input.entries, targetWeek: decision.nextExposure ? decision.nextExposure.week : undefined, carriedSets: carriedSets } : undefined } });
   }
@@ -177,6 +178,7 @@
     return Object.assign({
       key: key, clientId: input.clientId, planId: input.planId,
       prescriptionExerciseId: rec.prescriptionExerciseId || null,
+      executionExerciseId: rec.executionExerciseId || rec.prescriptionExerciseId || null,
       exerciseNameSnapshot: rec.exerciseName || '', action: rec.action || null,
       // T599-R (D-07): `dimension` is the CANONICAL decision's dimension (what the overlay will change); the dimension implied by the legacy action is kept in `legacyDimension`.
       dimension: (magnitude && magnitude.dimension) || decision.dimension || null, legacyDimension: decision.dimension || null,
