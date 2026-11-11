@@ -40,6 +40,11 @@
     if (typeof module === 'object' && module.exports && typeof require === 'function') { try { return require('./progression-structural-policy.js'); } catch (e) { return null; } }
     return typeof globalThis !== 'undefined' ? globalThis.VDSEN_STRUCTURAL_POLICY || null : null;
   }
+  // T758: variant identity resolution for autonomous progression of original and authorized substitutions.
+  function _variantIdentity() {
+    if (typeof module === 'object' && module.exports && typeof require === 'function') { try { return require('./progression-variant-identity.js'); } catch (e) { return null; } }
+    return typeof globalThis !== 'undefined' ? globalThis.VDSEN_VARIANT_IDENTITY || null : null;
+  }
   var NUMERIC_APPLY_ENABLED = false;
   var EVIDENCE_BASIS = 'VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET';
   // T523: the three formerly open decisions are now CLOSED VDSEN PRODUCT POLICY (director decisions). They are product choices,
@@ -111,20 +116,26 @@
     return _base(pid, { reasonCodes: [reasonCode] });
   }
 
-  // ── Evidence extraction from executed LOGS entries (identity is the snapshotted PID,
-  //    never the position index: POSITION != IDENTITY). ─────────────────────────────
+  // ── Evidence extraction from executed LOGS entries (supports original exercises and
+  //    authorized substitutions with independent execution identities and histories). ────────
   function extractExposures(entries, pid, scope) {
     var groups = {}, out = [];
     if (!pid || !entries) return out;
+    var vi = _variantIdentity();
     Object.keys(entries).forEach(function(key) {
       var m = /^log_(\d+)_(\d+)_(\d+)_s(\d+)$/.exec(key);
       var e = entries[key];
-      if (!m || !e || typeof e !== 'object' || e.prescriptionExerciseId !== pid) return;
+      if (!m || !e || typeof e !== 'object') return;
+      var matches = vi && typeof vi.entryMatchesTarget === 'function'
+        ? vi.entryMatchesTarget(e, pid)
+        : (e.prescriptionExerciseId === pid && !e.substitutedFrom);
+      if (!matches) return;
       var gk = m[1] + '_' + m[2] + '_' + m[3];
       var ps = entries['postsession_' + m[1] + '_' + m[2]];
       var pain = !!(ps && ((ps.articularPain && ps.articularPain.present) || ps.articular === 'si'));
+      var basePid = (vi && typeof vi.parseExecutionId === 'function') ? vi.parseExecutionId(pid).prescriptionExerciseId : pid;
       var g = groups[gk] || (groups[gk] = { week: Number(m[1]), dayIndex: Number(m[2]), exerciseIndex: Number(m[3]),
-        prescriptionExerciseId: pid, planId: scope && scope.planId, clientId: scope && scope.clientId, sets: [], painFlag: pain });
+        prescriptionExerciseId: basePid || pid, executionExerciseId: pid, planId: scope && scope.planId, clientId: scope && scope.clientId, sets: [], painFlag: pain });
       g.sets.push({ setIndex: Number(m[4]), load: e.carga, reps: e.reps, unit: e.unit, done: e.done === true,
         rirPrescribed: e.rir, rirReal: e.rir_real, ics: e.ics, pump: e.pump, autoFilled: e.autoFilled === true, express: e.express === true, expressFinal: e.expressFinal === true,
         warmup: e.warmup === true || e.isWarmup === true, drop: e.drop === true || e.isDrop === true || e.isDropSet === true || e.dropSet === true,
@@ -286,6 +297,13 @@
     if (ctx.identityConflict) return reject(pid, REASONS.IDENTITY_CONFLICT);
     if (ctx.stale) return reject(pid, REASONS.STALE);
     if (ctx.coachOverride) return reject(pid, REASONS.COACH_OVERRIDE);
+
+    var vi = _variantIdentity();
+    var targetExec = input.executionExerciseId || pid;
+    if (vi && input.plan && pid && targetExec && targetExec !== pid) {
+      var auth = vi.validateExecutionAuthorization(input.plan, pid, targetExec);
+      if (!auth.ok) return reject(pid, 'UNAUTHORIZED_ALTERNATIVE');
+    }
 
     var cmp = _comparable(input.exposures, input);
     var res = _base(pid, {

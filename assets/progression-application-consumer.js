@@ -113,6 +113,12 @@
     r.exactClient = !!record.clientId && record.clientId === ctx.clientId && !!overlay && overlay.clientId === record.clientId;
     r.exactActivePlan = !!record.planId && record.planId === ctx.planId && ctx.planId === ctx.activePlanId && !!overlay && overlay.planId === record.planId;
     r.exactPid = typeof record.prescriptionExerciseId === 'string' && record.prescriptionExerciseId !== '' && !!overlay && overlay.prescriptionExerciseId === record.prescriptionExerciseId;
+    var vi = _variantIdentity();
+    var targetExec = (overlay && overlay.executionExerciseId) || record.executionExerciseId || record.prescriptionExerciseId;
+    if (vi && plan && record.prescriptionExerciseId && targetExec && targetExec !== record.prescriptionExerciseId) {
+      var auth = vi.validateExecutionAuthorization(plan, record.prescriptionExerciseId, targetExec);
+      if (!auth.ok) r.exactPid = false;
+    }
     r.validSourceExposure = _int(src.week) && _int(src.dayIndex) && calcAt !== null && !!overlay && overlay.source && overlay.source.week === src.week && overlay.source.dayIndex === src.dayIndex;
     r.exactTargetExposure = _int(tgt.week) && _int(tgt.dayIndex) && (tgt.week > src.week || (tgt.week === src.week && tgt.dayIndex > src.dayIndex)) &&
       !!overlay && !!overlay.target && overlay.target.week === tgt.week && overlay.target.dayIndex === tgt.dayIndex;
@@ -168,6 +174,12 @@
   }
 
   function _time(v) { return typeof v === 'string' && Number.isFinite(Date.parse(v)) ? Date.parse(v) : null; }
+  function _variantIdentity() {
+    if (typeof module === 'object' && module.exports && typeof require === 'function') {
+      try { return require('./progression-variant-identity.js'); } catch (e) { return null; }
+    }
+    return typeof globalThis !== 'undefined' ? globalThis.VDSEN_VARIANT_IDENTITY || null : null;
+  }
   function _num(v) {
     if (v === '' || v === null || v === undefined || typeof v === 'boolean') return null;
     var n = Number(v); return Number.isFinite(n) ? n : null;
@@ -269,6 +281,14 @@
       var targetDay = (Array.isArray(plan.days) ? plan.days : []).filter(function(d) { return d.dayIndex === t.dayIndex; })[0];
       var matches = ((targetDay && targetDay.exercises) || []).filter(function(e) { return e.prescriptionExerciseId === pid; });
       if (matches.length !== 1) blockers.push(BLOCKERS.IDENTITY_UNRESOLVED);
+      var targetExec = record.executionExerciseId || pid;
+      if (_variantIdentity && plan && pid && targetExec && targetExec !== pid) {
+        var vi = _variantIdentity();
+        if (vi) {
+          var auth = vi.validateExecutionAuthorization(plan, pid, targetExec);
+          if (!auth.ok) blockers.push(BLOCKERS.IDENTITY_UNRESOLVED);
+        }
+      }
       if (typeof ctx.resolveNextExposure === 'function') {
         var fresh = ctx.resolveNextExposure(plan, pid, record.source.week, record.source.dayIndex);
         if (!fresh || fresh.week !== t.week || fresh.dayIndex !== t.dayIndex) blockers.push(BLOCKERS.TARGET_EXPOSURE_CHANGED);
@@ -298,12 +318,17 @@
       var key = overlayKey(record);
       // one overlay per exact target exposure, whatever its state: a new candidate never stacks on / resurrects an earlier application
       var eo = ctx.existingOverlays;
+      var targetExec = record.executionExerciseId || pid;
       if (eo && (eo[key] || Object.keys(eo).some(function(k) {
-        var x = eo[k]; return x && x.clientId === record.clientId && x.planId === record.planId && x.prescriptionExerciseId === pid && x.target && x.target.week === t.week && x.target.dayIndex === t.dayIndex; })))
+        var x = eo[k];
+        var xExec = x && (x.executionExerciseId || x.prescriptionExerciseId);
+        return x && x.clientId === record.clientId && x.planId === record.planId && x.prescriptionExerciseId === pid &&
+          xExec === targetExec && x.target && x.target.week === t.week && x.target.dayIndex === t.dayIndex; })))
         blockers.push(BLOCKERS.ALREADY_RECORDED);
       if (!blockers.length && cand) {
         out.wouldApply = true;
         out.overlay = { key: key, schema: SCHEMA, clientId: record.clientId, planId: record.planId, prescriptionExerciseId: pid,
+          executionExerciseId: targetExec,
           sourceRecordKey: record.key, sourceRevision: record.revision,
           source: { week: record.source.week, dayIndex: record.source.dayIndex, calculatedAt: record.source.calculatedAt },
           target: { week: t.week, dayIndex: t.dayIndex }, dimension: cand.dimension, previousValue: cand.previousValue,
@@ -491,7 +516,7 @@
     if (r.state !== 'APPLIED') return _fail('INVALID_TRANSITION');
     if (!_consistent(pair, 'APPLIED')) return _fail('RECORD_OVERLAY_INCONSISTENT');
     var tgt = pair.overlay.target, sh = input.shown || {};
-    if (!eff.pidExposureStarted(_entriesOf(st, r.planId), r.prescriptionExerciseId, tgt.week, tgt.dayIndex)) return _fail('TARGET_NOT_STARTED');
+    if (!eff.pidExposureStarted(_entriesOf(st, r.planId), r.prescriptionExerciseId, tgt.week, tgt.dayIndex, r.executionExerciseId)) return _fail('TARGET_NOT_STARTED');
     if (sh.provenance !== 'CANONICAL_OVERLAY' || sh.overlayKey !== pair.overlay.key || sh.appliedValue !== pair.overlay.appliedValue || sh.dimension !== pair.overlay.dimension) return _fail('OVERLAY_NOT_SHOWN');
     var at = _now(input, null);
     if (!at) return _fail('TIMESTAMP_MISSING');
@@ -520,7 +545,7 @@
     if (r.state !== 'APPLIED') return _fail('INVALID_TRANSITION');
     if (!_consistent(pair, 'APPLIED')) return _fail('RECORD_OVERLAY_INCONSISTENT');
     var tgt = pair.overlay.target, ov = pair.overlay;
-    if (!eff.pidExposureStarted(_entriesOf(st, r.planId), r.prescriptionExerciseId, tgt.week, tgt.dayIndex)) return _fail('TARGET_NOT_STARTED');
+    if (!eff.pidExposureStarted(_entriesOf(st, r.planId), r.prescriptionExerciseId, tgt.week, tgt.dayIndex, r.executionExerciseId)) return _fail('TARGET_NOT_STARTED');
     var rc = st.meso.consumptionReceipts && st.meso.consumptionReceipts[r.key];
     if (!rc) return _fail('NO_CONSUMPTION_RECEIPT');
     // the athlete's acknowledgement must describe exactly THIS overlay; it can never supply the prescription itself
@@ -534,7 +559,7 @@
       var exIdx = ((tday && tday.exercises) || []).map(function(e) { return e.prescriptionExerciseId; }).indexOf(r.prescriptionExerciseId);
       if (exIdx >= 0) { var mk = _read(await tx.get(refs.start(r.planId, tgt.week, tgt.dayIndex, exIdx))); if (mk && mk.planId === r.planId && mk.week === tgt.week && mk.dayIndex === tgt.dayIndex && mk.exerciseIndex === exIdx) startMarkers.push({ at: mk.at }); }
     }
-    var stillValid = eff.evaluateOverlay({ trustedStarts: typeof refs.start === 'function', startMarkers: startMarkers, clientId: r.clientId, planId: r.planId, activePlanId: r.planId, pid: r.prescriptionExerciseId, week: tgt.week, dayIndex: tgt.dayIndex,
+    var stillValid = eff.evaluateOverlay({ trustedStarts: typeof refs.start === 'function', startMarkers: startMarkers, clientId: r.clientId, planId: r.planId, activePlanId: r.planId, pid: r.prescriptionExerciseId, executionExerciseId: r.executionExerciseId, week: tgt.week, dayIndex: tgt.dayIndex,
       records: (function(o) { o[r.key] = r; return o; })({}), overlays: (function(o) { o[ov.key] = ov; return o; })({}), interventions: st.client && st.client.coachInterventions,
       plan: st.plan || {}, serverPlanUpdatedAt: st.planUpdateMs, entries: _entriesOf(st, r.planId), safetyConflict: false });
     if (!stillValid.usable) return _fail(stillValid.reason);
@@ -554,8 +579,8 @@
     input = input || {}; var eff = _effective(), o = input.overlay, r = input.record;
     if (!eff || !r || !o || r.state !== 'APPLIED' || o.status !== 'APPLIED') return { action: 'NONE', reason: 'NOT_APPLIED' };
     var t = o.target;
-    if (eff.pidExposureStarted(input.entries, r.prescriptionExerciseId, t.week, t.dayIndex)) return { action: 'NONE', reason: 'TARGET_STARTED' };
-    var ev = eff.evaluateOverlay({ clientId: r.clientId, planId: r.planId, activePlanId: input.activePlanId, pid: r.prescriptionExerciseId, week: t.week, dayIndex: t.dayIndex,
+    if (eff.pidExposureStarted(input.entries, r.prescriptionExerciseId, t.week, t.dayIndex, r.executionExerciseId)) return { action: 'NONE', reason: 'TARGET_STARTED' };
+    var ev = eff.evaluateOverlay({ clientId: r.clientId, planId: r.planId, activePlanId: input.activePlanId, pid: r.prescriptionExerciseId, executionExerciseId: r.executionExerciseId, week: t.week, dayIndex: t.dayIndex,
       records: { [r.key]: r }, overlays: { [o.key]: o }, interventions: input.interventions, plan: input.plan, entries: input.entries, safetyConflict: false });
     if (ev.usable) return { action: 'NONE', reason: null };
     if (ev.reason === 'COACH_OVERRIDE') return { action: 'OVERRIDE', reason: ev.reason };
@@ -588,7 +613,7 @@
     if (!_consistent(pair, 'APPLIED')) return _fail('RECORD_OVERLAY_INCONSISTENT');
     if (input.clientId !== undefined && r.clientId !== input.clientId) return _fail(BLOCKERS.CLIENT_MISMATCH);
     var t = pair.overlay.target;
-    if (eff.pidExposureStarted(_entriesOf(st, r.planId), r.prescriptionExerciseId, t.week, t.dayIndex)) return _fail(BLOCKERS.TARGET_ALREADY_STARTED);
+    if (eff.pidExposureStarted(_entriesOf(st, r.planId), r.prescriptionExerciseId, t.week, t.dayIndex, r.executionExerciseId)) return _fail(BLOCKERS.TARGET_ALREADY_STARTED);
     var at = _now(input, null), patch, reason;
     if (!at) return _fail('TIMESTAMP_MISSING');
     if (kind === 'REVERT') {

@@ -61,7 +61,7 @@
     var rec = input.recommendation || {};
     return _fingerprint([input.clientId, input.planId, input.week, input.dayIndex,
       input.calculatedAt || null, rec.prescriptionExerciseId || null,
-      rec.exerciseName || null, rec.action || null, rec.newLoad, rec.newReps]);
+      rec.executionExerciseId || rec.exerciseName || null, rec.action || null, rec.newLoad, rec.newReps]);
   }
   function _latestIntervention(interventions, planId, pid, calculatedAt) {
     var relevant = (Array.isArray(interventions) ? interventions : []).filter(function(iv) {
@@ -97,6 +97,13 @@
     if (rec.exerciseId && sourceMatches[0].exerciseId && rec.exerciseId !== sourceMatches[0].exerciseId)
       return { state: STATES.REJECTED, reasonCode: REASONS.IDENTITY_CONFLICT, nextExposure: null };
     var dimension = null;
+    var vi = _variantIdentity();
+    var targetExec = input.executionExerciseId || rec.executionExerciseId || pid;
+    if (vi && plan && pid && targetExec && targetExec !== pid) {
+      var auth = vi.validateExecutionAuthorization(plan, pid, targetExec);
+      if (!auth.ok)
+        return { state: STATES.REJECTED, reasonCode: 'UNAUTHORIZED_ALTERNATIVE', nextExposure: null };
+    }
     if (rec.action === 'increase_load' || rec.action === 'reduce_load') {
       if (!Number.isFinite(Number(rec.newLoad)) || Number(rec.newLoad) <= 0)
         return { state: STATES.REJECTED, reasonCode: REASONS.NON_COMPARABLE_VALUE, nextExposure: null };
@@ -122,6 +129,12 @@
     if (!next) return { state: STATES.REJECTED, reasonCode: REASONS.NO_NEXT_EXPOSURE, nextExposure: null };
     return { state: STATES.PENDING, reasonCode: REASONS.MAGNITUDE_POLICY_MISSING, nextExposure: next, dimension: dimension };
   }
+  function _variantIdentity() {
+    if (typeof module === 'object' && module.exports && typeof require === 'function') {
+      try { return require('./progression-variant-identity.js'); } catch (e) { return null; }
+    }
+    return typeof globalThis !== 'undefined' ? globalThis.VDSEN_VARIANT_IDENTITY || null : null;
+  }
   function _policy() {
     if (typeof module === 'object' && module.exports && typeof require === 'function') {
       try { return require('./progression-magnitude-policy.js'); } catch (e) { return null; }
@@ -139,6 +152,7 @@
     if (decision.state !== STATES.PENDING) return policy.reject(pid, decision.reasonCode);
     var plan = input.plan || {}, day = (Array.isArray(plan.days) ? plan.days : []).find(function(d) { return d.dayIndex === input.dayIndex; });
     var ex = ((day && day.exercises) || []).filter(function(e) { return e.prescriptionExerciseId === pid; })[0];
+    var targetExec = rec.executionExerciseId || pid;
     // T586: structural context (trusted callers only): the logbook (post-session / weekly check-in live in the same entries), the target week and the carried set counts of
     // every exercise (so the weekly muscle volume reflects what is really in force, not the original plan).
     var eff = _effective(), carriedSets = {};
@@ -152,7 +166,7 @@
     }
     return policy.evaluate({ clientId: input.clientId, planId: input.planId, prescriptionExerciseId: pid, plan: plan,
       prescription: ex ? { prescriptionExerciseId: pid, sets: ex.sets, repsRange: ex.repsRange, muscleGroup: ex.muscleGroup, fatigueCost: ex.fatigueCost } : null,
-      exposures: policy.extractExposures(input.entries, pid, { planId: input.planId, clientId: input.clientId }),
+      exposures: policy.extractExposures(input.entries, targetExec, { planId: input.planId, clientId: input.clientId }),
       context: { readinessVeto: input.readinessVeto === true,
         structural: input.structural === true ? { entries: input.entries, targetWeek: decision.nextExposure ? decision.nextExposure.week : undefined, carriedSets: carriedSets } : undefined } });
   }
@@ -177,6 +191,7 @@
     return Object.assign({
       key: key, clientId: input.clientId, planId: input.planId,
       prescriptionExerciseId: rec.prescriptionExerciseId || null,
+      executionExerciseId: rec.executionExerciseId || rec.prescriptionExerciseId || null,
       exerciseNameSnapshot: rec.exerciseName || '', action: rec.action || null,
       // T599-R (D-07): `dimension` is the CANONICAL decision's dimension (what the overlay will change); the dimension implied by the legacy action is kept in `legacyDimension`.
       dimension: (magnitude && magnitude.dimension) || decision.dimension || null, legacyDimension: decision.dimension || null,
@@ -302,7 +317,9 @@
         }
         Object.keys(records).forEach(function(key) {
           var old = records[key];
-          if (old && old.state === STATES.PENDING && old.prescriptionExerciseId && old.prescriptionExerciseId === candidate.prescriptionExerciseId &&
+          var oldExec = old && (old.executionExerciseId || old.prescriptionExerciseId);
+          var candExec = candidate.executionExerciseId || candidate.prescriptionExerciseId;
+          if (old && old.state === STATES.PENDING && oldExec && oldExec === candExec &&
               old.source.week === week && old.source.dayIndex === dayIndex) stale(key, REASONS.SOURCE_MISMATCH);
         });
         records[candidate.key] = candidate; created.push(candidate.key);

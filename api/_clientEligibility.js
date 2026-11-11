@@ -371,9 +371,12 @@ function extractRealAppActivity(input) {
     var mSet = /^log_(\d+)_(\d+)_(\d+)_s\d+$/.exec(k);
     if (mSet) {
       if (e.done !== true || e.autoFilled === true || e.express === true || e.expressFinal === true) return;
+      var vi = require('../assets/progression-variant-identity.js');
       var pid = e.prescriptionExerciseId;
-      var inPlanPid = typeof pid === 'string' && pidSet.has(pid);
-      var isRealCardioLog = e.exerciseType === 'cardio' && (!pid || pidSet.size === 0 || inPlanPid);
+      var subPid = e.substitutedFrom && (e.substitutedFrom.prescriptionExerciseId || e.substitutedFrom.pid);
+      var effectivePid = pid || (typeof subPid === 'string' ? subPid : null);
+      var inPlanPid = typeof effectivePid === 'string' && pidSet.has(effectivePid);
+      var isRealCardioLog = e.exerciseType === 'cardio' && (!effectivePid || pidSet.size === 0 || inPlanPid);
       if (!inPlanPid && !isRealCardioLog) {
         ignoredSyntheticCount++;
         return;
@@ -390,11 +393,31 @@ function extractRealAppActivity(input) {
       }
 
       // Comparable exposures for resistance progression (never cardio, never before plan.updatedAt)
-      if (inPlanPid && !cardioPidSet.has(pid) && e.exerciseType !== 'cardio') {
+      if (inPlanPid && !cardioPidSet.has(effectivePid) && e.exerciseType !== 'cardio') {
         if (typeof e.ts === 'number' && Number.isFinite(updatedMs) && e.ts >= WALL_CLOCK_FLOOR_MS && e.ts < updatedMs) return;
         if (ms !== null && Number.isFinite(updatedMs) && ms < updatedMs) return;
-        if (!perPidComparable[pid]) perPidComparable[pid] = new Set();
-        perPidComparable[pid].add(sk);
+        var targetId = effectivePid;
+        if (subPid || (e.executionExerciseId && e.executionExerciseId !== effectivePid)) {
+          var execToCheck = e.executionExerciseId;
+          if (!execToCheck) {
+            var exInPlan = null;
+            (Array.isArray(plan.days) ? plan.days : []).forEach(function(d) {
+              (d.exercises || []).forEach(function(x) { if (!exInPlan && x.prescriptionExerciseId === effectivePid) exInPlan = x; });
+            });
+            var subName = e.exerciseNameSnapshot || e.nombre || (e.substitutedFrom && e.substitutedFrom.exerciseName);
+            execToCheck = exInPlan ? vi.deriveExecutionId(effectivePid, subName, exInPlan.alternatives, exInPlan.exerciseName || exInPlan.nombre) : null;
+          }
+          if (execToCheck) {
+            var auth = vi.validateExecutionAuthorization(plan, effectivePid, execToCheck);
+            targetId = auth.ok ? execToCheck : null;
+          } else {
+            targetId = null;
+          }
+        }
+        if (targetId) {
+          if (!perPidComparable[targetId]) perPidComparable[targetId] = new Set();
+          perPidComparable[targetId].add(sk);
+        }
       }
       return;
     }

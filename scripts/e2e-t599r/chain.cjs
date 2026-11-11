@@ -172,8 +172,17 @@ async function runCase(label, def) {
         await sleep(1500); { const va = await p.ev('window.__view(' + ei + ')'); rec.exercises[ei].viewAfterFirstSet = { autoadjust: va.autoadjust, authorityState: va.authorityState, authority: va.authority, chips: va.chips, targets: va.targets.map((t) => t.text), sheet: ((/SERIES (\d+) REPS (\d+) RIR (\d+) DESCANSO ([\d:]+)/.exec(va.pageText || '') || []).slice(1)).join(',') }; await p.ev('window.__scrollTop()'); await p.shot(label + '-ex' + ei + '-after-first-set.jpg'); }
       }
       if (def.planEditAfterStart) { await L.db.doc('plans/' + a.planId).set({ updatedAt: new Date().toISOString(), coachNote: 'T602 plan edit AFTER the exposure started' }, { merge: true }); rec.planEditedAfterStart = true; }
-      await sleep(4500);
-      const mC = await L.meso(a);
+      await sleep(2500);
+      const mC = (!def.planEditAfterApply && !def.offlineLate)
+        ? (await waitFor(async () => {
+            const m = await L.meso(a);
+            const allConsumed = def.ex.every((_, ei) => {
+              const recs = L.recFor(m, a.pids[ei]);
+              return recs.length && recs[0].state === 'CONSUMED';
+            });
+            return allConsumed ? m : null;
+          }, 15000) || await L.meso(a))
+        : await L.meso(a);
       { const tgt = (L.ovFor(mC, a.pids[0])[0] || {}).target, k = tgt && ('log_' + tgt.week + '_' + tgt.dayIndex + '_0_s0'), en = k && mC.entries && mC.entries[k];   // T602: what the Client persisted for the first working set of the target exposure
         const ms = (v) => v && typeof v.toMillis === 'function' ? v.toMillis() : (v && v._seconds !== undefined ? v._seconds * 1000 : null);
         rec.firstSet = en ? { key: k, ts: en.ts, sts: ms(en.sts), stsPresent: ms(en.sts) !== null, skewMinutes: SKEW, deviceVsServerMs: ms(en.sts) !== null ? en.ts - ms(en.sts) : null } : null; }
