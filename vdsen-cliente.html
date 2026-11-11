@@ -12211,7 +12211,7 @@ function _scheduleTrustedProgression(uid, planId, recovering) {
       if (terminal) _storeTrustedProgressionIntent(uid, planId, null);
       else if (retry) { latest.attempts++; latest.nextAt = Date.now() + Math.min(30000, 1500 * Math.pow(2, latest.attempts - 1)); _storeTrustedProgressionIntent(uid, planId, latest); }
     }
-    if (again) _scheduleTrustedProgression(uid, planId, true);
+    if (again) _scheduleTrustedProgression(uid, planId, false);
     else _recoverTrustedProgression();
   });
 }
@@ -12458,10 +12458,10 @@ async function _maybeConsumeOverlays(uid) {
   for (var i = 0; i < keys.length; i++) {
     var o = st.overlays[keys[i]], r = o && st.records[o.sourceRecordKey];
     if (!o || !r || o.status !== 'APPLIED' || r.state !== 'APPLIED' || st.consumeBusy[r.key] || st.receipts[r.key]) continue;
-    if (!eff.pidExposureStarted(LOGS, r.prescriptionExerciseId, o.target.week, o.target.dayIndex)) continue;   // never on render: persisted execution only
+    if (!eff.pidExposureStarted(LOGS, r.prescriptionExerciseId, o.target.week, o.target.dayIndex, r.executionExerciseId)) continue;   // never on render: persisted execution only
     var day = (st.planDoc.days || []).filter(function(d){ return d.dayIndex === o.target.dayIndex; })[0];
     var pex = ((day && day.exercises) || []).filter(function(e){ return e.prescriptionExerciseId === r.prescriptionExerciseId; })[0];
-    var shownEff = eff.resolveEffective({ clientId: uid, planId: st.planId, activePlanId: ACTIVE_PLAN_ID, pid: r.prescriptionExerciseId, week: o.target.week, dayIndex: o.target.dayIndex,
+    var shownEff = eff.resolveEffective({ clientId: uid, planId: st.planId, activePlanId: ACTIVE_PLAN_ID, pid: r.prescriptionExerciseId, executionExerciseId: r.executionExerciseId, week: o.target.week, dayIndex: o.target.dayIndex,
       records: st.records, overlays: st.overlays, interventions: st.interventions, plan: st.planDoc, entries: LOGS, baseSets: (pex && pex.sets) || [], canonicalOverlayRead: true });
     if (shownEff.provenance !== 'CANONICAL_OVERLAY') continue;
     st.consumeBusy[r.key] = true;
