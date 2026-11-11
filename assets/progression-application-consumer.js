@@ -516,7 +516,7 @@
     if (r.state !== 'APPLIED') return _fail('INVALID_TRANSITION');
     if (!_consistent(pair, 'APPLIED')) return _fail('RECORD_OVERLAY_INCONSISTENT');
     var tgt = pair.overlay.target, sh = input.shown || {};
-    if (!eff.pidExposureStarted(_entriesOf(st, r.planId), r.prescriptionExerciseId, tgt.week, tgt.dayIndex)) return _fail('TARGET_NOT_STARTED');
+    if (!eff.pidExposureStarted(_entriesOf(st, r.planId), r.prescriptionExerciseId, tgt.week, tgt.dayIndex, r.executionExerciseId)) return _fail('TARGET_NOT_STARTED');
     if (sh.provenance !== 'CANONICAL_OVERLAY' || sh.overlayKey !== pair.overlay.key || sh.appliedValue !== pair.overlay.appliedValue || sh.dimension !== pair.overlay.dimension) return _fail('OVERLAY_NOT_SHOWN');
     var at = _now(input, null);
     if (!at) return _fail('TIMESTAMP_MISSING');
@@ -545,7 +545,7 @@
     if (r.state !== 'APPLIED') return _fail('INVALID_TRANSITION');
     if (!_consistent(pair, 'APPLIED')) return _fail('RECORD_OVERLAY_INCONSISTENT');
     var tgt = pair.overlay.target, ov = pair.overlay;
-    if (!eff.pidExposureStarted(_entriesOf(st, r.planId), r.prescriptionExerciseId, tgt.week, tgt.dayIndex)) return _fail('TARGET_NOT_STARTED');
+    if (!eff.pidExposureStarted(_entriesOf(st, r.planId), r.prescriptionExerciseId, tgt.week, tgt.dayIndex, r.executionExerciseId)) return _fail('TARGET_NOT_STARTED');
     var rc = st.meso.consumptionReceipts && st.meso.consumptionReceipts[r.key];
     if (!rc) return _fail('NO_CONSUMPTION_RECEIPT');
     // the athlete's acknowledgement must describe exactly THIS overlay; it can never supply the prescription itself
@@ -559,7 +559,7 @@
       var exIdx = ((tday && tday.exercises) || []).map(function(e) { return e.prescriptionExerciseId; }).indexOf(r.prescriptionExerciseId);
       if (exIdx >= 0) { var mk = _read(await tx.get(refs.start(r.planId, tgt.week, tgt.dayIndex, exIdx))); if (mk && mk.planId === r.planId && mk.week === tgt.week && mk.dayIndex === tgt.dayIndex && mk.exerciseIndex === exIdx) startMarkers.push({ at: mk.at }); }
     }
-    var stillValid = eff.evaluateOverlay({ trustedStarts: typeof refs.start === 'function', startMarkers: startMarkers, clientId: r.clientId, planId: r.planId, activePlanId: r.planId, pid: r.prescriptionExerciseId, week: tgt.week, dayIndex: tgt.dayIndex,
+    var stillValid = eff.evaluateOverlay({ trustedStarts: typeof refs.start === 'function', startMarkers: startMarkers, clientId: r.clientId, planId: r.planId, activePlanId: r.planId, pid: r.prescriptionExerciseId, executionExerciseId: r.executionExerciseId, week: tgt.week, dayIndex: tgt.dayIndex,
       records: (function(o) { o[r.key] = r; return o; })({}), overlays: (function(o) { o[ov.key] = ov; return o; })({}), interventions: st.client && st.client.coachInterventions,
       plan: st.plan || {}, serverPlanUpdatedAt: st.planUpdateMs, entries: _entriesOf(st, r.planId), safetyConflict: false });
     if (!stillValid.usable) return _fail(stillValid.reason);
@@ -579,8 +579,8 @@
     input = input || {}; var eff = _effective(), o = input.overlay, r = input.record;
     if (!eff || !r || !o || r.state !== 'APPLIED' || o.status !== 'APPLIED') return { action: 'NONE', reason: 'NOT_APPLIED' };
     var t = o.target;
-    if (eff.pidExposureStarted(input.entries, r.prescriptionExerciseId, t.week, t.dayIndex)) return { action: 'NONE', reason: 'TARGET_STARTED' };
-    var ev = eff.evaluateOverlay({ clientId: r.clientId, planId: r.planId, activePlanId: input.activePlanId, pid: r.prescriptionExerciseId, week: t.week, dayIndex: t.dayIndex,
+    if (eff.pidExposureStarted(input.entries, r.prescriptionExerciseId, t.week, t.dayIndex, r.executionExerciseId)) return { action: 'NONE', reason: 'TARGET_STARTED' };
+    var ev = eff.evaluateOverlay({ clientId: r.clientId, planId: r.planId, activePlanId: input.activePlanId, pid: r.prescriptionExerciseId, executionExerciseId: r.executionExerciseId, week: t.week, dayIndex: t.dayIndex,
       records: { [r.key]: r }, overlays: { [o.key]: o }, interventions: input.interventions, plan: input.plan, entries: input.entries, safetyConflict: false });
     if (ev.usable) return { action: 'NONE', reason: null };
     if (ev.reason === 'COACH_OVERRIDE') return { action: 'OVERRIDE', reason: ev.reason };
@@ -613,7 +613,7 @@
     if (!_consistent(pair, 'APPLIED')) return _fail('RECORD_OVERLAY_INCONSISTENT');
     if (input.clientId !== undefined && r.clientId !== input.clientId) return _fail(BLOCKERS.CLIENT_MISMATCH);
     var t = pair.overlay.target;
-    if (eff.pidExposureStarted(_entriesOf(st, r.planId), r.prescriptionExerciseId, t.week, t.dayIndex)) return _fail(BLOCKERS.TARGET_ALREADY_STARTED);
+    if (eff.pidExposureStarted(_entriesOf(st, r.planId), r.prescriptionExerciseId, t.week, t.dayIndex, r.executionExerciseId)) return _fail(BLOCKERS.TARGET_ALREADY_STARTED);
     var at = _now(input, null), patch, reason;
     if (!at) return _fail('TIMESTAMP_MISSING');
     if (kind === 'REVERT') {
