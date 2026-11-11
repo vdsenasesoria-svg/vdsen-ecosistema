@@ -251,13 +251,18 @@
   var CARRIED_DIMS = ['LOAD', 'REPS', 'REST', 'SETS'];
   function carriedBaseline(input) {
     input = input || {}; var out = {}, pid = input.pid, here = { week: input.week, dayIndex: input.dayIndex };
+    var targetExec = input.executionExerciseId || pid;
     if (!input.clientId || !input.planId || !pid || !Number.isInteger(here.week) || !Number.isInteger(here.dayIndex) || input.planId !== input.activePlanId) return out;
     var plan = input.plan || {}, planAt = _time(plan.updatedAt), best = {};
     _values(input.overlays).forEach(function(o) {
       if (!o || o.schema !== OVERLAY_SCHEMA || o.clientId !== input.clientId || o.planId !== input.planId || o.prescriptionExerciseId !== pid || !o.target || !validOverlayValues(o)) return;
+      var oExec = o.executionExerciseId || o.prescriptionExerciseId;
+      if (oExec !== targetExec) return;
       if (CARRIED_DIMS.indexOf(o.dimension) < 0 || !_before(o.target, here) || o.status !== 'CONSUMED') return;
       var r = input.records && input.records[o.sourceRecordKey];
       if (!r || r.state !== 'CONSUMED' || r.key !== o.sourceRecordKey || r.clientId !== o.clientId || r.planId !== o.planId || r.prescriptionExerciseId !== pid || o.key !== 'ovl_' + r.key) return;
+      var rExec = r.executionExerciseId || r.prescriptionExerciseId;
+      if (rExec !== targetExec) return;
       var cur = best[o.dimension]; if (!cur || _before(cur.target, o.target)) best[o.dimension] = o;
     });
     Object.keys(best).forEach(function(d) {
@@ -268,7 +273,7 @@
       if (overridden || painReportedBetween(input.entries, o.source, here)) return;
       if (d === 'LOAD' && input.unit && String(input.unit).toUpperCase() !== String(o.unit).toUpperCase()) return;
       if (_num(o.appliedValue) === null) return;
-      out[d] = { value: o.appliedValue, unit: o.unit || null, overlayKey: o.key, target: o.target };
+      out[d] = { value: o.appliedValue, unit: o.unit || null, overlayKey: o.key, target: o.target, executionExerciseId: targetExec };
     });
     return out;
   }
@@ -277,9 +282,15 @@
   function resolveEffective(input) {
     input = input || {};
     var baseSets = Array.isArray(input.baseSets) ? input.baseSets : [];
+    var pid = input.pid, targetExec = input.executionExerciseId || pid;
+    var isVariant = !!(targetExec && targetExec !== pid);
     function base(reason, prov, extra) {
       return Object.assign({ provenance: prov || PROVENANCE.BASE_PLAN, reason: reason, overlayKey: null, dimension: null, previousValue: null, appliedValue: null, unit: null, presentation: null,
-        sets: baseSets.map(function(s) { return { base: _copy(s), effective: _copy(s), adjusted: false }; }) }, extra || {});
+        sets: baseSets.map(function(s) {
+          var b = _copy(s), eff = _copy(s);
+          if (isVariant) eff.load = null; // No automatic load adoption from original exercise without own baseline
+          return { base: b, effective: eff, adjusted: isVariant && b.load !== null };
+        }) }, extra || {});
     }
     // T570-R: READING a canonical overlay is not applying one. Overlays are writable only by the trusted server executor (Firestore rules
     // reject every athlete/Coach write), so a reader that passes canonicalOverlayRead may display what exists; with none it is the base plan.
@@ -288,8 +299,12 @@
     function carriedOnly(reason, prov) {
       if (!hasCarry) return base(reason, prov);
       var pres = Object.keys(carried).map(function(d) { return d === 'LOAD' ? _fmt(carried[d].value) + ' ' + LOAD_UNIT(carried[d].unit) : d === 'REPS' ? _fmt(carried[d].value) + ' reps' : d === 'SETS' ? _fmt(carried[d].value) + ' series' : _fmt(carried[d].value) + ' s'; });
+      var effSets = _effectiveSets(baseSets, null, carried);
+      if (isVariant && !carried.LOAD) {
+        effSets = effSets.map(function(x) { var y = _copy(x); y.effective = _copy(y.effective); y.effective.load = null; return y; });
+      }
       return { provenance: PROVENANCE.CARRIED_OVERLAY, reason: reason, overlayKey: null, dimension: null, previousValue: null, appliedValue: null, unit: null, carried: carried,
-        presentation: { label: LABEL, text: 'Vigente: ' + pres.join(' · ') }, sets: _effectiveSets(baseSets, null, carried) };
+        presentation: { label: LABEL, text: 'Vigente: ' + pres.join(' · ') }, sets: effSets };
     }
     var ev = evaluateOverlay(input);
     if (!ev.usable) {

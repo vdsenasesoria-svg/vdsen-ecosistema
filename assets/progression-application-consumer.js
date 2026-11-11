@@ -113,6 +113,12 @@
     r.exactClient = !!record.clientId && record.clientId === ctx.clientId && !!overlay && overlay.clientId === record.clientId;
     r.exactActivePlan = !!record.planId && record.planId === ctx.planId && ctx.planId === ctx.activePlanId && !!overlay && overlay.planId === record.planId;
     r.exactPid = typeof record.prescriptionExerciseId === 'string' && record.prescriptionExerciseId !== '' && !!overlay && overlay.prescriptionExerciseId === record.prescriptionExerciseId;
+    var vi = _variantIdentity();
+    var targetExec = (overlay && overlay.executionExerciseId) || record.executionExerciseId || record.prescriptionExerciseId;
+    if (vi && plan && record.prescriptionExerciseId && targetExec && targetExec !== record.prescriptionExerciseId) {
+      var auth = vi.validateExecutionAuthorization(plan, record.prescriptionExerciseId, targetExec);
+      if (!auth.ok) r.exactPid = false;
+    }
     r.validSourceExposure = _int(src.week) && _int(src.dayIndex) && calcAt !== null && !!overlay && overlay.source && overlay.source.week === src.week && overlay.source.dayIndex === src.dayIndex;
     r.exactTargetExposure = _int(tgt.week) && _int(tgt.dayIndex) && (tgt.week > src.week || (tgt.week === src.week && tgt.dayIndex > src.dayIndex)) &&
       !!overlay && !!overlay.target && overlay.target.week === tgt.week && overlay.target.dayIndex === tgt.dayIndex;
@@ -168,6 +174,12 @@
   }
 
   function _time(v) { return typeof v === 'string' && Number.isFinite(Date.parse(v)) ? Date.parse(v) : null; }
+  function _variantIdentity() {
+    if (typeof module === 'object' && module.exports && typeof require === 'function') {
+      try { return require('./progression-variant-identity.js'); } catch (e) { return null; }
+    }
+    return typeof globalThis !== 'undefined' ? globalThis.VDSEN_VARIANT_IDENTITY || null : null;
+  }
   function _num(v) {
     if (v === '' || v === null || v === undefined || typeof v === 'boolean') return null;
     var n = Number(v); return Number.isFinite(n) ? n : null;
@@ -269,6 +281,14 @@
       var targetDay = (Array.isArray(plan.days) ? plan.days : []).filter(function(d) { return d.dayIndex === t.dayIndex; })[0];
       var matches = ((targetDay && targetDay.exercises) || []).filter(function(e) { return e.prescriptionExerciseId === pid; });
       if (matches.length !== 1) blockers.push(BLOCKERS.IDENTITY_UNRESOLVED);
+      var targetExec = record.executionExerciseId || pid;
+      if (_variantIdentity && plan && pid && targetExec && targetExec !== pid) {
+        var vi = _variantIdentity();
+        if (vi) {
+          var auth = vi.validateExecutionAuthorization(plan, pid, targetExec);
+          if (!auth.ok) blockers.push(BLOCKERS.IDENTITY_UNRESOLVED);
+        }
+      }
       if (typeof ctx.resolveNextExposure === 'function') {
         var fresh = ctx.resolveNextExposure(plan, pid, record.source.week, record.source.dayIndex);
         if (!fresh || fresh.week !== t.week || fresh.dayIndex !== t.dayIndex) blockers.push(BLOCKERS.TARGET_EXPOSURE_CHANGED);

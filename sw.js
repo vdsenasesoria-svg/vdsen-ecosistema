@@ -13,7 +13,6 @@ const PRECACHE = [
   '/assets/vdsen-logo-official.jpg',
   '/assets/exercise-visual-catalog.js',
   '/assets/sra-context.js',
-  '/assets/progression-variant-identity.js',
   '/assets/progression-auto-apply-shadow.js',
   '/assets/progression-magnitude-policy.js',
   '/assets/progression-effective-prescription.js',

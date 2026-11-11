@@ -268,6 +268,11 @@ async function applyPending(db, clientId, planId, clock) {
           coachDoc && coachDoc.autoApplyCanary, clientId, precord, planDoc, opDoc, key)) {
         return { written: false, reason: 'NUMERIC_PILOT_NOT_AUTHORIZED' };
       }
+      var vi = require('../assets/progression-variant-identity.js');
+      if (precord && precord.executionExerciseId && precord.executionExerciseId !== precord.prescriptionExerciseId) {
+        var auth = vi.validateExecutionAuthorization(planDoc, precord.prescriptionExerciseId, precord.executionExerciseId);
+        if (!auth.ok) return { written: false, reason: 'UNAUTHORIZED_ALTERNATIVE' };
+      }
       if (precord && precord.magnitude && (precord.magnitude.candidates || []).some(function(c) { return c && c.dimension === 'LOAD'; })) {
         // Increments come only from verified, already-configured sources (coach equipmentIncrements config + the catalog's canonical equipment
         // identity). Nothing is inferred from the equipment type or the exercise name; no data => BLOCKED_EQUIPMENT_DATA for LOAD only.
@@ -347,6 +352,11 @@ async function consumePending(db, clientId, planId, clock) {
       var coachData = refs.coach ? _data(await tx.get(refs.coach)) : null;
       var m = _data(await tx.get(refs.meso)), rec = m && m.progressionApplications && m.progressionApplications[key];
       if (!rec || !consumer.inCanaryScope(coachData && coachData.autoApplyCanary, clientId, rec.prescriptionExerciseId)) return { written: false, reason: 'OUT_OF_CANARY_SCOPE' };
+      var vi = require('../assets/progression-variant-identity.js');
+      if (rec && rec.executionExerciseId && rec.executionExerciseId !== rec.prescriptionExerciseId) {
+        var auth = vi.validateExecutionAuthorization(planDoc, rec.prescriptionExerciseId, rec.executionExerciseId);
+        if (!auth.ok) return { written: false, reason: 'UNAUTHORIZED_ALTERNATIVE' };
+      }
       var rootDoc = refs.root ? _data(await tx.get(refs.root)) : null;
       var authDoc = shadow.selectLogAuthority ? shadow.selectLogAuthority(m, rootDoc, planId) : m;
       var entries = (authDoc && authDoc.entries) || (m && m.entries) || {};

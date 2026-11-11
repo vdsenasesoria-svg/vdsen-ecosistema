@@ -397,14 +397,22 @@ function extractRealAppActivity(input) {
         if (typeof e.ts === 'number' && Number.isFinite(updatedMs) && e.ts >= WALL_CLOCK_FLOOR_MS && e.ts < updatedMs) return;
         if (ms !== null && Number.isFinite(updatedMs) && ms < updatedMs) return;
         var targetId = effectivePid;
-        if (subPid) {
-          var exInPlan = null;
-          (Array.isArray(plan.days) ? plan.days : []).forEach(function(d) {
-            (d.exercises || []).forEach(function(x) { if (!exInPlan && x.prescriptionExerciseId === effectivePid) exInPlan = x; });
-          });
-          var subName = e.exerciseNameSnapshot || e.nombre || (e.substitutedFrom && e.substitutedFrom.exerciseName);
-          var isAuth = exInPlan && vi.isAuthorizedAlternative(subName, exInPlan.alternatives, exInPlan.exerciseName || exInPlan.nombre);
-          targetId = isAuth ? vi.deriveExecutionId(effectivePid, subName, exInPlan.alternatives, exInPlan.exerciseName || exInPlan.nombre) : null;
+        if (subPid || (e.executionExerciseId && e.executionExerciseId !== effectivePid)) {
+          var execToCheck = e.executionExerciseId;
+          if (!execToCheck) {
+            var exInPlan = null;
+            (Array.isArray(plan.days) ? plan.days : []).forEach(function(d) {
+              (d.exercises || []).forEach(function(x) { if (!exInPlan && x.prescriptionExerciseId === effectivePid) exInPlan = x; });
+            });
+            var subName = e.exerciseNameSnapshot || e.nombre || (e.substitutedFrom && e.substitutedFrom.exerciseName);
+            execToCheck = exInPlan ? vi.deriveExecutionId(effectivePid, subName, exInPlan.alternatives, exInPlan.exerciseName || exInPlan.nombre) : null;
+          }
+          if (execToCheck) {
+            var auth = vi.validateExecutionAuthorization(plan, effectivePid, execToCheck);
+            targetId = auth.ok ? execToCheck : null;
+          } else {
+            targetId = null;
+          }
         }
         if (targetId) {
           if (!perPidComparable[targetId]) perPidComparable[targetId] = new Set();

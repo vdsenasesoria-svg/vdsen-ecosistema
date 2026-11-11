@@ -298,6 +298,13 @@
     if (ctx.stale) return reject(pid, REASONS.STALE);
     if (ctx.coachOverride) return reject(pid, REASONS.COACH_OVERRIDE);
 
+    var vi = _variantIdentity();
+    var targetExec = input.executionExerciseId || pid;
+    if (vi && input.plan && pid && targetExec && targetExec !== pid) {
+      var auth = vi.validateExecutionAuthorization(input.plan, pid, targetExec);
+      if (!auth.ok) return reject(pid, 'UNAUTHORIZED_ALTERNATIVE');
+    }
+
     var cmp = _comparable(input.exposures, input);
     var res = _base(pid, {
       comparableExposureCount: cmp.kept.length,

@@ -6,7 +6,10 @@
 (function(root, factory) {
   var api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
-  if (root) root.VDSEN_VARIANT_IDENTITY = api;
+  if (root) {
+    root.VDSEN_VARIANT_IDENTITY = api;
+    root.progressionVariantIdentity = api;
+  }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function() {
   'use strict';
 
@@ -81,11 +84,95 @@
     return normalizeToken(entryName) === parsed.variantToken;
   }
 
+  function findPrescribedExercise(plan, prescriptionExerciseId) {
+    if (!plan || !prescriptionExerciseId) return null;
+    var found = null;
+    (Array.isArray(plan.days) ? plan.days : []).forEach(function(day) {
+      (Array.isArray(day.exercises) ? day.exercises : []).forEach(function(ex) {
+        if (!found && ex && ex.prescriptionExerciseId === prescriptionExerciseId) {
+          found = { exercise: ex, dayIndex: day.dayIndex };
+        }
+      });
+    });
+    return found;
+  }
+
+  function matchAlternative(alt, candidateTokenOrId) {
+    if (!alt || !candidateTokenOrId) return false;
+    var candNorm = normalizeToken(String(candidateTokenOrId));
+    if (typeof alt === 'object' && alt !== null) {
+      if (alt.exerciseId && (String(alt.exerciseId) === String(candidateTokenOrId) || normalizeToken(String(alt.exerciseId)) === candNorm)) return true;
+      var altName = alt.exerciseName || alt.nombre || alt.name || '';
+      if (altName && normalizeToken(altName) === candNorm) return true;
+      return false;
+    }
+    if (typeof alt === 'string') {
+      return normalizeToken(alt) === candNorm;
+    }
+    return false;
+  }
+
+  function validateExecutionAuthorization(plan, prescriptionExerciseId, executionExerciseId) {
+    if (!plan || typeof plan !== 'object') {
+      return { ok: false, reason: 'PLAN_MISSING', isAuthorized: false };
+    }
+    if (!prescriptionExerciseId || typeof prescriptionExerciseId !== 'string') {
+      return { ok: false, reason: 'PID_MISSING', isAuthorized: false };
+    }
+    var slot = findPrescribedExercise(plan, prescriptionExerciseId);
+    if (!slot || !slot.exercise) {
+      return { ok: false, reason: 'PID_NOT_IN_PLAN', isAuthorized: false };
+    }
+    var ex = slot.exercise;
+    var targetId = executionExerciseId || prescriptionExerciseId;
+    var parsed = parseExecutionId(targetId);
+
+    if (parsed.prescriptionExerciseId !== prescriptionExerciseId) {
+      return { ok: false, reason: 'SLOT_PID_MISMATCH', isAuthorized: false };
+    }
+
+    if (!parsed.isVariant) {
+      return { ok: true, isVariant: false, isAuthorized: true, exercise: ex };
+    }
+
+    if (parsed.isAuthorized === false) {
+      return { ok: false, reason: 'UNAUTHORIZED_ALTERNATIVE', isVariant: true, isAuthorized: false };
+    }
+
+    var alts = Array.isArray(ex.alternatives) ? ex.alternatives : [];
+    if (!alts.length) {
+      return { ok: false, reason: 'NO_ALTERNATIVES_CONFIGURED', isVariant: true, isAuthorized: false };
+    }
+
+    var matchedAlt = null;
+    for (var i = 0; i < alts.length; i++) {
+      if (matchAlternative(alts[i], parsed.variantToken)) {
+        matchedAlt = alts[i];
+        break;
+      }
+    }
+
+    if (!matchedAlt) {
+      return { ok: false, reason: 'UNAUTHORIZED_ALTERNATIVE', isVariant: true, isAuthorized: false };
+    }
+
+    return {
+      ok: true,
+      isVariant: true,
+      isAuthorized: true,
+      exercise: ex,
+      matchedAlternative: matchedAlt
+    };
+  }
+
   return {
     normalizeToken: normalizeToken,
     isAuthorizedAlternative: isAuthorizedAlternative,
     deriveExecutionId: deriveExecutionId,
     parseExecutionId: parseExecutionId,
-    entryMatchesTarget: entryMatchesTarget
+    entryMatchesTarget: entryMatchesTarget,
+    findPrescribedExercise: findPrescribedExercise,
+    matchAlternative: matchAlternative,
+    validateExecutionAuthorization: validateExecutionAuthorization
   };
 });

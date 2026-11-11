@@ -97,6 +97,13 @@
     if (rec.exerciseId && sourceMatches[0].exerciseId && rec.exerciseId !== sourceMatches[0].exerciseId)
       return { state: STATES.REJECTED, reasonCode: REASONS.IDENTITY_CONFLICT, nextExposure: null };
     var dimension = null;
+    var vi = _variantIdentity();
+    var targetExec = input.executionExerciseId || rec.executionExerciseId || pid;
+    if (vi && plan && pid && targetExec && targetExec !== pid) {
+      var auth = vi.validateExecutionAuthorization(plan, pid, targetExec);
+      if (!auth.ok)
+        return { state: STATES.REJECTED, reasonCode: 'UNAUTHORIZED_ALTERNATIVE', nextExposure: null };
+    }
     if (rec.action === 'increase_load' || rec.action === 'reduce_load') {
       if (!Number.isFinite(Number(rec.newLoad)) || Number(rec.newLoad) <= 0)
         return { state: STATES.REJECTED, reasonCode: REASONS.NON_COMPARABLE_VALUE, nextExposure: null };
@@ -121,6 +128,12 @@
     var next = resolveNextExposure(plan, pid, input.week, input.dayIndex);
     if (!next) return { state: STATES.REJECTED, reasonCode: REASONS.NO_NEXT_EXPOSURE, nextExposure: null };
     return { state: STATES.PENDING, reasonCode: REASONS.MAGNITUDE_POLICY_MISSING, nextExposure: next, dimension: dimension };
+  }
+  function _variantIdentity() {
+    if (typeof module === 'object' && module.exports && typeof require === 'function') {
+      try { return require('./progression-variant-identity.js'); } catch (e) { return null; }
+    }
+    return typeof globalThis !== 'undefined' ? globalThis.VDSEN_VARIANT_IDENTITY || null : null;
   }
   function _policy() {
     if (typeof module === 'object' && module.exports && typeof require === 'function') {
@@ -304,7 +317,9 @@
         }
         Object.keys(records).forEach(function(key) {
           var old = records[key];
-          if (old && old.state === STATES.PENDING && old.prescriptionExerciseId && old.prescriptionExerciseId === candidate.prescriptionExerciseId &&
+          var oldExec = old && (old.executionExerciseId || old.prescriptionExerciseId);
+          var candExec = candidate.executionExerciseId || candidate.prescriptionExerciseId;
+          if (old && old.state === STATES.PENDING && oldExec && oldExec === candExec &&
               old.source.week === week && old.source.dayIndex === dayIndex) stale(key, REASONS.SOURCE_MISMATCH);
         });
         records[candidate.key] = candidate; created.push(candidate.key);
