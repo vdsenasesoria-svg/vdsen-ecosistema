@@ -1374,25 +1374,25 @@ button,.btn,.nb,.xc,.dt,.chip,a{-webkit-tap-highlight-color:transparent;touch-ac
 /* T587 · session recap (capture-friendly): same tokens, official logo crop (.brand-word), no new typefaces, no bottom nav while open */
 html.rc-open{overflow:hidden}
 #sessRecap{position:fixed;inset:0;z-index:2147483000;background:var(--bg);color:var(--tx);overflow:hidden;-webkit-tap-highlight-color:transparent}
-#sessRecap .rc-wrap{max-width:480px;height:100%;margin:0 auto;padding:calc(12px + env(safe-area-inset-top,0px)) 16px calc(10px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column}
+#sessRecap .rc-wrap{max-width:480px;width:100%;height:100%;height:100dvh;margin:0 auto;padding:calc(12px + env(safe-area-inset-top,0px)) 16px calc(10px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column}
 #sessRecap .rc-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:8px;border-bottom:1px solid var(--rule)}
 #sessRecap .rc-head .brand-word{height:22px}
 #sessRecap .rc-date{font-family:var(--font-num);font-size:12px;letter-spacing:.04em;color:var(--mt);text-transform:uppercase}
 #sessRecap .rc-title{padding:10px 0 8px}
-#sessRecap .rc-title h2{margin:0;font-family:var(--font-display);font-weight:800;font-style:normal;font-size:clamp(21px,6.4vw,26px);line-height:1.1;letter-spacing:-.01em}
+#sessRecap .rc-title h2{margin:0;font-family:var(--font-display);font-weight:800;font-style:normal;font-size:clamp(27px,7.5vw,34px);line-height:1.08;letter-spacing:-.01em}
 #sessRecap .rc-sub{margin-top:4px;font-size:12px;color:var(--mt);letter-spacing:.03em}
 #sessRecap .rc-sub u{text-decoration:none;color:var(--accent);font-weight:700}
 #sessRecap .rc-body{flex:1;min-height:0;overflow:hidden}
-#sessRecap .rc-ex{padding:9px 0;border-bottom:1px solid var(--rule)}
+#sessRecap .rc-ex{padding:12px 0;border-bottom:1px solid var(--rule)}
 #sessRecap .rc-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
-#sessRecap .rc-name{font-family:var(--font-display);font-weight:700;font-size:15.5px;line-height:1.2;min-width:0;overflow-wrap:anywhere}
+#sessRecap .rc-name{font-family:var(--font-display);font-weight:700;font-size:clamp(18px,4.8vw,21px);line-height:1.2;min-width:0;overflow-wrap:anywhere}
 #sessRecap .rc-sets{font-family:var(--font-num);font-size:12px;color:var(--accent);white-space:nowrap}
-#sessRecap .rc-data{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:3px;font-family:var(--font-num);font-size:14px}
+#sessRecap .rc-data{display:flex;flex-wrap:wrap;gap:5px 14px;margin-top:6px;font-family:var(--font-num);font-size:clamp(17px,4.6vw,20px)}
 #sessRecap .rc-data b{font-weight:600}
 #sessRecap .rc-data em{font-style:normal;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mt);border:1px solid var(--rule-strong);border-radius:var(--r-1);padding:1px 7px;align-self:center}
-#sessRecap .rc-meta{display:flex;flex-wrap:wrap;gap:2px 12px;margin-top:3px;font-family:var(--font-num);font-size:12px;color:var(--mt)}
+#sessRecap .rc-meta{display:flex;flex-wrap:wrap;gap:3px 12px;margin-top:5px;font-family:var(--font-num);font-size:14px;color:var(--mt)}
 #sessRecap .rc-rest i{font-style:normal;opacity:.85}
-#sessRecap .rc-note{margin-top:4px;font-size:12.5px;line-height:1.35;color:var(--ink);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+#sessRecap .rc-note{margin-top:6px;font-size:14px;line-height:1.35;color:var(--mt);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 #sessRecap .rc-foot{padding-top:8px}
 #sessRecap .rc-acts{display:flex;align-items:center;gap:8px}
 #sessRecap .rc-page{font-family:var(--font-num);font-size:12px;color:var(--mt);min-width:34px;text-align:center}
@@ -2025,6 +2025,11 @@ function _roundUnit(val, unit) {
   var step = unit === 'LB' ? 2.5 : 0.5;
   return Math.round(val / step) * step;
 }
+// Read-only formatting: maximum one decimal on weight displays, no persistence changes.
+function _fmtLoadForUi(v) {
+  var n = Number(v);
+  return Number.isFinite(n) ? String(Math.round((n + Number.EPSILON) * 10) / 10).replace('.', ',') : '—';
+}
 
 // Convertir carga entre KG y LB conservando el dato. Si fromUnit === toUnit
 // o falta info, devuelve el valor original sin tocar. Si difiere, multiplica
@@ -2593,7 +2598,8 @@ function waitFB(cb) {
 }
 
 // Aplicar modo claro/oscuro guardado antes de renderizar
-try { if (localStorage.getItem('vdsen_light_mode') === '1') document.documentElement.classList.add('light-mode'); } catch(e) {}
+document.documentElement.classList.remove('light-mode');
+try { localStorage.removeItem('vdsen_light_mode'); } catch(e) {}
 
 waitFB(() => {
   FB.onAuthStateChanged(FB.auth, async (user) => {
@@ -4787,12 +4793,12 @@ function renderResumen() {
   const _totalWeeksGrid = getTotalWeeks();
   for (let w=1; w<=_totalWeeksGrid; w++) {
     const _wResolved = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => !!LOGS['done_'+w+'_'+i]).every(Boolean);
-    const _wDone = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => _isRealExecution(LOGS['done_'+w+'_'+i])).every(Boolean);
+    const _wDone = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => _sessionHasRealLoggedSets(LOGS, w, i)).every(Boolean);
     // T310 (closes the known P3): a week resolved entirely via COMPLETE is
     // "done" (green); one resolved via real execution but containing at
     // least one PARTIAL gets its own distinct "partial" look -- never the
     // same green checkmark as a fully-COMPLETE week.
-    const _wAllComplete = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => _getSessionLifecycleState(LOGS, w, i) === 'COMPLETE').every(Boolean);
+    const _wAllComplete = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => _visibleSessionLifecycleState(LOGS, w, i) === 'COMPLETE').every(Boolean);
     const _wHasPartial = _wDone && !_wAllComplete;
     // T545: the last week is only a DELOAD when the reactive engine's own trigger check says so (T162: SEMANA 6 ≠ DELOAD AUTOMÁTICO);
     // the strip used to hard-code 'DELOAD' for every plan's final week, contradicting getSemProgresion() on the training tab.
@@ -4811,7 +4817,7 @@ function renderResumen() {
   const _missingHintsHtml = _renderClientMissingHints(_detectMissingData(LOGS, PLAN, semActiva));
   document.getElementById('tabResumen').innerHTML = `${_renderClientSra()}
     <section class="today-panel">
-      <div class="today-kicker">HOY — SEM ${semActiva}${semActiva===_totalWeeksGrid?' · DELOAD':''}</div>
+      <div class="today-kicker">HOY — SEM ${semActiva}${semActiva===_totalWeeksGrid?' · SEMANA FINAL':''}</div>
       ${getTodaySummary()}
       ${buildWeekDayChips()}
     </section>
@@ -5249,6 +5255,8 @@ function buildWeekDayChips() {
   var chips = sesiones.map(function(s, i) {
     var st = _getSessionLifecycleState(LOGS, CURRENT_WEEK, i);
     var label = _getSessionLifecycleLabel(LOGS, CURRENT_WEEK, i);
+    var visible = _visibleSessionLifecycleState(LOGS, CURRENT_WEEK, i);
+    if (visible !== st) { st = visible; label = _SESSION_LIFECYCLE_LABELS[visible] || 'Pendiente'; }
     return '<button onclick="_goToHomeDay('+i+')" title="Día '+(i+1)+': '+label+'" aria-label="Día '+(i+1)+': '+label+'" class="dc dc-'+st.toLowerCase()+'" style="flex:1;min-width:0;min-height:44px">'+
       '<span class="dc-mark" aria-hidden="true">'+(chipIcon[st]||'·')+'</span>'+
       '<span class="dc-lbl">D'+(i+1)+'</span>'+
@@ -5349,7 +5357,7 @@ function countSessions() {
   else if (typeof dias === 'number') numDias = dias;
   else numDias = getSesiones().length;
   if (!numDias) numDias = getSesiones().length;
-  var totalW = (typeof getTotalWeeks === 'function') ? (getTotalWeeks() - 1) : 5; // exclude deload week
+  var totalW = (typeof getTotalWeeks === 'function') ? getTotalWeeks() : 1; // never assume final week is deload
   return Math.max(numDias, 1) * Math.max(totalW, 1);
 }
 // ── F76 — Session completion semantics ───────────────────────────────────────
@@ -5407,6 +5415,14 @@ function _getSessionLifecycleState(logs, week, di) {
   if (s === 'AUTO_CLOSED' || s === 'PARTIAL') return 'PARTIAL';
   return 'SKIPPED'; // SKIPPED or AUTO_CLOSED_NO_DATA
 }
+// Presentation-only: closed/advanced is not evidence of executed training; LOGS remain untouched.
+function _visibleSessionLifecycleState(logs, week, di) {
+  var state = _getSessionLifecycleState(logs, week, di);
+  if ((state === 'COMPLETE' || state === 'PARTIAL') && !_sessionHasRealLoggedSets(logs, week, di)) {
+    return state === 'PARTIAL' ? 'SKIPPED' : 'NOT_STARTED';
+  }
+  return state;
+}
 // Natural Spanish labels for the 5 canonical states -- never expose raw enum names.
 var _SESSION_LIFECYCLE_LABELS = {
   NOT_STARTED: 'Pendiente',
@@ -5443,12 +5459,12 @@ function _getTodayHomeState(logs, week, sesiones) {
   var dayIndex = sesiones.length - 1;
   var weekFullyResolved = true;
   for (var i = 0; i < sesiones.length; i++) {
-    var scanState = _getSessionLifecycleState(logs, week, i);
+    var scanState = _visibleSessionLifecycleState(logs, week, i);
     if (scanState === 'NOT_STARTED' || scanState === 'IN_PROGRESS') { dayIndex = i; weekFullyResolved = false; break; }
   }
 
-  var lifecycle = _getSessionLifecycleState(logs, week, dayIndex);
-  var label = _getSessionLifecycleLabel(logs, week, dayIndex);
+  var lifecycle = _visibleSessionLifecycleState(logs, week, dayIndex);
+  var label = _SESSION_LIFECYCLE_LABELS[lifecycle] || 'Pendiente';
 
   var stats = _calcSessionStats(logs, dayIndex, week);
   var totalSets = 0;
@@ -5547,7 +5563,9 @@ function countDone() {
     if (!k.startsWith('done_')) return false;
     var parts = k.split('_');
     var week = parseInt(parts[1]);
-    return week >= 1 && week <= _tw && _isRealExecution(LOGS[k]);
+    var di = parseInt(parts[2], 10);
+    return week >= 1 && week <= _tw && Number.isInteger(di) && di >= 0 && di < getSesiones().length &&
+      _visibleSessionLifecycleState(LOGS, week, di) === 'COMPLETE';
   }).length;
 }
 
@@ -5646,11 +5664,12 @@ function setRestTimerDisabled(off) {
 
 // ── Preferencia: modo express activado/desactivado ──
 // T556: DETAILED mode (one form per set) is the DEFAULT. Express only when the athlete turned detailed mode off in Perfil (stored '0'); unset / '1' = detailed.
-function isExpressDisabled() {
-  try { return localStorage.getItem('vdsen_express_off') !== '0'; } catch(e) { return true; }
-}
+// Detailed is the default each time App Cliente starts; Express is session-only.
+var _detailedModeOn = true;
+function isExpressDisabled() { return _detailedModeOn; }
 function setExpressDisabled(off) {
-  try { localStorage.setItem('vdsen_express_off', off ? '1' : '0'); } catch(e) {}
+  _detailedModeOn = !!off;
+  try { localStorage.removeItem('vdsen_express_off'); } catch(e) {}
   try { renderPerfil(); } catch(_){}
   try { renderEntrenamiento(); } catch(_){}
 }
@@ -9285,8 +9304,9 @@ function renderEntrenamiento() {
     var isFuture = w > REAL_WEEK;
     var isReal  = w === REAL_WEEK;
     var isView  = w === CURRENT_WEEK;
-    var done    = w < REAL_WEEK;
-    var cls = 'wkc' + (isView ? ' view' : '') + (isReal ? ' real' : '') + (done ? ' past' : '') + (isFuture ? ' future' : '');
+    var done = sesiones.length > 0 && sesiones.every(function(_, di) { return _visibleSessionLifecycleState(LOGS, w, di) === 'COMPLETE'; });
+    var historical = w < REAL_WEEK;
+    var cls = 'wkc' + (isView ? ' view' : '') + (isReal ? ' real' : '') + (done ? ' past' : '') + (historical && !done ? ' history' : '') + (isFuture ? ' future' : '');
     var ttl = isFuture ? 'Vista previa Sem '+w : 'Ir a semana '+w;
     return '<button onclick="setWeek('+w+')" title="'+ttl+'" aria-label="'+ttl+(isReal?' (activa)':'')+'"'+(isView?' aria-current="true"':'')+' class="'+cls+'">'+
       '<span class="wkc-n">'+(done&&!isView?'✓':w)+'</span>'+
@@ -9302,7 +9322,7 @@ function renderEntrenamiento() {
       weeksHtml += '<button onclick="_weeksExpanded=false;renderEntrenamiento()" class="wkc wkc-fold" aria-label="Ocultar semanas anteriores"><span class="wkc-n">‹</span><span class="wkc-tag">OCULTAR</span></button>';
     } else {
       // Chip colapsado
-      weeksHtml += '<button onclick="_weeksExpanded=true;renderEntrenamiento()" class="wkc wkc-fold past" aria-label="Mostrar '+_pastCount+' semana(s) anteriores"><span class="wkc-n">✓ '+_pastCount+'</span><span class="wkc-tag">'+(_pastCount===1?'SEM':'SEMS')+' ›</span></button>';
+      weeksHtml += '<button onclick="_weeksExpanded=true;renderEntrenamiento()" class="wkc wkc-fold history" aria-label="Mostrar '+_pastCount+' semana(s) anteriores"><span class="wkc-n">'+_pastCount+'</span><span class="wkc-tag">'+(_pastCount===1?'SEM ANTERIOR':'SEMS ANTERIORES')+' ›</span></button>';
     }
   }
   // Semana activa + futuras (futuras sólo de referencia, no clickeables)
@@ -9353,7 +9373,7 @@ function renderEntrenamiento() {
   var tabsHtml = sesiones.map(function(s, i) {
     var _rawEntry = LOGS['done_'+CURRENT_WEEK+'_'+i];
     var _st = _getSessionCompletionState(_rawEntry);
-    var done = (_st === 'REAL_COMPLETE');
+    var done = (_st === 'REAL_COMPLETE') && _sessionHasRealLoggedSets(LOGS, CURRENT_WEEK, i);
     var isSkipped = (_st === 'SKIPPED');
     var _isAdminClosed = (_st === 'AUTO_CLOSED_NO_DATA');
     // T301/T300: AUTO_CLOSED (legacy week-close with data) and PARTIAL (per-session
@@ -9373,7 +9393,8 @@ function renderEntrenamiento() {
       var ns = ej.numSeries || (ej.sets ? ej.sets.length : 3);
       for (var ss = 0; ss < ns; ss++) {
         _tSets++;
-        if ((LOGS['log_'+CURRENT_WEEK+'_'+i+'_'+ei+'_s'+ss]||{}).done) _dSets++;
+        var entry = LOGS['log_'+CURRENT_WEEK+'_'+i+'_'+ei+'_s'+ss];
+        if (entry && entry.done === true && entry.autoFilled !== true) _dSets++;
       }
     });
     var _partial = !_rawEntry && _dSets > 0; // IN_PROGRESS: real sets, no done_ yet
@@ -9421,7 +9442,7 @@ function renderEntrenamiento() {
   var ses = sesiones[DIA_ACTIVO];
   var _doneEntry = LOGS['done_'+CURRENT_WEEK+'_'+DIA_ACTIVO];
   // T300: canonical resolver -- single source of truth for this session's status badge.
-  var _lifecycleState  = _getSessionLifecycleState(LOGS, CURRENT_WEEK, DIA_ACTIVO);
+  var _lifecycleState  = _visibleSessionLifecycleState(LOGS, CURRENT_WEEK, DIA_ACTIVO);
   var isDone            = (_lifecycleState === 'COMPLETE');
   var _isPartialClosed  = (_lifecycleState === 'PARTIAL'); // real execution, ended early -- never shown as COMPLETE
   var _isSkipped         = (_lifecycleState === 'SKIPPED');
@@ -10194,13 +10215,10 @@ function showPRCelebration(exDisplayName, load, unit, reps) {
 window.showPRCelebration = showPRCelebration;
 
 // ── Modo claro / oscuro ──────────────────────────────────────────────────
-function isLightMode() { return document.documentElement.classList.contains('light-mode'); }
+function isLightMode() { return false; }
 function toggleLightMode() {
-  var lm = !isLightMode();
-  document.documentElement.classList.toggle('light-mode', lm);
-  try { localStorage.setItem('vdsen_light_mode', lm ? '1' : '0'); } catch(e) {}
-  var btn = document.getElementById('themeTglBtn');
-  if (btn) btn.textContent = lm ? '☀️' : '🌙';
+  document.documentElement.classList.remove('light-mode');
+  try { localStorage.removeItem('vdsen_light_mode'); } catch(e) {}
   renderPerfil();
 }
 function _applyThemeBtn() { var b=document.getElementById('themeTglBtn'); if(b) b.textContent=isLightMode()?'☀️':'🌙'; }
@@ -12362,7 +12380,7 @@ function _seriesAuthorityHtml(view, si) {
     var base = view.baseSets[si] || view.baseSets[0] || {}, set = r.sets[si] && r.sets[si].effective || {};
     var changed = r.dimension === 'DELOAD' ? Object.keys(r.components || {}) : (r.dimension ? [r.dimension] : Object.keys(r.carried || {}));
     var names = { LOAD: 'Carga', REPS: 'Reps', SETS: 'Series', RIR: 'RIR', REST: 'Descanso', FREEZE: 'Carga congelada' };
-    var unit = view.unit, fmt = function(v, d) { if (v === undefined || v === null) return '—'; return d === 'REST' ? Math.floor(v/60)+':'+('0'+v%60).slice(-2) : String(v)+(d === 'LOAD' || d === 'FREEZE' ? ' '+unit : ''); };
+    var unit = view.unit, fmt = function(v, d) { if (v === undefined || v === null) return '—'; return d === 'REST' ? Math.floor(v/60)+':'+('0'+v%60).slice(-2) : (d === 'LOAD' || d === 'FREEZE' ? _fmtLoadForUi(v)+' '+unit : String(v)); };
     ['LOAD','REPS','SETS','RIR','REST'].forEach(function(d) {
       var isChange = changed.indexOf(d) >= 0 || (d === 'LOAD' && r.dimension === 'FREEZE');
       if (!isChange) { lines.push(names[d]+': sin cambios'); return; }
@@ -14993,12 +15011,9 @@ function renderPerfil() {
       <div style="display:flex;align-items:center;gap:12px;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
         <svg class="ico lg" style="flex-shrink:0;color:var(--mt)" aria-hidden="true" focusable="false"><use href="#i-eye"/></svg>
         <div style="flex:1;min-width:0">
-          <div style="font-size:13px;color:var(--tx);font-weight:700">Modo de visualización</div>
-          <div style="font-size:11px;color:var(--mt);margin-top:2px">${isLightMode()?'Modo claro — fondo blanco.':'Modo oscuro — fondo negro.'}</div>
+          <div style="font-size:13px;color:var(--tx);font-weight:700">Visualización VDSEN</div>
+          <div style="font-size:11px;color:var(--mt);margin-top:2px">Modo oscuro permanente · Off-Black.</div>
         </div>
-        <button onclick="toggleLightMode()" role="switch" aria-label="Modo claro" aria-checked="${isLightMode()?'true':'false'}" style="flex-shrink:0;width:52px;height:30px;border-radius:16px;border:1px solid ${isLightMode()?'rgba(196,255,0,.5)':'var(--bd)'};background:${isLightMode()?'var(--accent-fill)':'var(--dk)'};position:relative;cursor:pointer;transition:all .18s;padding:0">
-          <span style="position:absolute;top:2px;left:${isLightMode()?'24px':'2px'};width:24px;height:24px;border-radius:50%;background:${isLightMode()?'#0a0a0a':'var(--mt)'};transition:all .18s;box-shadow:0 1px 3px rgba(0,0,0,.4)"></span>
-        </button>
       </div>
       <div style="display:flex;align-items:center;gap:12px;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
         <div style="font-size:22px;flex-shrink:0">📋</div>
@@ -16658,10 +16673,13 @@ function _showSessionSummaryCard(di) {
 // Solo LECTURA: nunca escribe ni dispara progresión. Muestra lo que el atleta REALMENTE registró (cargas, repeticiones, RIR, ICS); un dato ausente se omite (nunca se rellena);
 // el descanso solo se muestra como "prescrito" (el Cliente no mide el descanso real). Las funciones _recap* puras se prueban en tests/t587-session-recap.test.js.
 function _recapNum(v) { var n = parseFloat(v); return isFinite(n) ? n : null; }
-function _recapFmtNum(n) { return (Math.round(n * 100) / 100 % 1 === 0) ? String(Math.round(n)) : String(Math.round(n * 100) / 100).replace('.', ','); }
+function _recapFmtNum(n, maxDecimals) {
+  var p = maxDecimals === 1 ? 10 : 100;
+  return String(Math.round((n + Number.EPSILON) * p) / p).replace('.', ',');
+}
 // Valores por serie -> texto compacto: todos iguales "10" · distintos "10·10·8"
-function _recapJoin(vals) {
-  var v = vals.filter(function(x) { return x !== null && x !== undefined; }).map(_recapFmtNum);
+function _recapJoin(vals, maxDecimals) {
+  var v = vals.filter(function(x) { return x !== null && x !== undefined; }).map(function(x) { return _recapFmtNum(x, maxDecimals); });
   if (!v.length) return '';
   return v.every(function(x) { return x === v[0]; }) ? v[0] : v.join('·');
 }
@@ -16704,8 +16722,8 @@ function _recapBuild(o) {
     var loadText = '';
     var loads = loadVals.filter(function(x) { return x; });
     if (loads.length) {
-      if (units.length === 1) loadText = _recapJoin(loads.map(function(x) { return x.v; })) + ' ' + units[0];
-      else loadText = loads.map(function(x) { return _recapFmtNum(x.v) + ' ' + x.u; }).join(' · ');   // distinct units are never mixed into one number
+      if (units.length === 1) loadText = _recapJoin(loads.map(function(x) { return x.v; }), 1) + ' ' + units[0];
+      else loadText = loads.map(function(x) { return _recapFmtNum(x.v, 1) + ' ' + x.u; }).join(' · ');   // distinct units are never mixed into one number
     }
     var repsText = _recapJoin(repsVals);
     var avgIcs = icsVals.length ? icsVals.reduce(function(a, b) { return a + b; }, 0) / icsVals.length : null;
@@ -16782,7 +16800,7 @@ function openSessionRecap(di, weekOverride, opts) {
       '<div class="rc-title"><h2>' + _escHTml(recap.sessionName) + '</h2><div class="rc-sub">SEM ' + week + ' · ' + recap.totals.exercises + (recap.totals.exercises === 1 ? ' ejercicio' : ' ejercicios') + (recap.totals.sets ? ' · ' + recap.totals.sets + ' series completadas' : '') + (recap.totals.cardio ? ' · ' + recap.totals.cardio + ' cardio' : '') + (recap.partial ? ' · <u>PARCIAL</u>' : '') + '</div></div>' +
       '<div class="rc-body" id="rcBody"></div><div class="rc-foot" id="rcFoot"></div></div>';
     document.body.appendChild(ov); document.documentElement.classList.add('rc-open');
-    _recapState = { recap: recap, page: 0, pages: [[]], capture: false, di: di, week: week };
+    _recapState = { recap: recap, page: 0, pages: [[]], capture: true, di: di, week: week };
     _recapLayout(); return true;
   } catch (e) { console.warn('[recap]', e && e.message); return false; }
 }
@@ -16792,7 +16810,7 @@ function _recapLayout() {
   // measure every block at the real width, then pack pages: nothing is shrunk to force a single screen
   body.innerHTML = st.recap.rows.map(_recapRowHtml).join('');
   var hs = Array.prototype.map.call(body.children, function(c) { var cs = getComputedStyle(c); return c.offsetHeight + parseFloat(cs.marginTop || 0) + parseFloat(cs.marginBottom || 0); });
-  var avail = Math.max(240, window.innerHeight - head.offsetHeight - title.offsetHeight - 132);
+  var avail = Math.max(1, body.clientHeight - 60); // viewport-aware; never force overflowing minimum
   st.pages = _recapPaginate(hs, avail); if (st.page >= st.pages.length) st.page = st.pages.length - 1;
   _recapRender();
 }
@@ -18063,7 +18081,7 @@ function calculateProgression(di, postData) {
         if (allRepsHit) {
           newLoad = _applyAlpha(load, alpha, unit);
           if (action === 'maintain') action = 'increase_load';
-          var incKg = (newLoad - load).toFixed(2);
+          var incKg = (newLoad - load).toFixed(1);
           reasons.push('Reps cumplidas y quedaron reps en el tanque (RIR '+avgRIR.toFixed(1)+' vs objetivo '+rirObj+') — subimos +'+incKg+' '+unit);
           // Anti-spike
           if (prevWeek && prevWeek.avgLoad > 0) {
@@ -18097,7 +18115,7 @@ function calculateProgression(di, postData) {
         newLoad = _applyAlpha(load, alpha, unit);
         newReps = repsTarget;
         if (action === 'maintain') action = 'increase_load';
-        reasons.push('Techo de reps del rango alcanzado con RIR en objetivo — subimos carga +'+(newLoad - load).toFixed(2)+' '+unit);
+        reasons.push('Techo de reps del rango alcanzado con RIR en objetivo — subimos carga +'+(newLoad - load).toFixed(1)+' '+unit);
       } else if (_prescriptionMatch) {
         // PRESCRIPTION_MATCH pero sin llegar al techo del rango → construir reps primero
         if (allRepsHit === false && avgReps > 0) {
