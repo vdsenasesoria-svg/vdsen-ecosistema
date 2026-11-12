@@ -126,7 +126,8 @@ const specs = [
       b = await boot(browser, spec.label, 5200); const ui = await snapshot(b.page);
       const eff = ui.effective, c = ov.components || {}, expectedN = spec.dim === 'SETS' ? ov.appliedValue : (c.SETS || 3);
       const targetNumbersMatch = eff.every(s => ui.target.includes(s.repsTarget + ' reps') && ui.target.includes('RIR ' + s.rirTarget) && ui.target.includes(expectedN + ' series') && ui.target.includes('Descanso ' + Math.floor(s.restSeconds / 60) + ':' + String(s.restSeconds % 60).padStart(2, '0')));
-      must(spec.dim + ' athlete-visible numbers match the operational sets', targetNumbersMatch && (!['LOAD','FREEZE','DELOAD'].includes(spec.dim) || ui.target.includes('CARGA ' + eff[0].load + ' KG')), ui.target);
+      const _uiLoad = String(Math.round((Number(eff[0].load) + Number.EPSILON) * 10) / 10).replace('.', ',');
+      must(spec.dim + ' athlete-visible numbers match the operational sets', targetNumbersMatch && (!['LOAD','FREEZE','DELOAD'].includes(spec.dim) || ui.target.includes('CARGA ' + _uiLoad + ' KG')), ui.target);
       must(spec.dim + ' real next-exposure DOM has exact server objective and row count', ui.state === 'APPLIED' && eff.length === expectedN && ui.rows === expectedN && /OBJETIVO DE ESTA SERIE/.test(ui.target) &&
         (['LOAD','FREEZE'].includes(spec.dim) ? eff.every(s => s.load === ov.appliedValue) : spec.dim === 'REPS' ? eff.every(s => s.repsTarget === ov.appliedValue) : spec.dim === 'REST' ? eff.every(s => s.restSeconds === ov.appliedValue) : spec.dim === 'DELOAD' ? eff.every(s => s.load === c.LOAD && s.rirTarget === c.RIR) : true), ui);
       await b.page.screenshot({ path: path.join(OUT, spec.dim.toLowerCase() + '-applied.png'), fullPage: true });
