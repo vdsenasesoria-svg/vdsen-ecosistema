@@ -35,8 +35,8 @@ const STATE = '.release/vdsen-client.json';
 // `evidenceArtifactDigest` pins the GitHub-reported digest of artifact `app-release-result-<run>` of the official run
 // (read from the authenticated Actions API during review). It is a provenance anchor reviewed
 // in the repository; the locally computed `evidenceSha256` is only tamper evidence of what was downloaded.
-const SAFE_OFF_BASELINE = Object.freeze({ runtimeSha: 'ec3b30f99d095c90fc8e1d54cf05366a0427205a', deployment: 'dpl_4CxS8VeoTwWFEJa37tqiHRGGuj4H', officialReleaseRun: '42693446755',
-  evidenceArtifactDigest: 'sha256:97b0a440e899223877748a7e3d012f748ed87b5673353d15274a7842be8baad8' });
+const SAFE_OFF_BASELINE = Object.freeze({ runtimeSha: '3fc264e23d67a8ecb1611a6c8af04ad739f422da', deployment: 'dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8', officialReleaseRun: '43132135716',
+  evidenceArtifactDigest: 'sha256:c2a20d42b7b4ea439375641345e3eea9fefb61a42b6cc32b89eea0758a53ec1a' });
 // Configurable so tests can exercise the full flow against a temp directory.
 let OUT = 'release-output';
 const VERCEL_API = 'https://api.vercel.com';
