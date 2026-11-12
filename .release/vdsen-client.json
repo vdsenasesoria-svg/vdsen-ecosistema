@@ -1,0 +1,64 @@
+{
+  "runtime_sha": "3fc264e23d67a8ecb1611a6c8af04ad739f422da",
+  "production_deployment": "dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8",
+  "rollback_deployment": "dpl_4CxS8VeoTwWFEJa37tqiHRGGuj4H",
+  "rollback_runtime_sha": "ec3b30f99d095c90fc8e1d54cf05366a0427205a",
+  "target_deployment": "dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8",
+  "production_project": "prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN",
+  "vercel_team": "team_VZc5H7Q1DBIJ3g0mwrSBz1o8",
+  "production_origin": "https://vdsen-ecosistema.vercel.app",
+  "firebase_project": "vdsen-ecosistema",
+  "numeric_apply_enabled": false,
+  "rules_transition": {
+    "target_sha256": "fe1517306bebd4bd529adfc51a406c5e97cac6b2dfd7fcae61c87318dd2e21e0",
+    "order": "verify_current_app_then_rules",
+    "rollback_order": "rules_then_app",
+    "rollback_sha256": "ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6",
+    "rollback_source_path": ".release/rollback/firestore.rules.ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6.rules"
+  },
+  "required_index": {
+    "collectionGroup": "plans_backup",
+    "queryScope": "COLLECTION",
+    "fields": [
+      {
+        "fieldPath": "coachId",
+        "order": "ASCENDING"
+      },
+      {
+        "fieldPath": "clientId",
+        "order": "ASCENDING"
+      },
+      {
+        "fieldPath": "backedUpAt",
+        "order": "DESCENDING"
+      }
+    ]
+  },
+  "release_status": "READY",
+  "preconditions": {
+    "entitlements_verified": true,
+    "legacy_data_reviewed": true,
+    "preview_production_env_verified": true,
+    "human_ux_approved": true
+  },
+  "observation_source": "T773 rebaseline after official OFF release run 43132135716 (T773). Production serves dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8 (runtime 3fc264e23d67a8ecb1611a6c8af04ad739f422da), built as a staged production deployment with Numeric Guard DISARMED (AUTONOMOUS_PROGRESSION_ENABLED=PLAIN_FALSE, AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED=PLAIN_FALSE) and promoted at 2026-11-12T01:16:36Z after passing 47 exported-tree and 46 public surface checks (artifact app-release-result-43132135716, digest sha256:c2a20d42b7b4ea439375641345e3eea9fefb61a42b6cc32b89eea0758a53ec1a). The deployment that served immediately before this promotion is dpl_4CxS8VeoTwWFEJa37tqiHRGGuj4H (runtime ec3b30f99d095c90fc8e1d54cf05366a0427205a, recorded truthfully in app_release.previous_deployment). Safe OFF recovery deployment is dpl_4CxS8VeoTwWFEJa37tqiHRGGuj4H (runtime ec3b30f99d095c90fc8e1d54cf05366a0427205a, official run 42693446755), pinned in rollback_deployment and app_release.safe_recovery_deployment; prior safe OFF recovery baselines dpl_AuykDuRaXejkbUzFNjFz6XocNPZt (353df8c12982cad7f4dc89b3622a6b63b3127b52) and dpl_5gQbFsFXdJoyCdJy7WVgiKLb1pPP (c3c1875425fe53981df512bdaa0dbe18d81de34d) remain in historical git provenance. Rules FE151 live (workflow run 40683175819).",
+  "release_mode": "app_only",
+  "app_release": {
+    "runtime_sha": "3fc264e23d67a8ecb1611a6c8af04ad739f422da",
+    "deployment": "dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8",
+    "promotion_model": "staged_production",
+    "previous_deployment": "dpl_4CxS8VeoTwWFEJa37tqiHRGGuj4H",
+    "previous_runtime_sha": "ec3b30f99d095c90fc8e1d54cf05366a0427205a",
+    "safe_recovery_deployment": "dpl_4CxS8VeoTwWFEJa37tqiHRGGuj4H",
+    "safe_recovery_runtime_sha": "ec3b30f99d095c90fc8e1d54cf05366a0427205a",
+    "verified_surfaces": 46,
+    "source_release_run": "43132135716",
+    "completed_at": "2026-11-12T01:16:37Z"
+  },
+  "published_rules": {
+    "sha256": "fe1517306bebd4bd529adfc51a406c5e97cac6b2dfd7fcae61c87318dd2e21e0",
+    "rules_sha": "ef91ac9072f40b2e2a1e73d77c424f9e21ccb27b",
+    "source_release_run": "40683175819",
+    "completed_at": "2026-10-28T11:54:05Z"
+  }
+}

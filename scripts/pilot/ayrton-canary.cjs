@@ -1,0 +1,204 @@
+#!/usr/bin/env node
+'use strict';
+// T584 · Piloto Ayrton: gestiona SOLO las dos barreras de Firestore de la progresión autónoma para UN atleta:
+//   (1) releaseControl/autonomousProgression  (allowlist de la release; solo Admin)   (2) coaches/{coachId}.autoApplyCanary  (canario del Coach)
+// No toca variables de Vercel, no habilita CRON, no toca planes ni bitácoras. Simulación por defecto: sin --confirm NO escribe nada.
+//
+//   node scripts/pilot/ayrton-canary.cjs --uid <UID> --mode status            (solo lectura)
+//   node scripts/pilot/ayrton-canary.cjs --uid <UID> --mode enable            (simulación: muestra qué escribiría)
+//   node scripts/pilot/ayrton-canary.cjs --uid <UID> --mode enable --confirm  (escribe, caduca a las 24 h; --ttl-hours 1..168)
+//   node scripts/pilot/ayrton-canary.cjs --uid <UID> --mode stop   --confirm  (enabled:false en ambas barreras y la caducidad pasa a ahora)
+//
+// T657: las dos barreras se escriben en UN SOLO commit atómico de Firestore (documents:commit) con precondición sobre la versión leída
+// (updateTime / exists:false): o se aplican las dos o ninguna, y si otro proceso las cambió entre la lectura y la escritura el commit falla.
+// La barrera de la release lleva `expiresAt`; el ejecutor la comprueba dentro de cada transacción (sin CRON), así que un permiso vencido no aplica nada.
+//
+// El UID lo entrega el propietario; este script no lo busca ni lo deduce. Credenciales: `gcloud auth print-access-token` de quien lo ejecuta (nunca se imprime).
+const { spawnSync } = require('node:child_process');
+
+const PROJECT = 'vdsen-ecosistema';
+const RELEASE_PATH = 'releaseControl/autonomousProgression', RELEASE_SCHEMA = 'vdsen-autonomous-release-v1';
+const UID_RE = /^[A-Za-z0-9]{20,40}$/;
+const DEFAULT_TTL_HOURS = 24, MAX_TTL_HOURS = 168;
+
+function validateUid(uid) {
+  if (typeof uid !== 'string' || !UID_RE.test(uid)) throw new Error('UID inválido: debe ser un único UID de Firebase (20-40 caracteres alfanuméricos). Comodines, listas y rutas se rechazan.');
+  return uid;
+}
+function validateTtlHours(h) {
+  if (h === undefined) return DEFAULT_TTL_HOURS;
+  const n = typeof h === 'string' && /^\d+$/.test(h) ? Number(h) : h;
+  if (!Number.isInteger(n) || n < 1 || n > MAX_TTL_HOURS) throw new Error('--ttl-hours inválido: entero entre 1 y ' + MAX_TTL_HOURS + '.');
+  return n;
+}
+const iso = (d) => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+const releaseDoc = (uid, enabled, expiresAt) => {
+  if (typeof expiresAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(expiresAt)) throw new Error('expiresAt obligatorio (ISO-8601 UTC).');
+  return { schema: RELEASE_SCHEMA, enabled: !!enabled, clientIds: [validateUid(uid)], expiresAt };
+};
+const canaryField = (uid, enabled, pids) => ({
+  enabled: !!enabled,
+  clientIds: [validateUid(uid)],
+  prescriptionExerciseIds: Array.isArray(pids) ? pids : (typeof pids === 'string' && pids ? [pids] : [])
+});
+
+// Firestore REST codec (valores simples)
+const enc = (v) => v === null || v === undefined ? { nullValue: null } : typeof v === 'boolean' ? { booleanValue: v } : typeof v === 'number' ? { integerValue: String(v) } : typeof v === 'string' ? { stringValue: v }
+  : Array.isArray(v) ? { arrayValue: { values: v.map(enc) } } : { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, enc(x)])) } };
+const dec = (v) => v.stringValue !== undefined ? v.stringValue : v.integerValue !== undefined ? +v.integerValue : v.booleanValue !== undefined ? v.booleanValue : v.nullValue !== undefined ? null
+  : v.arrayValue ? (v.arrayValue.values || []).map(dec) : v.mapValue ? Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, x]) => [k, dec(x)])) : undefined;
+const decDoc = (d) => d && d.fields ? Object.fromEntries(Object.entries(d.fields).map(([k, v]) => [k, dec(v)])) : null;
+
+// Decide qué escribir. Nunca amplía el alcance: si otra barrera ya lista a OTRO atleta, se niega salvo --replace explícito.
+function planWrites(mode, uid, state, opts) {
+  validateUid(uid); opts = opts || {};
+  if (mode !== 'enable' && mode !== 'stop') throw new Error('modo desconocido: ' + mode);
+  const enabled = mode === 'enable', writes = [], refusals = [];
+  const now = opts.now instanceof Date ? opts.now : new Date(), ttl = validateTtlHours(opts.ttlHours);
+  const foreign = (ids) => Array.isArray(ids) && ids.some((x) => x !== uid);
+  const rel = state.release, canary = state.coach && state.coach.autoApplyCanary;
+  const sameScope = (x) => x && Array.isArray(x.clientIds) && x.clientIds.length === 1 && x.clientIds[0] === uid;
+  const samePids = (x, y) => Array.isArray(x) && Array.isArray(y) && x.length === y.length && x.every((v, i) => v === y[i]);
+
+  if (enabled && !opts.replace && foreign(rel && rel.clientIds)) refusals.push('La allowlist de la release ya lista a otros clientes; usa --replace solo si quieres sustituirla por este único atleta.');
+  if (enabled && !opts.replace && foreign(canary && canary.clientIds)) refusals.push('El canario del Coach ya lista a otros clientes; usa --replace solo si quieres sustituirlo por este único atleta.');
+
+  const targetPids = opts.prescriptionExerciseIds || (opts.pid ? [opts.pid] : []);
+  if (enabled && !opts.legacyProtocol) {
+    if (opts.pidRequired || targetPids.length > 0) {
+      if (!targetPids.length || targetPids.length !== 1 || typeof targetPids[0] !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(targetPids[0])) {
+        throw new Error('--pid obligatorio para enable: debe especificarse exactamente un PID.');
+      }
+      if (Array.isArray(opts.allowedPids) && !opts.allowedPids.includes(targetPids[0])) {
+        refusals.push('El PID "' + targetPids[0] + '" no pertenece al plan activo del atleta.');
+      }
+    }
+  }
+
+  // Comprobar si ya existe una ventana habilitada y vigente para este atleta
+  const existingActive = !!(enabled && rel && rel.enabled === true && sameScope(rel) && typeof rel.expiresAt === 'string' && Date.parse(rel.expiresAt) > now.getTime());
+
+  // Impedir renovaciones accidentales de expiresAt cuando ya existe una ventana habilitada
+  if (enabled && existingActive) {
+    if ((opts.expiresAt && opts.expiresAt !== rel.expiresAt) || (opts.ttlHours !== undefined && opts.ttlHours !== null)) {
+      refusals.push('Ya existe una ventana de release activa hasta ' + rel.expiresAt + '; no se permite renovar o ampliar la caducidad mientras esté habilitada. Ejecuta --mode stop primero.');
+    }
+  }
+
+  if (refusals.length) return { writes: [], refusals };
+
+  const expiresAt = enabled ? (existingActive ? rel.expiresAt : (opts.expiresAt || iso(new Date(now.getTime() + ttl * 3600 * 1000)))) : iso(now);
+  if (enabled && (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(expiresAt) || !Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= now.getTime() || Date.parse(expiresAt) - now.getTime() > MAX_TTL_HOURS * 3600e3)) throw new Error('expiresAt inválido o caducado; no se renueva automáticamente.');
+  if (enabled && new Date(Date.parse(expiresAt)).toISOString() !== expiresAt.replace('Z', '.000Z')) throw new Error('expiresAt inválido: fecha UTC inexistente.');
+
+  writes.push({ path: RELEASE_PATH, mask: ['schema', 'enabled', 'clientIds', 'expiresAt'], fields: releaseDoc(uid, enabled, expiresAt) });
+  writes.push({ path: 'coaches/' + state.coachId, mask: ['autoApplyCanary'], fields: { autoApplyCanary: canaryField(uid, enabled, targetPids) } });
+
+  if (sameScope(rel) && sameScope(canary) && rel.enabled === enabled && canary.enabled === enabled &&
+      (!enabled || (rel.schema === RELEASE_SCHEMA && rel.expiresAt === expiresAt && samePids(canary.prescriptionExerciseIds, targetPids)))) return { writes: [], refusals, unchanged: true };
+  return { writes, refusals };
+}
+
+function defaultToken() { const r = spawnSync('gcloud', ['auth', 'print-access-token'], { encoding: 'utf8', shell: process.platform === 'win32' }); if (r.status !== 0 || !r.stdout.trim()) throw new Error('No se pudo obtener el token (gcloud auth print-access-token).'); return r.stdout.trim(); }
+const DB = 'projects/' + PROJECT + '/databases/(default)/documents/';
+const BASE = 'https://firestore.googleapis.com/v1/' + DB;
+async function http(method, p, token, body, mask) {
+  if (method === 'COMMIT') {
+    const r = await fetch(BASE.replace(/\/$/, '') + ':commit', { method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch (e) { /* not json */ }
+    return { status: r.status, body: j };
+  }
+  const q = mask ? '?' + mask.map((f) => 'updateMask.fieldPaths=' + encodeURIComponent(f)).join('&') : '';
+  const r = await fetch(BASE + p + q, { method, headers: Object.assign({ authorization: 'Bearer ' + token }, body ? { 'content-type': 'application/json' } : {}), body: body ? JSON.stringify(body) : undefined });
+  const text = await r.text(); let j = null; try { j = JSON.parse(text); } catch (e) { /* not json */ }
+  return { status: r.status, body: j };
+}
+
+async function main(argv, deps) {
+  deps = deps || {}; const out = deps.log || console.log, request = deps.http || http, token = deps.token || defaultToken;
+  const arg = (n) => { const i = argv.indexOf('--' + n); return i >= 0 ? argv[i + 1] : undefined; }, flag = (n) => argv.includes('--' + n);
+  const uid = validateUid(arg('uid')), mode = arg('mode') || 'status', confirm = flag('confirm'), replace = flag('replace');
+  const pidFlags = argv.filter((a) => a === '--pid');
+  if (pidFlags.length > 1) throw new Error('Múltiples PIDs no permitidos: debe especificarse exactamente un PID.');
+  const targetPid = arg('pid');
+  if (targetPid && (targetPid.includes(',') || targetPid.includes(' ') || targetPid.includes(';'))) {
+    throw new Error('Múltiples PIDs no permitidos: debe especificarse exactamente un único PID.');
+  }
+  const tk = token();
+  const client = await request('GET', 'clients/' + uid, tk); if (client.status !== 200) throw new Error('No existe clients/<uid> (HTTP ' + client.status + '): el UID no corresponde a una cuenta Cliente; no se escribe nada.');
+  const cdoc = decDoc(client.body); if (!cdoc.coachId || (mode !== 'stop' && !cdoc.activePlanId)) throw new Error('El cliente no tiene coachId o activePlanId: no se puede activar.');
+  const coachRes = await request('GET', 'coaches/' + cdoc.coachId, tk), relRes = await request('GET', RELEASE_PATH, tk);
+  if (coachRes.status !== 200) throw new Error('No existe coaches/<coachId> (HTTP ' + coachRes.status + '): no se escribe nada.');
+  if (relRes.status !== 200 && relRes.status !== 404) throw new Error('Lectura de la barrera de release inesperada (HTTP ' + relRes.status + '): no se escribe nada.');
+  const coach = decDoc(coachRes.body) || {}, rel = decDoc(relRes.body);
+  const plan = cdoc.activePlanId ? decDoc((await request('GET', 'plans/' + cdoc.activePlanId, tk)).body) || {} : {};
+  const exs = (plan.days || []).flatMap((d) => d.exercises || []);
+  const planPids = exs.map((e) => e.prescriptionExerciseId).filter(Boolean);
+  const isLegacyProtocol = flag('legacy-window-protocol') || deps.legacyProtocol === true;
+  if (mode === 'enable') {
+    if (!isLegacyProtocol) {
+      if (!targetPid || typeof targetPid !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(targetPid)) {
+        throw new Error('--pid obligatorio para enable: debe especificarse exactamente un PID del plan activo.');
+      }
+      if (!planPids.includes(targetPid)) {
+        throw new Error('El PID "' + targetPid + '" no pertenece al plan activo (' + cdoc.activePlanId + ') del atleta; no se escribe nada.');
+      }
+    } else if (targetPid) {
+      if (typeof targetPid !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(targetPid)) {
+        throw new Error('PID inválido: debe ser un identificador válido.');
+      }
+      if (!planPids.includes(targetPid)) {
+        throw new Error('El PID "' + targetPid + '" no pertenece al plan activo (' + cdoc.activePlanId + ') del atleta; no se escribe nada.');
+      }
+    }
+  } else if (targetPid) {
+    if (typeof targetPid !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(targetPid)) {
+      throw new Error('PID inválido: debe ser un identificador válido.');
+    }
+    if (!planPids.includes(targetPid)) {
+      throw new Error('El PID "' + targetPid + '" no pertenece al plan activo (' + cdoc.activePlanId + ') del atleta; no se escribe nada.');
+    }
+  }
+  out('Atleta: coachId=' + cdoc.coachId.slice(0, 6) + '… activePlanId=' + String(cdoc.activePlanId || '(ausente)').slice(0, 6) + '… ejercicios=' + exs.length + ' con prescriptionExerciseId=' + planPids.length + (targetPid ? ' [PID canario=' + targetPid + ']' : ''));
+  out('Allowlist release: ' + (rel ? 'enabled=' + rel.enabled + ' clientIds=' + (rel.clientIds || []).length + ' incluye_atleta=' + (rel.clientIds || []).includes(uid) + ' expiresAt=' + (rel.expiresAt || '(ausente)') : '(ausente)'));
+  out('Canario del Coach: ' + (coach.autoApplyCanary ? 'enabled=' + coach.autoApplyCanary.enabled + ' clientIds=' + (coach.autoApplyCanary.clientIds || []).length + ' incluye_atleta=' + (coach.autoApplyCanary.clientIds || []).includes(uid) + ' pids=' + (coach.autoApplyCanary.prescriptionExerciseIds || []).join(',') : '(ausente)'));
+  if (mode === 'status') return { mode, wrote: 0, pids: planPids };
+  if (deps.authorize) await deps.authorize({ uid, mode, client: cdoc, release: rel, coach, coachId: cdoc.coachId, confirm, pid: targetPid,
+    barrierVersions: { release: relRes.body && relRes.body.updateTime || null, coach: coachRes.body && coachRes.body.updateTime || null } });
+  const { writes, refusals, unchanged } = planWrites(mode, uid, { release: rel, coach, coachId: cdoc.coachId }, {
+    replace,
+    ttlHours: arg('ttl-hours'),
+    expiresAt: arg('expires-at'),
+    pid: targetPid,
+    allowedPids: planPids,
+    pidRequired: mode === 'enable' && !isLegacyProtocol,
+    legacyProtocol: isLegacyProtocol,
+    now: deps.now
+  });
+  if (refusals.length) { refusals.forEach((r) => out('RECHAZADO: ' + r)); return { mode, wrote: 0, refused: true }; }
+  if (unchanged) { out('Sin cambios: las dos barreras ya coinciden; no se amplía la caducidad.'); return { mode, wrote: 0, unchanged: true }; }
+  writes.forEach((w) => out((confirm ? 'ESCRIBE ' : 'SIMULACIÓN ') + w.path + ' campos=' + w.mask.join(',') + ' -> ' + JSON.stringify(w.fields)));
+  if (!confirm) { out('Simulación: no se escribió nada. Repite con --confirm para aplicar.'); return { mode, wrote: 0 }; }
+  // Un solo commit atómico con precondición de versión: ninguna activación parcial, y falla cerrado si las barreras cambiaron tras la lectura.
+  const pre = (res) => res.status === 200 && res.body && res.body.updateTime ? { updateTime: res.body.updateTime } : { exists: false };
+  const preconditions = { [RELEASE_PATH]: pre(relRes), ['coaches/' + cdoc.coachId]: pre(coachRes) };
+  if (deps.beforeCommit) await deps.beforeCommit();
+  const body = { writes: writes.map((w) => ({ update: { name: DB + w.path, fields: Object.fromEntries(Object.entries(w.fields).map(([k, v]) => [k, enc(v)])) },
+    updateMask: { fieldPaths: w.mask }, currentDocument: preconditions[w.path] })) };
+  let r;
+  try { r = await request('COMMIT', ':commit', tk, body); }
+  catch (_) {
+    if (deps.onUncertainCommit) await deps.onUncertainCommit({ request, token: tk });
+    throw new Error('Resultado del commit DESCONOCIDO: verificar ambas barreras; no repetir ni renovar.');
+  }
+  if (r.status !== 200) {
+    if ([400, 403, 404, 409, 412].includes(r.status)) throw new Error('El commit atómico falló (HTTP ' + r.status + '): no se aplicó NINGUNA de las dos barreras.');
+    if (deps.onUncertainCommit) await deps.onUncertainCommit({ request, token: tk });
+    throw new Error('Resultado del commit DESCONOCIDO (HTTP ' + r.status + '): verificar ambas barreras; no repetir ni renovar.');
+  }
+  if (deps.afterCommit) await deps.afterCommit({ request, token: tk, writes });
+  out('Listo: ' + writes.length + ' documentos actualizados (' + mode + ').'); return { mode, wrote: writes.length };
+}
+
+module.exports = { validateUid, validateTtlHours, releaseDoc, canaryField, planWrites, main, RELEASE_PATH, RELEASE_SCHEMA, PROJECT, http, decDoc };
+if (require.main === module) main(process.argv.slice(2)).catch((e) => { console.error('ERROR: ' + e.message); process.exit(1); });

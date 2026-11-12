@@ -5,6 +5,10 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
+          "fieldPath": "coachId",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "clientId",
           "order": "ASCENDING"
         },

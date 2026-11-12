@@ -1,18 +1,33 @@
-// VDSEN Service Worker — offline support
-const CACHE = 'vdsen-v5';
+// VDSEN Service Worker — offline support.  The build query is supplied by the
+// app shell registration.  A new build gets a distinct script URL and cache,
+// so an older worker cannot make the currently executing Preview ambiguous.
+// The legacy fallback only describes pre-Issue-115 registrations.
+const BUILD = new URL(self.location.href).searchParams.get('build') || 'legacy-v13';
+const CACHE = 'vdsen-' + BUILD;
 
 // Assets to pre-cache on install (propio HTML)
 const PRECACHE = [
   '/vdsen-cliente.html',
   '/cliente',
-  '/manifest.json'
+  '/manifest.json',
+  '/assets/vdsen-logo-official.jpg',
+  '/assets/exercise-visual-catalog.js',
+  '/assets/sra-context.js',
+  '/assets/progression-auto-apply-shadow.js',
+  '/assets/progression-magnitude-policy.js',
+  '/assets/progression-effective-prescription.js',
+  '/assets/progression-application-consumer.js',
+  '/assets/exercises/pending-license.svg'
 ];
 
 self.addEventListener('install', e => {
+  // Ask to replace a previous controller as soon as this install succeeds.
+  // Calling it before precache completion avoids leaving a new build in
+  // `waiting` behind an old shell while its cache is being populated.
+  self.skipWaiting();
   e.waitUntil(
     caches.open(CACHE)
       .then(c => c.addAll(PRECACHE))
-      .then(() => self.skipWaiting())
   );
 });
 

@@ -1,0 +1,45 @@
+{
+  "base": "vdsen-ecosistema-staging-t573-vdsenasesoria-svgs-projects.vercel.app",
+  "at": "2026-10-17T15:56:09.751Z",
+  "writes": false,
+  "cronSecret": "NOT_AVAILABLE (CRON_SECRET unknown to the operator)",
+  "results": [
+    {
+      "id": "H01 unauthenticated GET is rejected (401) - function reachable, federated runtime built",
+      "pass": true,
+      "note": "401 {\"error\":\"AUTH_INVALID\"}"
+    },
+    {
+      "id": "H02 POST without Bearer token -> 401",
+      "pass": true,
+      "note": "401 {\"error\":\"AUTH_MISSING\"}"
+    },
+    {
+      "id": "H03 POST with an invalid Firebase token -> 401",
+      "pass": true,
+      "note": "401 {\"error\":\"AUTH_INVALID\"}"
+    },
+    {
+      "id": "H04 federated credential works: read-only Firestore probe (STS + impersonation succeeded)",
+      "pass": true,
+      "note": "200 {\"firestore\":\"READ_OK\"}"
+    },
+    {
+      "id": "H05 valid token, switches OFF => 202 DISARMED (zero writes)",
+      "pass": true,
+      "note": "202 {\"status\":\"DISARMED\",\"created\":[],\"applied\":[],\"consumed\":[]}"
+    },
+    {
+      "id": "H06 valid token, malformed body -> 400 or 202 (no write)",
+      "pass": true,
+      "note": "400 {\"error\":\"REQUEST_INVALID\"}"
+    },
+    {
+      "id": "H07 unsupported method rejected",
+      "pass": true,
+      "note": "405"
+    }
+  ],
+  "pass": 7,
+  "fail": 0
+}

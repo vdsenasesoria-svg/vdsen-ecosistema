@@ -1,0 +1,18 @@
+const assert = require('node:assert/strict');
+const catalog = require('../assets/exercise-visual-catalog.js');
+const fs = require('node:fs');
+const source = fs.readFileSync('vdsen-coach.html', 'utf8');
+const block = source.match(/const BASE_EXERCISES = \[(.*?)\];\s*\n\s*document\.getElementById\("loadBaseBtn"\)/s)[1];
+const names = [...block.matchAll(/name:"([^"]+)"/g)].map(x => x[1]);
+const visual = catalog.gyms['smart-fit-san-diego'];
+const norm = x => String(x).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+const canonical = new Set(visual.entries.flatMap(e => [e.exerciseName, ...(e.aliases || [])]).map(norm));
+const added = new Set(visual.legacyEntries.map(e => e.exerciseName).map(norm));
+const covered = names.filter(n => canonical.has(norm(n)) || added.has(norm(n)));
+assert.equal(names.length, 85);
+assert.equal(visual.legacyEntries.length, 40);
+assert.equal(covered.length, 40);
+assert.equal(new Set(visual.legacyEntries.map(e => e.exerciseId)).size, 40);
+assert.equal(new Set(visual.legacyEntries.map(e => norm(e.exerciseName))).size, 40);
+assert.ok(visual.legacyEntries.every(e => e.assetRef && e.imageUrl === null && e.setup && e.execution && e.technicalObjective && e.commonErrors.length));
+console.log('T461 — expanded legacy coverage inventory: PASS');

@@ -282,6 +282,7 @@ Un único documento Firestore por cliente, colección `logs`, ID = UID del clien
 | `wearable_{W}_{D}` | Datos de wearable integrado | opcional |
 | `engine_state` | Snapshot del motor de progresión | 1 por doc |
 | `exnote_{W}_{D}_{E}` / `exnote_{D}_{E}` | Notas del cliente por ejercicio | variable |
+| `exnotepid_{W}_{PID}` (T549) | Nota del alumno por semana, identidad = planId + PID + semana (`{planId, prescriptionExerciseId, week, day, exerciseIndex, exerciseNameSnapshot, text, updatedAt}`); historial de solo lectura en semanas posteriores. Aditivo en `entries`, sin colección nueva; `exnote_{W}_{D}_{E}` pasa a ser su espejo por semana legible por el Coach; `exnote_{D}_{E}` queda como legado de solo lectura | variable |
 
 **Total keys estimado por mesociclo (6 semanas, 4 días, 6 ejercicios, 4 series):**
 - Contribución dominante: `log_*` = 576 keys

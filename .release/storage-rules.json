@@ -1,0 +1,9 @@
+{
+  "schema": "vdsen-storage-rules-v1",
+  "firebase_project": "vdsen-ecosistema",
+  "bucket": "vdsen-ecosistema.firebasestorage.app",
+  "release_name": "projects/vdsen-ecosistema/releases/firebase.storage/vdsen-ecosistema.firebasestorage.app",
+  "rules_path": "storage.rules",
+  "mutation_switch": "STORAGE_RULES_RELEASE_ENABLED",
+  "note": "Bucket is the single production storageBucket shipped in vdsen-cliente.html and vdsen-coach.html; storage-rules.cjs fails if they drift. Not served, not deployed by `firebase deploy`."
+}

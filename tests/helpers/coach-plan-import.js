@@ -1,0 +1,61 @@
+'use strict';
+// Test helper: run a Motor-style plan JSON through the REAL Coach import normalizer + the explicit save-time PID stamp (functions extracted from vdsen-coach.html and
+// executed in a vm sandbox). The result is the plan document shape the Coach persists, so integration tests do not hand-craft plan fields the Coach never writes.
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const identity = require('../../assets/equipment-identity.js');
+const catalog = require('../../assets/exercise-visual-catalog.js');
+
+const COACH = fs.readFileSync(path.join(__dirname, '..', '..', 'vdsen-coach.html'), 'utf8');
+
+function fnSrc(name) {
+  let i = COACH.indexOf('async function ' + name + '('); if (i < 0) i = COACH.indexOf('function ' + name + '(');
+  if (i < 0) throw new Error(name + ' not found in vdsen-coach.html');
+  let d = 0, q = null, esc = false;
+  for (let k = COACH.indexOf('{', i); k < COACH.length; k++) {
+    const c = COACH[k];
+    if (q) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === q) q = null; continue; }
+    if (c === '/' && COACH[k + 1] === '/') { k = COACH.indexOf('\n', k); continue; }
+    if (c === '/' && COACH[k + 1] === '*') { k = COACH.indexOf('*/', k) + 1; continue; }
+    if (c === '"' || c === "'" || c === '`') { q = c; continue; }
+    if (c === '{') d++; else if (c === '}' && --d === 0) return COACH.slice(i, k + 1);
+  }
+  throw new Error('unbalanced ' + name);
+}
+const consts = () => (COACH.match(/const _PERF_[A-Z_]+\b[\s\S]*?;\n/g) || []).join('\n') + '\n' + (COACH.match(/const _NIVEL_MEDIO_ENUM\b[\s\S]*?;\n/g) || []).join('\n') + '\n' + (COACH.match(/const _MUSCLE_KEYS\b[\s\S]*?;\n/g) || []).join('\n');
+const HELPERS = ['_normRirByWeek', '_perfScalar', '_perfType', '_perfEffType', '_perfHasNoSetsOk', '_perfCarryEx', '_perfCarrySet', '_genPrescriptionId', '_stampPrescriptionIds', '_normRestSeconds',
+  '_carryPrescriptionId', '_normNivelMedio', '_normVariacionVertical', '_carryClassification', '_carryExerciseIdentity', '_carryRepsRange', '_carryMuscleGroup', '_normalizeMusclePriorities', '_planMetaForRow', '_restorePlanMeta'];
+
+// idPrefix makes the minted PIDs unique per test (the sandbox uses a counter instead of crypto.randomUUID).
+function coachSandbox(idPrefix, extra) {
+  let n = 0;
+  const ctx = Object.assign({ console, JSON, Object, Array, String, Number, Math, parseInt, parseFloat, isNaN, Date,
+    window: { VDSEN_EQUIPMENT_IDENTITY: identity, VDSEN_EXERCISE_VISUAL_CATALOG: catalog },
+    crypto: { randomUUID: () => (idPrefix || 'pid') + '-' + (++n) } }, extra || {});
+  vm.createContext(ctx);
+  vm.runInContext(consts() + '\n' + HELPERS.map(fnSrc).join('\n') + '\n' + fnSrc('_normalizeTrainingPlan') +
+    '\nthis._normalizeTrainingPlan = _normalizeTrainingPlan; this._stampPrescriptionIds = _stampPrescriptionIds; this._carryExerciseIdentity = _carryExerciseIdentity; this._carryRepsRange = _carryRepsRange; this._planMetaForRow = _planMetaForRow; this._restorePlanMeta = _restorePlanMeta; this._carryMuscleGroup = _carryMuscleGroup; this._normalizeMusclePriorities = _normalizeMusclePriorities; this._MUSCLE_KEYS = _MUSCLE_KEYS;', ctx);
+  return ctx;
+}
+
+// Motor-style plan (names + sets only) -> plan fields exactly as the Coach would save them (normalized + stamped).
+function importLikeCoach(motorPlan, opts) {
+  opts = opts || {};
+  const sb = coachSandbox(opts.idPrefix, opts.extra);
+  const norm = JSON.parse(JSON.stringify(sb._normalizeTrainingPlan(motorPlan)));
+  norm.days = JSON.parse(JSON.stringify(sb._stampPrescriptionIds(norm.days)));
+  return norm;
+}
+
+// T587: the JSON-tab route (parsePlanFromJSON) with every carry helper present (as in the real page), driven through minimal DOM stubs. Returns the normalized plan the preview / save receive.
+function jsonTabImport(json, idPrefix) {
+  const el = { value: typeof json === 'string' ? json : JSON.stringify(json), innerHTML: '' };
+  const ctx = coachSandbox(idPrefix || 'jt', { document: { getElementById: () => el }, showToast() {}, _escH: (x) => x, showParsedPreview(p, w) { ctx.preview = p; ctx.warnings = w; } });
+  ctx.window = Object.assign(ctx.window || {}, { VDSEN_EQUIPMENT_IDENTITY: identity, VDSEN_EXERCISE_VISUAL_CATALOG: catalog });
+  vm.runInContext(fnSrc('parsePlanFromJSON') + '\nthis.parsePlanFromJSON = parsePlanFromJSON;', ctx);
+  ctx.parsePlanFromJSON();
+  return { statusHtml: el.innerHTML, warnings: ctx.warnings || [], plan: ctx.window._importedPlan ? JSON.parse(JSON.stringify(ctx.window._importedPlan)) : null, sandbox: ctx };
+}
+
+module.exports = { importLikeCoach, coachSandbox, jsonTabImport };

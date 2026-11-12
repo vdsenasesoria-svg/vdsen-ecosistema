@@ -1,0 +1,75 @@
+name: VDSEN retire legacy armed deployment (single-target)
+
+# CONTROLLED RETIREMENT OF THE LEGACY ARMED DEPLOYMENT (T732/T733).
+#
+# Deletes exactly ONE deployment (dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K) after a fail-closed preflight
+# (Vercel identities and aliases, fresh read of both Firestore fences, no concurrent operation),
+# a second identical check immediately before the DELETE, and a four-read post verification.
+#
+# - Manual dispatch only, canonical repository and branch only, first attempt only (reruns are rejected).
+# - Shares the non-cancelling `vdsen-production` lock with every other production lane.
+# - Credentials: existing Environment secret VERCEL_TOKEN and the existing read-only WIF identity. Nothing is printed or persisted.
+# - No Firestore writes, no deploy, no alias change, no variable change.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_deployment_id:
+        description: 'Type the exact ID to confirm retirement: dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+concurrency:
+  group: vdsen-production
+  cancel-in-progress: false
+
+jobs:
+  retire:
+    if: github.repository == 'vdsenasesoria-svg/vdsen-ecosistema' && github.ref == 'refs/heads/codex/client-app-next' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1
+    environment: Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Validate confirmation input
+        env:
+          CONFIRM_ID: ${{ inputs.confirm_deployment_id }}
+        run: |
+          if [ "$CONFIRM_ID" != "dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K" ]; then
+            echo "::error::confirm_deployment_id must match exactly dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K"
+            exit 1
+          fi
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - id: google
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_RELEASE_SERVICE_ACCOUNT }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          token_format: access_token
+          create_credentials_file: false
+          access_token_scopes: https://www.googleapis.com/auth/cloud-platform
+      - name: Execute controlled retirement
+        env:
+          CONFIRM_DEPLOYMENT_ID: ${{ inputs.confirm_deployment_id }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/release/retire-legacy-deployment.cjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: legacy-retirement-${{ github.run_id }}
+          path: release-output/legacy-retirement.json
+          if-no-files-found: warn
+          retention-days: 30

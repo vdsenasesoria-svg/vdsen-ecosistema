@@ -1,0 +1,46 @@
+npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+npm warn deprecated uuid@9.0.1: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+
+added 226 packages in 38s
+(node:2504) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[t476] project=demo-vdsen-shadow emulator=127.0.0.1:61655 rules=firestore.rules jar=cloud-firestore-emulator-v1.19.8.jar sha256=9d43599ed6151199e8d604dc87fac51218e49e5f3a48519b1ae560bbe5e3382d
+✔ T583-E1 provenance: the entries are what the REAL Client wrote (not hand-crafted) and the plans are what the Coach import produced (3.0968ms)
+✔ T583-E2 PLAN -> LOGBOOK -> PROGREC -> PENDING -> APPLIED: LOAD (orientative, no equipment) and REPS (inside the Motor range) from the Client real data (4196.2431ms)
+✔ T583-E3 ACTUAL load feedback: the athlete trains with 102.5 (not the suggested 105); the first overlays become CONSUMED; the next evaluation starts from 102.5; a range-top / matched-RIR exercise is maintained (2014.5141ms)
+✔ T583-E4 MAINTAIN (reps below target at the prescribed effort): the Client says maintain, the server applies nothing (167.3011ms)
+✔ T583-E5 INSUFFICIENT performance (6 reps to failure): no increase; (T586) effort outside the band freezes the load where a VDSEN rule exists, and a reps regression (no rule) still goes to Coach review (456.1264ms)
+✔ T583-E6 INDIVIDUAL restriction: the Client recommends an increase, the reported joint pain blocks it (SAFETY_CONFLICT) (350.0221ms)
+✔ T583-E7 LEGACY plan (PID + name + sets only): LOAD works without any new field; fixed reps get no invented range, so the easier-RIR progression is LOAD (400.6211ms)
+✔ T583-E8 the Coach decides: a Coach decision on ONE exercise after the application makes the Client show its base prescription; the other exercise keeps its adjustment (452.3392ms)
+✔ T583-E9 multi-client isolation: processing one athlete never writes another; a request asserting another athlete's plan is rejected (1442.46ms)
+✔ T583-E10 flags OFF: DISARMED writes nothing; numeric apply OFF leaves PENDING only; outside the allowlist nothing is written (266.7409ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10281.5276
+[suite] real client chain: pass=0 fail=0
+✔ T584-E1 provenance: the entries are what the REAL Client wrote with ICS >= 8, and the Client itself recommended add_sets (volume-first) (3.031ms)
+✔ T586-E2 ICS >= 8 and sustained performance: the server now ADDS the set itself (applied, visible as 4 rows in the next exposure, consumed once executed); the plan is never rewritten (1190.9053ms)
+✔ T584-E2b ICS >= 8 with the volume capped (heavy compound, 3 sets max): the server evaluates LOAD (orientative) and REPS (inside the Motor range) from the evidence, exactly as in T584 (483.4808ms)
+✔ T584-E3 DOUBLE PROGRESSION + ACTUAL load (volume capped): the athlete used 102.5 (not 105) and reached the 12-rep ceiling at the prescribed RIR; the next evaluation moves the curl to LOAD and starts the press from 102.5 (1588.1198ms)
+✔ T584-E4 flags OFF with the real Client data: DISARMED writes nothing; numeric apply OFF leaves PENDING only (what WOULD be prescribed, for observation) and a later activation applies those SAME records once (706.0061ms)
+✔ T586-E5 insufficient performance with ICS 8 (6 reps to failure): nothing is increased; effort outside the band FREEZES the load (applied); a reps regression has no VDSEN rule and still goes to Coach review (450.4935ms)
+✔ T584-E6 individual restriction with ICS 8: the independent evaluation computes the candidates but joint pain blocks them (SAFETY_CONFLICT) (460.1974ms)
+✔ T584-E7 the Coach decides: a decision on one exercise makes the Client show its base prescription; the other keeps its adjustment (534.1919ms)
+✔ T584-E8 multi-client isolation: processing one athlete never writes another (1313.7071ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7159.9706
+[suite] real client chain ICS8: pass=0 fail=0
+# pass 0
+# fail 0

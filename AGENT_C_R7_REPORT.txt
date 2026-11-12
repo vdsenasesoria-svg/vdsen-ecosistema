@@ -1,0 +1,80 @@
+AGENT C — QA ROUND 7 REPORT
+Branch: claude/qa-post-t125
+HEAD: 484a337
+
+═══════════════════════════════════════════════════════════════
+CONTRACT RESULTS
+═══════════════════════════════════════════════════════════════
+
+R7-01: _postSessionSubmitting lifecycle (R6-GAP-03)
+  Status: GAP (Agent A fixing)
+
+  Check 1 (hard assert — PASS):
+    _postSessionSubmitting = true appears before the first await in
+    submitPostSession.  Positional check confirmed: flag set at index ~5
+    within the extracted function body, first `await` at index ~1800.
+
+  Check 2 (gap-doc — NOT asserted yet):
+    No finally block exists in submitPostSession.
+    Current code resets the flag via closePostSessionModal() called PRE-await
+    (line 12496), before the main await _confirmSessionDone(di) at line 12528.
+    On an unexpected post-await exception the flag stays true, locking out
+    the modal guard for the session.
+    Expected fix: try { ... await _confirmSessionDone ... } finally { _postSessionSubmitting = false; }
+
+R7-02: _applyTemplateToClient error recovery (R6-GAP-04)
+  Status: GAP (Agent B fixing)
+
+  No try/catch and no finally block in _applyTemplateToClient.
+  Two Firestore writes (addDoc + updateDoc) are completely unguarded:
+    await addDoc(collection(db, 'plans'), { ... });
+    await updateDoc(doc(db, 'clients', clientId), { activePlanId: planRef.id });
+  A Firestore failure silently escapes with no user feedback and no state restore.
+  Expected fix: wrap writes in try/catch; showToast(err.message, true) in catch.
+
+═══════════════════════════════════════════════════════════════
+RESIDUAL FINDINGS
+═══════════════════════════════════════════════════════════════
+
+1. CLIENT — _guardarCIInFlight (informational, not a finding)
+   Confirmed clean: resets in a finally block (line 10585-10586).
+   The residual scan correctly identifies it as OK.
+
+2. COACH — No new MEDIUM+ findings
+   Functions excluded as intentional throw-to-caller (LOW severity):
+     - mergeClients: no own try/catch but caller (showMergeModal onclick ~line 2298)
+       wraps in try/catch with UI error feedback.
+     - ensureCoachDoc: tiny setDoc utility; all callers have try/catch.
+     - _vdsenSaveDraftToFirestore: throws validation errors by design; callers
+       (autoGeneratePlan / vdsenAIPreview) catch and show toast.
+   Scan found 0 new MEDIUM+ coach issues beyond the already-documented R6-GAP-04.
+
+═══════════════════════════════════════════════════════════════
+TEST RESULTS
+═══════════════════════════════════════════════════════════════
+
+File: tests/qa_r7_gap_resolution_contracts.test.js
+  node tests/qa_r7_gap_resolution_contracts.test.js  →  exit 0
+
+Full suite: node --test tests/*.test.js
+  tests 44 / pass 44 / fail 0 / exit 0
+  (baseline was 43/43; new R7 test adds 1)
+
+═══════════════════════════════════════════════════════════════
+UPGRADE PATH
+═══════════════════════════════════════════════════════════════
+
+After Agent A lands the R6-GAP-03 fix and Agent B lands the R6-GAP-04 fix
+and both are integrated, the orchestrator should upgrade qa_r7_gap_resolution_contracts.test.js:
+
+  R7-01 Check 2: remove the if(!pss_hasFinally || !pss_finallyHasReset) branch;
+    promote to: assert.ok(pss_hasFinally, '...'); assert.ok(pss_finallyHasReset, '...');
+
+  R7-02: remove the if(!at_hasTry || !at_hasCatch) branch;
+    promote to: assert.ok(at_hasTry, '...'); assert.ok(at_hasCatch, '...');
+
+═══════════════════════════════════════════════════════════════
+FINAL HEAD
+═══════════════════════════════════════════════════════════════
+
+484a337  QA Round 7: R6-GAP-03 and R6-GAP-04 resolution contracts

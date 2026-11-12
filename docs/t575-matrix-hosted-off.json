@@ -1,0 +1,94 @@
+{
+  "project": "vdsen-ecosistema-staging",
+  "at": "2026-10-18T17:19:24.694Z",
+  "phase": "off",
+  "mode": "HOSTED",
+  "results": [
+    {
+      "id": "P01 allowlist holds ONLY synthetic uids created by this run (no real client)",
+      "pass": true,
+      "note": "1 id(s)"
+    },
+    {
+      "id": "P02 canary lists only synthetic clients and EXPLICIT PIDs",
+      "pass": true,
+      "note": "pids=pid-t575-in"
+    },
+    {
+      "id": "P03 evidence is persisted and no canonical state exists yet",
+      "pass": true,
+      "note": "records=0"
+    },
+    {
+      "id": "N01 engine switches OFF => 202 DISARMED and ZERO Firestore writes (digest unchanged)",
+      "pass": true,
+      "note": "202 DISARMED",
+      "evidence": {
+        "before": {
+          "digest": "9b54fbc1be8e",
+          "records": [],
+          "overlays": [],
+          "receipts": 0
+        },
+        "after": {
+          "digest": "9b54fbc1be8e",
+          "records": [],
+          "overlays": [],
+          "receipts": 0
+        }
+      }
+    },
+    {
+      "id": "N02 athlete outside the allowlist, switches OFF => DISARMED, zero writes",
+      "pass": true,
+      "note": "202",
+      "evidence": {
+        "before": {
+          "digest": "12a2f78f320d",
+          "records": [],
+          "overlays": [],
+          "receipts": 0
+        },
+        "after": {
+          "digest": "12a2f78f320d",
+          "records": [],
+          "overlays": [],
+          "receipts": 0
+        }
+      }
+    },
+    {
+      "id": "N03 cron without / with a wrong secret => 401 and zero writes",
+      "pass": true,
+      "note": "401/401"
+    },
+    {
+      "id": "N04 Preview rejection",
+      "pass": null,
+      "note": "NOT_TESTED (no --preview-base)"
+    },
+    {
+      "id": "N05 deactivation procedure: allowlist removed + canary emptied => still zero writes",
+      "pass": true,
+      "note": "202"
+    },
+    {
+      "id": "N06 runtime still answers after teardown (recovery)",
+      "pass": true,
+      "note": "401"
+    },
+    {
+      "id": "CLEANUP all synthetic docs and users removed and verified absent",
+      "pass": true,
+      "note": "{\"docsDeleted\":11,\"docsRemaining\":[],\"usersDeleted\":3,\"usersRemaining\":[]}"
+    },
+    {
+      "id": "ZERO production access: every Firestore/Auth call targeted vdsen-ecosistema-staging",
+      "pass": true,
+      "note": "identitytoolkit.googleapis.com | firestore.googleapis.com [project=vdsen-ecosistema-staging] | vdsen-ecosistema-staging-t573.vercel.app | identitytoolkit.googleapis.com [project=vdsen-ecosistema-staging]"
+    }
+  ],
+  "pass": 10,
+  "fail": 0,
+  "skipped": 1
+}

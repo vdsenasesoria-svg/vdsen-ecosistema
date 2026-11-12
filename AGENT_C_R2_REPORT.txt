@@ -1,0 +1,301 @@
+AGENT C — QA / Cross-Track Auditor
+ROUND 2 REPORT
+Branch: claude/qa-post-t113
+Audit date: 2026-09-16
+Starting commit: da62943 (T113)
+
+════════════════════════════════════════════════════════════════════════════════
+AUDIT SCOPE COVERAGE
+════════════════════════════════════════════════════════════════════════════════
+
+1. updatedAt coverage scan .............. COMPLETED
+2. onSnapshot double-registration ....... COMPLETED (no issue found)
+3. CURRENT_WEEK / REAL_WEEK audit ........ COMPLETED (1 bug found)
+4. selectedClient stale closure ......... COMPLETED (no issue found)
+5. Test gaps ............................ 2 test files added
+
+════════════════════════════════════════════════════════════════════════════════
+CLEAN ITEMS (no findings)
+════════════════════════════════════════════════════════════════════════════════
+
+onSnapshot double-registration (item 2)
+  _clearLiveListeners() at client line 1344 is called at the very top of loadPlan(),
+  before any listener is registered. All five unsub handles
+  (_liveUnsubClient, _liveUnsubPlan, _liveUnsubLogs, _waitUnsubClientDoc,
+  _waitUnsubActivePlan) are checked and called if non-null. No double-registration
+  path found.
+
+selectedClient stale closure (item 4)
+  autoGeneratePlan() captures `clientId` from the DOM select at line 7239 as a
+  local const before the first await. All subsequent Firestore writes (lines 12039,
+  12054, etc.) use this local const, not _detailClientId. _applyAllModuloD captures
+  `planId` at line 14841 before any await. saveNutritionPlan / saveSupplementPlan
+  evaluate _detailClientId synchronously in the updateDoc() argument before the
+  first await — no stale read. No cross-client write risk found.
+
+CURRENT_WEEK/REAL_WEEK in submitPostSession (item 3 partial)
+  submitPostSession (lines 12429, 12440) uses CURRENT_WEEK for postsession_/progrec_.
+  showPostSessionModal can be reached from past-week views (markSessionDone blocks
+  FUTURE weeks but not past weeks). When CURRENT_WEEK < REAL_WEEK, all keys
+  (postsession_, progrec_, done_) are written under CURRENT_WEEK — which is the
+  semantically correct week the user is completing. Not a bug.
+
+updatedAt on ALL in-place plan updates (item 1)
+  Every updateDoc targeting plans/{id} already includes updatedAt:
+    extendPlanWeeks (line 4607) ✓
+    _applyAllModuloD (line 14866) ✓
+    _applyRecLoadsToMonitor (line 15135) ✓
+    saveManualPlan editor (line 16816) ✓
+    prescriptionId stamp (line 16941) ✓
+    _planUpd in update-plan modal (line 17304) ✓
+  Finding QA-R2-02 below covers the plan-creation gap (new plans, not edits).
+
+════════════════════════════════════════════════════════════════════════════════
+FINDINGS
+════════════════════════════════════════════════════════════════════════════════
+
+QA_FINDING_ID: QA-R2-01
+AREA: CURRENT_WEEK / REAL_WEEK mismatch in markSessionDoneFromHistory
+OWNER: CLIENT
+SEVERITY: high
+REPRO:
+  1. Client is on REAL_WEEK = 3 (week 3 is active).
+  2. Client navigates to week 2 by tapping the back-week arrow (CURRENT_WEEK = 2).
+  3. The "⚡ Copiar sem. anterior" button is rendered because CURRENT_WEEK (2) > 1.
+     (The guard CURRENT_WEEK === REAL_WEEK that protects the "Skip" button does NOT
+     apply here — the history button only checks CURRENT_WEEK > 1.)
+  4. Client taps the button → markSessionDoneFromHistory(DIA_ACTIVO) runs.
+  5. Log entries are written under CURRENT_WEEK (2): log_2_0_ei_s*, etc. ← correct.
+  6. BUT postsession_, progrec_, and done_ are written under REAL_WEEK (3):
+       postsession_3_0, progrec_3_0, done_3_0. ← WRONG week.
+  7. _autoAdvanceWeekIfDone(false) is called. If all sessions of REAL_WEEK=3 are
+     now marked done_, it auto-advances to REAL_WEEK=4 and updates Firestore.
+EXPECTED:
+  All key writes (log_, done_, postsession_, progrec_) should use CURRENT_WEEK,
+  OR the function should be blocked when CURRENT_WEEK < REAL_WEEK (same guard as
+  skipSession/markWeekDoneWithPartialData).
+ACTUAL:
+  log entries  → CURRENT_WEEK (past week)
+  done_        → REAL_WEEK    (active week — marked done without user doing it)
+  postsession_ → REAL_WEEK
+  progrec_     → REAL_WEEK
+  Outcome: active week (REAL_WEEK) gains a done_ flag it did not earn; REAL_WEEK
+  may auto-advance to REAL_WEEK+1; the actual past-week session (CURRENT_WEEK)
+  never receives a done_ flag, so UI still shows it as incomplete.
+FILES:
+  vdsen-cliente.html:8396  (function markSessionDoneFromHistory)
+  vdsen-cliente.html:8630  (log_ key — uses CURRENT_WEEK ✓)
+  vdsen-cliente.html:8643  (postsession_ key — uses REAL_WEEK ✗)
+  vdsen-cliente.html:8651  (progrec_ key — uses REAL_WEEK ✗)
+  vdsen-cliente.html:8657  (done_ key — uses REAL_WEEK ✗)
+  vdsen-cliente.html:6713  (button render — guard only CURRENT_WEEK > 1)
+TEST_GAP: yes
+TEST_FILE: tests/t113-r2-markhistory-week-mismatch.test.js
+RECOMMENDED_ACTION:
+  Option A (safer): Add guard at top of markSessionDoneFromHistory:
+    if (CURRENT_WEEK !== REAL_WEEK) { showToast(..., true); return; }
+  Option B (correct but more complex): replace REAL_WEEK with CURRENT_WEEK in all
+    key writes inside markSessionDoneFromHistory so that past-week fill-in is
+    fully attributed to the correct week.
+  Also apply the CURRENT_WEEK === REAL_WEEK guard to the button at line 6713,
+  matching the existing pattern used by the Skip button (line 6712).
+
+────────────────────────────────────────────────────────────────────────────────
+
+QA_FINDING_ID: QA-R2-02
+AREA: updatedAt missing from plan docs created via saveManualPlan / saveImportedPlan
+OWNER: COACH / CLIENT
+SEVERITY: medium
+REPRO:
+  1. Coach creates a plan via the manual builder or imports from text/PDF.
+     saveManualPlan (line 9307) or saveImportedPlan (line 5071) calls addDoc with
+     createdAt but NO updatedAt.
+  2. Client app loads: plan listener fires with the initial snapshot.
+     vdsen-cliente.html line 1705-1706:
+       var updatedAt = pd.updatedAt || '';
+       if (!updatedAt) return;   ← returns immediately; FB._planLastUpdatedAt never set.
+  3. Coach makes the FIRST in-place edit to the plan (e.g., changes a rep target
+     in the plan editor). updateDoc now includes updatedAt.
+  4. Plan listener fires: updatedAt = '2026-09-16T10:00:00.000Z' (non-empty).
+     Line 1707:
+       if (!FB._planLastUpdatedAt) { FB._planLastUpdatedAt = updatedAt; return; }
+     ← baseline stored, listener returns WITHOUT reloading. Client does not see the edit.
+  5. Coach makes the SECOND edit. Listener finally detects the change and reloads.
+EXPECTED:
+  Any coach edit to an active plan should trigger a client reload on the first edit.
+ACTUAL:
+  The first in-place edit after a manual/imported plan creation is silently invisible
+  to the client until a second edit happens.
+NOTE:
+  Plans created via AI generation path (setDoc at line 8558) also lack updatedAt
+  but are assigned via activePlanId change → client reloads from the client-doc
+  listener (line 1685), not the plan listener. That path is unaffected.
+  Only the manual/import paths that go through addDoc → activePlanId change → first
+  later in-place edit are affected.
+FILES:
+  vdsen-coach.html:9307-9316  (saveManualPlan addDoc, no updatedAt)
+  vdsen-coach.html:5071-5079  (saveImportedPlan addDoc, no updatedAt)
+  vdsen-cliente.html:1704-1708 (plan listener guard)
+TEST_GAP: yes
+TEST_FILE: tests/t113-r2-plan-missing-updatedat.test.js
+RECOMMENDED_ACTION:
+  Add updatedAt to both addDoc payloads:
+    saveManualPlan  (line ~9315): add   updatedAt: new Date().toISOString()
+    saveImportedPlan (line ~5079): add  updatedAt: new Date().toISOString()
+  No client-side change needed — the listener already handles non-empty updatedAt.
+
+────────────────────────────────────────────────────────────────────────────────
+
+QA_FINDING_ID: QA-R2-03
+AREA: Duplicate setWeek function definition — dead code
+OWNER: CLIENT
+SEVERITY: low
+REPRO:
+  Not a runtime repro; detected via static analysis.
+  Two setWeek functions are defined at module scope in vdsen-cliente.html:
+    Line 3507: function setWeek(w) { CURRENT_WEEK = w; renderEntrenamiento(); renderResumen(); }
+    Line 8769: function setWeek(w) { CURRENT_WEEK = w; _autoAdvanceDia(); renderEntrenamiento(); renderResumen(); }
+  In JavaScript, when two function declarations share the same name in the same
+  scope, the later one wins. All callers use the version at line 8769.
+  The definition at line 3507 is dead code.
+EXPECTED:
+  One canonical setWeek function.
+ACTUAL:
+  Two definitions. The one at 3507 (which does NOT call _autoAdvanceDia) is silently
+  overridden and never runs, but it misleads any developer who reads it.
+  If the file is ever processed by a linter / bundler with strict duplicate-check,
+  this will produce a warning or error.
+FILES:
+  vdsen-cliente.html:3507
+  vdsen-cliente.html:8769
+TEST_GAP: no
+RECOMMENDED_ACTION:
+  Remove the dead definition at line 3507. Confirm callers (goToWeek at 3514,
+  or any onclick="setWeek(...)") are unaffected — they already call the version
+  at 8769 due to JS hoisting rules.
+
+────────────────────────────────────────────────────────────────────────────────
+
+QA_FINDING_ID: QA-R2-04
+AREA: _logsLastSeen 500 ms echo window can suppress coach week-reset (F4, still open)
+OWNER: CLIENT
+SEVERITY: low
+REPRO:
+  1. Client is actively recording a set. _doSaveLogs() writes updatedAt = Date.now()
+     (e.g., T = 1000). _logsLastSeen is updated to 1000.
+  2. Within 500 ms (T = 1300), the coach performs resetClientWeek. Firestore writes
+     logs/{clientId} with updatedAt = 1300.
+  3. Client's _liveUnsubLogs fires with ts = 1300.
+     Line 1726: if (_logsLastSeen && ts <= _logsLastSeen + 500) return;
+     → 1300 <= 1000 + 500 (1500) → true → listener returns.
+  4. Coach's week reset is silently dropped. Client continues from old week.
+     The rollback guard at line 1735 (newWeek < REAL_WEEK → reload) is never reached.
+EXPECTED:
+  Coach-originated writes should always be processed, even within 500 ms of a local write.
+ACTUAL:
+  Any coach write to logs/{clientId} within 500 ms of the last client write is silently
+  ignored. The 500 ms window exists to suppress local echoes but cannot distinguish
+  between own echoes and external writes.
+NOTE:
+  500 ms is short and the race requires exact timing, making this low-probability
+  in practice. However, the coach reset is a high-value operation: false suppression
+  leaves the client stuck in a completed week. This was F4 in Round 1 and remains open.
+FILES:
+  vdsen-cliente.html:1721-1727 (_logsLastSeen / echo suppression logic)
+  vdsen-coach.html:17364,17396 (resetClientWeek / resetClientWeekKeepSessions set updatedAt)
+TEST_GAP: no (timing-dependent — impractical to test deterministically as a static test)
+RECOMMENDED_ACTION:
+  Replace the numeric window with a write-origin marker. Options:
+  A. Write an `updatedBy: 'coach'` field in coach resets; client checks and always
+     processes writes where updatedBy !== 'client'.
+  B. Use a monotonically increasing server timestamp on the coach write and compare
+     against a locally-stored sessionStartTime rather than _logsLastSeen.
+  C. Reduce the window to 100–200 ms (coach resets require a UI confirmation dialog
+     that takes >500 ms, so the timing risk is lowered).
+
+────────────────────────────────────────────────────────────────────────────────
+
+QA_FINDING_ID: QA-R2-05
+AREA: calculateProgression reads ci_sem_CURRENT_WEEK inside markWeekDoneWithPartialData
+      which iterates over REAL_WEEK's pending sessions
+OWNER: CLIENT
+SEVERITY: low
+REPRO:
+  1. Client is on REAL_WEEK = 3. CURRENT_WEEK = 3 (matching — normal state).
+  2. Coach uses "resetClientWeek" → client reloads at REAL_WEEK = 1, CURRENT_WEEK = 1.
+     OR: client navigates back (CURRENT_WEEK = 2) while REAL_WEEK = 3, then opens
+     Entrenamiento tab (line 1805 resets CURRENT_WEEK = REAL_WEEK = 3 — safe).
+     In the normal flow CURRENT_WEEK === REAL_WEEK when markWeekDoneWithPartialData runs.
+  3. Inside markWeekDoneWithPartialData, calculateProgression(di, ...) is called for
+     each pending session of REAL_WEEK.
+  4. calculateProgression (line 13674) reads:
+        var ciKey = 'ci_sem_'+CURRENT_WEEK;
+        var ci = LOGS[ciKey] || {};
+     This reads the check-in for CURRENT_WEEK, not necessarily the week being closed
+     (REAL_WEEK). If CURRENT_WEEK !== REAL_WEEK at call time (e.g., user navigated
+     back just before calling the bulk-close), deload triggers and WHO-5 values may
+     come from the wrong week's check-in.
+EXPECTED:
+  calculateProgression should receive the target week as a parameter and read
+  ci_sem_{targetWeek} rather than relying on the CURRENT_WEEK global.
+ACTUAL:
+  calculateProgression always reads ci_sem_CURRENT_WEEK, creating an implicit
+  dependency on the caller setting CURRENT_WEEK correctly. If called while
+  CURRENT_WEEK != REAL_WEEK, deload signals and RPE calculations are misattributed.
+NOTE:
+  markWeekDoneWithPartialData can only be triggered from the Entrenamiento tab which
+  resets CURRENT_WEEK = REAL_WEEK at tab entry (line 1805), so the window is narrow.
+  However, the coupling to a global rather than a parameter is a fragile design.
+FILES:
+  vdsen-cliente.html:13674  (calculateProgression reads ci_sem_CURRENT_WEEK)
+  vdsen-cliente.html:8494-8565 (markWeekDoneWithPartialData calls calculateProgression
+                                without targeting a specific week)
+TEST_GAP: no (requires tab-navigation race, covered by F1 pattern)
+RECOMMENDED_ACTION:
+  Add an optional `weekNum` parameter to calculateProgression:
+    function calculateProgression(di, postData, weekNum) {
+      var w = weekNum || CURRENT_WEEK;
+      ...
+      var ciKey = 'ci_sem_'+w;
+  Pass REAL_WEEK from markWeekDoneWithPartialData and markWeekCompleteFromHistory.
+
+════════════════════════════════════════════════════════════════════════════════
+NEW TEST FILES ADDED
+════════════════════════════════════════════════════════════════════════════════
+
+tests/t113-r2-markhistory-week-mismatch.test.js
+  Covers QA-R2-01.
+  4 tests:
+  - Asserts log_ entries use CURRENT_WEEK (passes — documents correct part)
+  - Asserts done_ uses REAL_WEEK (passes — documents the bug)
+  - Asserts all key writes use the same week variable (FAILS — exposes mismatch)
+  - Asserts history button has CURRENT_WEEK === REAL_WEEK guard (FAILS — guard missing)
+
+tests/t113-r2-plan-missing-updatedat.test.js
+  Covers QA-R2-02.
+  4 tests:
+  - Asserts saveManualPlan addDoc includes updatedAt (FAILS — not present)
+  - Asserts saveImportedPlan addDoc includes updatedAt (FAILS — not present)
+  - Verifies client listener returns on empty updatedAt (passes — confirms behavior)
+  - Verifies baseline capture guard exists (passes — confirms behavior)
+
+════════════════════════════════════════════════════════════════════════════════
+ROUND 2 FINDINGS SUMMARY
+════════════════════════════════════════════════════════════════════════════════
+
+ID          SEVERITY  OWNER   AREA
+QA-R2-01    high      CLIENT  markSessionDoneFromHistory REAL_WEEK/CURRENT_WEEK mismatch
+QA-R2-02    medium    COACH/  Plans created without updatedAt — first coach edit invisible
+                      CLIENT
+QA-R2-03    low       CLIENT  Duplicate setWeek definition (dead code at line 3507)
+QA-R2-04    low       CLIENT  _logsLastSeen 500ms window (F4 from R1, still open)
+QA-R2-05    low       CLIENT  calculateProgression reads CURRENT_WEEK global instead of
+                              target week parameter (fragile coupling)
+
+No critical findings. QA-R2-01 is the only high-severity item and is directly
+actionable (2-line fix: add guard at top of markSessionDoneFromHistory OR change
+REAL_WEEK to CURRENT_WEEK in the 3 key writes inside the function).
+
+═══════════════════════════════════════════════════════════
+END OF AGENT C ROUND 2 REPORT
+═══════════════════════════════════════════════════════════

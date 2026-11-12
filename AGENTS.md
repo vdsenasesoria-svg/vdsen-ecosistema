@@ -1,0 +1,19 @@
+# VDSEN agent contract
+
+- Canonical repo: `vdsenasesoria-svg/vdsen-ecosistema`; branch: `codex/client-app-next`. Never commit, push, merge, or force-push `main`. Never force-push any branch.
+- Firebase production: `vdsen-ecosistema`; staging: `vdsen-ecosistema-staging`.
+- Vercel production: `prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN`, team `team_VZc5H7Q1DBIJ3g0mwrSBz1o8`.
+- Forbidden: `vdsen-planes`, broad IAM changes, service-account keys, production identities/data migrations, secret retrieval or printing by agents.
+- A0 analysis; A1 branch edits; A2 PR + tests; A3 explicitly authorized staging; A4 production only through controlled GitHub workflows. Codex/Claude default A2; A3 requires staging scope.
+- Production path: `.github/workflows/vdsen-release-prod.yml`, Environment `Production`, Google WIF, scoped Vercel credential. Agents never run production mutations locally.
+- Source of truth: `.release/vdsen-client.json`, `docs/FIRESTORE_DEPLOYMENT_RUNBOOK.md`, existing runtime engines/contracts. Use small compatible deltas; no unrelated refactors.
+- Invariant: `NUMERIC_APPLY_ENABLED=false`. Never enable numeric application in a release infrastructure change.
+- External contract: Environment `Production` (ID `13808916927`), vars `GCP_PROJECT_ID`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_RELEASE_SERVICE_ACCOUNT`, `VERCEL_PROJECT_ID`, `VERCEL_ORG_ID`, `PRODUCTION_RELEASE_ENABLED`; sole Environment secret `VERCEL_TOKEN`. Initial kill switch `false`. Expected service account: `vdsen-release-bot@vdsen-ecosistema.iam.gserviceaccount.com`.
+- Gates: explicit approved runtime SHA, current deployment provenance, runtime/package equivalence, target rules hash, exact READY index, compatible captured rollback rules artifact, rollback metadata, exact baseline-aware unit + emulator results, no secrets, reviewed preconditions. Never waive release/security/provenance/secret/kill-switch/numeric invariants; baseline fixes require observed PASS and reviewed manifest removal.
+- Forward scope: verify current approved app → exact rules only → smoke; no preview promotion. Recovery/rollback: restore and verify compatible old rules → old app → verify SHA → smoke. Never revert app if rule restoration or source provenance fails.
+- Data boundaries: no release tool writes Firestore documents, Auth identities, entitlements or indexes. Synthetic emulator users only. Production authenticated/write smoke reports GAP when evidence is unavailable; GAP is never PASS.
+- Testing: `node scripts/release/check.cjs`; infrastructure tests; `node scripts/release/baseline.cjs unit`; `node scripts/release/baseline.cjs emulator`; `git diff --check`. Report raw suite results separately from baseline match and gate status. No count-only waiver; critical failures always block. Avoid broad reruns unless baseline verification requires them.
+- Security: production credentials exist only in protected workflow jobs, never in repo or agent sessions. No `pull_request_target`, untrusted PR code with secrets, or workflow token write permission.
+- Bootstrap: `vdsen-oidc-validate.yml` uses protected Production on canonical branch push for read-only metadata authentication checks while the kill switch is false; no release mutation path or client-data access. Repo release-check also runs on canonical push using the pinned state SHA when no dispatch input exists.
+- Improvement loop may inspect tests/TODO/failed CI/baseline and prepare branch/PR proposals. No automatic waivers, production secrets, IAM changes, deployment, automatic merge, data repair or numeric activation. Preserve stable IDs, tenant isolation, persisted JSON contracts and keyboard accessibility.
+- Push only with verified workflow-write permission. If unavailable/rejected: `PENDING_AUTH_WORKFLOW_SCOPE`; preserve workflow files and local commits, never retry by force or push to main.

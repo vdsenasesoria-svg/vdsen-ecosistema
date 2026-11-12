@@ -1,0 +1,2967 @@
+{
+ "meta": {
+  "source": "T583 real-Client E2E on local emulators (Auth + Firestore); the Client UI wrote these entries and ran its own progression algorithm",
+  "clientAlgorithm": "vdsen-cliente.html calculateProgression (VDSEN v3.1)",
+  "capturedAt": "2026-10-19T03:23:01.816Z"
+ },
+ "scenarios": {
+  "A": {
+   "plan": {
+    "schema": "vdsen-plan-v2",
+    "status": "active",
+    "generatedBy": "import",
+    "createdAt": "2026-09-26T00:00:00.000Z",
+    "updatedAt": "2026-09-26T00:00:00.000Z",
+    "weeks": 4,
+    "daysPerWeek": 1,
+    "days": [
+     {
+      "dayIndex": 0,
+      "label": "Día 1 - Empuje",
+      "exercises": [
+       {
+        "exerciseName": "Press de pecho E2E",
+        "alternatives": [],
+        "technique": "straight",
+        "techniqueNote": "",
+        "coachNote": "",
+        "supersetGroup": "",
+        "nivel_medio": null,
+        "variacion_vertical": null,
+        "sets": [
+         {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         },
+         {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         },
+         {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         }
+        ],
+        "prescriptionExerciseId": "pid-e2e-a-1"
+       },
+       {
+        "exerciseName": "Curl predicador E2E",
+        "alternatives": [],
+        "technique": "straight",
+        "techniqueNote": "",
+        "coachNote": "",
+        "supersetGroup": "",
+        "nivel_medio": null,
+        "variacion_vertical": null,
+        "sets": [
+         {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 1,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         },
+         {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 1,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         },
+         {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 1,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         }
+        ],
+        "repsRange": {
+         "min": 8,
+         "max": 12
+        },
+        "prescriptionExerciseId": "pid-e2e-a-2"
+       }
+      ]
+     }
+    ]
+   },
+   "entriesThroughW2": {
+    "log_1_0_0_s0": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-a-1",
+     "ts": 1790510400000
+    },
+    "log_1_0_0_s1": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-a-1",
+     "ts": 1790510400001
+    },
+    "log_1_0_0_s2": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-a-1",
+     "ts": 1790510400002
+    },
+    "log_1_0_1_s0": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-a-2",
+     "ts": 1790510400100
+    },
+    "log_1_0_1_s1": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-a-2",
+     "ts": 1790510400101
+    },
+    "log_1_0_1_s2": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-a-2",
+     "ts": 1790510400102
+    },
+    "done_1_0": true,
+    "log_2_0_0_s0": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "4",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379791904,
+     "prescriptionExerciseId": "pid-e2e-a-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_0_s1": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "4",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379793624,
+     "prescriptionExerciseId": "pid-e2e-a-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_0_s2": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "4",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379795353,
+     "prescriptionExerciseId": "pid-e2e-a-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_1_s0": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "3",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379797072,
+     "prescriptionExerciseId": "pid-e2e-a-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "log_2_0_1_s1": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "3",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379798795,
+     "prescriptionExerciseId": "pid-e2e-a-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "log_2_0_1_s2": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "3",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379800505,
+     "prescriptionExerciseId": "pid-e2e-a-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "postsession_2_0": {
+     "eimd": 1,
+     "articularPain": {
+      "present": false,
+      "pattern": ""
+     },
+     "sleepHours": 8,
+     "rpeAverage": 7,
+     "ts": 1792379803422
+    },
+    "progrec_2_0": {
+     "recommendations": [
+      {
+       "exerciseName": "Press de pecho E2E",
+       "prescriptionExerciseId": "pid-e2e-a-1",
+       "action": "increase_load",
+       "newLoad": 101.5,
+       "newSets": 3,
+       "newReps": 10,
+       "prescribedRIR": 1,
+       "observedRIR": 4,
+       "observedICS": 7,
+       "observedPump": 1,
+       "repRangeTarget": {
+        "low": 10,
+        "high": 10
+       },
+       "rirTarget": 0,
+       "reason": "Hay margen para mejorar técnica — consolida antes de agregar series | Reps cumplidas y quedaron reps en el tanque (RIR 4.0 vs objetivo 1) — subimos +1.50 KG",
+       "substituteExercise": null,
+       "trend": {
+        "prevLoad": 100,
+        "prevReps": 10,
+        "prevSets": 3,
+        "prevICS": 7
+       },
+       "setMetrics": {
+        "validSetCount": 3,
+        "minRIR": 4,
+        "maxRIR": 4,
+        "setsWithinRirBand": 0,
+        "setsAtTopRange": 3,
+        "setCompletionRate": 1
+       }
+      },
+      {
+       "exerciseName": "Curl predicador E2E",
+       "prescriptionExerciseId": "pid-e2e-a-2",
+       "action": "increase_load",
+       "newLoad": 101.5,
+       "newSets": 3,
+       "newReps": 10,
+       "prescribedRIR": 1,
+       "observedRIR": 3,
+       "observedICS": 7,
+       "observedPump": 1,
+       "repRangeTarget": {
+        "low": 10,
+        "high": 10
+       },
+       "rirTarget": 0,
+       "reason": "Hay margen para mejorar técnica — consolida antes de agregar series | Reps cumplidas y quedaron reps en el tanque (RIR 3.0 vs objetivo 1) — subimos +1.50 KG",
+       "substituteExercise": null,
+       "trend": {
+        "prevLoad": 100,
+        "prevReps": 10,
+        "prevSets": 3,
+        "prevICS": 7
+       },
+       "setMetrics": {
+        "validSetCount": 3,
+        "minRIR": 3,
+        "maxRIR": 3,
+        "setsWithinRirBand": 0,
+        "setsAtTopRange": 3,
+        "setCompletionRate": 1
+       }
+      }
+     ],
+     "deloadTriggers": [],
+     "weekNum": 2,
+     "calculatedAt": "2026-10-19T03:16:43.424Z",
+     "engineState": {
+      "engineVersion": "3.1.0",
+      "generatedAt": "2026-10-19T03:16:43.424Z",
+      "updatedAt": "2026-10-19T03:16:43.424Z",
+      "weekNum": 2,
+      "totalWeeks": 4,
+      "deloadTriggered": false,
+      "isLastWeek": false,
+      "deloadTriggers": [],
+      "globalAction": "load_up",
+      "actionCounts": {
+       "increase_load": 2
+      },
+      "exerciseSummary": [
+       {
+        "name": "Press de pecho E2E",
+        "action": "increase_load",
+        "newLoad": 101.5,
+        "newSets": 3
+       },
+       {
+        "name": "Curl predicador E2E",
+        "action": "increase_load",
+        "newLoad": 101.5,
+        "newSets": 3
+       }
+      ],
+      "avgNewLoad": 101.5,
+      "checkinRef": null,
+      "observationsCount": 12,
+      "confidence": "low"
+     }
+    },
+    "engine_state": {
+     "engineVersion": "3.1.0",
+     "generatedAt": "2026-10-19T03:17:46.371Z",
+     "updatedAt": "2026-10-19T03:17:46.371Z",
+     "weekNum": 3,
+     "totalWeeks": 4,
+     "deloadTriggered": false,
+     "isLastWeek": false,
+     "deloadTriggers": [],
+     "globalAction": "load_up",
+     "actionCounts": {
+      "increase_load": 2
+     },
+     "exerciseSummary": [
+      {
+       "name": "Press de pecho E2E",
+       "action": "increase_load",
+       "newLoad": 104,
+       "newSets": 3
+      },
+      {
+       "name": "Curl predicador E2E",
+       "action": "increase_load",
+       "newLoad": 101.5,
+       "newSets": 3
+      }
+     ],
+     "avgNewLoad": 102.75,
+     "checkinRef": null,
+     "observationsCount": 18,
+     "confidence": "low"
+    },
+    "done_2_0": {
+     "ts": 1792379803425
+    }
+   },
+   "entriesThroughW3": {
+    "log_1_0_0_s0": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-a-1",
+     "ts": 1790510400000
+    },
+    "log_1_0_0_s1": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-a-1",
+     "ts": 1790510400001
+    },
+    "log_1_0_0_s2": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-a-1",
+     "ts": 1790510400002
+    },
+    "log_1_0_1_s0": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-a-2",
+     "ts": 1790510400100
+    },
+    "log_1_0_1_s1": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-a-2",
+     "ts": 1790510400101
+    },
+    "log_1_0_1_s2": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-a-2",
+     "ts": 1790510400102
+    },
+    "done_1_0": true,
+    "log_2_0_0_s0": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "4",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379791904,
+     "prescriptionExerciseId": "pid-e2e-a-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_0_s1": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "4",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379793624,
+     "prescriptionExerciseId": "pid-e2e-a-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_0_s2": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "4",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379795353,
+     "prescriptionExerciseId": "pid-e2e-a-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_1_s0": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "3",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379797072,
+     "prescriptionExerciseId": "pid-e2e-a-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "log_2_0_1_s1": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "3",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379798795,
+     "prescriptionExerciseId": "pid-e2e-a-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "log_2_0_1_s2": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "3",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379800505,
+     "prescriptionExerciseId": "pid-e2e-a-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "postsession_2_0": {
+     "eimd": 1,
+     "articularPain": {
+      "present": false,
+      "pattern": ""
+     },
+     "sleepHours": 8,
+     "rpeAverage": 7,
+     "ts": 1792379803422
+    },
+    "progrec_2_0": {
+     "recommendations": [
+      {
+       "exerciseName": "Press de pecho E2E",
+       "prescriptionExerciseId": "pid-e2e-a-1",
+       "action": "increase_load",
+       "newLoad": 101.5,
+       "newSets": 3,
+       "newReps": 10,
+       "prescribedRIR": 1,
+       "observedRIR": 4,
+       "observedICS": 7,
+       "observedPump": 1,
+       "repRangeTarget": {
+        "low": 10,
+        "high": 10
+       },
+       "rirTarget": 0,
+       "reason": "Hay margen para mejorar técnica — consolida antes de agregar series | Reps cumplidas y quedaron reps en el tanque (RIR 4.0 vs objetivo 1) — subimos +1.50 KG",
+       "substituteExercise": null,
+       "trend": {
+        "prevLoad": 100,
+        "prevReps": 10,
+        "prevSets": 3,
+        "prevICS": 7
+       },
+       "setMetrics": {
+        "validSetCount": 3,
+        "minRIR": 4,
+        "maxRIR": 4,
+        "setsWithinRirBand": 0,
+        "setsAtTopRange": 3,
+        "setCompletionRate": 1
+       }
+      },
+      {
+       "exerciseName": "Curl predicador E2E",
+       "prescriptionExerciseId": "pid-e2e-a-2",
+       "action": "increase_load",
+       "newLoad": 101.5,
+       "newSets": 3,
+       "newReps": 10,
+       "prescribedRIR": 1,
+       "observedRIR": 3,
+       "observedICS": 7,
+       "observedPump": 1,
+       "repRangeTarget": {
+        "low": 10,
+        "high": 10
+       },
+       "rirTarget": 0,
+       "reason": "Hay margen para mejorar técnica — consolida antes de agregar series | Reps cumplidas y quedaron reps en el tanque (RIR 3.0 vs objetivo 1) — subimos +1.50 KG",
+       "substituteExercise": null,
+       "trend": {
+        "prevLoad": 100,
+        "prevReps": 10,
+        "prevSets": 3,
+        "prevICS": 7
+       },
+       "setMetrics": {
+        "validSetCount": 3,
+        "minRIR": 3,
+        "maxRIR": 3,
+        "setsWithinRirBand": 0,
+        "setsAtTopRange": 3,
+        "setCompletionRate": 1
+       }
+      }
+     ],
+     "deloadTriggers": [],
+     "weekNum": 2,
+     "calculatedAt": "2026-10-19T03:16:43.424Z",
+     "engineState": {
+      "engineVersion": "3.1.0",
+      "generatedAt": "2026-10-19T03:16:43.424Z",
+      "updatedAt": "2026-10-19T03:16:43.424Z",
+      "weekNum": 2,
+      "totalWeeks": 4,
+      "deloadTriggered": false,
+      "isLastWeek": false,
+      "deloadTriggers": [],
+      "globalAction": "load_up",
+      "actionCounts": {
+       "increase_load": 2
+      },
+      "exerciseSummary": [
+       {
+        "name": "Press de pecho E2E",
+        "action": "increase_load",
+        "newLoad": 101.5,
+        "newSets": 3
+       },
+       {
+        "name": "Curl predicador E2E",
+        "action": "increase_load",
+        "newLoad": 101.5,
+        "newSets": 3
+       }
+      ],
+      "avgNewLoad": 101.5,
+      "checkinRef": null,
+      "observationsCount": 12,
+      "confidence": "low"
+     }
+    },
+    "engine_state": {
+     "engineVersion": "3.1.0",
+     "generatedAt": "2026-10-19T03:17:46.371Z",
+     "updatedAt": "2026-10-19T03:17:46.371Z",
+     "weekNum": 3,
+     "totalWeeks": 4,
+     "deloadTriggered": false,
+     "isLastWeek": false,
+     "deloadTriggers": [],
+     "globalAction": "load_up",
+     "actionCounts": {
+      "increase_load": 2
+     },
+     "exerciseSummary": [
+      {
+       "name": "Press de pecho E2E",
+       "action": "increase_load",
+       "newLoad": 104,
+       "newSets": 3
+      },
+      {
+       "name": "Curl predicador E2E",
+       "action": "increase_load",
+       "newLoad": 101.5,
+       "newSets": 3
+      }
+     ],
+     "avgNewLoad": 102.75,
+     "checkinRef": null,
+     "observationsCount": 18,
+     "confidence": "low"
+    },
+    "done_2_0": {
+     "ts": 1792379803425
+    },
+    "log_3_0_0_s0": {
+     "carga": "102.5",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "4",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379854828,
+     "prescriptionExerciseId": "pid-e2e-a-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_3_0_0_s1": {
+     "carga": "102.5",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "4",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379856570,
+     "prescriptionExerciseId": "pid-e2e-a-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_3_0_0_s2": {
+     "carga": "102.5",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "4",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379858284,
+     "prescriptionExerciseId": "pid-e2e-a-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_3_0_1_s0": {
+     "carga": "100",
+     "reps": "12",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "1",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379860015,
+     "prescriptionExerciseId": "pid-e2e-a-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "log_3_0_1_s1": {
+     "carga": "100",
+     "reps": "12",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "1",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379861742,
+     "prescriptionExerciseId": "pid-e2e-a-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "log_3_0_1_s2": {
+     "carga": "100",
+     "reps": "12",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "1",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379863460,
+     "prescriptionExerciseId": "pid-e2e-a-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "postsession_3_0": {
+     "eimd": 1,
+     "articularPain": {
+      "present": false,
+      "pattern": ""
+     },
+     "sleepHours": 8,
+     "rpeAverage": 7,
+     "ts": 1792379866370
+    },
+    "progrec_3_0": {
+     "recommendations": [
+      {
+       "exerciseName": "Press de pecho E2E",
+       "prescriptionExerciseId": "pid-e2e-a-1",
+       "action": "increase_load",
+       "newLoad": 104,
+       "newSets": 3,
+       "newReps": 10,
+       "prescribedRIR": 0,
+       "observedRIR": 4,
+       "observedICS": 7,
+       "observedPump": 1,
+       "repRangeTarget": {
+        "low": 10,
+        "high": 10
+       },
+       "rirTarget": 3,
+       "reason": "Hay margen para mejorar técnica — consolida antes de agregar series | Reps cumplidas y quedaron reps en el tanque (RIR 4.0 vs objetivo 0) — subimos +1.50 KG",
+       "substituteExercise": null,
+       "trend": {
+        "prevLoad": 100,
+        "prevReps": 10,
+        "prevSets": 3,
+        "prevICS": 7
+       },
+       "setMetrics": {
+        "validSetCount": 3,
+        "minRIR": 4,
+        "maxRIR": 4,
+        "setsWithinRirBand": 0,
+        "setsAtTopRange": 3,
+        "setCompletionRate": 1
+       }
+      },
+      {
+       "exerciseName": "Curl predicador E2E",
+       "prescriptionExerciseId": "pid-e2e-a-2",
+       "action": "increase_load",
+       "newLoad": 101.5,
+       "newSets": 3,
+       "newReps": 10,
+       "prescribedRIR": 0,
+       "observedRIR": 1,
+       "observedICS": 7,
+       "observedPump": 1,
+       "repRangeTarget": {
+        "low": 10,
+        "high": 10
+       },
+       "rirTarget": 3,
+       "reason": "Hay margen para mejorar técnica — consolida antes de agregar series | Techo de reps del rango alcanzado con RIR en objetivo — subimos carga +1.50 KG",
+       "substituteExercise": null,
+       "trend": {
+        "prevLoad": 100,
+        "prevReps": 10,
+        "prevSets": 3,
+        "prevICS": 7
+       },
+       "setMetrics": {
+        "validSetCount": 3,
+        "minRIR": 1,
+        "maxRIR": 1,
+        "setsWithinRirBand": 3,
+        "setsAtTopRange": 3,
+        "setCompletionRate": 1
+       }
+      }
+     ],
+     "deloadTriggers": [],
+     "weekNum": 3,
+     "calculatedAt": "2026-10-19T03:17:46.371Z",
+     "engineState": {
+      "engineVersion": "3.1.0",
+      "generatedAt": "2026-10-19T03:17:46.371Z",
+      "updatedAt": "2026-10-19T03:17:46.371Z",
+      "weekNum": 3,
+      "totalWeeks": 4,
+      "deloadTriggered": false,
+      "isLastWeek": false,
+      "deloadTriggers": [],
+      "globalAction": "load_up",
+      "actionCounts": {
+       "increase_load": 2
+      },
+      "exerciseSummary": [
+       {
+        "name": "Press de pecho E2E",
+        "action": "increase_load",
+        "newLoad": 104,
+        "newSets": 3
+       },
+       {
+        "name": "Curl predicador E2E",
+        "action": "increase_load",
+        "newLoad": 101.5,
+        "newSets": 3
+       }
+      ],
+      "avgNewLoad": 102.75,
+      "checkinRef": null,
+      "observationsCount": 18,
+      "confidence": "low"
+     }
+    },
+    "done_3_0": {
+     "ts": 1792379866371
+    }
+   },
+   "interventions": []
+  },
+  "B": {
+   "plan": {
+    "schema": "vdsen-plan-v2",
+    "status": "active",
+    "generatedBy": "import",
+    "createdAt": "2026-09-26T00:00:00.000Z",
+    "updatedAt": "2026-09-26T00:00:00.000Z",
+    "weeks": 4,
+    "daysPerWeek": 1,
+    "days": [
+     {
+      "dayIndex": 0,
+      "label": "Día 1 - Empuje",
+      "exercises": [
+       {
+        "exerciseName": "Press de pecho E2E",
+        "alternatives": [],
+        "technique": "straight",
+        "techniqueNote": "",
+        "coachNote": "",
+        "supersetGroup": "",
+        "nivel_medio": null,
+        "variacion_vertical": null,
+        "sets": [
+         {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         },
+         {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         },
+         {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         }
+        ],
+        "prescriptionExerciseId": "pid-e2e-b-1"
+       },
+       {
+        "exerciseName": "Curl predicador E2E",
+        "alternatives": [],
+        "technique": "straight",
+        "techniqueNote": "",
+        "coachNote": "",
+        "supersetGroup": "",
+        "nivel_medio": null,
+        "variacion_vertical": null,
+        "sets": [
+         {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 1,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         },
+         {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 1,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         },
+         {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 1,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         }
+        ],
+        "repsRange": {
+         "min": 8,
+         "max": 12
+        },
+        "prescriptionExerciseId": "pid-e2e-b-2"
+       }
+      ]
+     }
+    ]
+   },
+   "entriesThroughW2": {
+    "log_1_0_0_s0": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-b-1",
+     "ts": 1790510400000
+    },
+    "log_1_0_0_s1": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-b-1",
+     "ts": 1790510400001
+    },
+    "log_1_0_0_s2": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-b-1",
+     "ts": 1790510400002
+    },
+    "log_1_0_1_s0": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-b-2",
+     "ts": 1790510400100
+    },
+    "log_1_0_1_s1": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-b-2",
+     "ts": 1790510400101
+    },
+    "log_1_0_1_s2": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-b-2",
+     "ts": 1790510400102
+    },
+    "done_1_0": true,
+    "log_2_0_0_s0": {
+     "carga": "100",
+     "reps": "9",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "1",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379915366,
+     "prescriptionExerciseId": "pid-e2e-b-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_0_s1": {
+     "carga": "100",
+     "reps": "9",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "1",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379917099,
+     "prescriptionExerciseId": "pid-e2e-b-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_0_s2": {
+     "carga": "100",
+     "reps": "9",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "1",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379918815,
+     "prescriptionExerciseId": "pid-e2e-b-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_1_s0": {
+     "carga": "100",
+     "reps": "9",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "1",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379920549,
+     "prescriptionExerciseId": "pid-e2e-b-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "log_2_0_1_s1": {
+     "carga": "100",
+     "reps": "9",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "1",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379922266,
+     "prescriptionExerciseId": "pid-e2e-b-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "log_2_0_1_s2": {
+     "carga": "100",
+     "reps": "9",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "1",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379924003,
+     "prescriptionExerciseId": "pid-e2e-b-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "postsession_2_0": {
+     "eimd": 1,
+     "articularPain": {
+      "present": false,
+      "pattern": ""
+     },
+     "sleepHours": 8,
+     "rpeAverage": 7,
+     "ts": 1792379926891
+    },
+    "progrec_2_0": {
+     "recommendations": [
+      {
+       "exerciseName": "Press de pecho E2E",
+       "prescriptionExerciseId": "pid-e2e-b-1",
+       "action": "maintain",
+       "newLoad": 100,
+       "newSets": 3,
+       "newReps": 10,
+       "prescribedRIR": 1,
+       "observedRIR": 1,
+       "observedICS": 7,
+       "observedPump": 1,
+       "repRangeTarget": {
+        "low": 10,
+        "high": 10
+       },
+       "rirTarget": 0,
+       "reason": "Hay margen para mejorar técnica — consolida antes de agregar series | RIR en objetivo — apuntá a 10 reps (techo del rango) antes de subir carga",
+       "substituteExercise": null,
+       "trend": {
+        "prevLoad": 100,
+        "prevReps": 10,
+        "prevSets": 3,
+        "prevICS": 7
+       },
+       "setMetrics": {
+        "validSetCount": 3,
+        "minRIR": 1,
+        "maxRIR": 1,
+        "setsWithinRirBand": 3,
+        "setsAtTopRange": 0,
+        "setCompletionRate": 1
+       }
+      },
+      {
+       "exerciseName": "Curl predicador E2E",
+       "prescriptionExerciseId": "pid-e2e-b-2",
+       "action": "maintain",
+       "newLoad": 100,
+       "newSets": 3,
+       "newReps": 10,
+       "prescribedRIR": 1,
+       "observedRIR": 1,
+       "observedICS": 7,
+       "observedPump": 1,
+       "repRangeTarget": {
+        "low": 10,
+        "high": 10
+       },
+       "rirTarget": 0,
+       "reason": "Hay margen para mejorar técnica — consolida antes de agregar series | RIR en objetivo — apuntá a 10 reps (techo del rango) antes de subir carga",
+       "substituteExercise": null,
+       "trend": {
+        "prevLoad": 100,
+        "prevReps": 10,
+        "prevSets": 3,
+        "prevICS": 7
+       },
+       "setMetrics": {
+        "validSetCount": 3,
+        "minRIR": 1,
+        "maxRIR": 1,
+        "setsWithinRirBand": 3,
+        "setsAtTopRange": 0,
+        "setCompletionRate": 1
+       }
+      }
+     ],
+     "deloadTriggers": [],
+     "weekNum": 2,
+     "calculatedAt": "2026-10-19T03:18:46.891Z",
+     "engineState": {
+      "engineVersion": "3.1.0",
+      "generatedAt": "2026-10-19T03:18:46.891Z",
+      "updatedAt": "2026-10-19T03:18:46.891Z",
+      "weekNum": 2,
+      "totalWeeks": 4,
+      "deloadTriggered": false,
+      "isLastWeek": false,
+      "deloadTriggers": [],
+      "globalAction": "maintain",
+      "actionCounts": {
+       "maintain": 2
+      },
+      "exerciseSummary": [
+       {
+        "name": "Press de pecho E2E",
+        "action": "maintain",
+        "newLoad": 100,
+        "newSets": 3
+       },
+       {
+        "name": "Curl predicador E2E",
+        "action": "maintain",
+        "newLoad": 100,
+        "newSets": 3
+       }
+      ],
+      "avgNewLoad": 100,
+      "checkinRef": null,
+      "observationsCount": 12,
+      "confidence": "low"
+     }
+    },
+    "engine_state": {
+     "engineVersion": "3.1.0",
+     "generatedAt": "2026-10-19T03:18:46.891Z",
+     "updatedAt": "2026-10-19T03:18:46.891Z",
+     "weekNum": 2,
+     "totalWeeks": 4,
+     "deloadTriggered": false,
+     "isLastWeek": false,
+     "deloadTriggers": [],
+     "globalAction": "maintain",
+     "actionCounts": {
+      "maintain": 2
+     },
+     "exerciseSummary": [
+      {
+       "name": "Press de pecho E2E",
+       "action": "maintain",
+       "newLoad": 100,
+       "newSets": 3
+      },
+      {
+       "name": "Curl predicador E2E",
+       "action": "maintain",
+       "newLoad": 100,
+       "newSets": 3
+      }
+     ],
+     "avgNewLoad": 100,
+     "checkinRef": null,
+     "observationsCount": 12,
+     "confidence": "low"
+    },
+    "done_2_0": {
+     "ts": 1792379926892
+    }
+   },
+   "entriesThroughW3": null,
+   "interventions": []
+  },
+  "C": {
+   "plan": {
+    "schema": "vdsen-plan-v2",
+    "status": "active",
+    "generatedBy": "import",
+    "createdAt": "2026-09-26T00:00:00.000Z",
+    "updatedAt": "2026-09-26T00:00:00.000Z",
+    "weeks": 4,
+    "daysPerWeek": 1,
+    "days": [
+     {
+      "dayIndex": 0,
+      "label": "Día 1 - Empuje",
+      "exercises": [
+       {
+        "exerciseName": "Press de pecho E2E",
+        "alternatives": [],
+        "technique": "straight",
+        "techniqueNote": "",
+        "coachNote": "",
+        "supersetGroup": "",
+        "nivel_medio": null,
+        "variacion_vertical": null,
+        "sets": [
+         {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         },
+         {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         },
+         {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         }
+        ],
+        "prescriptionExerciseId": "pid-e2e-c-1"
+       },
+       {
+        "exerciseName": "Curl predicador E2E",
+        "alternatives": [],
+        "technique": "straight",
+        "techniqueNote": "",
+        "coachNote": "",
+        "supersetGroup": "",
+        "nivel_medio": null,
+        "variacion_vertical": null,
+        "sets": [
+         {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 1,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         },
+         {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 1,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         },
+         {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 1,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         }
+        ],
+        "repsRange": {
+         "min": 8,
+         "max": 12
+        },
+        "prescriptionExerciseId": "pid-e2e-c-2"
+       }
+      ]
+     }
+    ]
+   },
+   "entriesThroughW2": {
+    "log_1_0_0_s0": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-c-1",
+     "ts": 1790510400000
+    },
+    "log_1_0_0_s1": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-c-1",
+     "ts": 1790510400001
+    },
+    "log_1_0_0_s2": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-c-1",
+     "ts": 1790510400002
+    },
+    "log_1_0_1_s0": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-c-2",
+     "ts": 1790510400100
+    },
+    "log_1_0_1_s1": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-c-2",
+     "ts": 1790510400101
+    },
+    "log_1_0_1_s2": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-c-2",
+     "ts": 1790510400102
+    },
+    "done_1_0": true,
+    "log_2_0_0_s0": {
+     "carga": "100",
+     "reps": "6",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "0",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379952538,
+     "prescriptionExerciseId": "pid-e2e-c-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_0_s1": {
+     "carga": "100",
+     "reps": "6",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "0",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379954264,
+     "prescriptionExerciseId": "pid-e2e-c-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_0_s2": {
+     "carga": "100",
+     "reps": "6",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "0",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379955988,
+     "prescriptionExerciseId": "pid-e2e-c-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_1_s0": {
+     "carga": "100",
+     "reps": "6",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "0",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379957708,
+     "prescriptionExerciseId": "pid-e2e-c-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "log_2_0_1_s1": {
+     "carga": "100",
+     "reps": "6",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "0",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379959430,
+     "prescriptionExerciseId": "pid-e2e-c-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "log_2_0_1_s2": {
+     "carga": "100",
+     "reps": "6",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "0",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379961137,
+     "prescriptionExerciseId": "pid-e2e-c-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "postsession_2_0": {
+     "eimd": 2,
+     "articularPain": {
+      "present": false,
+      "pattern": ""
+     },
+     "sleepHours": 7,
+     "rpeAverage": 9,
+     "ts": 1792379964019
+    },
+    "progrec_2_0": {
+     "recommendations": [
+      {
+       "exerciseName": "Press de pecho E2E",
+       "prescriptionExerciseId": "pid-e2e-c-1",
+       "action": "maintain",
+       "newLoad": 100,
+       "newSets": 3,
+       "newReps": 7,
+       "prescribedRIR": 1,
+       "observedRIR": 0,
+       "observedICS": 7,
+       "observedPump": 1,
+       "repRangeTarget": {
+        "low": 10,
+        "high": 10
+       },
+       "rirTarget": 0,
+       "reason": "Hay margen para mejorar técnica — consolida antes de agregar series | RIR en objetivo — apuntá a 10 reps (techo del rango) antes de subir carga",
+       "substituteExercise": null,
+       "trend": {
+        "prevLoad": 100,
+        "prevReps": 10,
+        "prevSets": 3,
+        "prevICS": 7
+       },
+       "setMetrics": {
+        "validSetCount": 3,
+        "minRIR": 0,
+        "maxRIR": 0,
+        "setsWithinRirBand": 3,
+        "setsAtTopRange": 0,
+        "setCompletionRate": 1
+       }
+      },
+      {
+       "exerciseName": "Curl predicador E2E",
+       "prescriptionExerciseId": "pid-e2e-c-2",
+       "action": "maintain",
+       "newLoad": 100,
+       "newSets": 3,
+       "newReps": 7,
+       "prescribedRIR": 1,
+       "observedRIR": 0,
+       "observedICS": 7,
+       "observedPump": 1,
+       "repRangeTarget": {
+        "low": 10,
+        "high": 10
+       },
+       "rirTarget": 0,
+       "reason": "Hay margen para mejorar técnica — consolida antes de agregar series | RIR en objetivo — apuntá a 10 reps (techo del rango) antes de subir carga",
+       "substituteExercise": null,
+       "trend": {
+        "prevLoad": 100,
+        "prevReps": 10,
+        "prevSets": 3,
+        "prevICS": 7
+       },
+       "setMetrics": {
+        "validSetCount": 3,
+        "minRIR": 0,
+        "maxRIR": 0,
+        "setsWithinRirBand": 3,
+        "setsAtTopRange": 0,
+        "setCompletionRate": 1
+       }
+      }
+     ],
+     "deloadTriggers": [],
+     "weekNum": 2,
+     "calculatedAt": "2026-10-19T03:19:24.020Z",
+     "engineState": {
+      "engineVersion": "3.1.0",
+      "generatedAt": "2026-10-19T03:19:24.020Z",
+      "updatedAt": "2026-10-19T03:19:24.020Z",
+      "weekNum": 2,
+      "totalWeeks": 4,
+      "deloadTriggered": false,
+      "isLastWeek": false,
+      "deloadTriggers": [],
+      "globalAction": "maintain",
+      "actionCounts": {
+       "maintain": 2
+      },
+      "exerciseSummary": [
+       {
+        "name": "Press de pecho E2E",
+        "action": "maintain",
+        "newLoad": 100,
+        "newSets": 3
+       },
+       {
+        "name": "Curl predicador E2E",
+        "action": "maintain",
+        "newLoad": 100,
+        "newSets": 3
+       }
+      ],
+      "avgNewLoad": 100,
+      "checkinRef": null,
+      "observationsCount": 12,
+      "confidence": "low"
+     }
+    },
+    "engine_state": {
+     "engineVersion": "3.1.0",
+     "generatedAt": "2026-10-19T03:19:24.020Z",
+     "updatedAt": "2026-10-19T03:19:24.020Z",
+     "weekNum": 2,
+     "totalWeeks": 4,
+     "deloadTriggered": false,
+     "isLastWeek": false,
+     "deloadTriggers": [],
+     "globalAction": "maintain",
+     "actionCounts": {
+      "maintain": 2
+     },
+     "exerciseSummary": [
+      {
+       "name": "Press de pecho E2E",
+       "action": "maintain",
+       "newLoad": 100,
+       "newSets": 3
+      },
+      {
+       "name": "Curl predicador E2E",
+       "action": "maintain",
+       "newLoad": 100,
+       "newSets": 3
+      }
+     ],
+     "avgNewLoad": 100,
+     "checkinRef": null,
+     "observationsCount": 12,
+     "confidence": "low"
+    },
+    "done_2_0": {
+     "ts": 1792379964020
+    }
+   },
+   "entriesThroughW3": null,
+   "interventions": []
+  },
+  "D": {
+   "plan": {
+    "schema": "vdsen-plan-v2",
+    "status": "active",
+    "generatedBy": "import",
+    "createdAt": "2026-09-26T00:00:00.000Z",
+    "updatedAt": "2026-09-26T00:00:00.000Z",
+    "weeks": 4,
+    "daysPerWeek": 1,
+    "days": [
+     {
+      "dayIndex": 0,
+      "label": "Día 1 - Empuje",
+      "exercises": [
+       {
+        "exerciseName": "Press de pecho E2E",
+        "alternatives": [],
+        "technique": "straight",
+        "techniqueNote": "",
+        "coachNote": "",
+        "supersetGroup": "",
+        "nivel_medio": null,
+        "variacion_vertical": null,
+        "sets": [
+         {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         },
+         {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         },
+         {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         }
+        ],
+        "prescriptionExerciseId": "pid-e2e-d-1"
+       },
+       {
+        "exerciseName": "Curl predicador E2E",
+        "alternatives": [],
+        "technique": "straight",
+        "techniqueNote": "",
+        "coachNote": "",
+        "supersetGroup": "",
+        "nivel_medio": null,
+        "variacion_vertical": null,
+        "sets": [
+         {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 1,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         },
+         {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 1,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         },
+         {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 1,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         }
+        ],
+        "repsRange": {
+         "min": 8,
+         "max": 12
+        },
+        "prescriptionExerciseId": "pid-e2e-d-2"
+       }
+      ]
+     }
+    ]
+   },
+   "entriesThroughW2": {
+    "log_1_0_0_s0": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-d-1",
+     "ts": 1790510400000
+    },
+    "log_1_0_0_s1": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-d-1",
+     "ts": 1790510400001
+    },
+    "log_1_0_0_s2": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-d-1",
+     "ts": 1790510400002
+    },
+    "log_1_0_1_s0": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-d-2",
+     "ts": 1790510400100
+    },
+    "log_1_0_1_s1": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-d-2",
+     "ts": 1790510400101
+    },
+    "log_1_0_1_s2": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-d-2",
+     "ts": 1790510400102
+    },
+    "done_1_0": true,
+    "log_2_0_0_s0": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "4",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379991190,
+     "prescriptionExerciseId": "pid-e2e-d-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_0_s1": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "4",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379992905,
+     "prescriptionExerciseId": "pid-e2e-d-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_0_s2": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "4",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379994627,
+     "prescriptionExerciseId": "pid-e2e-d-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_1_s0": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "3",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379996341,
+     "prescriptionExerciseId": "pid-e2e-d-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "log_2_0_1_s1": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "3",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379998066,
+     "prescriptionExerciseId": "pid-e2e-d-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "log_2_0_1_s2": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "3",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792379999789,
+     "prescriptionExerciseId": "pid-e2e-d-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "postsession_2_0": {
+     "eimd": 1,
+     "articularPain": {
+      "present": true,
+      "pattern": "Empuje"
+     },
+     "sleepHours": 8,
+     "rpeAverage": 7,
+     "ts": 1792380010531
+    },
+    "progrec_2_0": {
+     "recommendations": [
+      {
+       "exerciseName": "Press de pecho E2E",
+       "prescriptionExerciseId": "pid-e2e-d-1",
+       "action": "increase_load",
+       "newLoad": 101.5,
+       "newSets": 3,
+       "newReps": 10,
+       "prescribedRIR": 1,
+       "observedRIR": 4,
+       "observedICS": 7,
+       "observedPump": 1,
+       "repRangeTarget": {
+        "low": 10,
+        "high": 10
+       },
+       "rirTarget": 0,
+       "reason": "Hay margen para mejorar técnica — consolida antes de agregar series | Reps cumplidas y quedaron reps en el tanque (RIR 4.0 vs objetivo 1) — subimos +1.50 KG | ⚠ Fatiga articular en Empuje",
+       "substituteExercise": "Revisar alternativa para patrón: Empuje",
+       "trend": {
+        "prevLoad": 100,
+        "prevReps": 10,
+        "prevSets": 3,
+        "prevICS": 7
+       },
+       "setMetrics": {
+        "validSetCount": 3,
+        "minRIR": 4,
+        "maxRIR": 4,
+        "setsWithinRirBand": 0,
+        "setsAtTopRange": 3,
+        "setCompletionRate": 1
+       }
+      },
+      {
+       "exerciseName": "Curl predicador E2E",
+       "prescriptionExerciseId": "pid-e2e-d-2",
+       "action": "increase_load",
+       "newLoad": 101.5,
+       "newSets": 3,
+       "newReps": 10,
+       "prescribedRIR": 1,
+       "observedRIR": 3,
+       "observedICS": 7,
+       "observedPump": 1,
+       "repRangeTarget": {
+        "low": 10,
+        "high": 10
+       },
+       "rirTarget": 0,
+       "reason": "Hay margen para mejorar técnica — consolida antes de agregar series | Reps cumplidas y quedaron reps en el tanque (RIR 3.0 vs objetivo 1) — subimos +1.50 KG | ⚠ Fatiga articular en Empuje",
+       "substituteExercise": "Revisar alternativa para patrón: Empuje",
+       "trend": {
+        "prevLoad": 100,
+        "prevReps": 10,
+        "prevSets": 3,
+        "prevICS": 7
+       },
+       "setMetrics": {
+        "validSetCount": 3,
+        "minRIR": 3,
+        "maxRIR": 3,
+        "setsWithinRirBand": 0,
+        "setsAtTopRange": 3,
+        "setCompletionRate": 1
+       }
+      }
+     ],
+     "deloadTriggers": [],
+     "weekNum": 2,
+     "calculatedAt": "2026-10-19T03:20:10.532Z",
+     "engineState": {
+      "engineVersion": "3.1.0",
+      "generatedAt": "2026-10-19T03:20:10.532Z",
+      "updatedAt": "2026-10-19T03:20:10.532Z",
+      "weekNum": 2,
+      "totalWeeks": 4,
+      "deloadTriggered": false,
+      "isLastWeek": false,
+      "deloadTriggers": [],
+      "globalAction": "load_up",
+      "actionCounts": {
+       "increase_load": 2
+      },
+      "exerciseSummary": [
+       {
+        "name": "Press de pecho E2E",
+        "action": "increase_load",
+        "newLoad": 101.5,
+        "newSets": 3
+       },
+       {
+        "name": "Curl predicador E2E",
+        "action": "increase_load",
+        "newLoad": 101.5,
+        "newSets": 3
+       }
+      ],
+      "avgNewLoad": 101.5,
+      "checkinRef": null,
+      "observationsCount": 12,
+      "confidence": "low"
+     }
+    },
+    "engine_state": {
+     "engineVersion": "3.1.0",
+     "generatedAt": "2026-10-19T03:20:10.532Z",
+     "updatedAt": "2026-10-19T03:20:10.532Z",
+     "weekNum": 2,
+     "totalWeeks": 4,
+     "deloadTriggered": false,
+     "isLastWeek": false,
+     "deloadTriggers": [],
+     "globalAction": "load_up",
+     "actionCounts": {
+      "increase_load": 2
+     },
+     "exerciseSummary": [
+      {
+       "name": "Press de pecho E2E",
+       "action": "increase_load",
+       "newLoad": 101.5,
+       "newSets": 3
+      },
+      {
+       "name": "Curl predicador E2E",
+       "action": "increase_load",
+       "newLoad": 101.5,
+       "newSets": 3
+      }
+     ],
+     "avgNewLoad": 101.5,
+     "checkinRef": null,
+     "observationsCount": 12,
+     "confidence": "low"
+    },
+    "done_2_0": {
+     "ts": 1792380010532
+    }
+   },
+   "entriesThroughW3": null,
+   "interventions": []
+  },
+  "E": {
+   "plan": {
+    "schema": "vdsen-plan-v2",
+    "status": "active",
+    "generatedBy": "import",
+    "weeks": 4,
+    "daysPerWeek": 1,
+    "createdAt": "2026-09-26T00:00:00.000Z",
+    "updatedAt": "2026-09-26T00:00:00.000Z",
+    "days": [
+     {
+      "dayIndex": 0,
+      "label": "Día 1 - Empuje",
+      "exercises": [
+       {
+        "prescriptionExerciseId": "legacy-e-0",
+        "exerciseName": "Press de pecho E2E",
+        "alternatives": [],
+        "technique": "straight",
+        "sets": [
+         {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "load": 0,
+          "restSeconds": 90
+         },
+         {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "load": 0,
+          "restSeconds": 90
+         },
+         {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "load": 0,
+          "restSeconds": 90
+         }
+        ]
+       },
+       {
+        "prescriptionExerciseId": "legacy-e-1",
+        "exerciseName": "Curl predicador E2E",
+        "alternatives": [],
+        "technique": "straight",
+        "sets": [
+         {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 1,
+          "load": 0,
+          "restSeconds": 90
+         },
+         {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 1,
+          "load": 0,
+          "restSeconds": 90
+         },
+         {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 1,
+          "load": 0,
+          "restSeconds": 90
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "entriesThroughW2": {
+    "log_1_0_0_s0": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "legacy-e-0",
+     "ts": 1790510400000
+    },
+    "log_1_0_0_s1": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "legacy-e-0",
+     "ts": 1790510400001
+    },
+    "log_1_0_0_s2": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "legacy-e-0",
+     "ts": 1790510400002
+    },
+    "log_1_0_1_s0": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "legacy-e-1",
+     "ts": 1790510400100
+    },
+    "log_1_0_1_s1": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "legacy-e-1",
+     "ts": 1790510400101
+    },
+    "log_1_0_1_s2": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "legacy-e-1",
+     "ts": 1790510400102
+    },
+    "done_1_0": true,
+    "log_2_0_0_s0": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "4",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792380056944,
+     "prescriptionExerciseId": "legacy-e-0",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_0_s1": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "4",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792380058677,
+     "prescriptionExerciseId": "legacy-e-0",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_0_s2": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "4",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792380060413,
+     "prescriptionExerciseId": "legacy-e-0",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_1_s0": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "3",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792380062121,
+     "prescriptionExerciseId": "legacy-e-1",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "log_2_0_1_s1": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "3",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792380063840,
+     "prescriptionExerciseId": "legacy-e-1",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "log_2_0_1_s2": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "3",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792380065568,
+     "prescriptionExerciseId": "legacy-e-1",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "postsession_2_0": {
+     "eimd": 1,
+     "articularPain": {
+      "present": false,
+      "pattern": ""
+     },
+     "sleepHours": 8,
+     "rpeAverage": 7,
+     "ts": 1792380068457
+    },
+    "progrec_2_0": {
+     "recommendations": [
+      {
+       "exerciseName": "Press de pecho E2E",
+       "prescriptionExerciseId": "legacy-e-0",
+       "action": "increase_load",
+       "newLoad": 101.5,
+       "newSets": 3,
+       "newReps": 10,
+       "prescribedRIR": 1,
+       "observedRIR": 4,
+       "observedICS": 7,
+       "observedPump": 1,
+       "repRangeTarget": {
+        "low": 10,
+        "high": 10
+       },
+       "rirTarget": 0,
+       "reason": "Hay margen para mejorar técnica — consolida antes de agregar series | Reps cumplidas y quedaron reps en el tanque (RIR 4.0 vs objetivo 1) — subimos +1.50 KG",
+       "substituteExercise": null,
+       "trend": {
+        "prevLoad": 100,
+        "prevReps": 10,
+        "prevSets": 3,
+        "prevICS": 7
+       },
+       "setMetrics": {
+        "validSetCount": 3,
+        "minRIR": 4,
+        "maxRIR": 4,
+        "setsWithinRirBand": 0,
+        "setsAtTopRange": 3,
+        "setCompletionRate": 1
+       }
+      },
+      {
+       "exerciseName": "Curl predicador E2E",
+       "prescriptionExerciseId": "legacy-e-1",
+       "action": "increase_load",
+       "newLoad": 101.5,
+       "newSets": 3,
+       "newReps": 10,
+       "prescribedRIR": 1,
+       "observedRIR": 3,
+       "observedICS": 7,
+       "observedPump": 1,
+       "repRangeTarget": {
+        "low": 10,
+        "high": 10
+       },
+       "rirTarget": 0,
+       "reason": "Hay margen para mejorar técnica — consolida antes de agregar series | Reps cumplidas y quedaron reps en el tanque (RIR 3.0 vs objetivo 1) — subimos +1.50 KG",
+       "substituteExercise": null,
+       "trend": {
+        "prevLoad": 100,
+        "prevReps": 10,
+        "prevSets": 3,
+        "prevICS": 7
+       },
+       "setMetrics": {
+        "validSetCount": 3,
+        "minRIR": 3,
+        "maxRIR": 3,
+        "setsWithinRirBand": 0,
+        "setsAtTopRange": 3,
+        "setCompletionRate": 1
+       }
+      }
+     ],
+     "deloadTriggers": [],
+     "weekNum": 2,
+     "calculatedAt": "2026-10-19T03:21:08.458Z",
+     "engineState": {
+      "engineVersion": "3.1.0",
+      "generatedAt": "2026-10-19T03:21:08.458Z",
+      "updatedAt": "2026-10-19T03:21:08.458Z",
+      "weekNum": 2,
+      "totalWeeks": 4,
+      "deloadTriggered": false,
+      "isLastWeek": false,
+      "deloadTriggers": [],
+      "globalAction": "load_up",
+      "actionCounts": {
+       "increase_load": 2
+      },
+      "exerciseSummary": [
+       {
+        "name": "Press de pecho E2E",
+        "action": "increase_load",
+        "newLoad": 101.5,
+        "newSets": 3
+       },
+       {
+        "name": "Curl predicador E2E",
+        "action": "increase_load",
+        "newLoad": 101.5,
+        "newSets": 3
+       }
+      ],
+      "avgNewLoad": 101.5,
+      "checkinRef": null,
+      "observationsCount": 12,
+      "confidence": "low"
+     }
+    },
+    "engine_state": {
+     "engineVersion": "3.1.0",
+     "generatedAt": "2026-10-19T03:21:08.458Z",
+     "updatedAt": "2026-10-19T03:21:08.458Z",
+     "weekNum": 2,
+     "totalWeeks": 4,
+     "deloadTriggered": false,
+     "isLastWeek": false,
+     "deloadTriggers": [],
+     "globalAction": "load_up",
+     "actionCounts": {
+      "increase_load": 2
+     },
+     "exerciseSummary": [
+      {
+       "name": "Press de pecho E2E",
+       "action": "increase_load",
+       "newLoad": 101.5,
+       "newSets": 3
+      },
+      {
+       "name": "Curl predicador E2E",
+       "action": "increase_load",
+       "newLoad": 101.5,
+       "newSets": 3
+      }
+     ],
+     "avgNewLoad": 101.5,
+     "checkinRef": null,
+     "observationsCount": 12,
+     "confidence": "low"
+    },
+    "done_2_0": {
+     "ts": 1792380068458
+    }
+   },
+   "entriesThroughW3": null,
+   "interventions": []
+  },
+  "F": {
+   "plan": {
+    "schema": "vdsen-plan-v2",
+    "status": "active",
+    "generatedBy": "import",
+    "createdAt": "2026-09-26T00:00:00.000Z",
+    "updatedAt": "2026-09-26T00:00:00.000Z",
+    "weeks": 4,
+    "daysPerWeek": 1,
+    "days": [
+     {
+      "dayIndex": 0,
+      "label": "Día 1 - Empuje",
+      "exercises": [
+       {
+        "exerciseName": "Press de pecho E2E",
+        "alternatives": [],
+        "technique": "straight",
+        "techniqueNote": "",
+        "coachNote": "",
+        "supersetGroup": "",
+        "nivel_medio": null,
+        "variacion_vertical": null,
+        "sets": [
+         {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         },
+         {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         },
+         {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 2,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         }
+        ],
+        "prescriptionExerciseId": "pid-e2e-f-1"
+       },
+       {
+        "exerciseName": "Curl predicador E2E",
+        "alternatives": [],
+        "technique": "straight",
+        "techniqueNote": "",
+        "coachNote": "",
+        "supersetGroup": "",
+        "nivel_medio": null,
+        "variacion_vertical": null,
+        "sets": [
+         {
+          "setIndex": 0,
+          "repsTarget": 10,
+          "rirTarget": 1,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         },
+         {
+          "setIndex": 1,
+          "repsTarget": 10,
+          "rirTarget": 1,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         },
+         {
+          "setIndex": 2,
+          "repsTarget": 10,
+          "rirTarget": 1,
+          "load": 0,
+          "restSeconds": 90,
+          "setNote": "",
+          "drop": false,
+          "tempo": ""
+         }
+        ],
+        "repsRange": {
+         "min": 8,
+         "max": 12
+        },
+        "prescriptionExerciseId": "pid-e2e-f-2"
+       }
+      ]
+     }
+    ]
+   },
+   "entriesThroughW2": {
+    "log_1_0_0_s0": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-f-1",
+     "ts": 1790510400000
+    },
+    "log_1_0_0_s1": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-f-1",
+     "ts": 1790510400001
+    },
+    "log_1_0_0_s2": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 2,
+     "rir_real": 4,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-f-1",
+     "ts": 1790510400002
+    },
+    "log_1_0_1_s0": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-f-2",
+     "ts": 1790510400100
+    },
+    "log_1_0_1_s1": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-f-2",
+     "ts": 1790510400101
+    },
+    "log_1_0_1_s2": {
+     "done": true,
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "rir": 1,
+     "rir_real": 3,
+     "ics": 7,
+     "pump": 1,
+     "prescriptionExerciseId": "pid-e2e-f-2",
+     "ts": 1790510400102
+    },
+    "done_1_0": true,
+    "log_2_0_0_s0": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "4",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792380103124,
+     "prescriptionExerciseId": "pid-e2e-f-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_0_s1": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "4",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792380104847,
+     "prescriptionExerciseId": "pid-e2e-f-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_0_s2": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 2,
+     "rir_real": "4",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792380106572,
+     "prescriptionExerciseId": "pid-e2e-f-1",
+     "exerciseNameSnapshot": "Press de pecho E2E"
+    },
+    "log_2_0_1_s0": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "3",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792380108289,
+     "prescriptionExerciseId": "pid-e2e-f-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "log_2_0_1_s1": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "3",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792380110019,
+     "prescriptionExerciseId": "pid-e2e-f-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "log_2_0_1_s2": {
+     "carga": "100",
+     "reps": "10",
+     "unit": "KG",
+     "done": true,
+     "rir": 1,
+     "rir_real": "3",
+     "ics": 7,
+     "pump": 1,
+     "ts": 1792380111733,
+     "prescriptionExerciseId": "pid-e2e-f-2",
+     "exerciseNameSnapshot": "Curl predicador E2E"
+    },
+    "postsession_2_0": {
+     "eimd": 1,
+     "articularPain": {
+      "present": false,
+      "pattern": ""
+     },
+     "sleepHours": 8,
+     "rpeAverage": 7,
+     "ts": 1792380114626
+    },
+    "progrec_2_0": {
+     "recommendations": [
+      {
+       "exerciseName": "Press de pecho E2E",
+       "prescriptionExerciseId": "pid-e2e-f-1",
+       "action": "increase_load",
+       "newLoad": 101.5,
+       "newSets": 3,
+       "newReps": 10,
+       "prescribedRIR": 1,
+       "observedRIR": 4,
+       "observedICS": 7,
+       "observedPump": 1,
+       "repRangeTarget": {
+        "low": 10,
+        "high": 10
+       },
+       "rirTarget": 0,
+       "reason": "Hay margen para mejorar técnica — consolida antes de agregar series | Reps cumplidas y quedaron reps en el tanque (RIR 4.0 vs objetivo 1) — subimos +1.50 KG",
+       "substituteExercise": null,
+       "trend": {
+        "prevLoad": 100,
+        "prevReps": 10,
+        "prevSets": 3,
+        "prevICS": 7
+       },
+       "setMetrics": {
+        "validSetCount": 3,
+        "minRIR": 4,
+        "maxRIR": 4,
+        "setsWithinRirBand": 0,
+        "setsAtTopRange": 3,
+        "setCompletionRate": 1
+       }
+      },
+      {
+       "exerciseName": "Curl predicador E2E",
+       "prescriptionExerciseId": "pid-e2e-f-2",
+       "action": "increase_load",
+       "newLoad": 101.5,
+       "newSets": 3,
+       "newReps": 10,
+       "prescribedRIR": 1,
+       "observedRIR": 3,
+       "observedICS": 7,
+       "observedPump": 1,
+       "repRangeTarget": {
+        "low": 10,
+        "high": 10
+       },
+       "rirTarget": 0,
+       "reason": "Hay margen para mejorar técnica — consolida antes de agregar series | Reps cumplidas y quedaron reps en el tanque (RIR 3.0 vs objetivo 1) — subimos +1.50 KG",
+       "substituteExercise": null,
+       "trend": {
+        "prevLoad": 100,
+        "prevReps": 10,
+        "prevSets": 3,
+        "prevICS": 7
+       },
+       "setMetrics": {
+        "validSetCount": 3,
+        "minRIR": 3,
+        "maxRIR": 3,
+        "setsWithinRirBand": 0,
+        "setsAtTopRange": 3,
+        "setCompletionRate": 1
+       }
+      }
+     ],
+     "deloadTriggers": [],
+     "weekNum": 2,
+     "calculatedAt": "2026-10-19T03:21:54.627Z",
+     "engineState": {
+      "engineVersion": "3.1.0",
+      "generatedAt": "2026-10-19T03:21:54.627Z",
+      "updatedAt": "2026-10-19T03:21:54.627Z",
+      "weekNum": 2,
+      "totalWeeks": 4,
+      "deloadTriggered": false,
+      "isLastWeek": false,
+      "deloadTriggers": [],
+      "globalAction": "load_up",
+      "actionCounts": {
+       "increase_load": 2
+      },
+      "exerciseSummary": [
+       {
+        "name": "Press de pecho E2E",
+        "action": "increase_load",
+        "newLoad": 101.5,
+        "newSets": 3
+       },
+       {
+        "name": "Curl predicador E2E",
+        "action": "increase_load",
+        "newLoad": 101.5,
+        "newSets": 3
+       }
+      ],
+      "avgNewLoad": 101.5,
+      "checkinRef": null,
+      "observationsCount": 12,
+      "confidence": "low"
+     }
+    },
+    "engine_state": {
+     "engineVersion": "3.1.0",
+     "generatedAt": "2026-10-19T03:21:54.627Z",
+     "updatedAt": "2026-10-19T03:21:54.627Z",
+     "weekNum": 2,
+     "totalWeeks": 4,
+     "deloadTriggered": false,
+     "isLastWeek": false,
+     "deloadTriggers": [],
+     "globalAction": "load_up",
+     "actionCounts": {
+      "increase_load": 2
+     },
+     "exerciseSummary": [
+      {
+       "name": "Press de pecho E2E",
+       "action": "increase_load",
+       "newLoad": 101.5,
+       "newSets": 3
+      },
+      {
+       "name": "Curl predicador E2E",
+       "action": "increase_load",
+       "newLoad": 101.5,
+       "newSets": 3
+      }
+     ],
+     "avgNewLoad": 101.5,
+     "checkinRef": null,
+     "observationsCount": 12,
+     "confidence": "low"
+    },
+    "done_2_0": {
+     "ts": 1792380114627
+    }
+   },
+   "entriesThroughW3": null,
+   "interventions": [
+    {
+     "id": "iv-e2e-1",
+     "targetType": "EXERCISE",
+     "targetId": "pid-e2e-f-1",
+     "action": "REDUCE_SETS",
+     "decidedAt": "2026-10-19T03:22:00.937Z"
+    }
+   ]
+  }
+ }
+}

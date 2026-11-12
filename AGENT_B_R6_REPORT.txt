@@ -1,0 +1,173 @@
+AGENT B — ROUND 6 — COACH ERROR-RECOVERY AUDIT
+===============================================
+Branch : claude/coach-post-t124
+Baseline: 0437901 (T124)  40/40 tests passing
+
+OPERATIONS AUDITED
+==================
+
+saveTrainingPlan (lines 16820–16903)
+--------------------------------------
+VERDICT: OK
+
+False-success check:
+  markEditorClean() is called ONLY on line 16890, AFTER the
+  await updateDoc() on line 16889.  If updateDoc throws, the
+  catch block fires and none of: markEditorClean(),
+  toggleTrainingEditor(), showClientDetail() execute.
+  The editor stays open and dirty.  No navigation on failure.
+
+Stuck-button check:
+  finally { _savingTrainingPlan = false; btn.disabled = false; }
+  always runs, including on the BLOCK-gate early return on
+  line 16885 (return inside try still triggers finally).
+
+Dirty-state preservation:
+  markEditorClean() never called on failure path.  _dirtyEditor
+  flag is preserved.
+
+Multi-write partial failure:
+  The backup write (lines 16873-16881) is wrapped in its own
+  try-catch that swallows errors.  If backup addDoc succeeds but
+  main updateDoc fails, an orphan backup document exists.
+  ACCEPTABLE — backup orphans are harmless.
+
+saveManualPlan (lines 9295–9347)
+---------------------------------
+VERDICT: OK
+
+  try/catch/finally; addDoc and updateDoc inside try.
+  On failure: button re-enabled (finally), manualPlan object NOT
+  cleared (only cleared on success, line 9338), form data stays.
+  User can retry.
+
+  Multi-write risk: if addDoc succeeds but updateDoc(activePlanId)
+  fails, an orphan plan document is left.  On retry another orphan
+  is created.  ACCEPTABLE — no false success, user sees error.
+
+saveImportedPlan (lines 5046–5108)
+------------------------------------
+VERDICT: OK
+
+  try/catch/finally; button disabled/re-enabled correctly.
+  window._importedPlan cleared ONLY on success (line 5099).
+  On failure user can retry with the same imported plan.
+
+  The !confirmed early return (line 5077) is inside try; the
+  finally block re-enables the button.  Correct.
+
+  Multi-write risk: same orphan-plan scenario as saveManualPlan.
+  ACCEPTABLE — backupPlanIfExists swallows its own errors.
+
+saveNutritionPlan (lines 15794–15824)
+---------------------------------------
+VERDICT: OK
+
+  Single updateDoc; try/catch/finally; button re-enabled.
+  DOM not updated on failure (renderNutritionView called only
+  after successful updateDoc, line 15816).
+  T118-H stale-client guard present and correct.
+
+saveSupplementPlan (lines 15826–15844)
+----------------------------------------
+VERDICT: OK
+
+  Same pattern as saveNutritionPlan.  No issues.
+
+showUpdatePlanModal / apply-update handler (lines 17296–17423)
+---------------------------------------------------------------
+VERDICT: OK
+
+  On updateDoc failure (lines 17416-17421):
+    - _updApplyBtn.disabled = false  (re-enabled)
+    - error message shown in st element inside the modal
+    - overlay NOT removed → modal stays open for retry
+  Correct behavior.
+
+activatePlan
+-------------
+VERDICT: N/A
+
+  No standalone activatePlan function exists in the codebase.
+  The activePlanId update is always part of multi-step save flows
+  (saveImportedPlan, saveManualPlan, duplicatePlan) which are
+  covered above.
+
+duplicatePlan (lines 17551–17577)
+-----------------------------------
+VERDICT: OK / ACCEPTABLE
+
+  No spinner/button to manage.  On any failure the catch on
+  line 17576 shows an error toast.  No false success.
+
+  The two-write sequence (addDoc then updateDoc) has the same
+  orphan-plan risk as saveManualPlan.  ACCEPTABLE.
+
+duplicatePlanToClient (lines 18052–18102)
+------------------------------------------
+VERDICT: ACCEPTABLE (minor UX)
+
+  The modal is dismissed (ov.remove()) BEFORE the writes begin
+  (line 18078).  If writes fail, the error toast is shown but
+  the user must restart the flow to retry.  This is a UX
+  inconvenience, not a stuck state or false success.
+  Not classified as a bug per the priority guidelines.
+
+saveRenovacion (lines 10507–10536)
+------------------------------------
+VERDICT: OK
+
+  try/catch/finally; button re-enabled; error shown in status
+  element.  No false success.
+
+saveFotometria (lines 18618–18637)
+------------------------------------
+VERDICT: OK
+
+  try/catch/finally; button re-enabled.
+  _intakeFotometria and DOM updates only happen after setDoc
+  succeeds.
+
+saveIntake (lines 18915–18925)
+--------------------------------
+VERDICT: OK
+
+  try/catch/finally; button re-enabled; status text updated only
+  on success.
+
+saveAllNotes / saveCoachNote / saveClientMessage (lines 15221–15254)
+---------------------------------------------------------------------
+VERDICT: OK
+
+  saveCoachNote and saveClientMessage propagate their errors
+  (re-throw in catch).  saveAllNotes wraps both in try/catch/
+  finally; button always re-enabled.
+
+
+FINDINGS SUMMARY
+================
+
+False-success bugs found    : 0
+Stuck-modal bugs found      : 0
+Stuck-button bugs found     : 0
+Multi-write partial-failure : all cases ACCEPTABLE (orphan docs,
+                              no user-visible false success)
+
+No code changes required.  All audited operations have correct
+try/catch/finally patterns, buttons are re-enabled in finally
+blocks, success-only state mutations follow successful awaits,
+and editor dirty state is preserved on save failure.
+
+DECISION: No T125-H / T126-H / T127-H fixes needed.
+
+
+TEST RESULTS
+============
+
+node --test tests/*.test.js
+
+  tests  : 40
+  pass   : 40
+  fail   : 0
+
+HEAD commit : 0437901
