@@ -50,5 +50,6 @@ test('recap opens in screenshot mode, is viewport sized and retains pagination',
   assert.ok(html.includes('capture: true, di: di, week: week'));
   assert.ok(html.includes('#sessRecap .rc-wrap{max-width:480px;width:100%;height:100%;height:100dvh;'));
   assert.ok(html.includes('body.clientHeight - 60'));
+  assert.ok(html.includes('#sessRecap .rc-data{font-size:16px}'), '320px recap numbers must remain readable');
   assert.ok(html.includes('ov.onclick = st.capture'));
 });
