@@ -29,6 +29,10 @@ on:
       restore_run:
         description: Restore only from this completed official pilot run; leave empty to arm
         type: string
+      reconcile_failed_run:
+        description: Explicit run ID of a verified failed attempt with zero mutations to reconcile (single recovery attempt only)
+        default: ''
+        type: string
 permissions:
   contents: read
   actions: read
@@ -59,6 +63,7 @@ jobs:
       INPUT_PLAN: ${{ inputs.plan_id }}
       INPUT_EXPIRY: ${{ inputs.expires_at }}
       INPUT_OPERATION: ${{ inputs.operation_id }}
+      INPUT_RECONCILE_FAILED_RUN: ${{ inputs.reconcile_failed_run }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -72,7 +77,7 @@ jobs:
       - name: One arm attempt per verified OFF baseline; uncertainty requires review
         if: inputs.restore_run == ''
         run: |
-          node -e "const cp=require('child_process'),s=require('./.release/vdsen-client.json');if(!s.runtime_sha||s.numeric_apply_enabled!==false||!Number.isFinite(Date.parse(s.app_release.completed_at)))process.exit(1);const p='repos/'+process.env.GITHUB_REPOSITORY+'/actions/workflows/vdsen-ayrton-runtime.yml/runs?per_page=100&event=workflow_dispatch&created='+encodeURIComponent('>='+s.app_release.completed_at);const r=JSON.parse(cp.execFileSync('gh',['api',p],{encoding:'utf8'}));const headSha=cp.execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();const runsForHead=r.workflow_runs.filter(w=>w.head_sha===headSha);if(runsForHead.length!==1||String(runsForHead[0].id)!==process.env.GITHUB_RUN_ID)process.exit(1);"
+          node -e "const cp=require('child_process'),s=require('./.release/vdsen-client.json'),R=require('./scripts/pilot/ayrton-runtime.cjs');if(!s.runtime_sha||s.numeric_apply_enabled!==false||!Number.isFinite(Date.parse(s.app_release.completed_at)))process.exit(1);const p='repos/'+process.env.GITHUB_REPOSITORY+'/actions/workflows/vdsen-ayrton-runtime.yml/runs?per_page=100&event=workflow_dispatch&created='+encodeURIComponent('>='+s.app_release.completed_at);const r=JSON.parse(cp.execFileSync('gh',['api',p],{encoding:'utf8'}));R.assertAttemptAllowed(r.workflow_runs,process.env.GITHUB_RUN_ID,process.env.INPUT_RECONCILE_FAILED_RUN);"
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Repo and pilot contracts
         run: |

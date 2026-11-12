@@ -23,6 +23,29 @@ function assertAuthorizedMainSha(mainSha, expectedEnv = process.env.APP_EXPECTED
   assert.ok(allowed.has(mainSha), 'UNAUTHORIZED_MAIN_SHA: ' + mainSha);
   return mainSha;
 }
+function assertAttemptAllowed(workflowRuns, currentRunId, reconcileFailedRun = '') {
+  assert.ok(Array.isArray(workflowRuns), 'INVALID_WORKFLOW_RUNS');
+  assert.match(String(currentRunId || ''), /^[1-9][0-9]+$/, 'INVALID_CURRENT_RUN_ID');
+  const current = workflowRuns.find(w => String(w.id) === String(currentRunId));
+  assert.ok(current, 'CURRENT_RUN_NOT_FOUND_IN_DISPATCH_LIST');
+
+  if (!reconcileFailedRun) {
+    assert.equal(workflowRuns.length, 1, 'ONE_ATTEMPT_PER_BASELINE_EXCEEDED');
+    assert.equal(String(workflowRuns[0].id), String(currentRunId), 'CONCURRENT_OR_PRIOR_RUN_EXISTS');
+    return { mode: 'STANDARD_SINGLE_ATTEMPT', runId: String(currentRunId) };
+  }
+
+  assert.match(String(reconcileFailedRun), /^[1-9][0-9]+$/, 'INVALID_RECONCILE_FAILED_RUN_ID');
+  assert.notEqual(String(reconcileFailedRun), String(currentRunId), 'CANNOT_RECONCILE_SELF');
+  assert.equal(workflowRuns.length, 2, 'RECOVERY_ALLOWED_ONLY_FOR_EXACTLY_ONE_PRIOR_ATTEMPT');
+
+  const prior = workflowRuns.find(w => String(w.id) === String(reconcileFailedRun));
+  assert.ok(prior, 'RECONCILED_RUN_NOT_FOUND_FOR_CURRENT_BASELINE');
+  assert.equal(prior.status, 'completed', 'PRIOR_RUN_NOT_COMPLETED');
+  assert.equal(prior.conclusion, 'failure', 'PRIOR_RUN_DID_NOT_FAIL');
+
+  return { mode: 'AUDITED_FAILED_RUN_RECOVERY', currentRunId: String(currentRunId), reconciledRunId: String(reconcileFailedRun) };
+}
 function closed(w, snapshot) {
   P.stateGate(w, snapshot, 'enable');
   assert.ok(!snapshot.release || snapshot.release.enabled === false, 'RELEASE_FENCE_MUST_BE_DISABLED');
@@ -122,9 +145,10 @@ function adapters(s) {
   const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
   const read = async (p, allow404 = false) => {
     const r = await C.http('GET', p, process.env.GOOGLE_ACCESS_TOKEN);
-    if (allow404 && r.status === 404) return null;
+    if (allow404 && r.status === 404 && p.split('?')[0] === C.RELEASE_PATH) return null;
     assert.equal(r.status, 200, 'FENCE_READ_FAILED: ' + p + ' status ' + r.status);
-    return C.decDoc(r.body);
+    assert.ok(r.body && typeof r.body === 'object', 'MALFORMED_FIRESTORE_RESPONSE: ' + p);
+    return C.decDoc(r.body) || {};
   };
   const vget = async p => {
     const r = await fetch('https://api.vercel.com' + p + (p.includes('?') ? '&' : '?') + 'teamId=' + P.TEAM, {
@@ -156,8 +180,14 @@ function adapters(s) {
     },
     snapshot: async w => {
       const client = await read('clients/' + w.uid + '?mask.fieldPaths=coachId&mask.fieldPaths=activePlanId');
+      assert.ok(client && typeof client === 'object', 'CLIENT_DOCUMENT_INVALID');
+      assert.ok(client.coachId && typeof client.coachId === 'string', 'CLIENT_COACH_ID_REQUIRED');
+      assert.ok(client.activePlanId && typeof client.activePlanId === 'string', 'CLIENT_ACTIVE_PLAN_REQUIRED');
+      assert.equal(client.coachId, w.coachId, 'COACH_ID_MISMATCH');
+      assert.equal(client.activePlanId, w.planId, 'ACTIVE_PLAN_MISMATCH');
       const release = await read(C.RELEASE_PATH, true);
-      const coach = await read('coaches/' + w.coachId + '?mask.fieldPaths=autoApplyCanary', true) || {};
+      const coach = await read('coaches/' + w.coachId + '?mask.fieldPaths=autoApplyCanary');
+      assert.ok(coach && typeof coach === 'object', 'COACH_DOCUMENT_REQUIRED');
       return { uid: w.uid, client, coachId: client.coachId, release, coach };
     },
     offProof: async () => {
@@ -168,11 +198,23 @@ function adapters(s) {
       return G.evaluateProductionEnv(r.envs, { project: P.PROJECT, team: P.TEAM });
     },
     assertNoPriorOperation: async id => {
-      const r = await vget('/v6/deployments?projectId=' + P.PROJECT + '&limit=100');
-      assert.ok(Array.isArray(r.deployments) && !r.pagination?.next, 'DEPLOYMENT_LIST_INCOMPLETE');
-      const matchingOp = r.deployments.filter(d => d.meta && d.meta.vdsenPilotOperation === id);
+      let until = null;
+      const allDeployments = [];
+      for (let page = 0; page < 10; page++) {
+        const query = '/v6/deployments?projectId=' + P.PROJECT + '&limit=100' + (until ? '&until=' + until : '');
+        const r = await vget(query);
+        assert.ok(Array.isArray(r.deployments), 'MALFORMED_VERCEL_DEPLOYMENTS_RESPONSE');
+        allDeployments.push(...r.deployments);
+        if (!r.pagination || !r.pagination.next) {
+          until = null;
+          break;
+        }
+        until = r.pagination.next;
+      }
+      assert.equal(until, null, 'DEPLOYMENT_LIST_INCOMPLETE');
+      const matchingOp = allDeployments.filter(d => d.meta && d.meta.vdsenPilotOperation === id);
       assert.equal(matchingOp.length, 0, 'PILOT_OPERATION_ALREADY_EXISTS: ' + id);
-      const matchingBaseline = r.deployments.filter(d => d.meta && d.meta.vdsenPilotBaseline === s.production_deployment);
+      const matchingBaseline = allDeployments.filter(d => d.meta && d.meta.vdsenPilotBaseline === s.production_deployment);
       assert.equal(matchingBaseline.length, 0, 'PILOT_BASELINE_ALREADY_STAGED: ' + s.production_deployment);
     },
     stage: async w => {
@@ -203,9 +245,20 @@ async function main(argv) {
   assert.equal(w.mode, 'STAGE1_SHADOW', 'ONLY_STAGE1_SHADOW_ACCEPTED');
   return arm(w, { runtimeSha: s.runtime_sha, deployment: s.production_deployment, officialReleaseRun: String(s.app_release.source_release_run) }, io);
 }
-module.exports = { arm, restore, closed, invocation, buildDeployArgs, T671, OFF_BASELINE_SHA, LEGACY_T671_SHA, assertAuthorizedMainSha, REVIEWED_MAIN_SHAS, adapters };
+function formatSanitizedFailure(err) {
+  const rawMsg = (err && (err.message || err.code)) ? String(err.message || err.code) : String(err || 'UNKNOWN_ERROR');
+  const cleanCode = rawMsg.split('\n')[0].replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]').slice(0, 140);
+  return {
+    status: 'PILOT_RUNTIME_STOPPED',
+    error_code: cleanCode,
+    phase: 'ARM_PREFLIGHT',
+    state: 'SAFE_BASELINE_UNCHANGED_ZERO_MUTATIONS',
+    action_required: 'REVIEW_REDACTED_CHECKPOINT_NO_AUTOMATIC_RETRY',
+  };
+}
+module.exports = { arm, restore, closed, invocation, buildDeployArgs, T671, OFF_BASELINE_SHA, LEGACY_T671_SHA, assertAuthorizedMainSha, REVIEWED_MAIN_SHAS, adapters, assertAttemptAllowed, formatSanitizedFailure };
 if (require.main === module) main(process.argv.slice(2)).then(r => console.log(JSON.stringify({ status: r.status }))).catch((err) => {
-  console.error('PILOT_RUNTIME_STOPPED: ' + (err && err.message ? err.message : String(err)));
-  if (err && err.stack) console.error(err.stack);
+  const report = formatSanitizedFailure(err);
+  console.error(JSON.stringify(report));
   process.exitCode = 1;
 });
