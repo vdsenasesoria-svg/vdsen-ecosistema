@@ -9,6 +9,20 @@ const OFF_BASELINE_SHA = A.SAFE_OFF_BASELINE.runtimeSha;
 const LEGACY_T671_SHA = 'a8cf462c78c4bd795cc9f485a82f64429c179f00';
 const T671 = OFF_BASELINE_SHA;
 const FILE = 'release-output/ayrton-runtime.json';
+const REVIEWED_MAIN_SHAS = [
+  'f6596ba5207dc158b8a9b01483cd0fe0ebeb274c', // Pinned initial main baseline
+  // Post-PR171: the exact merge commit SHA on main will be appended here upon reviewed integration.
+];
+function assertAuthorizedMainSha(mainSha, expectedEnv = process.env.APP_EXPECTED_MAIN_SHA, extraReviewed = []) {
+  assert.match(String(mainSha || ''), /^[a-f0-9]{40}$/, 'INVALID_MAIN_SHA');
+  if (expectedEnv) {
+    assert.match(String(expectedEnv), /^[a-f0-9]{40}$/, 'INVALID_EXPECTED_MAIN_SHA');
+    assert.equal(mainSha, expectedEnv, 'MAIN_SHA_MISMATCH');
+  }
+  const allowed = new Set([...REVIEWED_MAIN_SHAS, ...extraReviewed]);
+  assert.ok(allowed.has(mainSha), 'UNAUTHORIZED_MAIN_SHA: ' + mainSha);
+  return mainSha;
+}
 function closed(w, snapshot) {
   P.stateGate(w, snapshot, 'enable');
   assert.ok(!snapshot.release || snapshot.release.enabled === false, 'RELEASE_FENCE_MUST_BE_DISABLED');
@@ -121,7 +135,7 @@ function adapters(s) {
       G.assertContractCoverage(G.discoverRuntimeEnvNames(sha, git));
       assert.ok(git('show', sha + ':api/autonomous-progression-trigger.js').includes('vdsen-progression-runtime-v1'), 'PROBE_NOT_IN_RUNTIME');
       const main = git('ls-remote', 'origin', 'refs/heads/main').split(/\s/)[0];
-      assert.equal(main, 'f6596ba5207dc158b8a9b01483cd0fe0ebeb274c');
+      assertAuthorizedMainSha(main);
       await require('./ayrton-window.cjs').assertLegacyRetired(s);
       return git('rev-parse', sha + '^{tree}');
     },
@@ -182,7 +196,7 @@ async function main(argv) {
   assert.equal(w.mode, 'STAGE1_SHADOW', 'ONLY_STAGE1_SHADOW_ACCEPTED');
   return arm(w, { runtimeSha: s.runtime_sha, deployment: s.production_deployment, officialReleaseRun: String(s.app_release.source_release_run) }, io);
 }
-module.exports = { arm, restore, closed, invocation, buildDeployArgs, T671, OFF_BASELINE_SHA, LEGACY_T671_SHA };
+module.exports = { arm, restore, closed, invocation, buildDeployArgs, T671, OFF_BASELINE_SHA, LEGACY_T671_SHA, assertAuthorizedMainSha, REVIEWED_MAIN_SHAS };
 if (require.main === module) main(process.argv.slice(2)).then(r => console.log(JSON.stringify({ status: r.status }))).catch(() => {
   console.error('PILOT_RUNTIME_STOPPED: review the redacted checkpoint; do not repeat deployment.'); process.exitCode = 1;
 });
