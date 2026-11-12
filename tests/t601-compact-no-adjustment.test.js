@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const HTML = fs.readFileSync('vdsen-cliente.html', 'utf8');
 function fnSrc(name) { const i = HTML.indexOf('function ' + name + '('); assert.ok(i >= 0, name); let d = 0; for (let k = HTML.indexOf('{', i); k < HTML.length; k++) { d += (HTML[k] === '{') - (HTML[k] === '}'); if (!d) return HTML.slice(i, k + 1); } throw new Error(name); }
 const ctx = { _escHTml: (s) => String(s), Number, String, Object, Math }; vm.createContext(ctx);
-vm.runInContext(fnSrc('_ruleReason') + '\n' + fnSrc('_seriesAuthorityHtml'), ctx);
+vm.runInContext(fnSrc('_fmtLoadForUi') + '\n' + fnSrc('_ruleReason') + '\n' + fnSrc('_seriesAuthorityHtml'), ctx);
 
 test('T601-1 no authorized adjustment: one short status line, no "CAMBIO RESPECTO" block', () => {
   const html = ctx._seriesAuthorityHtml(null, 0);

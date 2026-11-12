@@ -119,10 +119,10 @@ const renderResumenSrc = extractFunction(CLIENT, 'function renderResumen() {');
 ok(!renderResumenSrc.includes('_findStaleOpenSession') && !renderResumenSrc.includes('SESIÓN ANTERIOR SIN CERRAR'),
   'FINDING 2 still open as of T307/T308/T309: renderResumen never checks for a stale session -- the only surface is loadPlan\'s one-time modal (fixed in T311)');
 
-// ── Known P3 (already documented, not a new finding): week-grid conflates
-// all-PARTIAL with all-COMPLETE. ────────────────────────────────────────────
-ok(CLIENT.includes("const _wDone = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => _isRealExecution(LOGS['done_'+w+'_'+i])).every(Boolean);"),
-  'confirmed pre-existing P3: the week-grid "done" class is driven by _isRealExecution (COMPLETE+PARTIAL+legacy AUTO_CLOSED all collapse to the same green cell)');
+// Week-grid now separates complete, partial and administrative closures.
+ok(renderResumenSrc.includes('const _wAllComplete = _numDiasGrid > 0 && _wStates.every(s => s === \'COMPLETE\');') &&
+   renderResumenSrc.includes('const _wHasPartial = _wResolved && !_wAllComplete && _wStates.some('),
+  'week-grid complete requires every day to have verified execution; partial is separate');
 
 console.log('');
 console.log('T307 — Home contract audit: ' + pass + ' assertions PASSED. 2 real findings documented (fixed in T308/T309 and T311). No code changed this phase.');

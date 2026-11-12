@@ -161,7 +161,7 @@ function setLog(w, di, ei, si, over) {
 
   // A. Full completion -> COMPLETE
   {
-    H.reset({ LOGS: {}, CURRENT_WEEK: 2, REAL_WEEK: 2, sesiones: [ses(1,1)], saveResult: true });
+    H.reset({ LOGS: { log_2_0_0_s0: setLog(2,0,0,0) }, CURRENT_WEEK: 2, REAL_WEEK: 2, sesiones: [ses(1,1)], saveResult: true });
     await H._confirmSessionDone(0);
     const st = H.getState();
     eq(H._getSessionLifecycleState(st.LOGS, 2, 0), 'COMPLETE', 'A: _confirmSessionDone -> lifecycle COMPLETE');
@@ -270,6 +270,8 @@ function setLog(w, di, ei, si, over) {
     logs['done_2_0'] = { ts: Date.now() };                    // COMPLETE
     logs['done_2_1'] = { ts: Date.now(), partial: true };     // PARTIAL
     logs['done_2_2'] = { ts: Date.now(), skipped: true };     // SKIPPED
+    logs['log_2_0_0_s0'] = setLog(2,0,0,0);
+    logs['log_2_1_0_s0'] = setLog(2,1,0,0);
     H.reset({ LOGS: logs, CURRENT_WEEK: 2, REAL_WEEK: 2, sesiones: [ses(1,1), ses(1,1), ses(1,1)], totalWeeks: 6 });
     await H._autoAdvanceWeekIfDone(false);
     const st = H.getState();
@@ -339,7 +341,7 @@ function setLog(w, di, ei, si, over) {
 
   // S. Two independent client LOGS objects never leak into each other
   {
-    var clientA = { 'done_1_0': { ts: 1, partial: true } };
+    var clientA = { 'done_1_0': { ts: 1, partial: true }, 'log_1_0_0_s0': setLog(1,0,0,0) };
     var clientB = {}; // client B never touched this session
     eq(H._getSessionLifecycleState(clientA, 1, 0), 'PARTIAL', 'S: client A\'s own state resolves correctly');
     eq(H._getSessionLifecycleState(clientB, 1, 0), 'NOT_STARTED', 'S: client B\'s independent (empty) LOGS never inherits client A\'s PARTIAL state');
@@ -367,7 +369,7 @@ function setLog(w, di, ei, si, over) {
 
   checked('missing done_ causing a permanent lock -- selDia/setWeek have zero done_-based gating (T299/T304)');
   checked('PARTIAL treated as COMPLETE -- day tabs / session header / exercise-card banner all resolved via _getSessionLifecycleState, PARTIAL renders its own "◐ PARCIAL" badge, never the COMPLETE checkmark (T301)');
-  checked('PARTIAL treated as NOT_STARTED -- _getSessionLifecycleState resolves partial/autoClosed BEFORE falling through to the SKIPPED branch; never reaches NOT_STARTED once a done_ entry exists (T300)');
+  checked('PARTIAL requires execution evidence; an administrative close without it resolves SKIPPED (T300)');
   checked('SKIPPED generating progression evidence -- skipSession never calls calculateProgression (case C/T above)');
   checked('autofill counted as execution -- _sessionHasRealLoggedSets/_calcSessionStats/_lastRealSetTs all filter autoFilled (case O above)');
   checked('stale timer identity leakage -- _calcSessionStats scopes sessionStart to the exact log_{week}_{di}_ prefix (T299/T173.1, re-confirmed in T303)');
@@ -380,13 +382,11 @@ function setLog(w, di, ei, si, over) {
   checked('refresh losing partial/skipped state -- case R above: _getSessionLifecycleState is a pure function of persisted LOGS, re-derives identically from a freshly-parsed copy');
   checked('logout not clearing session-specific transient state -- doLogout (T129, pre-existing) resets LOGS/PLAN/EXERCISE_UNITS/EXERCISE_HISTORY/REAL_WEEK/CURRENT_WEEK');
 
-  // ── One documented P3 (not fixed -- coarse aggregate view, not the
-  // per-session status display the ticket requires 5 distinct labels for). ──
-  ok(CLIENT.includes('const _wDone = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => _isRealExecution(LOGS[\'done_\'+w+\'_\'+i])).every(Boolean);'),
-    'P3 (documented, not fixed): renderResumen\'s week-grid "done" (green) cell and the adherence streak both treat a week fully closed via PARTIAL identically to one fully COMPLETE -- an intentional, low-risk aggregate simplification (a week IS genuinely executed either way), but it means a glance at the week grid cannot distinguish "fully real-complete" from "fully partial" the way the per-session view now can. Left as documented debt: fixing it would require a second aggregate color/label, which is cosmetic polish outside this ticket\'s blocking-correctness scope.');
+  ok(CLIENT.includes('const _wHasPartial = _wResolved && !_wAllComplete && _wStates.some('),
+    'a resolved week with execution but incomplete sessions is visibly partial, never fully completed');
 
   console.log('');
-  console.log('T306 — Residual audit: 0 new P0/P1/P2 findings. 1 P3 documented (cosmetic, week-grid aggregate only).');
+  console.log('T306 — Residual audit: week-grid complete/partial states verified.');
   console.log('T306 TOTAL: ' + pass + ' assertions PASSED');
 
   try { fs.unlinkSync(harnessPath); } catch(e) {}

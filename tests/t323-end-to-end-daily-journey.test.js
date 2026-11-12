@@ -170,7 +170,7 @@ try {
   // CASE A — Normal day: NOT_STARTED -> start -> log sets -> COMPLETE -> Home COMPLETE
   {
     var oneSes = [ses(1, 1)];
-    HA.reset({ LOGS: {}, CURRENT_WEEK: 2, REAL_WEEK: 2, sesiones: oneSes });
+    HA.reset({ LOGS: { log_2_0_0_s0: { done: true, carga: '50', reps: '8', ts: Date.now() } }, CURRENT_WEEK: 2, REAL_WEEK: 2, sesiones: oneSes });
     eq(HA._getTodayHomeState({}, 2, oneSes).lifecycle, 'NOT_STARTED', 'CASE A: starts NOT_STARTED');
     await HA._confirmSessionDone(0);
     var st = HA.getState();
@@ -260,7 +260,7 @@ try {
 
   // CASE K — Client switch: zero cross-client leakage
   {
-    var clientALogs = { 'done_2_0': { ts: Date.now(), partial: true } };
+    var clientALogs = { 'done_2_0': { ts: Date.now(), partial: true }, 'log_2_0_0_s0': { done: true, ts: Date.now() } };
     var clientBLogs = {};
     var oneSes = [ses(1,1)];
     eq(HA._getTodayHomeState(clientALogs, 2, oneSes).lifecycle, 'PARTIAL', 'CASE K: client A own state');
@@ -325,7 +325,7 @@ try {
   // CASE Q — completed workout: no mutation from Home or Workout
   {
     var oneSes = [ses(1,1)];
-    var logs = { 'done_2_0': { ts: Date.now() } };
+    var logs = { 'done_2_0': { ts: Date.now() }, 'log_2_0_0_s0': { done: true, ts: Date.now() } };
     var home = HA._getTodayHomeState(logs, 2, oneSes);
     ok(!home.canStart && !home.canResume, 'CASE Q: Home exposes no writable action on a COMPLETE session');
     var goToHomeDaySrc = extractFunction(CLIENT, 'function _goToHomeDay(idx) {');

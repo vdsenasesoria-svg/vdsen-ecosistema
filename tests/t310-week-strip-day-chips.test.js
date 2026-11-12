@@ -42,7 +42,7 @@ function extractFunction(src, decl) {
 // any-PARTIAL-mixed-in, via a separate CSS class and label. ────────────────
 const renderResumenSrc = extractFunction(CLIENT, 'function renderResumen() {');
 ok(renderResumenSrc.includes('const _wAllComplete ='), 'renderResumen computes a pure-COMPLETE check separate from the real-execution check');
-ok(renderResumenSrc.includes('const _wHasPartial = _wDone && !_wAllComplete;'), 'a week resolved via real execution but not purely COMPLETE is flagged _wHasPartial');
+ok(renderResumenSrc.includes('const _wHasPartial = _wResolved && !_wAllComplete && _wStates.some('), 'a resolved week with genuine execution but not purely COMPLETE is flagged _wHasPartial');
 ok(renderResumenSrc.includes("cls = w===semActiva?'active':(_wAllComplete?'done':(_wHasPartial?'partial':"),
   'the "done" (green) class is now reserved for purely-COMPLETE weeks; a PARTIAL-containing week gets its own "partial" class, never "done"');
 ok(renderResumenSrc.includes("lbl = w===_totalWeeksGrid?(_wIsDeload?'DELOAD':'FINAL'):w===semActiva?'ACTIVA':(_wHasPartial?'PARCIAL':"),

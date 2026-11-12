@@ -31,7 +31,7 @@ function world(logs) {
     showPRCelebration: () => { throw new Error('celebration must be opt-in'); }
   };
   ctx.window = ctx; vm.createContext(ctx);
-  for (const name of ['_historyPidKey', '_historySnapshot', '_historyLast', '_historyPersonalBest', '_historyEntry', '_getExerciseHistoryEntry', '_recordExerciseHistoryAndPR', '_rebuildExerciseHistoryFromLogs', '_rebuildLoadedHistoryReferences', '_logbookReferenceHtml', '_effectiveSetTargetHtml']) vm.runInContext(fn(name), ctx);
+  for (const name of ['_fmtLoadForUi', '_historyPidKey', '_historySnapshot', '_historyLast', '_historyPersonalBest', '_historyEntry', '_getExerciseHistoryEntry', '_recordExerciseHistoryAndPR', '_rebuildExerciseHistoryFromLogs', '_rebuildLoadedHistoryReferences', '_logbookReferenceHtml', '_effectiveSetTargetHtml']) vm.runInContext(fn(name), ctx);
   return ctx;
 }
 const set = (load, ts, extra) => Object.assign({ done: true, carga: String(load), reps: '10', rir_real: '2', unit: 'KG', ts, prescriptionExerciseId: 'pidA' }, extra || {});
@@ -73,7 +73,7 @@ test('T597-F/G/I Coach supplies only structure; logbook references convert units
   const coach = w._effectiveSetTargetHtml({ load: 100, repsTarget: 8, rirTarget: 2 }, 'COACH', 'KG', false);
   assert.match(coach, /ESTRUCTURA COACH/); assert.doesNotMatch(coach, /CARGA 100/);
   const applied = w._effectiveSetTargetHtml({ load: 102.5, repsTarget: 8, rirTarget: 2 }, 'AUTOAJUSTE VDSEN', 'KG', false);
-  assert.match(applied, /OBJETIVO AUTOAJUSTE VDSEN/); assert.match(applied, /CARGA 102.5 KG/);
+  assert.match(applied, /OBJETIVO AUTOAJUSTE VDSEN/); assert.match(applied, /CARGA 102,5 KG/);
   const ref = w._historyEntry({ load: '10', unit: 'KG', reps: '10', updatedAt: 1 });
   assert.match(w._logbookReferenceHtml(ref, 'LB', false), /22(?:\.0)? LB/);
   assert.match(w._logbookReferenceHtml({}, 'KG', false), /SIN HISTORIAL/);

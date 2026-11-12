@@ -55,6 +55,18 @@ test('T587-R3 units are never mixed into one number; decimals use the app format
   assert.equal(o.rows[0].loadText, '100 kg · 225 lb'); assert.equal(o.rows[1].loadText, '102,5 kg');
   assert.equal(o.rows[2].express, true); assert.equal(o.rows[2].rirText, 'RIR 2'); assert.equal(o.rows[2].icsText, 'ICS 9');
 });
+test('single-log circuit is included with only its recorded rounds, time and effort', () => {
+  const recap = J(R._recapBuild({ exercises: [{ name: 'Circuito', circuito: { rounds: 4, tiempoTotalMin: 12, rpe: 8 } }] }));
+  assert.equal(recap.totals.exercises, 1);
+  assert.equal(recap.totals.sets, 0);
+  assert.equal(recap.rows[0].activity, 'circuito');
+  assert.equal(recap.rows[0].activityText, '4 rounds · 12 min');
+  assert.equal(recap.rows[0].effortText, 'RPE 8/10');
+  const logs = { log_1_0_0: { done: true, exType: 'circuito', rounds: 4, tiempoTotalMin: 12 } };
+  const ses = [{ dia: 'DÍA 1 — Circuito', exercises: [{ nombre: 'Circuito', exerciseType: 'circuito' }] }];
+  const sb = sandbox({ __collect: true, LOGS: logs, getSesiones: () => ses, isTechniqueActive: () => true, _getExType: () => 'circuito', _stripDayNo: x => x });
+  assert.equal(J(sb._recapCollect(0, 1)).exercises[0].circuito.rounds, 4);
+});
 
 test('T587-R4 helpers: rest format, number format, compact join', () => {
   assert.deepEqual([R._recapRestFmt(90), R._recapRestFmt(120), R._recapRestFmt(45), R._recapRestFmt('x'), R._recapRestFmt(0)], ['1:30', '2:00', '45 s', '', '']);
