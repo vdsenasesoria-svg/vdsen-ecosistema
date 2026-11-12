@@ -16,7 +16,7 @@ const PROD_DEPLOYMENT = 'dpl_BDdGBRjtRotiv4nJJEDoZK57He9s';
 const PROD_RUNTIME = '21dc0e2b211facfb0df9f3079c58488c2f86952c';
 const PROJECT = 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN';
 const TEAM = 'team_VZc5H7Q1DBIJ3g0mwrSBz1o8';
-const MAIN = 'f6596ba5207dc158b8a9b01483cd0fe0ebeb274c';
+const MAIN = 'eee34ea6442381ef7af086d08f149445f347efb6';
 
 const candidate = (over = {}) => Object.assign({
   id: 'dpl_candidate000000000000000001',
