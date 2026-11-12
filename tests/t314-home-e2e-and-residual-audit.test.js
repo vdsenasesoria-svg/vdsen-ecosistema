@@ -125,7 +125,7 @@ try {
   // it looking for something NOT_STARTED that doesn't exist)
   {
     var logs = {};
-    sesiones4.forEach(function(_, i) { logs['done_'+W+'_'+i] = { ts: Date.now(), partial: true }; });
+    sesiones4.forEach(function(_, i) { logs['done_'+W+'_'+i] = { ts: Date.now(), partial: true }; logs['log_'+W+'_'+i+'_0_s0'] = { done: true, ts: Date.now() }; });
     H.reset({ LOGS: logs, CURRENT_WEEK: W, REAL_WEEK: W, sesiones: sesiones4 });
     const home = H._getTodayHomeState(logs, W, sesiones4);
     eq(home.label, 'Parcial', 'CASE C: label "Parcial"');
@@ -135,7 +135,7 @@ try {
 
   // D. COMPLETE
   {
-    var logs = { ['done_'+W+'_0']: { ts: Date.now() } };
+    var logs = { ['done_'+W+'_0']: { ts: Date.now() }, ['log_'+W+'_0_0_s0']: { done: true, ts: Date.now() } };
     // Make day 0 the only day so the resolver's fallback lands there as COMPLETE.
     var oneSes = [ses(1,4)];
     H.reset({ LOGS: logs, CURRENT_WEEK: W, REAL_WEEK: W, sesiones: oneSes });
@@ -199,6 +199,8 @@ try {
     sesiones4.forEach(function(_, i) {
       logsAllPartial['done_'+W+'_'+i] = { ts: Date.now(), partial: true };
       logsAllComplete['done_'+W+'_'+i] = { ts: Date.now() };
+      logsAllPartial['log_'+W+'_'+i+'_0_s0'] = { done: true, ts: Date.now() };
+      logsAllComplete['log_'+W+'_'+i+'_0_s0'] = { done: true, ts: Date.now() };
     });
     var allComplete_partial = sesiones4.every(function(_, i) { return H._getSessionLifecycleState(logsAllPartial, W, i) === 'COMPLETE'; });
     var allComplete_complete = sesiones4.every(function(_, i) { return H._getSessionLifecycleState(logsAllComplete, W, i) === 'COMPLETE'; });
@@ -217,7 +219,7 @@ try {
   // L. client switch -> zero previous-client Home state
   {
     var oneSes = [ses(1, 4)];
-    var clientALogs = { ['done_'+W+'_0']: { ts: Date.now(), partial: true } };
+    var clientALogs = { ['done_'+W+'_0']: { ts: Date.now(), partial: true }, ['log_'+W+'_0_0_s0']: { done: true, ts: Date.now() } };
     var clientBLogs = {}; // a fresh client, never touched anything
     eq(H._getTodayHomeState(clientALogs, W, oneSes).lifecycle, 'PARTIAL', 'CASE L: client A resolves its own real state');
     eq(H._getTodayHomeState(clientBLogs, W, oneSes).lifecycle, 'NOT_STARTED', 'CASE L: client B (independent LOGS object) never inherits client A\'s PARTIAL state');
@@ -243,14 +245,14 @@ try {
   // O. refresh after PARTIAL closure -> remains PARTIAL
   {
     var oneSes = [ses(1, 4)];
-    var logs = { ['done_'+W+'_0']: { ts: 99999, partial: true } };
+    var logs = { ['done_'+W+'_0']: { ts: 99999, partial: true }, ['log_'+W+'_0_0_s0']: { done: true, ts: 99999 } };
     var freshCopy = JSON.parse(JSON.stringify(logs));
     eq(H._getTodayHomeState(freshCopy, W, oneSes).lifecycle, 'PARTIAL', 'CASE O: a refreshed (freshly-parsed) LOGS object still resolves to PARTIAL, never reverting to NOT_STARTED/IN_PROGRESS');
   }
 
   // P. completed session -> no writable/continue action exposed by Home
   {
-    var logs = { ['done_'+W+'_0']: { ts: Date.now() } };
+    var logs = { ['done_'+W+'_0']: { ts: Date.now() }, ['log_'+W+'_0_0_s0']: { done: true, ts: Date.now() } };
     var oneSes = [ses(1,4)];
     const home = H._getTodayHomeState(logs, W, oneSes);
     ok(!home.canStart && !home.canResume, 'CASE P: COMPLETE exposes neither canStart nor canResume -- Home offers no writable/continue action');

@@ -92,6 +92,7 @@ const sesiones3 = [ses(1,3), ses(1,3), ses(1,3)];
 // 4. Day 0 PARTIAL -> Home moves to day 1 (PARTIAL is a resolved closure)
 {
   var logs = { ['done_'+W+'_0']: { ts: Date.now(), partial: true } };
+  logs['log_'+W+'_0_0_s0'] = { done: true, ts: Date.now() };
   const st = _getTodayHomeState(logs, W, sesiones3);
   eq(st.dayIndex, 1, 'T308-4: a PARTIAL day 0 is resolved -- Home advances to day 1, never stuck showing day 0 as still-pending');
   eq(st.lifecycle, 'NOT_STARTED', 'T308-4: day 1 itself is untouched');
@@ -104,6 +105,7 @@ const sesiones3 = [ses(1,3), ses(1,3), ses(1,3)];
   // Force all 3 days to appear PARTIAL so the resolver's fallback (last day) lands on one.
   logs['done_'+W+'_1'] = { ts: Date.now(), partial: true };
   logs['done_'+W+'_2'] = { ts: Date.now(), partial: true };
+  for (var i = 0; i < 3; i++) logs['log_'+W+'_'+i+'_0_s0'] = { done: true, ts: Date.now() };
   const st = _getTodayHomeState(logs, W, sesiones3);
   eq(st.dayIndex, 2, 'T308-5: week fully resolved via PARTIAL -> falls back to the last day');
   eq(st.lifecycle, 'PARTIAL', 'T308-5: lifecycle PARTIAL');
@@ -115,7 +117,7 @@ const sesiones3 = [ses(1,3), ses(1,3), ses(1,3)];
 // 6. All days COMPLETE -> FINDING 1's exact repro case: never "ENTRENAR AHORA"
 {
   var logs = {};
-  for (var i = 0; i < 3; i++) logs['done_'+W+'_'+i] = { ts: Date.now() };
+  for (var i = 0; i < 3; i++) { logs['done_'+W+'_'+i] = { ts: Date.now() }; logs['log_'+W+'_'+i+'_0_s0'] = { done: true, ts: Date.now() }; }
   const st = _getTodayHomeState(logs, W, sesiones3);
   eq(st.lifecycle, 'COMPLETE', 'T308-6: lifecycle COMPLETE');
   eq(st.primaryAction.code, 'VIEW', 'T308-6: primary action VIEW -- FINDING 1 fixed, no more fake "start again"');
@@ -135,6 +137,7 @@ const sesiones3 = [ses(1,3), ses(1,3), ses(1,3)];
 // 8. Mixed week: day 0 SKIPPED, day 1 COMPLETE, day 2 untouched -> lands on day 2
 {
   var logs = { ['done_'+W+'_0']: { ts: Date.now(), skipped: true }, ['done_'+W+'_1']: { ts: Date.now() } };
+  logs['log_'+W+'_1_0_s0'] = { done: true, ts: Date.now() };
   const st = _getTodayHomeState(logs, W, sesiones3);
   eq(st.dayIndex, 2, 'T308-8: correctly skips past resolved days (SKIPPED and COMPLETE alike) to the next actionable one');
   eq(st.lifecycle, 'NOT_STARTED', 'T308-8: day 2 is NOT_STARTED');

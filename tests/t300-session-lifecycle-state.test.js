@@ -72,11 +72,11 @@ eq(_getSessionLifecycleState({ ['log_'+W+'_'+D+'_0_s0']: { done: true, carga: '5
 eq(_getSessionLifecycleState({ ['log_'+W+'_'+D+'_0_s0']: { done: true, autoFilled: true, carga: '50' } }, W, D),
   'NOT_STARTED', 'T300-3: only autoFilled set, no done_ -> NOT_STARTED (AUTOFILLED != EXECUTED)');
 
-// 4. Legacy boolean true -> COMPLETE
-eq(_getSessionLifecycleState(logsWithDone(true), W, D), 'COMPLETE', 'T300-4: legacy done_=true -> COMPLETE');
+// 4. Legacy boolean true is only a closure marker until execution is verified.
+eq(_getSessionLifecycleState(logsWithDone(true), W, D), 'NOT_STARTED', 'T300-4: legacy done_=true without execution -> NOT_STARTED');
 
-// 5. Real completion object {ts} -> COMPLETE
-eq(_getSessionLifecycleState(logsWithDone({ ts: Date.now() }), W, D), 'COMPLETE', 'T300-5: done_={ts} (real completion) -> COMPLETE');
+// 5. A completion timestamp alone is not execution evidence.
+eq(_getSessionLifecycleState(logsWithDone({ ts: Date.now() }), W, D), 'NOT_STARTED', 'T300-5: done_={ts} without execution -> NOT_STARTED');
 
 // 6. Explicit skip -> SKIPPED
 eq(_getSessionLifecycleState(logsWithDone({ ts: Date.now(), skipped: true }), W, D), 'SKIPPED', 'T300-6: done_={skipped:true} -> SKIPPED');
@@ -86,12 +86,12 @@ eq(_getSessionLifecycleState(logsWithDone({ ts: Date.now(), autoClosed: true, sk
   'SKIPPED', 'T300-7: autoClosed+skipped (no real data) -> SKIPPED (no fabricated execution)');
 
 // 8. Week bulk-close WITH real data (AUTO_CLOSED, legacy path) -> PARTIAL, not COMPLETE
-eq(_getSessionLifecycleState(logsWithDone({ ts: Date.now(), autoClosed: true }), W, D),
+eq(_getSessionLifecycleState({ ...logsWithDone({ ts: Date.now(), autoClosed: true }), ['log_'+W+'_'+D+'_0_s0']: { done: true } }, W, D),
   'PARTIAL', 'T300-8: autoClosed with real data -> PARTIAL (PARTIAL != COMPLETE, even via the legacy week-close path)');
 
 // 9. T301 per-session "TERMINAR POR HOY" close -> PARTIAL
-eq(_getSessionLifecycleState(logsWithDone({ ts: Date.now(), partial: true }), W, D),
-  'PARTIAL', 'T300-9: done_={partial:true} (T301 close) -> PARTIAL');
+eq(_getSessionLifecycleState({ ...logsWithDone({ ts: Date.now(), partial: true }), ['log_'+W+'_'+D+'_0_s0']: { done: true } }, W, D),
+  'PARTIAL', 'T300-9: done_={partial:true} with execution -> PARTIAL');
 
 // 10. Real sets logged in a DIFFERENT day/week must never bleed into this session's IN_PROGRESS check
 eq(_getSessionLifecycleState({ ['log_'+W+'_'+(D+1)+'_0_s0']: { done: true }, ['log_'+(W+1)+'_'+D+'_0_s0']: { done: true } }, W, D),
@@ -102,9 +102,9 @@ ok(_isRealExecution({ ts: Date.now(), partial: true }), 'PARTIAL counts as real 
 
 // Bonus: label mapping never exposes raw enum names
 eq(_getSessionLifecycleLabel({}, W, D), 'Pendiente', 'label: NOT_STARTED -> "Pendiente" (natural Spanish, not raw enum)');
-eq(_getSessionLifecycleLabel(logsWithDone({ ts: Date.now(), partial: true }), W, D), 'Parcial', 'label: PARTIAL -> "Parcial"');
+eq(_getSessionLifecycleLabel({ ...logsWithDone({ ts: Date.now(), partial: true }), ['log_'+W+'_'+D+'_0_s0']: { done: true } }, W, D), 'Parcial', 'label: PARTIAL -> "Parcial"');
 eq(_getSessionLifecycleLabel(logsWithDone({ ts: Date.now(), skipped: true }), W, D), 'Omitida', 'label: SKIPPED -> "Omitida"');
-eq(_getSessionLifecycleLabel(logsWithDone({ ts: Date.now() }), W, D), 'Completada', 'label: COMPLETE -> "Completada"');
+eq(_getSessionLifecycleLabel({ ...logsWithDone({ ts: Date.now() }), ['log_'+W+'_'+D+'_0_s0']: { done: true } }, W, D), 'Completada', 'label: COMPLETE -> "Completada"');
 eq(_getSessionLifecycleLabel({ ['log_'+W+'_'+D+'_0_s0']: { done: true } }, W, D), 'En curso', 'label: IN_PROGRESS -> "En curso"');
 
 console.log('');

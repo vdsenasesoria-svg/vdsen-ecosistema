@@ -14,7 +14,7 @@ function fnSrc(name) {
   for (let k = j; k < SRC.length; k++) { if (SRC[k] === '{') d++; else if (SRC[k] === '}' && --d === 0) return SRC.slice(i, k + 1); }
   throw new Error('unbalanced ' + name);
 }
-const FNS = ['_exNotePidKey', '_exNoteCtx', '_exNoteValid', '_exNoteShadowed', '_roundUnit', '_convertCarga', '_prevWeekRef', '_prevWeekHtml', '_prevWeekReuse', '_prevWeekKeyParts', '_prevWeekReuseHtml', '_prevWeekUse', '_buildSetReferenceHtml'];
+const FNS = ['_fmtLoadForUi', '_exNotePidKey', '_exNoteCtx', '_exNoteValid', '_exNoteShadowed', '_roundUnit', '_convertCarga', '_prevWeekRef', '_prevWeekHtml', '_prevWeekReuse', '_prevWeekKeyParts', '_prevWeekReuseHtml', '_prevWeekUse', '_buildSetReferenceHtml'];
 const PRES = [{ prescriptionExerciseId: 'pidA', exerciseName: 'Press banca', sets: [{ rirTarget: 2, load: 100, repsTarget: 8 }, { rirTarget: 2, load: 100, repsTarget: 8 }, { rirTarget: 1, load: 100, repsTarget: 8 }] }, { prescriptionExerciseId: 'pidB', exerciseName: 'Remo', sets: [] }];
 function world(o) {
   o = o || {}; const calls = { save: 0, rir: 0, toast: 0, hint: 0 }; const els = {};
@@ -118,7 +118,8 @@ test('T551.20 partial prior evidence: only the field that exists is copied (noth
   assert.ok(btn(w, 0).includes('— × 12'));
 });
 test('T551.21 unit conversion: a LB prior set shown / copied in the current KG unit (explicit conversion only)', () => {
-  const w = world({ logs: { log_1_1_0_s0: set({ carga: '100', unit: 'LB', reps: '8' }) } }); const html = btn(w, 0); assert.ok(/45\.4|45\.35|45\.5/.test(html), html);
+  const w = world({ logs: { log_1_1_0_s0: set({ carga: '100', unit: 'LB', reps: '8' }) } }); const html = btn(w, 0); assert.ok(html.includes('45,5 kg'), html);
+  w.getExUnit = () => 'KG'; w._prevWeekUse('log_2_1_0_s0'); assert.equal(w.els['carga_log_2_1_0_s0'].value, '45.5', 'display formatting never becomes the draft value');
 });
 test('T551.22 the OLD hint is gone: no ↩ SEM chip, no 📋 HISTORIAL chip, no prefill with RIR, no positional / name / history lookup in the hint path', () => {
   const body = fnSrc('_buildSetReferenceHtml'); assert.ok(!/↩ SEM|HISTORIAL|_prefillFromReference|histEx\.|prev\.rir_real|prev\.carga/.test(body));

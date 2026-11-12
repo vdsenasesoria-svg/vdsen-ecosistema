@@ -1383,6 +1383,7 @@ html.rc-open{overflow:hidden}
 #sessRecap .rc-sub{margin-top:4px;font-size:12px;color:var(--mt);letter-spacing:.03em}
 #sessRecap .rc-sub u{text-decoration:none;color:var(--accent);font-weight:700}
 #sessRecap .rc-body{flex:1;min-height:0;overflow:hidden}
+#sessRecap[data-oversize="1"] .rc-body{overflow-y:auto}
 #sessRecap .rc-ex{padding:12px 0;border-bottom:1px solid var(--rule)}
 #sessRecap .rc-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
 #sessRecap .rc-name{font-family:var(--font-display);font-weight:700;font-size:clamp(18px,4.8vw,21px);line-height:1.2;min-width:0;overflow-wrap:anywhere}
@@ -1392,7 +1393,7 @@ html.rc-open{overflow:hidden}
 #sessRecap .rc-data em{font-style:normal;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mt);border:1px solid var(--rule-strong);border-radius:var(--r-1);padding:1px 7px;align-self:center}
 #sessRecap .rc-meta{display:flex;flex-wrap:wrap;gap:3px 12px;margin-top:5px;font-family:var(--font-num);font-size:14px;color:var(--mt)}
 #sessRecap .rc-rest i{font-style:normal;opacity:.85}
-#sessRecap .rc-note{margin-top:6px;font-size:14px;line-height:1.35;color:var(--mt);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+#sessRecap .rc-note{margin-top:6px;font-size:14px;line-height:1.35;color:var(--mt);overflow-wrap:anywhere}
 #sessRecap .rc-foot{padding-top:8px}
 #sessRecap .rc-acts{display:flex;align-items:center;gap:8px}
 #sessRecap .rc-page{font-family:var(--font-num);font-size:12px;color:var(--mt);min-width:34px;text-align:center}
@@ -4793,18 +4794,18 @@ function renderResumen() {
   const _totalWeeksGrid = getTotalWeeks();
   for (let w=1; w<=_totalWeeksGrid; w++) {
     const _wResolved = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => !!LOGS['done_'+w+'_'+i]).every(Boolean);
-    const _wDone = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => _sessionHasRealLoggedSets(LOGS, w, i)).every(Boolean);
+    const _wStates = Array.from({length:_numDiasGrid}, (_,i) => _getSessionLifecycleState(LOGS, w, i));
     // T310 (closes the known P3): a week resolved entirely via COMPLETE is
     // "done" (green); one resolved via real execution but containing at
     // least one PARTIAL gets its own distinct "partial" look -- never the
     // same green checkmark as a fully-COMPLETE week.
-    const _wAllComplete = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => _visibleSessionLifecycleState(LOGS, w, i) === 'COMPLETE').every(Boolean);
-    const _wHasPartial = _wDone && !_wAllComplete;
+    const _wAllComplete = _numDiasGrid > 0 && _wStates.every(s => s === 'COMPLETE');
+    const _wHasPartial = _wResolved && !_wAllComplete && _wStates.some(s => s === 'COMPLETE' || s === 'PARTIAL');
     // T545: the last week is only a DELOAD when the reactive engine's own trigger check says so (T162: SEMANA 6 ≠ DELOAD AUTOMÁTICO);
     // the strip used to hard-code 'DELOAD' for every plan's final week, contradicting getSemProgresion() on the training tab.
     const _wIsDeload = w===_totalWeeksGrid && _computeDeloadTriggers(w).isDeload === true;
     const cls = w===semActiva?'active':(_wAllComplete?'done':(_wHasPartial?'partial':(_wIsDeload?'deload':'')));
-    const lbl = w===_totalWeeksGrid?(_wIsDeload?'DELOAD':'FINAL'):w===semActiva?'ACTIVA':(_wHasPartial?'PARCIAL':(_wResolved&&!_wDone?'⏸':''));
+    const lbl = w===_totalWeeksGrid?(_wIsDeload?'DELOAD':'FINAL'):w===semActiva?'ACTIVA':(_wHasPartial?'PARCIAL':(_wResolved?'⏸':''));
     weekHtml += `<button type="button" class="wk ${cls}" onclick="goToWeek(${w})" aria-label="Semana ${w}${lbl?': '+lbl:''}">
       <div class="wk-num">${w}</div>
       <div class="wk-lbl">${lbl||'SEM'}</div>
@@ -5255,7 +5256,7 @@ function buildWeekDayChips() {
   var chips = sesiones.map(function(s, i) {
     var st = _getSessionLifecycleState(LOGS, CURRENT_WEEK, i);
     var label = _getSessionLifecycleLabel(LOGS, CURRENT_WEEK, i);
-    var visible = _visibleSessionLifecycleState(LOGS, CURRENT_WEEK, i);
+    var visible = _getSessionLifecycleState(LOGS, CURRENT_WEEK, i);
     if (visible !== st) { st = visible; label = _SESSION_LIFECYCLE_LABELS[visible] || 'Pendiente'; }
     return '<button onclick="_goToHomeDay('+i+')" title="Día '+(i+1)+': '+label+'" aria-label="Día '+(i+1)+': '+label+'" class="dc dc-'+st.toLowerCase()+'" style="flex:1;min-width:0;min-height:44px">'+
       '<span class="dc-mark" aria-hidden="true">'+(chipIcon[st]||'·')+'</span>'+
@@ -5399,29 +5400,24 @@ function _sessionHasRealLoggedSets(logs, week, di) {
   var prefix = 'log_' + week + '_' + di + '_';
   for (var k in logs) {
     if (k.indexOf(prefix) !== 0) continue;
+    // Strength and rounds use _sN; cardio and circuits use one exercise log.
+    if (!/^log_\d+_\d+_\d+(?:_s\d+)?$/.test(k)) continue;
     var e = logs[k];
-    if (e && e.done && !e.autoFilled) return true;
+    if (e && e.done === true && e.autoFilled !== true) return true;
   }
   return false;
 }
 function _getSessionLifecycleState(logs, week, di) {
   logs = logs || {};
   var doneEntry = logs['done_' + week + '_' + di];
+  var hasExecution = _sessionHasRealLoggedSets(logs, week, di);
   if (!doneEntry) {
-    return _sessionHasRealLoggedSets(logs, week, di) ? 'IN_PROGRESS' : 'NOT_STARTED';
+    return hasExecution ? 'IN_PROGRESS' : 'NOT_STARTED';
   }
   var s = _getSessionCompletionState(doneEntry);
-  if (s === 'REAL_COMPLETE') return 'COMPLETE';
-  if (s === 'AUTO_CLOSED' || s === 'PARTIAL') return 'PARTIAL';
+  if (s === 'REAL_COMPLETE') return hasExecution ? 'COMPLETE' : 'NOT_STARTED';
+  if (s === 'AUTO_CLOSED' || s === 'PARTIAL') return hasExecution ? 'PARTIAL' : 'SKIPPED';
   return 'SKIPPED'; // SKIPPED or AUTO_CLOSED_NO_DATA
-}
-// Presentation-only: closed/advanced is not evidence of executed training; LOGS remain untouched.
-function _visibleSessionLifecycleState(logs, week, di) {
-  var state = _getSessionLifecycleState(logs, week, di);
-  if ((state === 'COMPLETE' || state === 'PARTIAL') && !_sessionHasRealLoggedSets(logs, week, di)) {
-    return state === 'PARTIAL' ? 'SKIPPED' : 'NOT_STARTED';
-  }
-  return state;
 }
 // Natural Spanish labels for the 5 canonical states -- never expose raw enum names.
 var _SESSION_LIFECYCLE_LABELS = {
@@ -5459,11 +5455,11 @@ function _getTodayHomeState(logs, week, sesiones) {
   var dayIndex = sesiones.length - 1;
   var weekFullyResolved = true;
   for (var i = 0; i < sesiones.length; i++) {
-    var scanState = _visibleSessionLifecycleState(logs, week, i);
+    var scanState = _getSessionLifecycleState(logs, week, i);
     if (scanState === 'NOT_STARTED' || scanState === 'IN_PROGRESS') { dayIndex = i; weekFullyResolved = false; break; }
   }
 
-  var lifecycle = _visibleSessionLifecycleState(logs, week, dayIndex);
+  var lifecycle = _getSessionLifecycleState(logs, week, dayIndex);
   var label = _SESSION_LIFECYCLE_LABELS[lifecycle] || 'Pendiente';
 
   var stats = _calcSessionStats(logs, dayIndex, week);
@@ -5565,7 +5561,7 @@ function countDone() {
     var week = parseInt(parts[1]);
     var di = parseInt(parts[2], 10);
     return week >= 1 && week <= _tw && Number.isInteger(di) && di >= 0 && di < getSesiones().length &&
-      _visibleSessionLifecycleState(LOGS, week, di) === 'COMPLETE';
+      _getSessionLifecycleState(LOGS, week, di) === 'COMPLETE';
   }).length;
 }
 
@@ -6025,7 +6021,7 @@ function _effectiveSetTargetHtml(setSpec, provenance, unit, isIsometric, detail)
   var rir = setSpec.rirTarget;
   var source = provenance === 'AUTOAJUSTE VDSEN' ? 'AUTOAJUSTE VDSEN' : 'COACH';
   var rows = [];
-  if (hasLoad) rows.push('<span class="sp-t-v"><b>CARGA '+_escHTml(String(load))+' '+_escHTml(unit)+'</b></span>');
+  if (hasLoad) rows.push('<span class="sp-t-v"><b>CARGA '+_escHTml(_fmtLoadForUi(load))+' '+_escHTml(unit)+'</b></span>');
   if (reps !== undefined && reps !== null && reps !== '') rows.push('<span class="sp-t-v"><b>'+_escHTml(String(reps))+'</b> '+(isIsometric ? 'seg' : 'reps')+'</span>');
   if (rir !== undefined && rir !== null && rir !== '') rows.push('<span class="sp-t-r">RIR '+_escHTml(String(rir))+'</span>');
   if (detail) {
@@ -6835,7 +6831,7 @@ function _prevWeekReuseHtml(key, unit) {
   var k = _prevWeekKeyParts(key); if (!k || k.week !== CURRENT_WEEK) return '';
   var r = _prevWeekReuse(LOGS, _exNoteCtx(k.di, k.ei), k.si); if (!r) return '';
   var shown = r.load === null ? null : _convertCarga(r.load, r.unit, unit);
-  var lbl = (shown === null ? '—' : _escHTml(String(shown)) + ' ' + String(unit).toLowerCase()) + ' × ' + (r.reps === null ? '—' : _escHTml(r.reps));
+  var lbl = (shown === null ? '—' : _escHTml(_fmtLoadForUi(shown)) + ' ' + String(unit).toLowerCase()) + ' × ' + (r.reps === null ? '—' : _escHTml(r.reps));
   var ex = (_EJERCICIOS_DIA || [])[k.ei], target = ex && ex.sets && ex.sets[k.si];
   var diff = target && r.reps !== null && String(target.repsTarget) !== String(r.reps) ? ' · Objetivo vigente: '+_escHTml(String(target.repsTarget))+' reps' : '';
   return '<button type="button" class="pw-use" onclick="_prevWeekUse(\'' + key + '\')" aria-label="Copiar registro anterior como borrador, serie ' + r.n + ': ' + lbl + '"><span class="pw-use-a">USAR CARGA/REPS' + (diff ? ' · COPIAR HISTORIAL' : '') + '</span><span class="pw-use-v">SEM ' + (k.week - 1) + ' · S' + r.n + ' · ' + lbl + diff + (diff ? ' · No es una recomendación' : '') + '</span></button>';
@@ -6856,7 +6852,7 @@ function _prevWeekHtml(di, ei) {
   var r = _prevWeekRef(LOGS, _exNoteCtx(di, ei));
   if (!r) return '';
   var rows = r.sets.map(function(st, i) {
-    return '<li class="pw-i"' + (i >= 6 ? ' data-more="1" hidden' : '') + '>S' + st.n + ' · ' + (st.load === null ? '—' : _escHTml(st.load) + ' ' + String(st.unit).toLowerCase()) + ' × ' + (st.reps === null ? '—' : _escHTml(st.reps)) + ' · RIR ' + (st.rir === null ? '—' : st.rir) + '</li>';
+    return '<li class="pw-i"' + (i >= 6 ? ' data-more="1" hidden' : '') + '>S' + st.n + ' · ' + (st.load === null ? '—' : _escHTml(_fmtLoadForUi(st.load)) + ' ' + String(st.unit).toLowerCase()) + ' × ' + (st.reps === null ? '—' : _escHTml(st.reps)) + ' · RIR ' + (st.rir === null ? '—' : st.rir) + '</li>';
   }).join('');
   return '<div class="pw" id="pw_' + di + '_' + ei + '"><div class="pw-h">ÚLTIMA SEMANA <span class="pw-w">· SEM ' + r.week + '</span></div><div class="pw-m">Referencia de tu sesión anterior</div><ul class="pw-l">' + rows + '</ul>' +
     (r.sets.length > 6 ? '<button type="button" class="pw-more" aria-expanded="false" onclick="togglePrevWeek(' + di + ',' + ei + ')">Ver todas (' + r.sets.length + ')</button>' : '') +
@@ -7426,10 +7422,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       var pumpLabel = saved.pump===1?'PUMP ALTO':saved.pump===2?'PUMP MEDIO':saved.pump===3?'PUMP BAJO':'';
       var _pumpSpan = pumpLabel ? ' · '+pumpLabel : '';
       var _cargaDisplay = isIsometric
-        ? ((parseFloat(saved.carga)>0 ? saved.carga+' '+unit+' · ' : '')+saved.reps+' seg')
+        ? ((parseFloat(saved.carga)>0 ? _fmtLoadForUi(saved.carga)+' '+unit+' · ' : '')+saved.reps+' seg')
         : (isBodyweight
-            ? ((parseFloat(saved.carga)>0 ? 'BW + '+saved.carga+' '+unit : 'Peso corporal')+' × '+saved.reps+' reps')
-            : (saved.carga+' '+unit+' × '+saved.reps+' reps'));
+            ? ((parseFloat(saved.carga)>0 ? 'BW + '+_fmtLoadForUi(saved.carga)+' '+unit : 'Peso corporal')+' × '+saved.reps+' reps')
+            : (_fmtLoadForUi(saved.carga)+' '+unit+' × '+saved.reps+' reps'));
       setsHtml += '<div class="workout-set workout-set-saved" style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;margin-bottom:8px">'+
         '<div style="width:28px;height:28px;flex-shrink:0;color:var(--grn);'+
           'display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">✓</div>'+
@@ -9304,7 +9300,7 @@ function renderEntrenamiento() {
     var isFuture = w > REAL_WEEK;
     var isReal  = w === REAL_WEEK;
     var isView  = w === CURRENT_WEEK;
-    var done = sesiones.length > 0 && sesiones.every(function(_, di) { return _visibleSessionLifecycleState(LOGS, w, di) === 'COMPLETE'; });
+    var done = sesiones.length > 0 && sesiones.every(function(_, di) { return _getSessionLifecycleState(LOGS, w, di) === 'COMPLETE'; });
     var historical = w < REAL_WEEK;
     var cls = 'wkc' + (isView ? ' view' : '') + (isReal ? ' real' : '') + (done ? ' past' : '') + (historical && !done ? ' history' : '') + (isFuture ? ' future' : '');
     var ttl = isFuture ? 'Vista previa Sem '+w : 'Ir a semana '+w;
@@ -9371,25 +9367,30 @@ function renderEntrenamiento() {
 
   // ── Day tabs ─────────────────────────────────────────────────────
   var tabsHtml = sesiones.map(function(s, i) {
-    var _rawEntry = LOGS['done_'+CURRENT_WEEK+'_'+i];
-    var _st = _getSessionCompletionState(_rawEntry);
-    var done = (_st === 'REAL_COMPLETE') && _sessionHasRealLoggedSets(LOGS, CURRENT_WEEK, i);
-    var isSkipped = (_st === 'SKIPPED');
-    var _isAdminClosed = (_st === 'AUTO_CLOSED_NO_DATA');
+    var _st = _getSessionLifecycleState(LOGS, CURRENT_WEEK, i);
+    var done = _st === 'COMPLETE';
+    var isSkipped = _st === 'SKIPPED';
     // T301/T300: AUTO_CLOSED (legacy week-close with data) and PARTIAL (per-session
     // "Terminar por hoy") are both real execution ended early -- PARTIAL != COMPLETE,
     // so they get their own distinct visual, never the same checkmark as done.
-    var _isPartialClosed = (_st === 'AUTO_CLOSED' || _st === 'PARTIAL');
+    var _isPartialClosed = _st === 'PARTIAL';
     var active = i === DIA_ACTIVO;
     var rawLabel = _stripDayNo((s.dia||'').replace(/^(SESI[OÓ]N\s*\d+[:\s]+|D[IÍ]A\s*\d+[:\s]+)/i,'').replace(/\([^)]+\)/,'').trim())||('DÍA '+(i+1));
     var _dtShort = _dayShortLabel(rawLabel);
-    var iconColor = active ? 'var(--accent)' : (isSkipped || _isAdminClosed) ? 'var(--mt)' : _isPartialClosed ? 'var(--sess-partial)' : done ? 'var(--grn)' : 'var(--mt)';
-    var txtColor  = active ? 'var(--tx)' : (isSkipped || _isAdminClosed) ? 'rgba(160,160,160,.7)' : _isPartialClosed ? 'var(--sess-partial)' : done ? 'rgba(110,154,110,.8)' : 'var(--mt)';
+    var iconColor = active ? 'var(--accent)' : isSkipped ? 'var(--mt)' : _isPartialClosed ? 'var(--sess-partial)' : done ? 'var(--grn)' : 'var(--mt)';
+    var txtColor  = active ? 'var(--tx)' : isSkipped ? 'rgba(160,160,160,.7)' : _isPartialClosed ? 'var(--sess-partial)' : done ? 'rgba(110,154,110,.8)' : 'var(--mt)';
     // Progreso parcial de sets
     var _exs = s.exercises || [];
     var _tSets = 0, _dSets = 0;
     _exs.forEach(function(ej, ei) {
       if (!isTechniqueActive(ej, CURRENT_WEEK)) return;
+      var exType = _getExType(ej);
+      if (exType === 'cardio' || exType === 'circuito') {
+        _tSets++;
+        var oneLog = LOGS['log_'+CURRENT_WEEK+'_'+i+'_'+ei];
+        if (oneLog && oneLog.done === true && oneLog.autoFilled !== true) _dSets++;
+        return;
+      }
       var ns = ej.numSeries || (ej.sets ? ej.sets.length : 3);
       for (var ss = 0; ss < ns; ss++) {
         _tSets++;
@@ -9397,10 +9398,10 @@ function renderEntrenamiento() {
         if (entry && entry.done === true && entry.autoFilled !== true) _dSets++;
       }
     });
-    var _partial = !_rawEntry && _dSets > 0; // IN_PROGRESS: real sets, no done_ yet
+    var _partial = _st === 'IN_PROGRESS';
     var _pPct = _tSets > 0 ? Math.round(_dSets / _tSets * 100) : 0;
-    var _stCls = (isSkipped || _isAdminClosed) ? 'skipped' : _isPartialClosed ? 'partial' : done ? 'done' : (_partial ? 'live' : 'pending');
-    var _glyph = (isSkipped||_isAdminClosed)?'⏸':_isPartialClosed?'◐':done?'✓':(_partial?_dSets+'/'+_tSets:'·');
+    var _stCls = isSkipped ? 'skipped' : _isPartialClosed ? 'partial' : done ? 'done' : (_partial ? 'live' : 'pending');
+    var _glyph = isSkipped?'⏸':_isPartialClosed?'◐':done?'✓':(_partial?_dSets+'/'+_tSets:'·');
     return '<button onclick="selDia('+i+')" class="dt dt-'+_stCls+(active?' on':'')+'"'+(active?' aria-current="true"':'')+' title="'+_escHTml(rawLabel)+'">'+
       '<span class="dt-top"><span class="dt-glyph" aria-hidden="true">'+_glyph+'</span><span class="dt-n">D'+(i+1)+'</span></span>'+
       '<span class="dt-lbl">'+_escHTml(_dtShort)+'</span>'+
@@ -9442,7 +9443,7 @@ function renderEntrenamiento() {
   var ses = sesiones[DIA_ACTIVO];
   var _doneEntry = LOGS['done_'+CURRENT_WEEK+'_'+DIA_ACTIVO];
   // T300: canonical resolver -- single source of truth for this session's status badge.
-  var _lifecycleState  = _visibleSessionLifecycleState(LOGS, CURRENT_WEEK, DIA_ACTIVO);
+  var _lifecycleState  = _getSessionLifecycleState(LOGS, CURRENT_WEEK, DIA_ACTIVO);
   var isDone            = (_lifecycleState === 'COMPLETE');
   var _isPartialClosed  = (_lifecycleState === 'PARTIAL'); // real execution, ended early -- never shown as COMPLETE
   var _isSkipped         = (_lifecycleState === 'SKIPPED');
@@ -10182,7 +10183,7 @@ function _logbookReferenceHtml(historyEntry, unit, isIsometric) {
   var last = _historyLast(historyEntry);
   var load = last.load ? parseFloat(_convertCarga(last.load, last.unit || unit, unit)) : 0;
   if (!(load > 0)) return '<div class="sp-history-reference" data-load-reference="none"><span>SIN HISTORIAL</span><b>Primera ejecución: registra la carga utilizada.</b></div>';
-  return '<div class="sp-history-reference" data-load-reference="logbook"><span>REFERENCIA DE BITÁCORA</span><b>Última carga de trabajo válida: '+_escHTml(String(_roundUnit(load, unit)))+' '+_escHTml(unit)+'.</b></div>';
+  return '<div class="sp-history-reference" data-load-reference="logbook"><span>REFERENCIA DE BITÁCORA</span><b>Última carga de trabajo válida: '+_escHTml(_fmtLoadForUi(_roundUnit(load, unit)))+' '+_escHTml(unit)+'.</b></div>';
 }
 
 function showPRCelebration(exDisplayName, load, unit, reps) {
@@ -10205,7 +10206,7 @@ function showPRCelebration(exDisplayName, load, unit, reps) {
     '<div style="font-size:72px;animation:prPop .4s cubic-bezier(.34,1.56,.64,1) forwards">🏆</div>'+
     '<div style="font-family:var(--font-display);font-size:13px;letter-spacing:4px;color:var(--mt);font-weight:700">NUEVO RÉCORD PERSONAL</div>'+
     '<div style="font-family:var(--font-display);font-size:28px;font-weight:900;color:var(--accent);letter-spacing:1px;text-align:center;max-width:280px">'+exDisplayName+'</div>'+
-    '<div style="font-size:22px;font-weight:800;color:var(--tx)">'+load+' '+unit+' × '+reps+' reps</div>'+
+    '<div style="font-size:22px;font-weight:800;color:var(--tx)">'+_fmtLoadForUi(load)+' '+unit+' × '+reps+' reps</div>'+
     '<div style="font-size:11px;color:var(--mt);margin-top:4px">Toca para continuar</div>';
   document.body.appendChild(el);
   el.addEventListener('click', function(){ el.style.opacity='0'; setTimeout(function(){ el.remove(); }, 250); });
@@ -10984,7 +10985,7 @@ function startRestTimer(seconds, lastSetKey) {
   if (lsEl) {
     var ls = lastSetKey ? (LOGS[lastSetKey] || {}) : {};
     if (ls.carga && ls.reps) {
-      var lsTxt = '✓ ' + ls.carga + ' ' + (ls.unit||'KG') + ' × ' + ls.reps + ' reps';
+      var lsTxt = '✓ ' + _fmtLoadForUi(ls.carga) + ' ' + (ls.unit||'KG') + ' × ' + ls.reps + ' reps';
       if (ls.rir_real !== '' && ls.rir_real !== null && ls.rir_real !== undefined) lsTxt += ' · RIR ' + ls.rir_real;
       lsEl.textContent = lsTxt;
     } else {
@@ -12453,7 +12454,7 @@ function _autoAdjustSummary(ej) {
   var parts = [], load = parseFloat(st.load), reps = st.repsTarget, rir = parseFloat(st.rirTarget);
   var loadUnit = o.carried && o.carried.LOAD && ['LOAD','FREEZE','DELOAD'].indexOf(o.dimension) < 0 ? o.carried.LOAD.unit : (o.loadUnit || o.unit);
   var unit = String(loadUnit || 'kg').toUpperCase() === 'LB' ? 'lb' : 'kg';
-  if (load > 0 && (['LOAD','FREEZE'].indexOf(o.dimension) >= 0 || (o.components && o.components.LOAD) || (o.carried && o.carried.LOAD))) parts.push(String(Number(load)) + ' ' + unit);
+  if (load > 0 && (['LOAD','FREEZE'].indexOf(o.dimension) >= 0 || (o.components && o.components.LOAD) || (o.carried && o.carried.LOAD))) parts.push(_fmtLoadForUi(load) + ' ' + unit);
   if (reps !== undefined && reps !== null && String(reps) !== '' && /^[0-9]+([-–][0-9]+)?$/.test(String(reps))) parts.push(String(reps) + ' reps');
   if (!isNaN(rir) && rir >= 0) parts.push('RIR ' + String(Number(rir)));
   return parts.join(' · ');
@@ -15040,7 +15041,7 @@ function renderPerfil() {
         return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(244,244,240,.05)">'
           + '<div style="flex:1;min-width:0"><div style="font-size:12px;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+name+'</div>'
           + (date?'<div style="font-size:10px;color:var(--mt)">'+date+'</div>':'')+'</div>'
-          + '<div style="text-align:right;flex-shrink:0"><div style="font-family:var(--ff);font-size:15px;color:var(--gold);font-weight:900">'+v.load+' '+(v.unit||'KG')+'</div>'
+          + '<div style="text-align:right;flex-shrink:0"><div style="font-family:var(--ff);font-size:15px;color:var(--gold);font-weight:900">'+_fmtLoadForUi(v.load)+' '+(v.unit||'KG')+'</div>'
           + '<div style="font-size:10px;color:var(--mt)">'+(v.reps?v.reps+' reps':'')+(v.rir!=null?' · RIR '+v.rir:'')+'</div></div>'
           + '</div>';
       }).join('');
@@ -16703,6 +16704,16 @@ function _recapCardioRow(c) {
 function _recapBuild(o) {
   o = o || {}; var rows = [], totalSets = 0, totalCardio = 0;
   (o.exercises || []).forEach(function(ex) {
+    if (ex.circuito) {
+      var c = ex.circuito, parts = [], rounds = _recapNum(c.rounds), minutes = _recapNum(c.tiempoTotalMin);
+      if (minutes === null && _recapNum(c.tiempoTotalSeg) !== null) minutes = _recapNum(c.tiempoTotalSeg) / 60;
+      if (rounds !== null && rounds > 0) parts.push(_recapFmtNum(rounds) + ' rounds');
+      if (minutes !== null && minutes > 0) parts.push(_recapFmtNum(minutes) + ' min');
+      if (!parts.length) return;
+      var effort = _recapNum(c.rpe);
+      rows.push({ name: String(ex.name || 'Circuito'), activity: 'circuito', activityText: parts.join(' · '), effortText: effort !== null && effort > 0 ? 'RPE ' + _recapFmtNum(effort) + '/10' : '', note: String(ex.note || c.notas || '').replace(/\s+/g, ' ').trim() });
+      return;
+    }
     if (ex.cardio) {   // T589: cardio has its own row (duration + RPE/quality); it is never a set and never counts as one
       var cd = _recapCardioRow(ex.cardio); if (!cd) return;
       rows.push({ name: String(ex.name || 'Cardio'), cardio: true, sets: 0, repsText: '', loadText: '', rirText: '', icsText: '', cardioText: cd.durText, effortText: cd.effortText, restText: '', restLabel: '', express: false, note: String(ex.note || '').replace(/\s+/g, ' ').trim() });
@@ -16755,9 +16766,10 @@ function _recapCollect(di, week) {
     if (typeof isTechniqueActive === 'function' && !isTechniqueActive(ej, week)) return;
     var sub = LOGS['exsub_' + week + '_' + di + '_' + ei], name = (sub && sub.nombre) || ej.nombre || ej.exerciseName || ('Ejercicio ' + (ei + 1));
     var sets = [];
-    if (_getExType(ej) === 'cardio') {   // T589: one cardio log per exercise (no _s{S}); legacy set-shaped records of a cardio exercise are preserved in LOGS but never shown as strength sets
+    var exType = _getExType(ej);
+    if (exType === 'cardio' || exType === 'circuito') {
       var cl = LOGS['log_' + week + '_' + di + '_' + ei], cnote = (ej.prescriptionExerciseId && LOGS['exnotepid_' + week + '_' + ej.prescriptionExerciseId]);
-      if (cl && cl.done === true && cl.exType === 'cardio') { if (typeof cl.ts === 'number' && cl.ts > lastTs) lastTs = cl.ts; items.push({ name: name, sets: [], cardio: cl, prescribedRest: null, note: (cnote && typeof cnote.text === 'string' && cnote.text) || (typeof LOGS['exnote_' + week + '_' + di + '_' + ei] === 'string' ? LOGS['exnote_' + week + '_' + di + '_' + ei] : '') }); }
+      if (cl && cl.done === true && cl.autoFilled !== true) { if (typeof cl.ts === 'number' && cl.ts > lastTs) lastTs = cl.ts; items.push({ name: name, sets: [], cardio: exType === 'cardio' ? cl : null, circuito: exType === 'circuito' ? cl : null, prescribedRest: null, note: (cnote && typeof cnote.text === 'string' && cnote.text) || (typeof LOGS['exnote_' + week + '_' + di + '_' + ei] === 'string' ? LOGS['exnote_' + week + '_' + di + '_' + ei] : '') }); }
       return;
     }
     for (var s = 0; s < 12; s++) {
@@ -16774,6 +16786,11 @@ function _recapCollect(di, week) {
   return { sessionName: sessionName, week: week, dateMs: (post && post.ts) || lastTs || 0, partial: !!(post && (post.partial === true || post.autoClosed === true)) || !!LOGS['partial_' + week + '_' + di], exercises: items };
 }
 function _recapRowHtml(r) {
+  if (r.activity === 'circuito') {
+    return '<div class="rc-ex rc-circuito"><div class="rc-top"><span class="rc-name">' + _escHTml(r.name) + '</span><span class="rc-sets">circuito</span></div>' +
+      '<div class="rc-data"><b>' + _escHTml(r.activityText) + '</b>' + (r.effortText ? '<b>' + _escHTml(r.effortText) + '</b>' : '') + '</div>' +
+      (r.note ? '<div class="rc-note">' + _escHTml(r.note) + '</div>' : '') + '</div>';
+  }
   if (r.cardio) {
     return '<div class="rc-ex rc-cardio">' +
       '<div class="rc-top"><span class="rc-name">' + _escHTml(r.name) + '</span><span class="rc-sets">cardio</span></div>' +
@@ -16794,14 +16811,18 @@ function openSessionRecap(di, weekOverride, opts) {
     var week = weekOverride || CURRENT_WEEK, data = _recapCollect(di, week); if (!data) return false;
     var recap = _recapBuild(data); if (!recap.rows.length) { if (!(opts && opts.auto)) showToast('Esta sesión no tiene registros', true); return false; }
     var old = document.getElementById('sessRecap'); if (old) old.remove();   // never two overlays
-    var ov = document.createElement('div'); ov.id = 'sessRecap'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'Resumen de la sesión');
+    var ov = document.createElement('div'); ov.id = 'sessRecap'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'Resumen de la sesión'); ov.tabIndex = -1;
     ov.innerHTML = '<div class="rc-wrap"><div class="rc-head"><div class="brand"><span class="brand-word" aria-label="VDSEN">VDSEN<i></i></span></div>' +
       '<div class="rc-date">' + _escHTml(recap.dateText) + '</div></div>' +
       '<div class="rc-title"><h2>' + _escHTml(recap.sessionName) + '</h2><div class="rc-sub">SEM ' + week + ' · ' + recap.totals.exercises + (recap.totals.exercises === 1 ? ' ejercicio' : ' ejercicios') + (recap.totals.sets ? ' · ' + recap.totals.sets + ' series completadas' : '') + (recap.totals.cardio ? ' · ' + recap.totals.cardio + ' cardio' : '') + (recap.partial ? ' · <u>PARCIAL</u>' : '') + '</div></div>' +
       '<div class="rc-body" id="rcBody"></div><div class="rc-foot" id="rcFoot"></div></div>';
     document.body.appendChild(ov); document.documentElement.classList.add('rc-open');
     _recapState = { recap: recap, page: 0, pages: [[]], capture: true, di: di, week: week };
-    _recapLayout(); return true;
+    ov.addEventListener('keydown', _recapKeydown);
+    window.addEventListener('resize', _recapLayout);
+    _recapLayout(); ov.focus();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(function() { if (document.getElementById('sessRecap') === ov) _recapLayout(); });
+    return true;
   } catch (e) { console.warn('[recap]', e && e.message); return false; }
 }
 function _recapLayout() {
@@ -16812,12 +16833,15 @@ function _recapLayout() {
   var hs = Array.prototype.map.call(body.children, function(c) { var cs = getComputedStyle(c); return c.offsetHeight + parseFloat(cs.marginTop || 0) + parseFloat(cs.marginBottom || 0); });
   var avail = Math.max(1, body.clientHeight - 60); // viewport-aware; never force overflowing minimum
   st.pages = _recapPaginate(hs, avail); if (st.page >= st.pages.length) st.page = st.pages.length - 1;
+  st.oversizedRows = hs.map(function(h) { return h > avail; });
   _recapRender();
 }
 function _recapRender() {
   var st = _recapState, ov = document.getElementById('sessRecap'); if (!st || !ov) return;
   var body = ov.querySelector('#rcBody'), foot = ov.querySelector('#rcFoot'), idx = st.pages[st.page] || [], multi = st.pages.length > 1;
   body.innerHTML = idx.map(function(i) { return _recapRowHtml(st.recap.rows[i]); }).join('');
+  body.scrollTop = 0;
+  ov.setAttribute('data-oversize', idx.some(function(i) { return st.oversizedRows && st.oversizedRows[i]; }) ? '1' : '0');
   ov.setAttribute('data-capture', st.capture ? '1' : '0');
   var dots = multi ? '<span class="rc-page">' + (st.page + 1) + '/' + st.pages.length + '</span>' : '';
   foot.innerHTML = st.capture
@@ -16826,11 +16850,18 @@ function _recapRender() {
       (multi ? '<button type="button" class="rc-b" onclick="_recapGo(1)" ' + (st.page === st.pages.length - 1 ? 'disabled' : '') + ' aria-label="Página siguiente">›</button>' : '') +
       '<button type="button" class="rc-b rc-cap" onclick="_recapCapture(true)">CAPTURA</button>' +
       '<button type="button" class="rc-b rc-home" onclick="closeSessionRecap(true)">INICIO</button></div>';
-  ov.onclick = st.capture ? function() { if (st.page < st.pages.length - 1) { st.page++; _recapRender(); } else _recapCapture(false); } : null;
+  ov.onclick = st.capture ? function(e) { if (e.target.closest('.rc-body') && ov.getAttribute('data-oversize') === '1' && body.scrollTop + body.clientHeight < body.scrollHeight - 2) return; if (st.page < st.pages.length - 1) { st.page++; _recapRender(); } else _recapCapture(false); } : null;
+}
+function _recapKeydown(e) {
+  if (e.key === 'Escape') { e.preventDefault(); closeSessionRecap(false); }
+  else if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); _recapGo(1); }
+  else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); _recapGo(-1); }
+  else if (e.key === 'Enter' && _recapState && _recapState.capture) { e.preventDefault(); if (_recapState.page < _recapState.pages.length - 1) _recapGo(1); else _recapCapture(false); }
 }
 function _recapGo(d) { var st = _recapState; if (!st) return; st.page = Math.max(0, Math.min(st.pages.length - 1, st.page + d)); _recapRender(); }
 function _recapCapture(on) { var st = _recapState; if (!st) return; st.capture = !!on; if (on) st.page = 0; _recapRender(); }
 function closeSessionRecap(goHome) {
+  window.removeEventListener('resize', _recapLayout);
   var ov = document.getElementById('sessRecap'); if (ov) ov.remove(); document.documentElement.classList.remove('rc-open'); _recapState = null;
   if (goHome && typeof goTab === 'function') { try { goTab(0); } catch (e) { /* no-op */ } }
 }
@@ -17160,7 +17191,7 @@ function showExHistory(di, ei) {
         + '</div>'
         + '<div style="font-size:11px;color:var(--mt);line-height:1.8">'
         + exp.sets.map(function(s,idx) {
-            return 'S'+(idx+1)+': '+s.carga+' '+unit+' × '+s.reps+(s.rir_real!==null?' · RIR '+s.rir_real:'');
+            return 'S'+(idx+1)+': '+_fmtLoadForUi(s.carga)+' '+unit+' × '+s.reps+(s.rir_real!==null?' · RIR '+s.rir_real:'');
           }).join(' &nbsp;·&nbsp; ')
         + '</div>'
         + '</div>';
@@ -17768,7 +17799,7 @@ function _warmupRowsHtml(refLoad, unit) {
   var wuSets = [{pct:0.50,reps:8},{pct:0.70,reps:5},{pct:0.85,reps:2}];
   return wuSets.map(function(ws) {
     var text = refLoad > 0
-      ? _roundUnit(refLoad * ws.pct, unit)+' '+unit+' × '+ws.reps+' reps'
+      ? _fmtLoadForUi(_roundUnit(refLoad * ws.pct, unit))+' '+unit+' × '+ws.reps+' reps'
       : (ws.pct*100)+'% de tu carga de trabajo × '+ws.reps+' reps';
     return '<div class="wu-r">'+
       '<span class="wu-p">'+(ws.pct*100)+'%</span>'+

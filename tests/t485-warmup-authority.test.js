@@ -22,7 +22,7 @@ function fnSource(name) {
 }
 const ctx = {};
 vm.createContext(ctx);
-['_roundUnit', '_warmupReferenceLoad', '_warmupRowsHtml'].forEach(n => vm.runInContext(fnSource(n), ctx));
+['_fmtLoadForUi', '_roundUnit', '_warmupReferenceLoad', '_warmupRowsHtml'].forEach(n => vm.runInContext(fnSource(n), ctx));
 const region = (a, b) => { const i = client.indexOf(a); assert.ok(i >= 0, a); const j = client.indexOf(b, i); assert.ok(j > i, b); return client.slice(i, j); };
 
 test('T485.1 base load order: previous execution > history; Coach plan load is not load authority', () => {

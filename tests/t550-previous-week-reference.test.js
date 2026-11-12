@@ -13,7 +13,7 @@ function fnSrc(name) {
   for (let k = j; k < SRC.length; k++) { if (SRC[k] === '{') d++; else if (SRC[k] === '}' && --d === 0) return SRC.slice(i, k + 1); }
   throw new Error('unbalanced ' + name);
 }
-const FNS = ['_exNotePidKey', '_exNoteCtx', '_exNoteValid', '_exNoteShadowed', '_prevWeekRef', '_prevWeekHtml', 'togglePrevWeek'];
+const FNS = ['_fmtLoadForUi', '_exNotePidKey', '_exNoteCtx', '_exNoteValid', '_exNoteShadowed', '_prevWeekRef', '_prevWeekHtml', 'togglePrevWeek'];
 const PRES = [{ prescriptionExerciseId: 'pidA', exerciseName: 'Press banca', coachNote: 'Baja 3 s', sets: [{ rirTarget: 2, load: 100, repsTarget: 8 }, { rirTarget: 2, load: 100, repsTarget: 8 }] }, { prescriptionExerciseId: 'pidB', exerciseName: 'Remo', sets: [] }];
 function world(o) {
   o = o || {};

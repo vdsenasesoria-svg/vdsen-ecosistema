@@ -108,7 +108,7 @@ try {
   // CASE B — TRAIN: Client logs workout -> session COMPLETE -> Coach Monitor receives evidence
   {
     var oneSes = [ses(1,1)];
-    H1.reset({ LOGS: {}, CURRENT_WEEK: 2, REAL_WEEK: 2, sesiones: oneSes });
+    H1.reset({ LOGS: { log_2_0_0_s0: { done: true, carga: '50', reps: '8', ts: Date.now() } }, CURRENT_WEEK: 2, REAL_WEEK: 2, sesiones: oneSes });
     await H1._confirmSessionDone(0);
     var clientLogs = H1.getState().LOGS;
     eq(H1._getSessionLifecycleState(clientLogs, 2, 0), 'COMPLETE', 'CASE B: Client resolves COMPLETE');
@@ -194,7 +194,7 @@ try {
   // CASE L — CLIENT SWITCH: zero leakage
   {
     var oneSesL = [ses(1,1)];
-    var clientALogs = { 'done_2_0': { ts: Date.now(), partial: true } };
+    var clientALogs = { 'done_2_0': { ts: Date.now(), partial: true }, 'log_2_0_0_s0': { done: true, ts: Date.now() } };
     var clientBLogs = {};
     eq(H1._getTodayHomeState(clientALogs, 2, oneSesL).lifecycle, 'PARTIAL', 'CASE L: client A own real state');
     eq(H1._getTodayHomeState(clientBLogs, 2, oneSesL).lifecycle, 'NOT_STARTED', 'CASE L: client B has zero leakage from client A (independent LOGS objects)');
@@ -213,7 +213,7 @@ try {
 
   // CASE N — RELOAD: Client state reconstructs correctly
   {
-    var logs = { 'done_2_0': { ts: 12345, partial: true } };
+    var logs = { 'done_2_0': { ts: 12345, partial: true }, 'log_2_0_0_s0': { done: true, ts: 12345 } };
     var fresh = JSON.parse(JSON.stringify(logs));
     eq(H1._getSessionLifecycleState(fresh, 2, 0), 'PARTIAL', 'CASE N: a freshly-parsed (simulated reload) LOGS object still resolves correctly');
   }

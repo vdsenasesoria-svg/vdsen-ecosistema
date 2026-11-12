@@ -23,7 +23,7 @@ function fn(name) {
 function render(setSpec, provenance, unit, isIsometric) {
   const context = { Number, String, Object, _escHTml: value => String(value).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c])) };
   vm.createContext(context);
-  vm.runInContext(fn('_effectiveSetTargetHtml'), context);
+  vm.runInContext(fn('_fmtLoadForUi') + fn('_effectiveSetTargetHtml'), context);
   return context._effectiveSetTargetHtml(setSpec, provenance, unit, isIsometric);
 }
 
@@ -41,7 +41,7 @@ test('T594.2 canonical overlay targets identify VDSEN auto-adjustment without ch
   const html = render({ load: 102.5, repsTarget: 10, rirTarget: 1 }, 'AUTOAJUSTE VDSEN', 'KG', false);
   assert.match(html, /data-target-source="AUTOAJUSTE VDSEN"/);
   assert.match(html, /OBJETIVO AUTOAJUSTE VDSEN/);
-  assert.match(html, /CARGA 102.5 KG/);
+  assert.match(html, /CARGA 102,5 KG/);
   assert.match(html, />10<\/b> reps/);
   assert.match(html, /RIR 1/);
 });
