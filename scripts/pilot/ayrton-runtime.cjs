@@ -120,7 +120,12 @@ async function restore(report, io) {
 }
 function adapters(s) {
   const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
-  const read = async p => { const r = await C.http('GET', p, process.env.GOOGLE_ACCESS_TOKEN); assert.equal(r.status, 200, 'FENCE_READ_FAILED'); return C.decDoc(r.body); };
+  const read = async (p, allow404 = false) => {
+    const r = await C.http('GET', p, process.env.GOOGLE_ACCESS_TOKEN);
+    if (allow404 && r.status === 404) return null;
+    assert.equal(r.status, 200, 'FENCE_READ_FAILED: ' + p + ' status ' + r.status);
+    return C.decDoc(r.body);
+  };
   const vget = async p => {
     const r = await fetch('https://api.vercel.com' + p + (p.includes('?') ? '&' : '?') + 'teamId=' + P.TEAM, {
       headers: { authorization: 'Bearer ' + process.env.VERCEL_TOKEN }, redirect: 'error', signal: AbortSignal.timeout(30000) });
@@ -151,8 +156,8 @@ function adapters(s) {
     },
     snapshot: async w => {
       const client = await read('clients/' + w.uid + '?mask.fieldPaths=coachId&mask.fieldPaths=activePlanId');
-      const release = await read(C.RELEASE_PATH);
-      const coach = await read('coaches/' + w.coachId + '?mask.fieldPaths=autoApplyCanary');
+      const release = await read(C.RELEASE_PATH, true);
+      const coach = await read('coaches/' + w.coachId + '?mask.fieldPaths=autoApplyCanary', true) || {};
       return { uid: w.uid, client, coachId: client.coachId, release, coach };
     },
     offProof: async () => {
@@ -163,10 +168,12 @@ function adapters(s) {
       return G.evaluateProductionEnv(r.envs, { project: P.PROJECT, team: P.TEAM });
     },
     assertNoPriorOperation: async id => {
-      for (const filter of ['meta-vdsenPilotOperation=' + encodeURIComponent(id), 'meta-vdsenPilotBaseline=' + encodeURIComponent(s.production_deployment)]) {
-        const r = await vget('/v6/deployments?projectId=' + P.PROJECT + '&' + filter);
-        assert.ok(Array.isArray(r.deployments) && !r.pagination?.next && r.deployments.length === 0, 'OPERATION_EXISTS_OR_LIST_INCOMPLETE');
-      }
+      const r = await vget('/v6/deployments?projectId=' + P.PROJECT + '&limit=100');
+      assert.ok(Array.isArray(r.deployments) && !r.pagination?.next, 'DEPLOYMENT_LIST_INCOMPLETE');
+      const matchingOp = r.deployments.filter(d => d.meta && d.meta.vdsenPilotOperation === id);
+      assert.equal(matchingOp.length, 0, 'PILOT_OPERATION_ALREADY_EXISTS: ' + id);
+      const matchingBaseline = r.deployments.filter(d => d.meta && d.meta.vdsenPilotBaseline === s.production_deployment);
+      assert.equal(matchingBaseline.length, 0, 'PILOT_BASELINE_ALREADY_STAGED: ' + s.production_deployment);
     },
     stage: async w => {
       const root = path.resolve(process.env.RUNNER_TEMP), dest = path.resolve(root, 'vdsen-ayrton-' + process.env.GITHUB_RUN_ID);
@@ -196,7 +203,9 @@ async function main(argv) {
   assert.equal(w.mode, 'STAGE1_SHADOW', 'ONLY_STAGE1_SHADOW_ACCEPTED');
   return arm(w, { runtimeSha: s.runtime_sha, deployment: s.production_deployment, officialReleaseRun: String(s.app_release.source_release_run) }, io);
 }
-module.exports = { arm, restore, closed, invocation, buildDeployArgs, T671, OFF_BASELINE_SHA, LEGACY_T671_SHA, assertAuthorizedMainSha, REVIEWED_MAIN_SHAS };
-if (require.main === module) main(process.argv.slice(2)).then(r => console.log(JSON.stringify({ status: r.status }))).catch(() => {
-  console.error('PILOT_RUNTIME_STOPPED: review the redacted checkpoint; do not repeat deployment.'); process.exitCode = 1;
+module.exports = { arm, restore, closed, invocation, buildDeployArgs, T671, OFF_BASELINE_SHA, LEGACY_T671_SHA, assertAuthorizedMainSha, REVIEWED_MAIN_SHAS, adapters };
+if (require.main === module) main(process.argv.slice(2)).then(r => console.log(JSON.stringify({ status: r.status }))).catch((err) => {
+  console.error('PILOT_RUNTIME_STOPPED: ' + (err && err.message ? err.message : String(err)));
+  if (err && err.stack) console.error(err.stack);
+  process.exitCode = 1;
 });
