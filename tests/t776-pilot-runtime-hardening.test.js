@@ -11,6 +11,7 @@ const {
   ALLOWED_DIAGNOSTIC_CODES,
   restore,
   arm,
+  gatherReconciliationEvidence,
 } = require('../scripts/pilot/ayrton-runtime.cjs');
 const P = require('../scripts/pilot/window-protocol.cjs');
 
@@ -541,4 +542,193 @@ test('SCENARIO 10: Preservación del STOP y rollback', async () => {
   );
   assert.equal(armRollbackInvoked, true, 'Rollback must be invoked on promotion failure');
   assert.equal(currentAlias, DEPLOYMENT, 'Alias must converge back to baseline');
+});
+
+// SCENARIO 11: gatherReconciliationEvidence auditoría autoritativa de corrida previa fallida
+test('SCENARIO 11: gatherReconciliationEvidence auditoría autoritativa de corrida previa fallida', async () => {
+  const s = sampleState();
+  const failedRunId = '43156465756';
+
+  const mockRun = {
+    id: 43156465756,
+    path: '.github/workflows/vdsen-ayrton-runtime.yml',
+    head_branch: 'codex/client-app-next',
+    event: 'workflow_dispatch',
+    status: 'completed',
+    conclusion: 'failure',
+    created_at: '2026-11-12T04:41:43Z',
+    updated_at: '2026-11-12T04:51:03Z',
+  };
+
+  const mockJobs = {
+    jobs: [
+      {
+        id: 130977457299,
+        name: 'pilot-runtime',
+        status: 'completed',
+        conclusion: 'failure',
+        steps: [
+          {
+            name: 'One pilot deployment with both fences closed, then promote the same ID',
+            conclusion: 'failure',
+            started_at: '2026-11-12T04:50:59.467Z',
+            completed_at: '2026-11-12T04:51:00.216Z', // ~749ms
+          },
+        ],
+      },
+    ],
+  };
+
+  const mockArtifacts = {
+    total_count: 0,
+    artifacts: [],
+  };
+
+  const mockGhSuccess = (cmd, path) => {
+    if (path.endsWith('/actions/runs/' + failedRunId)) return mockRun;
+    if (path.endsWith('/actions/runs/' + failedRunId + '/jobs')) return mockJobs;
+    if (path.endsWith('/actions/runs/' + failedRunId + '/artifacts')) return mockArtifacts;
+    throw new Error('UNEXPECTED_GH_PATH: ' + path);
+  };
+
+  const mockFetchSuccess = async (url) => {
+    return {
+      status: 200,
+      json: async () => ({
+        deployments: [
+          {
+            uid: 'dpl_existing1',
+            created: Date.parse('2026-11-12T01:00:00Z'),
+            meta: {},
+          },
+        ],
+        pagination: { count: 1, next: null, prev: null },
+      }),
+    };
+  };
+
+  const mockCurrentAppSuccess = async () => DEPLOYMENT;
+
+  // 11A: Éxito en reconciliación con evidencia completa demostrada
+  const evidence = await gatherReconciliationEvidence(s, failedRunId, {
+    gh: mockGhSuccess,
+    fetch: mockFetchSuccess,
+    currentApp: mockCurrentAppSuccess,
+    vercelToken: 'mock_token',
+  });
+  assert.equal(evidence.evidenceVerified, true);
+  assert.equal(evidence.priorRunMutations, 0);
+  assert.equal(evidence.phaseProven, 'ARM_PREFLIGHT_ZERO_MUTATIONS');
+  assert.equal(evidence.currentAlias, DEPLOYMENT);
+  assert.equal(evidence.stagedDeploymentsCount, 0);
+
+  // 11B: Rechazo si el paso de arm duró más de 30s (indica que pudo entrar a staging)
+  const mockGhSlowStep = (cmd, path) => {
+    if (path.endsWith('/actions/runs/' + failedRunId + '/jobs')) {
+      return {
+        jobs: [
+          {
+            name: 'pilot-runtime',
+            status: 'completed',
+            conclusion: 'failure',
+            steps: [
+              {
+                name: 'One pilot deployment with both fences closed, then promote the same ID',
+                conclusion: 'failure',
+                started_at: '2026-11-12T04:50:00Z',
+                completed_at: '2026-11-12T04:50:45Z', // 45s
+              },
+            ],
+          },
+        ],
+      };
+    }
+    return mockGhSuccess(cmd, path);
+  };
+  await assert.rejects(
+    async () => gatherReconciliationEvidence(s, failedRunId, {
+      gh: mockGhSlowStep,
+      fetch: mockFetchSuccess,
+      currentApp: mockCurrentAppSuccess,
+      vercelToken: 'mock_token',
+    }),
+    /BLOCKED_EVIDENCE/
+  );
+
+  // 11C: Rechazo si existe artefacto de la corrida previa (mutaciones no probadas cero)
+  const mockGhWithArtifact = (cmd, path) => {
+    if (path.endsWith('/actions/runs/' + failedRunId + '/artifacts')) {
+      return {
+        total_count: 1,
+        artifacts: [{ name: 'ayrton-runtime-' + failedRunId }],
+      };
+    }
+    return mockGhSuccess(cmd, path);
+  };
+  await assert.rejects(
+    async () => gatherReconciliationEvidence(s, failedRunId, {
+      gh: mockGhWithArtifact,
+      fetch: mockFetchSuccess,
+      currentApp: mockCurrentAppSuccess,
+      vercelToken: 'mock_token',
+    }),
+    /PRIOR_RUN_MUTATIONS_NOT_PROVEN_ZERO/
+  );
+
+  // 11D: Rechazo si la paginación de Vercel queda incompleta
+  const mockFetchInfinitePagination = async (url) => {
+    return {
+      status: 200,
+      json: async () => ({
+        deployments: [],
+        pagination: { count: 100, next: 1700000000000, prev: null },
+      }),
+    };
+  };
+  await assert.rejects(
+    async () => gatherReconciliationEvidence(s, failedRunId, {
+      gh: mockGhSuccess,
+      fetch: mockFetchInfinitePagination,
+      currentApp: mockCurrentAppSuccess,
+      vercelToken: 'mock_token',
+    }),
+    /DEPLOYMENT_LIST_INCOMPLETE/
+  );
+
+  // 11E: Rechazo si se creó un deployment durante la ventana de la corrida previa
+  const mockFetchDeployDuringRun = async (url) => {
+    return {
+      status: 200,
+      json: async () => ({
+        deployments: [
+          {
+            uid: 'dpl_suspicious',
+            created: Date.parse('2026-11-12T04:45:00Z'),
+            meta: {},
+          },
+        ],
+        pagination: { count: 1, next: null, prev: null },
+      }),
+    };
+  };
+  await assert.rejects(
+    async () => gatherReconciliationEvidence(s, failedRunId, {
+      gh: mockGhSuccess,
+      fetch: mockFetchDeployDuringRun,
+      currentApp: mockCurrentAppSuccess,
+      vercelToken: 'mock_token',
+    }),
+    /BLOCKED_EVIDENCE/
+  );
+
+  // 11F: Rechazo si el alias productivo actual no coincide con el baseline
+  await assert.rejects(
+    async () => gatherReconciliationEvidence(s, failedRunId, {
+      gh: mockGhSuccess,
+      fetch: mockFetchSuccess,
+      currentApp: async () => 'dpl_other_foreign',
+      vercelToken: 'mock_token',
+    }),
+    /PRODUCTION_ALIAS_NOT_ON_BASELINE/
+  );
 });

@@ -54,48 +54,108 @@ function assertAttemptAllowed(workflowRuns, currentRunId, reconcileFailedRun = '
   return { mode: 'AUDITED_FAILED_RUN_RECOVERY', currentRunId: String(currentRunId), reconciledRunId: String(reconcileFailedRun), evidence: reconciliationEvidence };
 }
 async function gatherReconciliationEvidence(s, failedRunId, deps = {}) {
-  assert.ok(s && s.production_deployment, 'BASELINE_DEPLOYMENT_REQUIRED');
-  assert.match(String(failedRunId || ''), /^[1-9][0-9]+$/, 'INVALID_RECONCILE_FAILED_RUN_ID');
-  const cp = require('node:child_process');
-  const gh = deps.gh || ((...args) => JSON.parse(cp.execFileSync('gh', args, { encoding: 'utf8' })));
-  const fetchFn = deps.fetch || globalThis.fetch;
-  const currentAppFn = deps.currentApp || A.currentApp;
-  const repo = process.env.GITHUB_REPOSITORY || 'vdsenasesoria-svg/vdsen-ecosistema';
+  try {
+    assert.ok(s && s.production_deployment, 'BASELINE_DEPLOYMENT_REQUIRED');
+    assert.match(String(failedRunId || ''), /^[1-9][0-9]+$/, 'INVALID_RECONCILE_FAILED_RUN_ID');
 
-  const run = gh('api', 'repos/' + repo + '/actions/runs/' + failedRunId);
-  assert.equal(String(run.id), String(failedRunId), 'RUN_ID_MISMATCH');
-  assert.equal(run.status, 'completed', 'PRIOR_RUN_NOT_COMPLETED');
-  assert.equal(run.conclusion, 'failure', 'PRIOR_RUN_DID_NOT_FAIL');
+    // 1. Check project and baseline identity
+    assert.equal(s.production_project, P.PROJECT, 'PROJECT_IDENTITY_MISMATCH');
+    assert.equal(s.vercel_team, P.TEAM, 'TEAM_IDENTITY_MISMATCH');
+    assert.ok(s.runtime_sha && s.runtime_sha.length === 40, 'BASELINE_RUNTIME_MISMATCH');
+    assert.equal(s.numeric_apply_enabled, false, 'BASELINE_MUST_BE_OFF');
 
-  const artifacts = gh('api', 'repos/' + repo + '/actions/runs/' + failedRunId + '/artifacts');
-  assert.ok(artifacts && Array.isArray(artifacts.artifacts), 'INVALID_ARTIFACT_LIST');
-  if (artifacts.artifacts.length > 0) {
-    const art = artifacts.artifacts.find(a => a.name === 'ayrton-runtime-' + failedRunId);
-    if (art) assert.fail('PRIOR_RUN_MUTATIONS_NOT_PROVEN_ZERO');
+    const cp = require('node:child_process');
+    const gh = deps.gh || ((...args) => JSON.parse(cp.execFileSync('gh', args, { encoding: 'utf8' })));
+    const fetchFn = deps.fetch || globalThis.fetch;
+    const currentAppFn = deps.currentApp || A.currentApp;
+    const repo = process.env.GITHUB_REPOSITORY || 'vdsenasesoria-svg/vdsen-ecosistema';
+
+    // 2. Check run identity and state in GitHub Actions
+    const run = gh('api', 'repos/' + repo + '/actions/runs/' + failedRunId);
+    assert.equal(String(run.id), String(failedRunId), 'RUN_ID_MISMATCH');
+    assert.equal(run.path, '.github/workflows/vdsen-ayrton-runtime.yml', 'WORKFLOW_PATH_MISMATCH');
+    assert.equal(run.head_branch, 'codex/client-app-next', 'WORKFLOW_BRANCH_MISMATCH');
+    assert.equal(run.event, 'workflow_dispatch', 'WORKFLOW_EVENT_MISMATCH');
+    assert.equal(run.status, 'completed', 'PRIOR_RUN_NOT_COMPLETED');
+    assert.equal(run.conclusion, 'failure', 'PRIOR_RUN_DID_NOT_FAIL');
+
+    // 3. Reconstruct exact failure phase from jobs / steps / artifacts
+    const jobsRes = gh('api', 'repos/' + repo + '/actions/runs/' + failedRunId + '/jobs');
+    assert.ok(jobsRes && Array.isArray(jobsRes.jobs) && jobsRes.jobs.length >= 1, 'INVALID_JOBS_LIST');
+    const pilotJob = jobsRes.jobs.find(j => j.name === 'pilot-runtime') || jobsRes.jobs[0];
+    assert.equal(pilotJob.status, 'completed', 'JOB_NOT_COMPLETED');
+    assert.equal(pilotJob.conclusion, 'failure', 'JOB_DID_NOT_FAIL');
+
+    const steps = pilotJob.steps || [];
+    const armStep = steps.find(st => st.name && st.name.includes('One pilot deployment with both fences closed'));
+    assert.ok(armStep, 'ARM_STEP_NOT_FOUND');
+    assert.equal(armStep.conclusion, 'failure', 'ARM_STEP_DID_NOT_FAIL');
+
+    // Check duration: preflight failure took <= 10s (e.g. 749ms); staging CLI would take > 30s
+    const armDurationSec = (Date.parse(armStep.completed_at) - Date.parse(armStep.started_at)) / 1000;
+    assert.ok(Number.isFinite(armDurationSec) && armDurationSec < 30, 'ARM_STEP_DURATION_EXCEEDS_PREFLIGHT');
+
+    // Check artifacts: must not have produced any release/staging report
+    const artifacts = gh('api', 'repos/' + repo + '/actions/runs/' + failedRunId + '/artifacts');
+    assert.ok(artifacts && Array.isArray(artifacts.artifacts), 'INVALID_ARTIFACT_LIST');
+    const runtimeArt = artifacts.artifacts.find(a => a.name === 'ayrton-runtime-' + failedRunId);
+    if (runtimeArt) {
+      assert.fail('PRIOR_RUN_MUTATIONS_NOT_PROVEN_ZERO');
+    }
+
+    // 4. Full, fail-closed pagination of Vercel deployments
+    const vercelToken = deps.vercelToken || process.env.VERCEL_TOKEN;
+    assert.ok(vercelToken, 'VERCEL_TOKEN_REQUIRED');
+    let until = null;
+    const allDeployments = [];
+    for (let page = 0; page < 20; page++) {
+      const q = 'https://api.vercel.com/v6/deployments?projectId=' + P.PROJECT + '&teamId=' + P.TEAM + '&limit=100' + (until ? '&until=' + until : '');
+      const vres = await fetchFn(q, { headers: { authorization: 'Bearer ' + vercelToken } });
+      assert.equal(vres.status, 200, 'VERCEL_READ_FAILED');
+      const vjson = await vres.json();
+      assert.ok(Array.isArray(vjson.deployments), 'VERCEL_READ_FAILED');
+      allDeployments.push(...vjson.deployments);
+      if (!vjson.pagination || !vjson.pagination.next) {
+        until = null;
+        break;
+      }
+      until = vjson.pagination.next;
+    }
+    assert.equal(until, null, 'DEPLOYMENT_LIST_INCOMPLETE');
+
+    // Verify no deployment was staged with this baseline
+    const matchingBaseline = allDeployments.filter(d => d.meta && d.meta.vdsenPilotBaseline === s.production_deployment);
+    assert.equal(matchingBaseline.length, 0, 'PENDING_OR_STAGED_DEPLOYMENTS_EXIST');
+
+    // Verify no deployment was created during the failed run's time window
+    const runStartMs = Date.parse(run.created_at);
+    const runEndMs = Date.parse(run.updated_at);
+    assert.ok(Number.isFinite(runStartMs) && Number.isFinite(runEndMs), 'RUN_TIMESTAMPS_INVALID');
+    const deploymentsDuringRun = allDeployments.filter(d => {
+      const dCreated = typeof d.created === 'number' ? d.created : Date.parse(d.createdAt || d.created);
+      return dCreated >= runStartMs - 5000 && dCreated <= runEndMs + 60000;
+    });
+    assert.equal(deploymentsDuringRun.length, 0, 'DEPLOYMENTS_CREATED_DURING_PRIOR_RUN');
+
+    // 5. Verify current live alias matches baseline deployment
+    const currentAlias = await currentAppFn(s);
+    assert.equal(currentAlias, s.production_deployment, 'PRODUCTION_ALIAS_NOT_ON_BASELINE');
+
+    return {
+      baselineDeployment: s.production_deployment,
+      currentAlias,
+      stagedDeploymentsCount: matchingBaseline.length,
+      priorRunMutations: 0,
+      evidenceVerified: true,
+      phaseProven: 'ARM_PREFLIGHT_ZERO_MUTATIONS',
+    };
+  } catch (err) {
+    const code = classifyDiagnosticCode(err);
+    const known = ['PRIOR_RUN_MUTATIONS_NOT_PROVEN_ZERO', 'PENDING_OR_STAGED_DEPLOYMENTS_EXIST', 'PRODUCTION_ALIAS_NOT_ON_BASELINE', 'DEPLOYMENT_LIST_INCOMPLETE'].includes(code);
+    const outErr = new Error(known ? code : 'BLOCKED_EVIDENCE');
+    outErr.cause = err;
+    throw outErr;
   }
-
-  const vercelToken = process.env.VERCEL_TOKEN;
-  assert.ok(vercelToken, 'VERCEL_TOKEN_REQUIRED');
-  const vres = await fetchFn('https://api.vercel.com/v6/deployments?projectId=' + P.PROJECT + '&teamId=' + P.TEAM + '&limit=100', {
-    headers: { authorization: 'Bearer ' + vercelToken },
-  });
-  assert.equal(vres.status, 200, 'VERCEL_READ_FAILED');
-  const vjson = await vres.json();
-  assert.ok(Array.isArray(vjson.deployments), 'VERCEL_READ_FAILED');
-
-  const matchingBaseline = vjson.deployments.filter(d => d.meta && d.meta.vdsenPilotBaseline === s.production_deployment);
-  assert.equal(matchingBaseline.length, 0, 'PENDING_OR_STAGED_DEPLOYMENTS_EXIST');
-
-  const currentAlias = await currentAppFn(s);
-  assert.equal(currentAlias, s.production_deployment, 'PRODUCTION_ALIAS_NOT_ON_BASELINE');
-
-  return {
-    baselineDeployment: s.production_deployment,
-    currentAlias,
-    stagedDeploymentsCount: matchingBaseline.length,
-    priorRunMutations: 0,
-    evidenceVerified: true,
-  };
 }
 function closed(w, snapshot) {
   P.stateGate(w, snapshot, 'enable');
@@ -376,6 +436,7 @@ const ALLOWED_DIAGNOSTIC_CODES = new Set([
   'UNSAFE_EXPORT_PATH',
   'DEPLOYMENT_ENV_NAMES_REQUIRED',
   'PILOT_RUNTIME_STOPPED',
+  'BLOCKED_EVIDENCE',
 ]);
 
 function classifyDiagnosticCode(err) {
