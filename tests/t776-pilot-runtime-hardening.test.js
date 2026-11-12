@@ -695,7 +695,7 @@ test('SCENARIO 11: gatherReconciliationEvidence auditoría autoritativa de corri
     /DEPLOYMENT_LIST_INCOMPLETE/
   );
 
-  // 11E: Rechazo si se creó un deployment durante la ventana de la corrida previa
+  // 11E: Rechazo si se creó un deployment de producción durante la ventana de la corrida previa
   const mockFetchDeployDuringRun = async (url) => {
     return {
       status: 200,
@@ -703,6 +703,7 @@ test('SCENARIO 11: gatherReconciliationEvidence auditoría autoritativa de corri
         deployments: [
           {
             uid: 'dpl_suspicious',
+            target: 'production',
             created: Date.parse('2026-11-12T04:45:00Z'),
             meta: {},
           },
@@ -718,7 +719,7 @@ test('SCENARIO 11: gatherReconciliationEvidence auditoría autoritativa de corri
       currentApp: mockCurrentAppSuccess,
       vercelToken: 'mock_token',
     }),
-    /BLOCKED_EVIDENCE/
+    /DEPLOYMENTS_CREATED_DURING_PRIOR_RUN/
   );
 
   // 11F: Rechazo si el alias productivo actual no coincide con el baseline
@@ -730,5 +731,143 @@ test('SCENARIO 11: gatherReconciliationEvidence auditoría autoritativa de corri
       vercelToken: 'mock_token',
     }),
     /PRODUCTION_ALIAS_NOT_ON_BASELINE/
+  );
+});
+
+// SCENARIO 12: T777 reconciliación extraordinaria acotada (43156465756 + 43310023302), /v7/deployments y no repetición
+test('SCENARIO 12: T777 reconciliación extraordinaria acotada, /v7/deployments y no repetición', async () => {
+  const s = sampleState();
+  const T777_OP = 'op-ayrton-shadow-20261112-c4f8a2e9';
+  const ctx = {
+    baselineDeployment: DEPLOYMENT,
+    runtimeSha: RUNTIME_SHA,
+    operationId: T777_OP,
+  };
+
+  // 12A: gatherReconciliationEvidence verifica /v7/deployments (nunca /v6) e ignora previews ajenos en la ventana
+  let seenUrls = [];
+  const mockGh43310023302 = (cmd, path) => {
+    if (path.endsWith('/actions/runs/43310023302')) {
+      return {
+        id: 43310023302,
+        path: '.github/workflows/vdsen-ayrton-runtime.yml',
+        head_branch: 'codex/client-app-next',
+        event: 'workflow_dispatch',
+        status: 'completed',
+        conclusion: 'failure',
+        created_at: '2026-11-12T21:25:00Z',
+        updated_at: '2026-11-12T21:25:12Z',
+      };
+    }
+    if (path.endsWith('/actions/runs/43310023302/jobs')) {
+      return {
+        jobs: [{
+          name: 'pilot-runtime',
+          status: 'completed',
+          conclusion: 'failure',
+          steps: [
+            { name: 'One arm attempt per verified OFF baseline; uncertainty requires review', conclusion: 'failure' },
+            { name: 'One pilot deployment with both fences closed, then promote the same ID', conclusion: 'skipped' },
+          ],
+        }],
+      };
+    }
+    if (path.endsWith('/actions/runs/43310023302/artifacts')) {
+      return { total_count: 0, artifacts: [] };
+    }
+    throw new Error('UNEXPECTED_GH_PATH: ' + path);
+  };
+
+  const mockFetchV7WithPreview = async (url, opts) => {
+    seenUrls.push(String(url));
+    assert.ok(String(url).includes('/v7/deployments'), 'Debe consultar /v7/deployments');
+    assert.equal(opts.redirect, 'error', 'Debe rechazar redirecciones');
+    return {
+      status: 200,
+      json: async () => ({
+        deployments: [
+          {
+            uid: 'dpl_unrelated_preview',
+            target: 'preview',
+            created: Date.parse('2026-11-12T21:25:05Z'),
+            meta: {},
+          },
+          {
+            uid: 'dpl_older_than_baseline',
+            target: 'production',
+            created: Date.parse('2026-11-12T00:00:00Z'),
+            meta: {},
+          },
+        ],
+        pagination: { count: 2, next: 1700000000000 }, // Early stop because oldestInPage < minTimestampMs!
+      }),
+    };
+  };
+
+  const ev2 = await gatherReconciliationEvidence(s, '43310023302', {
+    gh: mockGh43310023302,
+    fetch: mockFetchV7WithPreview,
+    currentApp: async () => DEPLOYMENT,
+    vercelToken: 'mock_token',
+  });
+  assert.equal(ev2.runId, '43310023302');
+  assert.equal(ev2.phaseProven, 'ATTEMPT_GATE_PREFLIGHT_ZERO_MUTATIONS');
+  assert.equal(ev2.priorRunMutations, 0);
+  assert.equal(ev2.evidenceVerified, true);
+  assert.equal(seenUrls.length, 1, 'Paginación acotada debe detenerse al cubrir minTimestampMs');
+
+  // 12B: Rechazo si un deployment de producción fue creado en la ventana del run fallido
+  await assert.rejects(
+    async () => gatherReconciliationEvidence(s, '43310023302', {
+      gh: mockGh43310023302,
+      fetch: async () => ({
+        status: 200,
+        json: async () => ({
+          deployments: [
+            { uid: 'dpl_prod_window', target: 'production', created: Date.parse('2026-11-12T21:25:05Z'), meta: {} },
+          ],
+          pagination: { next: null },
+        }),
+      }),
+      currentApp: async () => DEPLOYMENT,
+      vercelToken: 'mock_token',
+    }),
+    /DEPLOYMENTS_CREATED_DURING_PRIOR_RUN/
+  );
+
+  // 12C: assertAttemptAllowed acepta reconciliación extraordinaria T777 para exactamente los 2 runs + nueva corrida
+  const ev1 = {
+    runId: '43156465756',
+    baselineDeployment: DEPLOYMENT,
+    currentAlias: DEPLOYMENT,
+    stagedDeploymentsCount: 0,
+    priorRunMutations: 0,
+    evidenceVerified: true,
+  };
+  const runs3 = [
+    { id: 43156465756, status: 'completed', conclusion: 'failure' },
+    { id: 43310023302, status: 'completed', conclusion: 'failure' },
+    { id: 43320000000, status: 'in_progress' },
+  ];
+  const resT777 = assertAttemptAllowed(runs3, '43320000000', '43156465756,43310023302', [ev1, ev2], ctx);
+  assert.equal(resT777.mode, 'T777_EXTRAORDINARY_TWO_RUN_RECOVERY');
+  assert.equal(resT777.operationId, T777_OP);
+
+  // 12D: Bloqueo de repetición (4ta corrida), manipulación de operationId, baseline o run IDs
+  assert.throws(
+    () => assertAttemptAllowed([...runs3, { id: 43320000001, status: 'in_progress' }], '43320000001', '43156465756,43310023302', [ev1, ev2], ctx),
+    /ONE_ATTEMPT_PER_BASELINE_EXCEEDED/
+  );
+  assert.throws(
+    () => assertAttemptAllowed(runs3, '43320000000', '43156465756,43310023302', [ev1, ev2], { ...ctx, operationId: 'op-other-hijack' }),
+    /EXTRAORDINARY_RECOVERY_NOT_AUTHORIZED/
+  );
+  assert.throws(
+    () => assertAttemptAllowed(runs3, '43320000000', '43156465756,43399999999', [ev1, ev2], ctx),
+    /EXTRAORDINARY_RECOVERY_NOT_AUTHORIZED/
+  );
+  assert.throws(
+    () => assertAttemptAllowed(runs3, '43320000000', '43156465756,43310023302', [ev1, { ...ev2, evidenceVerified: false }], ctx),
+    /PRIOR_RUN_EVIDENCE_UNVERIFIED/
   );
 });

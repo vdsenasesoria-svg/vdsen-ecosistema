@@ -23,35 +23,85 @@ function assertAuthorizedMainSha(mainSha, expectedEnv = process.env.APP_EXPECTED
   assert.ok(allowed.has(mainSha), 'UNAUTHORIZED_MAIN_SHA: ' + mainSha);
   return mainSha;
 }
-function assertAttemptAllowed(workflowRuns, currentRunId, reconcileFailedRun = '', reconciliationEvidence = null) {
+const T777_EXTRAORDINARY_RECOVERY = Object.freeze({
+  runIds: ['43156465756', '43310023302'],
+  baselineDeployment: 'dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8',
+  runtimeSha: '3fc264e23d67a8ecb1611a6c8af04ad739f422da',
+  operationId: 'op-ayrton-shadow-20261112-c4f8a2e9',
+});
+
+function assertAttemptAllowed(workflowRuns, currentRunId, reconcileFailedRun = '', reconciliationEvidence = null, context = {}) {
   assert.ok(Array.isArray(workflowRuns), 'INVALID_WORKFLOW_RUNS');
   assert.match(String(currentRunId || ''), /^[1-9][0-9]+$/, 'INVALID_CURRENT_RUN_ID');
   const current = workflowRuns.find(w => String(w.id) === String(currentRunId));
   assert.ok(current, 'CURRENT_RUN_NOT_FOUND_IN_DISPATCH_LIST');
 
-  if (!reconcileFailedRun) {
+  const rawRec = String(reconcileFailedRun || '').trim();
+  if (!rawRec) {
     assert.equal(workflowRuns.length, 1, 'ONE_ATTEMPT_PER_BASELINE_EXCEEDED');
     assert.equal(String(workflowRuns[0].id), String(currentRunId), 'CONCURRENT_OR_PRIOR_RUN_EXISTS');
     return { mode: 'STANDARD_SINGLE_ATTEMPT', runId: String(currentRunId) };
   }
 
-  assert.match(String(reconcileFailedRun), /^[1-9][0-9]+$/, 'INVALID_RECONCILE_FAILED_RUN_ID');
-  assert.notEqual(String(reconcileFailedRun), String(currentRunId), 'CANNOT_RECONCILE_SELF');
-  assert.equal(workflowRuns.length, 2, 'RECOVERY_ALLOWED_ONLY_FOR_EXACTLY_ONE_PRIOR_ATTEMPT');
+  const recIds = rawRec.split(',').map(x => x.trim()).filter(Boolean);
+  assert.ok(recIds.length >= 1, 'INVALID_RECONCILE_FAILED_RUN_ID');
+  for (const id of recIds) {
+    assert.match(id, /^[1-9][0-9]+$/, 'INVALID_RECONCILE_FAILED_RUN_ID');
+    assert.notEqual(id, String(currentRunId), 'CANNOT_RECONCILE_SELF');
+  }
+  assert.equal(new Set(recIds).size, recIds.length, 'INVALID_RECONCILE_FAILED_RUN_ID');
 
-  const prior = workflowRuns.find(w => String(w.id) === String(reconcileFailedRun));
-  assert.ok(prior, 'RECONCILED_RUN_NOT_FOUND_FOR_CURRENT_BASELINE');
-  assert.equal(prior.status, 'completed', 'PRIOR_RUN_NOT_COMPLETED');
-  assert.equal(prior.conclusion, 'failure', 'PRIOR_RUN_DID_NOT_FAIL');
+  if (recIds.length === 1) {
+    const singleId = recIds[0];
+    assert.equal(workflowRuns.length, 2, 'RECOVERY_ALLOWED_ONLY_FOR_EXACTLY_ONE_PRIOR_ATTEMPT');
 
-  assert.ok(reconciliationEvidence && typeof reconciliationEvidence === 'object', 'PRIOR_RUN_EVIDENCE_MISSING');
-  assert.ok(reconciliationEvidence.baselineDeployment && typeof reconciliationEvidence.baselineDeployment === 'string', 'PRIOR_RUN_EVIDENCE_MISSING');
-  assert.equal(reconciliationEvidence.currentAlias, reconciliationEvidence.baselineDeployment, 'PRODUCTION_ALIAS_NOT_ON_BASELINE');
-  assert.equal(reconciliationEvidence.stagedDeploymentsCount, 0, 'PENDING_OR_STAGED_DEPLOYMENTS_EXIST');
-  assert.equal(reconciliationEvidence.priorRunMutations, 0, 'PRIOR_RUN_MUTATIONS_NOT_PROVEN_ZERO');
-  assert.equal(reconciliationEvidence.evidenceVerified, true, 'PRIOR_RUN_EVIDENCE_UNVERIFIED');
+    const prior = workflowRuns.find(w => String(w.id) === singleId);
+    assert.ok(prior, 'RECONCILED_RUN_NOT_FOUND_FOR_CURRENT_BASELINE');
+    assert.equal(prior.status, 'completed', 'PRIOR_RUN_NOT_COMPLETED');
+    assert.equal(prior.conclusion, 'failure', 'PRIOR_RUN_DID_NOT_FAIL');
 
-  return { mode: 'AUDITED_FAILED_RUN_RECOVERY', currentRunId: String(currentRunId), reconciledRunId: String(reconcileFailedRun), evidence: reconciliationEvidence };
+    assert.ok(reconciliationEvidence && typeof reconciliationEvidence === 'object', 'PRIOR_RUN_EVIDENCE_MISSING');
+    assert.ok(reconciliationEvidence.baselineDeployment && typeof reconciliationEvidence.baselineDeployment === 'string', 'PRIOR_RUN_EVIDENCE_MISSING');
+    assert.equal(reconciliationEvidence.currentAlias, reconciliationEvidence.baselineDeployment, 'PRODUCTION_ALIAS_NOT_ON_BASELINE');
+    assert.equal(reconciliationEvidence.stagedDeploymentsCount, 0, 'PENDING_OR_STAGED_DEPLOYMENTS_EXIST');
+    assert.equal(reconciliationEvidence.priorRunMutations, 0, 'PRIOR_RUN_MUTATIONS_NOT_PROVEN_ZERO');
+    assert.equal(reconciliationEvidence.evidenceVerified, true, 'PRIOR_RUN_EVIDENCE_UNVERIFIED');
+
+    return { mode: 'AUDITED_FAILED_RUN_RECOVERY', currentRunId: String(currentRunId), reconciledRunId: singleId, evidence: reconciliationEvidence };
+  }
+
+  // T777 extraordinary single-use recovery strictly bound to the two verified failed runs, baseline, runtime, and operationId
+  const sortedRec = [...recIds].sort();
+  const sortedExpected = [...T777_EXTRAORDINARY_RECOVERY.runIds].sort();
+  assert.deepEqual(sortedRec, sortedExpected, 'EXTRAORDINARY_RECOVERY_NOT_AUTHORIZED');
+  assert.equal(context.baselineDeployment, T777_EXTRAORDINARY_RECOVERY.baselineDeployment, 'EXTRAORDINARY_RECOVERY_NOT_AUTHORIZED');
+  assert.equal(context.runtimeSha, T777_EXTRAORDINARY_RECOVERY.runtimeSha, 'EXTRAORDINARY_RECOVERY_NOT_AUTHORIZED');
+  assert.equal(context.operationId, T777_EXTRAORDINARY_RECOVERY.operationId, 'EXTRAORDINARY_RECOVERY_NOT_AUTHORIZED');
+  assert.equal(workflowRuns.length, 3, 'ONE_ATTEMPT_PER_BASELINE_EXCEEDED');
+
+  assert.ok(Array.isArray(reconciliationEvidence) && reconciliationEvidence.length === 2, 'PRIOR_RUN_EVIDENCE_MISSING');
+  for (const id of sortedExpected) {
+    const prior = workflowRuns.find(w => String(w.id) === id);
+    assert.ok(prior, 'RECONCILED_RUN_NOT_FOUND_FOR_CURRENT_BASELINE');
+    assert.equal(prior.status, 'completed', 'PRIOR_RUN_NOT_COMPLETED');
+    assert.equal(prior.conclusion, 'failure', 'PRIOR_RUN_DID_NOT_FAIL');
+
+    const ev = reconciliationEvidence.find(e => e && String(e.runId || id) === id);
+    assert.ok(ev && typeof ev === 'object', 'PRIOR_RUN_EVIDENCE_MISSING');
+    assert.equal(ev.baselineDeployment, T777_EXTRAORDINARY_RECOVERY.baselineDeployment, 'PRIOR_RUN_EVIDENCE_MISSING');
+    assert.equal(ev.currentAlias, ev.baselineDeployment, 'PRODUCTION_ALIAS_NOT_ON_BASELINE');
+    assert.equal(ev.stagedDeploymentsCount, 0, 'PENDING_OR_STAGED_DEPLOYMENTS_EXIST');
+    assert.equal(ev.priorRunMutations, 0, 'PRIOR_RUN_MUTATIONS_NOT_PROVEN_ZERO');
+    assert.equal(ev.evidenceVerified, true, 'PRIOR_RUN_EVIDENCE_UNVERIFIED');
+  }
+
+  return {
+    mode: 'T777_EXTRAORDINARY_TWO_RUN_RECOVERY',
+    currentRunId: String(currentRunId),
+    reconciledRunIds: sortedExpected,
+    operationId: context.operationId,
+    evidence: reconciliationEvidence,
+  };
 }
 async function gatherReconciliationEvidence(s, failedRunId, deps = {}) {
   try {
@@ -87,13 +137,20 @@ async function gatherReconciliationEvidence(s, failedRunId, deps = {}) {
     assert.equal(pilotJob.conclusion, 'failure', 'JOB_DID_NOT_FAIL');
 
     const steps = pilotJob.steps || [];
+    const gateStep = steps.find(st => st.name && st.name.includes('One arm attempt per verified OFF baseline'));
     const armStep = steps.find(st => st.name && st.name.includes('One pilot deployment with both fences closed'));
-    assert.ok(armStep, 'ARM_STEP_NOT_FOUND');
-    assert.equal(armStep.conclusion, 'failure', 'ARM_STEP_DID_NOT_FAIL');
 
-    // Check duration: preflight failure took <= 10s (e.g. 749ms); staging CLI would take > 30s
-    const armDurationSec = (Date.parse(armStep.completed_at) - Date.parse(armStep.started_at)) / 1000;
-    assert.ok(Number.isFinite(armDurationSec) && armDurationSec < 30, 'ARM_STEP_DURATION_EXCEEDS_PREFLIGHT');
+    let phaseProven = null;
+    if (gateStep && gateStep.conclusion === 'failure') {
+      assert.ok(!armStep || armStep.conclusion === 'skipped', 'ARM_STEP_EXECUTED_AFTER_GATE_FAILURE');
+      phaseProven = 'ATTEMPT_GATE_PREFLIGHT_ZERO_MUTATIONS';
+    } else {
+      assert.ok(armStep, 'ARM_STEP_NOT_FOUND');
+      assert.equal(armStep.conclusion, 'failure', 'ARM_STEP_DID_NOT_FAIL');
+      const armDurationSec = (Date.parse(armStep.completed_at) - Date.parse(armStep.started_at)) / 1000;
+      assert.ok(Number.isFinite(armDurationSec) && armDurationSec < 30, 'ARM_STEP_DURATION_EXCEEDS_PREFLIGHT');
+      phaseProven = 'ARM_PREFLIGHT_ZERO_MUTATIONS';
+    }
 
     // Check artifacts: must not have produced any release/staging report
     const artifacts = gh('api', 'repos/' + repo + '/actions/runs/' + failedRunId + '/artifacts');
@@ -103,19 +160,32 @@ async function gatherReconciliationEvidence(s, failedRunId, deps = {}) {
       assert.fail('PRIOR_RUN_MUTATIONS_NOT_PROVEN_ZERO');
     }
 
-    // 4. Full, fail-closed pagination of Vercel deployments
+    // 4. Full, fail-closed pagination of Vercel deployments (/v7/deployments; /v6 returns HTTP 400)
     const vercelToken = deps.vercelToken || process.env.VERCEL_TOKEN;
     assert.ok(vercelToken, 'VERCEL_TOKEN_REQUIRED');
+    const runStartMs = Date.parse(run.created_at);
+    const runEndMs = Date.parse(run.updated_at);
+    assert.ok(Number.isFinite(runStartMs) && Number.isFinite(runEndMs), 'RUN_TIMESTAMPS_INVALID');
+    const releaseCompletedMs = s.app_release && s.app_release.completed_at ? Date.parse(s.app_release.completed_at) : runStartMs;
+    const minTimestampMs = Math.min(runStartMs - 5000, Number.isFinite(releaseCompletedMs) ? releaseCompletedMs - 60000 : runStartMs - 5000);
+
     let until = null;
     const allDeployments = [];
     for (let page = 0; page < 20; page++) {
-      const q = 'https://api.vercel.com/v6/deployments?projectId=' + P.PROJECT + '&teamId=' + P.TEAM + '&limit=100' + (until ? '&until=' + until : '');
-      const vres = await fetchFn(q, { headers: { authorization: 'Bearer ' + vercelToken } });
+      const q = 'https://api.vercel.com/v7/deployments?projectId=' + encodeURIComponent(P.PROJECT) + '&teamId=' + encodeURIComponent(P.TEAM) + '&limit=100' + (until ? '&until=' + encodeURIComponent(String(until)) : '');
+      const vres = await fetchFn(q, { headers: { authorization: 'Bearer ' + vercelToken }, redirect: 'error', signal: AbortSignal.timeout(30000) });
       assert.equal(vres.status, 200, 'VERCEL_READ_FAILED');
       const vjson = await vres.json();
       assert.ok(Array.isArray(vjson.deployments), 'VERCEL_READ_FAILED');
       allDeployments.push(...vjson.deployments);
-      if (!vjson.pagination || !vjson.pagination.next) {
+
+      let oldestInPage = Infinity;
+      for (const d of vjson.deployments) {
+        const dCreated = typeof d.created === 'number' ? d.created : Date.parse(d.createdAt || d.created);
+        if (Number.isFinite(dCreated) && dCreated < oldestInPage) oldestInPage = dCreated;
+      }
+
+      if (!vjson.pagination || !vjson.pagination.next || oldestInPage < minTimestampMs) {
         until = null;
         break;
       }
@@ -127,11 +197,10 @@ async function gatherReconciliationEvidence(s, failedRunId, deps = {}) {
     const matchingBaseline = allDeployments.filter(d => d.meta && d.meta.vdsenPilotBaseline === s.production_deployment);
     assert.equal(matchingBaseline.length, 0, 'PENDING_OR_STAGED_DEPLOYMENTS_EXIST');
 
-    // Verify no deployment was created during the failed run's time window
-    const runStartMs = Date.parse(run.created_at);
-    const runEndMs = Date.parse(run.updated_at);
-    assert.ok(Number.isFinite(runStartMs) && Number.isFinite(runEndMs), 'RUN_TIMESTAMPS_INVALID');
+    // Verify no production or pilot deployment was created during the failed run's time window
     const deploymentsDuringRun = allDeployments.filter(d => {
+      const isProdOrPilot = d.target === 'production' || (d.meta && d.meta.vdsenPilotBaseline === s.production_deployment);
+      if (!isProdOrPilot) return false;
       const dCreated = typeof d.created === 'number' ? d.created : Date.parse(d.createdAt || d.created);
       return dCreated >= runStartMs - 5000 && dCreated <= runEndMs + 60000;
     });
@@ -142,16 +211,24 @@ async function gatherReconciliationEvidence(s, failedRunId, deps = {}) {
     assert.equal(currentAlias, s.production_deployment, 'PRODUCTION_ALIAS_NOT_ON_BASELINE');
 
     return {
+      runId: String(failedRunId),
       baselineDeployment: s.production_deployment,
       currentAlias,
       stagedDeploymentsCount: matchingBaseline.length,
       priorRunMutations: 0,
       evidenceVerified: true,
-      phaseProven: 'ARM_PREFLIGHT_ZERO_MUTATIONS',
+      phaseProven,
     };
   } catch (err) {
     const code = classifyDiagnosticCode(err);
-    const known = ['PRIOR_RUN_MUTATIONS_NOT_PROVEN_ZERO', 'PENDING_OR_STAGED_DEPLOYMENTS_EXIST', 'PRODUCTION_ALIAS_NOT_ON_BASELINE', 'DEPLOYMENT_LIST_INCOMPLETE'].includes(code);
+    const known = [
+      'PRIOR_RUN_MUTATIONS_NOT_PROVEN_ZERO',
+      'PENDING_OR_STAGED_DEPLOYMENTS_EXIST',
+      'PRODUCTION_ALIAS_NOT_ON_BASELINE',
+      'DEPLOYMENT_LIST_INCOMPLETE',
+      'VERCEL_READ_FAILED',
+      'DEPLOYMENTS_CREATED_DURING_PRIOR_RUN',
+    ].includes(code);
     const outErr = new Error(known ? code : 'BLOCKED_EVIDENCE');
     outErr.cause = err;
     throw outErr;
@@ -437,6 +514,8 @@ const ALLOWED_DIAGNOSTIC_CODES = new Set([
   'DEPLOYMENT_ENV_NAMES_REQUIRED',
   'PILOT_RUNTIME_STOPPED',
   'BLOCKED_EVIDENCE',
+  'EXTRAORDINARY_RECOVERY_NOT_AUTHORIZED',
+  'DEPLOYMENTS_CREATED_DURING_PRIOR_RUN',
 ]);
 
 function classifyDiagnosticCode(err) {
@@ -533,6 +612,7 @@ module.exports = {
   formatSanitizedFailure,
   classifyDiagnosticCode,
   ALLOWED_DIAGNOSTIC_CODES,
+  T777_EXTRAORDINARY_RECOVERY,
 };
 if (require.main === module) main(process.argv.slice(2)).then(r => console.log(JSON.stringify({ status: r.status }))).catch((err) => {
   const checkpoint = (err && err.checkpoint) ? err.checkpoint : null;
