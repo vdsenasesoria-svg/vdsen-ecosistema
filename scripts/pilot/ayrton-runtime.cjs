@@ -10,8 +10,8 @@ const LEGACY_T671_SHA = 'a8cf462c78c4bd795cc9f485a82f64429c179f00';
 const T671 = OFF_BASELINE_SHA;
 const FILE = 'release-output/ayrton-runtime.json';
 const REVIEWED_MAIN_SHAS = [
+  'eee34ea6442381ef7af086d08f149445f347efb6', // Post-PR171 merge: Ayrton pilot runtime workflow registration (T776)
   'f6596ba5207dc158b8a9b01483cd0fe0ebeb274c', // Pinned initial main baseline
-  // Post-PR171: the exact merge commit SHA on main will be appended here upon reviewed integration.
 ];
 function assertAuthorizedMainSha(mainSha, expectedEnv = process.env.APP_EXPECTED_MAIN_SHA, extraReviewed = []) {
   assert.match(String(mainSha || ''), /^[a-f0-9]{40}$/, 'INVALID_MAIN_SHA');
