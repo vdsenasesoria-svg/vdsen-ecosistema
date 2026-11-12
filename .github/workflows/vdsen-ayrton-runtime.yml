@@ -77,7 +77,7 @@ jobs:
       - name: One arm attempt per verified OFF baseline; uncertainty requires review
         if: inputs.restore_run == ''
         run: |
-          node -e "const cp=require('child_process'),s=require('./.release/vdsen-client.json'),R=require('./scripts/pilot/ayrton-runtime.cjs');if(!s.runtime_sha||s.numeric_apply_enabled!==false||!Number.isFinite(Date.parse(s.app_release.completed_at)))process.exit(1);const p='repos/'+process.env.GITHUB_REPOSITORY+'/actions/workflows/vdsen-ayrton-runtime.yml/runs?per_page=100&event=workflow_dispatch&created='+encodeURIComponent('>='+s.app_release.completed_at);const r=JSON.parse(cp.execFileSync('gh',['api',p],{encoding:'utf8'}));R.assertAttemptAllowed(r.workflow_runs,process.env.GITHUB_RUN_ID,process.env.INPUT_RECONCILE_FAILED_RUN);"
+          node -e "(async()=>{const cp=require('child_process'),s=require('./.release/vdsen-client.json'),R=require('./scripts/pilot/ayrton-runtime.cjs');if(!s.runtime_sha||s.numeric_apply_enabled!==false||!Number.isFinite(Date.parse(s.app_release.completed_at)))process.exit(1);const p='repos/'+process.env.GITHUB_REPOSITORY+'/actions/workflows/vdsen-ayrton-runtime.yml/runs?per_page=100&event=workflow_dispatch&created='+encodeURIComponent('>='+s.app_release.completed_at);const r=JSON.parse(cp.execFileSync('gh',['api',p],{encoding:'utf8'}));const ev=process.env.INPUT_RECONCILE_FAILED_RUN?await R.gatherReconciliationEvidence(s,process.env.INPUT_RECONCILE_FAILED_RUN):null;R.assertAttemptAllowed(r.workflow_runs,process.env.GITHUB_RUN_ID,process.env.INPUT_RECONCILE_FAILED_RUN,ev);})().catch(e=>{console.error('PILOT_ATTEMPT_GATE_FAILED');process.exit(1);});"
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Repo and pilot contracts
         run: |

@@ -7,6 +7,8 @@ const {
   adapters,
   assertAttemptAllowed,
   formatSanitizedFailure,
+  classifyDiagnosticCode,
+  ALLOWED_DIAGNOSTIC_CODES,
   restore,
   arm,
 } = require('../scripts/pilot/ayrton-runtime.cjs');
@@ -47,6 +49,14 @@ const sampleState = () => ({
   },
 });
 
+const validEvidence = () => ({
+  baselineDeployment: DEPLOYMENT,
+  currentAlias: DEPLOYMENT,
+  stagedDeploymentsCount: 0,
+  priorRunMutations: 0,
+  evidenceVerified: true,
+});
+
 // SCENARIO 1: Reintento tras fallo verificado con reconciliación auditable
 test('SCENARIO 1: Reintento tras fallo verificado con reconciliación auditable (reconcile_failed_run)', () => {
   const currentRunId = '43160000000';
@@ -56,10 +66,11 @@ test('SCENARIO 1: Reintento tras fallo verificado con reconciliación auditable 
     { id: 43160000000, status: 'in_progress', conclusion: null, head_sha: '87a3fa759a44e2172f0b1c26465de78408b4cb72' },
   ];
 
-  const res = assertAttemptAllowed(runs, currentRunId, failedRunId);
+  const res = assertAttemptAllowed(runs, currentRunId, failedRunId, validEvidence());
   assert.equal(res.mode, 'AUDITED_FAILED_RUN_RECOVERY');
   assert.equal(res.currentRunId, currentRunId);
   assert.equal(res.reconciledRunId, failedRunId);
+  assert.equal(res.evidence.evidenceVerified, true);
 });
 
 // SCENARIO 2: Reintento bloqueado si ya existe un deployment staged
@@ -99,8 +110,8 @@ test('SCENARIO 2: Reintento bloqueado si ya existe un deployment staged', async 
   }
 });
 
-// SCENARIO 3: Reintento bloqueado con resultado incierto
-test('SCENARIO 3: Reintento bloqueado con resultado incierto (no completado, éxito, cancelado, >1 reintento, auto-reconciliación)', () => {
+// SCENARIO 3: Reintento bloqueado con resultado incierto y sin evidencia suficiente
+test('SCENARIO 3: Reintento bloqueado con resultado incierto o sin evidencia suficiente para reconciliación', () => {
   const currentRunId = '43160000000';
   const targetFailedRunId = '43156465756';
 
@@ -108,37 +119,67 @@ test('SCENARIO 3: Reintento bloqueado con resultado incierto (no completado, éx
   assert.throws(() => assertAttemptAllowed([
     { id: 43156465756, status: 'in_progress', conclusion: null },
     { id: 43160000000, status: 'in_progress' },
-  ], currentRunId, targetFailedRunId), /PRIOR_RUN_NOT_COMPLETED/);
+  ], currentRunId, targetFailedRunId, validEvidence()), /PRIOR_RUN_NOT_COMPLETED/);
 
   // 3B: Prior run concluded with success
   assert.throws(() => assertAttemptAllowed([
     { id: 43156465756, status: 'completed', conclusion: 'success' },
     { id: 43160000000, status: 'in_progress' },
-  ], currentRunId, targetFailedRunId), /PRIOR_RUN_DID_NOT_FAIL/);
+  ], currentRunId, targetFailedRunId, validEvidence()), /PRIOR_RUN_DID_NOT_FAIL/);
 
   // 3C: Prior run concluded with cancelled
   assert.throws(() => assertAttemptAllowed([
     { id: 43156465756, status: 'completed', conclusion: 'cancelled' },
     { id: 43160000000, status: 'in_progress' },
-  ], currentRunId, targetFailedRunId), /PRIOR_RUN_DID_NOT_FAIL/);
+  ], currentRunId, targetFailedRunId, validEvidence()), /PRIOR_RUN_DID_NOT_FAIL/);
 
   // 3D: Exactly 1 recovery attempt allowed (3 runs exist = already attempted once)
   assert.throws(() => assertAttemptAllowed([
     { id: 43156465756, status: 'completed', conclusion: 'failure' },
     { id: 43159000000, status: 'completed', conclusion: 'failure' },
     { id: 43160000000, status: 'in_progress' },
-  ], currentRunId, targetFailedRunId), /RECOVERY_ALLOWED_ONLY_FOR_EXACTLY_ONE_PRIOR_ATTEMPT/);
+  ], currentRunId, targetFailedRunId, validEvidence()), /RECOVERY_ALLOWED_ONLY_FOR_EXACTLY_ONE_PRIOR_ATTEMPT/);
 
   // 3E: Cannot reconcile self
   assert.throws(() => assertAttemptAllowed([
     { id: 43160000000, status: 'in_progress' },
-  ], currentRunId, currentRunId), /CANNOT_RECONCILE_SELF/);
+  ], currentRunId, currentRunId, validEvidence()), /CANNOT_RECONCILE_SELF/);
 
   // 3F: Reconciled run ID not found in list
   assert.throws(() => assertAttemptAllowed([
     { id: 43158888888, status: 'completed', conclusion: 'failure' },
     { id: 43160000000, status: 'in_progress' },
-  ], currentRunId, '43159999999'), /RECONCILED_RUN_NOT_FOUND_FOR_CURRENT_BASELINE/);
+  ], currentRunId, '43159999999', validEvidence()), /RECONCILED_RUN_NOT_FOUND_FOR_CURRENT_BASELINE/);
+
+  // 3G: Intento fallido sin evidencia suficiente (evidencia null/missing)
+  assert.throws(() => assertAttemptAllowed([
+    { id: 43156465756, status: 'completed', conclusion: 'failure' },
+    { id: 43160000000, status: 'in_progress' },
+  ], currentRunId, targetFailedRunId, null), /PRIOR_RUN_EVIDENCE_MISSING/);
+
+  // 3H: Intento fallido con mutaciones > 0 no probadas cero
+  assert.throws(() => assertAttemptAllowed([
+    { id: 43156465756, status: 'completed', conclusion: 'failure' },
+    { id: 43160000000, status: 'in_progress' },
+  ], currentRunId, targetFailedRunId, { ...validEvidence(), priorRunMutations: 1 }), /PRIOR_RUN_MUTATIONS_NOT_PROVEN_ZERO/);
+
+  // 3I: Intento fallido donde el alias se movió del baseline
+  assert.throws(() => assertAttemptAllowed([
+    { id: 43156465756, status: 'completed', conclusion: 'failure' },
+    { id: 43160000000, status: 'in_progress' },
+  ], currentRunId, targetFailedRunId, { ...validEvidence(), currentAlias: 'dpl_other_foreign' }), /PRODUCTION_ALIAS_NOT_ON_BASELINE/);
+
+  // 3J: Intento fallido con despliegues staged pendientes
+  assert.throws(() => assertAttemptAllowed([
+    { id: 43156465756, status: 'completed', conclusion: 'failure' },
+    { id: 43160000000, status: 'in_progress' },
+  ], currentRunId, targetFailedRunId, { ...validEvidence(), stagedDeploymentsCount: 1 }), /PENDING_OR_STAGED_DEPLOYMENTS_EXIST/);
+
+  // 3K: Intento fallido con evidencia no verificada
+  assert.throws(() => assertAttemptAllowed([
+    { id: 43156465756, status: 'completed', conclusion: 'failure' },
+    { id: 43160000000, status: 'in_progress' },
+  ], currentRunId, targetFailedRunId, { ...validEvidence(), evidenceVerified: false }), /PRIOR_RUN_EVIDENCE_UNVERIFIED/);
 });
 
 // SCENARIO 4: Cambio de commit sin reconciliación explícita rechazado fail-closed
@@ -343,27 +384,87 @@ test('SCENARIO 8: Metadatos Vercel: paginación completa multipágina y rechazo 
   }
 });
 
-// SCENARIO 9: Formato de logs: sin fuga de información
-test('SCENARIO 9: Formato de logs: sin fuga de información (sin stack trace, sin header Authorization, sin token)', () => {
-  const sensitiveError = new Error(
-    'Failed to authenticate with Vercel API: Bearer vercel_sec_999999999999999999999999\n' +
-    'Authorization: Bearer vercel_sec_secret\n' +
-    '    at Object.<anonymous> (/home/runner/work/vdsen-ecosistema/scripts/pilot/ayrton-runtime.cjs:154:15)\n' +
-    '    at async arm (/home/runner/work/vdsen-ecosistema/scripts/pilot/ayrton-runtime.cjs:80:5)'
+// SCENARIO 9: Formato de logs y derivación estricta de estado de seguridad
+test('SCENARIO 9: Formato de logs y derivación estricta de estado de seguridad', () => {
+  // 9A: Fallo antes del staging (preflight con cero mutaciones)
+  const preflightCheckpoint = {
+    phase: 'ARM_PREFLIGHT',
+    status: 'PREPARING',
+    productionMutations: 0,
+    staged: null,
+    deployIntentReached: false,
+    promotionAttempted: false,
+  };
+  const repPreflight = formatSanitizedFailure(new Error('FENCE_READ_FAILED: clients/123 status 403'), preflightCheckpoint);
+  assert.equal(repPreflight.status, 'PILOT_RUNTIME_STOPPED');
+  assert.equal(repPreflight.error_code, 'FENCE_READ_FAILED');
+  assert.equal(repPreflight.phase, 'ARM_PREFLIGHT');
+  assert.equal(repPreflight.state, 'SAFE_BASELINE_UNCHANGED_ZERO_MUTATIONS');
+  assert.equal(repPreflight.action_required, 'REVIEW_REDACTED_CHECKPOINT_NO_AUTOMATIC_RETRY');
+  assert.equal(repPreflight.stack, undefined);
+
+  // 9B: Resultado incierto durante staging (deploy intent alcanzado)
+  const stagingCheckpoint = {
+    phase: 'STAGING',
+    status: 'DEPLOY_INTENT_NO_RETRY',
+    deployIntentReached: true,
+    productionMutations: 0,
+    staged: null,
+    promotionAttempted: false,
+  };
+  const repStaging = formatSanitizedFailure(new Error('DEPLOY_UNCERTAIN_NO_RETRY: network timeout during vercel deploy'), stagingCheckpoint);
+  assert.equal(repStaging.status, 'PILOT_RUNTIME_STOPPED');
+  assert.equal(repStaging.error_code, 'DEPLOY_UNCERTAIN_NO_RETRY');
+  assert.equal(repStaging.phase, 'STAGING');
+  assert.equal(repStaging.state, 'PRODUCTION_STATE_UNVERIFIED');
+  assert.equal(repStaging.action_required, 'STOP_REVIEW_REQUIRED_NO_AUTOMATIC_RETRY');
+
+  // 9C: Fallo después de promoción (promotion attempted)
+  const promoCheckpoint = {
+    phase: 'PROMOTION',
+    status: 'CONCURRENT_ALIAS_NO_AUTOMATIC_OVERWRITE',
+    deployIntentReached: true,
+    productionMutations: 2,
+    staged: { id: 'dpl_stage123' },
+    promotionAttempted: true,
+  };
+  const repPromo = formatSanitizedFailure(new Error('ALIAS_NOT_CONVERGED'), promoCheckpoint);
+  assert.equal(repPromo.status, 'PILOT_RUNTIME_STOPPED');
+  assert.equal(repPromo.error_code, 'ALIAS_NOT_CONVERGED');
+  assert.equal(repPromo.state, 'PRODUCTION_STATE_UNVERIFIED');
+  assert.equal(repPromo.action_required, 'STOP_REVIEW_REQUIRED_NO_AUTOMATIC_RETRY');
+
+  // 9D: Rollback fallido
+  const rollbackFailCheckpoint = {
+    phase: 'ROLLBACK',
+    status: 'ROLLBACK_FAILED_UNVERIFIED',
+    deployIntentReached: true,
+    productionMutations: 3,
+    staged: { id: 'dpl_stage123' },
+    promotionAttempted: true,
+  };
+  const repRbFail = formatSanitizedFailure(new Error('ROLLBACK_FAILED_UNVERIFIED'), rollbackFailCheckpoint);
+  assert.equal(repRbFail.status, 'PILOT_RUNTIME_STOPPED');
+  assert.equal(repRbFail.error_code, 'ROLLBACK_FAILED_UNVERIFIED');
+  assert.equal(repRbFail.state, 'PRODUCTION_STATE_UNVERIFIED');
+  assert.equal(repRbFail.action_required, 'STOP_REVIEW_REQUIRED_NO_AUTOMATIC_RETRY');
+
+  // 9E: Error arbitrario con secreto fuera del patrón Bearer
+  const arbitrarySecretError = new Error(
+    'Postgres connection failed: postgresql://admin:super_secret_pg_pass_998877!@10.0.1.5:5432/vdsen_prod?sslmode=require\n' +
+    'Internal trace: token=github_pat_11AAAAABBBBCCCCDDDD_EEEEFFFFGGGGHHHH\n' +
+    '    at pgConnect (/node_modules/pg/client.js:10:5)'
   );
+  const repArbitrary = formatSanitizedFailure(arbitrarySecretError, preflightCheckpoint);
+  assert.equal(repArbitrary.error_code, 'UNCLASSIFIED_ERROR');
+  assert.ok(!JSON.stringify(repArbitrary).includes('super_secret_pg_pass_998877'));
+  assert.ok(!JSON.stringify(repArbitrary).includes('github_pat_11AAAAABBBBCCCCDDDD'));
+  assert.ok(!JSON.stringify(repArbitrary).includes('pgConnect'));
 
-  const report = formatSanitizedFailure(sensitiveError);
-
-  assert.equal(report.status, 'PILOT_RUNTIME_STOPPED');
-  assert.equal(report.phase, 'ARM_PREFLIGHT');
-  assert.equal(report.state, 'SAFE_BASELINE_UNCHANGED_ZERO_MUTATIONS');
-  assert.equal(report.action_required, 'REVIEW_REDACTED_CHECKPOINT_NO_AUTOMATIC_RETRY');
-  assert.equal(report.stack, undefined, 'No stack trace property allowed');
-
-  assert.ok(!report.error_code.includes('vercel_sec_999999999999999999999999'), 'Secrets must not be logged');
-  assert.ok(report.error_code.includes('Bearer [REDACTED]'), 'Tokens must be redacted');
-  assert.ok(!report.error_code.includes('\n'), 'Stack traces and multi-line headers must be excluded');
-  assert.ok(report.error_code.length <= 140, 'Error code must be bounded');
+  // 9F: Incertidumbre total sin checkpoint explícito -> PRODUCTION_STATE_UNVERIFIED
+  const repNoCheckpoint = formatSanitizedFailure(new Error('SOME_UNKNOWN_FAILURE'));
+  assert.equal(repNoCheckpoint.state, 'PRODUCTION_STATE_UNVERIFIED');
+  assert.equal(repNoCheckpoint.action_required, 'STOP_REVIEW_REQUIRED_NO_AUTOMATIC_RETRY');
 });
 
 // SCENARIO 10: Preservación del STOP y rollback

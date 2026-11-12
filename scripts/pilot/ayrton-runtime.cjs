@@ -23,7 +23,7 @@ function assertAuthorizedMainSha(mainSha, expectedEnv = process.env.APP_EXPECTED
   assert.ok(allowed.has(mainSha), 'UNAUTHORIZED_MAIN_SHA: ' + mainSha);
   return mainSha;
 }
-function assertAttemptAllowed(workflowRuns, currentRunId, reconcileFailedRun = '') {
+function assertAttemptAllowed(workflowRuns, currentRunId, reconcileFailedRun = '', reconciliationEvidence = null) {
   assert.ok(Array.isArray(workflowRuns), 'INVALID_WORKFLOW_RUNS');
   assert.match(String(currentRunId || ''), /^[1-9][0-9]+$/, 'INVALID_CURRENT_RUN_ID');
   const current = workflowRuns.find(w => String(w.id) === String(currentRunId));
@@ -44,7 +44,58 @@ function assertAttemptAllowed(workflowRuns, currentRunId, reconcileFailedRun = '
   assert.equal(prior.status, 'completed', 'PRIOR_RUN_NOT_COMPLETED');
   assert.equal(prior.conclusion, 'failure', 'PRIOR_RUN_DID_NOT_FAIL');
 
-  return { mode: 'AUDITED_FAILED_RUN_RECOVERY', currentRunId: String(currentRunId), reconciledRunId: String(reconcileFailedRun) };
+  assert.ok(reconciliationEvidence && typeof reconciliationEvidence === 'object', 'PRIOR_RUN_EVIDENCE_MISSING');
+  assert.ok(reconciliationEvidence.baselineDeployment && typeof reconciliationEvidence.baselineDeployment === 'string', 'PRIOR_RUN_EVIDENCE_MISSING');
+  assert.equal(reconciliationEvidence.currentAlias, reconciliationEvidence.baselineDeployment, 'PRODUCTION_ALIAS_NOT_ON_BASELINE');
+  assert.equal(reconciliationEvidence.stagedDeploymentsCount, 0, 'PENDING_OR_STAGED_DEPLOYMENTS_EXIST');
+  assert.equal(reconciliationEvidence.priorRunMutations, 0, 'PRIOR_RUN_MUTATIONS_NOT_PROVEN_ZERO');
+  assert.equal(reconciliationEvidence.evidenceVerified, true, 'PRIOR_RUN_EVIDENCE_UNVERIFIED');
+
+  return { mode: 'AUDITED_FAILED_RUN_RECOVERY', currentRunId: String(currentRunId), reconciledRunId: String(reconcileFailedRun), evidence: reconciliationEvidence };
+}
+async function gatherReconciliationEvidence(s, failedRunId, deps = {}) {
+  assert.ok(s && s.production_deployment, 'BASELINE_DEPLOYMENT_REQUIRED');
+  assert.match(String(failedRunId || ''), /^[1-9][0-9]+$/, 'INVALID_RECONCILE_FAILED_RUN_ID');
+  const cp = require('node:child_process');
+  const gh = deps.gh || ((...args) => JSON.parse(cp.execFileSync('gh', args, { encoding: 'utf8' })));
+  const fetchFn = deps.fetch || globalThis.fetch;
+  const currentAppFn = deps.currentApp || A.currentApp;
+  const repo = process.env.GITHUB_REPOSITORY || 'vdsenasesoria-svg/vdsen-ecosistema';
+
+  const run = gh('api', 'repos/' + repo + '/actions/runs/' + failedRunId);
+  assert.equal(String(run.id), String(failedRunId), 'RUN_ID_MISMATCH');
+  assert.equal(run.status, 'completed', 'PRIOR_RUN_NOT_COMPLETED');
+  assert.equal(run.conclusion, 'failure', 'PRIOR_RUN_DID_NOT_FAIL');
+
+  const artifacts = gh('api', 'repos/' + repo + '/actions/runs/' + failedRunId + '/artifacts');
+  assert.ok(artifacts && Array.isArray(artifacts.artifacts), 'INVALID_ARTIFACT_LIST');
+  if (artifacts.artifacts.length > 0) {
+    const art = artifacts.artifacts.find(a => a.name === 'ayrton-runtime-' + failedRunId);
+    if (art) assert.fail('PRIOR_RUN_MUTATIONS_NOT_PROVEN_ZERO');
+  }
+
+  const vercelToken = process.env.VERCEL_TOKEN;
+  assert.ok(vercelToken, 'VERCEL_TOKEN_REQUIRED');
+  const vres = await fetchFn('https://api.vercel.com/v6/deployments?projectId=' + P.PROJECT + '&teamId=' + P.TEAM + '&limit=100', {
+    headers: { authorization: 'Bearer ' + vercelToken },
+  });
+  assert.equal(vres.status, 200, 'VERCEL_READ_FAILED');
+  const vjson = await vres.json();
+  assert.ok(Array.isArray(vjson.deployments), 'VERCEL_READ_FAILED');
+
+  const matchingBaseline = vjson.deployments.filter(d => d.meta && d.meta.vdsenPilotBaseline === s.production_deployment);
+  assert.equal(matchingBaseline.length, 0, 'PENDING_OR_STAGED_DEPLOYMENTS_EXIST');
+
+  const currentAlias = await currentAppFn(s);
+  assert.equal(currentAlias, s.production_deployment, 'PRODUCTION_ALIAS_NOT_ON_BASELINE');
+
+  return {
+    baselineDeployment: s.production_deployment,
+    currentAlias,
+    stagedDeploymentsCount: matchingBaseline.length,
+    priorRunMutations: 0,
+    evidenceVerified: true,
+  };
 }
 function closed(w, snapshot) {
   P.stateGate(w, snapshot, 'enable');
@@ -90,16 +141,23 @@ async function arm(w, baseline, io) {
   assert.notEqual(w.runtimeSha, LEGACY_T671_SHA, 'PILOT_PROBE_RUNTIME_REQUIRED');
   const report = { schema: 'vdsen-ayrton-runtime-release-v1', operationId: w.operationId, runtimeSha: w.runtimeSha,
     mode: 'STAGE1_SHADOW', pid: w.pid || w.prescriptionExerciseId || null,
-    baseline, staged: null, status: 'PREPARING', promotionAttempted: false, productionMutations: 0 };
+    baseline, staged: null, status: 'PREPARING', promotionAttempted: false, productionMutations: 0, deployIntentReached: false };
   const save = () => io.save(report);
   const fenceEvidence = snapshot => ({ readAt: new Date().toISOString(), releaseEnabled: snapshot.release && snapshot.release.enabled,
     coachEnabled: snapshot.coach.autoApplyCanary && snapshot.coach.autoApplyCanary.enabled, exclusiveScopeVerified: true });
-  report.treeSha = await io.validateSource(w.runtimeSha); report.baselineProof = await io.validateBaseline(baseline);
-  assert.equal(await io.current(), baseline.deployment, 'BASELINE_MOVED');
-  const fencesBefore = await io.snapshot(w); closed(w, fencesBefore); report.fencesBefore = fenceEvidence(fencesBefore);
-  const before = await io.offProof(); G.assertDisarmedEvidence(before); G.assertFresh(before);
-  report.projectNumericGuardBefore = before;
-  await io.assertNoPriorOperation(w.operationId);
+  let before = null;
+  try {
+    report.treeSha = await io.validateSource(w.runtimeSha); report.baselineProof = await io.validateBaseline(baseline);
+    assert.equal(await io.current(), baseline.deployment, 'BASELINE_MOVED');
+    const fencesBefore = await io.snapshot(w); closed(w, fencesBefore); report.fencesBefore = fenceEvidence(fencesBefore);
+    before = await io.offProof(); G.assertDisarmedEvidence(before); G.assertFresh(before);
+    report.projectNumericGuardBefore = before;
+    await io.assertNoPriorOperation(w.operationId);
+  } catch (preflightErr) {
+    if (preflightErr && typeof preflightErr === 'object') preflightErr.checkpoint = report;
+    throw preflightErr;
+  }
+  report.deployIntentReached = true;
   report.status = 'DEPLOY_INTENT_NO_RETRY'; await save();
   try {
     const d = await io.stage(w); // Exactly one call. Uncertain results must never be retried.
@@ -118,7 +176,7 @@ async function arm(w, baseline, io) {
     assert.equal(await io.current(), d.id, 'ALIAS_NOT_CONVERGED');
     const fencesAfter = await io.snapshot(w); closed(w, fencesAfter); report.fencesAfter = fenceEvidence(fencesAfter);
     report.status = 'RUNTIME_READY_FENCES_CLOSED_NOT_ACTIVATED'; await save(); return report;
-  } catch (_) {
+  } catch (stageOrPromoteErr) {
     const current = await io.current();
     if (current !== baseline.deployment && report.promotionAttempted && report.staged && current === report.staged.id) {
       report.status = 'ROLLBACK_INTENT'; await save();
@@ -126,9 +184,18 @@ async function arm(w, baseline, io) {
         await io.rollback(baseline.deployment); report.productionMutations++;
         assert.equal(await io.current(), baseline.deployment, 'ROLLBACK_ALIAS_FAILED');
         await io.verifyBytes(baseline.runtimeSha); report.status = 'ROLLED_BACK_VERIFIED';
-      } catch (_) { report.status = 'ROLLBACK_FAILED_UNVERIFIED'; await save(); throw new Error(report.status); }
-    } else report.status = current === baseline.deployment ? 'FAILED_BASELINE_UNCHANGED_NO_RETRY' : 'CONCURRENT_ALIAS_NO_AUTOMATIC_OVERWRITE';
-    await save(); throw new Error(report.status);
+      } catch (_) {
+        report.status = 'ROLLBACK_FAILED_UNVERIFIED'; await save();
+        const err = new Error(report.status); err.checkpoint = report; throw err;
+      }
+    } else {
+      report.status = current === baseline.deployment ? 'FAILED_BASELINE_UNCHANGED_NO_RETRY' : 'CONCURRENT_ALIAS_NO_AUTOMATIC_OVERWRITE';
+    }
+    await save();
+    const err = new Error(report.status);
+    err.checkpoint = report;
+    err.cause = stageOrPromoteErr;
+    throw err;
   }
 }
 async function restore(report, io) {
@@ -245,20 +312,170 @@ async function main(argv) {
   assert.equal(w.mode, 'STAGE1_SHADOW', 'ONLY_STAGE1_SHADOW_ACCEPTED');
   return arm(w, { runtimeSha: s.runtime_sha, deployment: s.production_deployment, officialReleaseRun: String(s.app_release.source_release_run) }, io);
 }
-function formatSanitizedFailure(err) {
-  const rawMsg = (err && (err.message || err.code)) ? String(err.message || err.code) : String(err || 'UNKNOWN_ERROR');
-  const cleanCode = rawMsg.split('\n')[0].replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]').slice(0, 140);
+const ALLOWED_DIAGNOSTIC_CODES = new Set([
+  'FENCE_READ_FAILED',
+  'RELEASE_FENCE_MUST_BE_DISABLED',
+  'COACH_FENCE_MUST_BE_DISABLED',
+  'PILOT_OPERATION_ALREADY_EXISTS',
+  'PILOT_BASELINE_ALREADY_STAGED',
+  'DEPLOYMENT_LIST_INCOMPLETE',
+  'MALFORMED_FIRESTORE_RESPONSE',
+  'CLIENT_DOCUMENT_INVALID',
+  'CLIENT_COACH_ID_REQUIRED',
+  'CLIENT_ACTIVE_PLAN_REQUIRED',
+  'COACH_ID_MISMATCH',
+  'ACTIVE_PLAN_MISMATCH',
+  'COACH_DOCUMENT_REQUIRED',
+  'BASELINE_MOVED',
+  'STAGED_IS_BASELINE',
+  'ALIAS_MOVED_DURING_STAGE',
+  'ALIAS_NOT_CONVERGED',
+  'DEPLOY_UNCERTAIN_NO_RETRY',
+  'DEPLOY_ID_UNCERTAIN_NO_RETRY',
+  'VERCEL_READ_FAILED',
+  'CRON_NOT_ALLOWED',
+  'PILOT_WINDOW_REQUIRED',
+  'ONLY_STAGE1_SHADOW_ACCEPTED',
+  'PILOT_LANE_DISARMED',
+  'NO_JOB_RERUNS',
+  'EXPIRY_INVALID',
+  'PLAN_CHANGED',
+  'COACH_CHANGED',
+  'CANARY_SINGLE_PID_MISMATCH',
+  'ACTIVE_WINDOW_NO_RENEWAL',
+  'IMMUTABLE_RUNTIME_WINDOW_MISMATCH',
+  'ROLLBACK_ALIAS_FAILED',
+  'ROLLBACK_FAILED_UNVERIFIED',
+  'ROLLED_BACK_VERIFIED',
+  'FAILED_BASELINE_UNCHANGED_NO_RETRY',
+  'CONCURRENT_ALIAS_NO_AUTOMATIC_OVERWRITE',
+  'FOREIGN_ALIAS_NO_OVERWRITE',
+  'ONE_ATTEMPT_PER_BASELINE_EXCEEDED',
+  'CONCURRENT_OR_PRIOR_RUN_EXISTS',
+  'RECOVERY_ALLOWED_ONLY_FOR_EXACTLY_ONE_PRIOR_ATTEMPT',
+  'RECONCILED_RUN_NOT_FOUND_FOR_CURRENT_BASELINE',
+  'PRIOR_RUN_NOT_COMPLETED',
+  'PRIOR_RUN_DID_NOT_FAIL',
+  'PRIOR_RUN_MUTATIONS_NOT_PROVEN_ZERO',
+  'PRIOR_RUN_EVIDENCE_MISSING',
+  'PRIOR_RUN_EVIDENCE_UNVERIFIED',
+  'PRODUCTION_ALIAS_NOT_ON_BASELINE',
+  'PENDING_OR_STAGED_DEPLOYMENTS_EXIST',
+  'CANNOT_RECONCILE_SELF',
+  'INVALID_RECONCILE_FAILED_RUN_ID',
+  'INVALID_CURRENT_RUN_ID',
+  'INVALID_WORKFLOW_RUNS',
+  'UNAUTHORIZED_MAIN_SHA',
+  'INVALID_MAIN_SHA',
+  'MAIN_SHA_MISMATCH',
+  'OFF_BASELINE_RELEASE_REQUIRED_FIRST',
+  'PILOT_PROBE_RUNTIME_REQUIRED',
+  'BASELINE_RUNTIME_MISMATCH',
+  'BASELINE_MUST_BE_OFF',
+  'ENV_LIST_INCOMPLETE',
+  'UNSAFE_EXPORT_PATH',
+  'DEPLOYMENT_ENV_NAMES_REQUIRED',
+  'PILOT_RUNTIME_STOPPED',
+]);
+
+function classifyDiagnosticCode(err) {
+  if (!err) return 'UNCLASSIFIED_ERROR';
+  const raw = String(err.message || err.code || err || '').trim();
+  if (!raw) return 'UNCLASSIFIED_ERROR';
+
+  for (const code of ALLOWED_DIAGNOSTIC_CODES) {
+    if (raw === code) return code;
+    if (raw.startsWith(code + ':') || raw.startsWith(code + ' ') || raw.startsWith('Error: ' + code)) {
+      return code;
+    }
+  }
+
+  for (const code of ALLOWED_DIAGNOSTIC_CODES) {
+    const re = new RegExp('\\b' + code + '\\b');
+    if (re.test(raw)) return code;
+  }
+
+  return 'UNCLASSIFIED_ERROR';
+}
+
+function formatSanitizedFailure(err, checkpoint = null) {
+  const code = classifyDiagnosticCode(err);
+
+  let phase = 'ARM_PREFLIGHT';
+  if (checkpoint && checkpoint.phase) {
+    phase = checkpoint.phase;
+  } else if (checkpoint && checkpoint.status) {
+    if (checkpoint.status === 'DEPLOY_INTENT_NO_RETRY' || (checkpoint.deployIntentReached && !checkpoint.staged && !checkpoint.promotionAttempted)) {
+      phase = 'STAGING';
+    } else if (['STAGED', 'PROMOTE_INTENT'].includes(checkpoint.status)) {
+      phase = checkpoint.promotionAttempted ? 'PROMOTION' : 'STAGING';
+    } else if (['ROLLBACK_INTENT', 'ROLLBACK_FAILED_UNVERIFIED', 'ROLLED_BACK_VERIFIED'].includes(checkpoint.status)) {
+      phase = 'ROLLBACK';
+    } else if (['FAILED_BASELINE_UNCHANGED_NO_RETRY', 'CONCURRENT_ALIAS_NO_AUTOMATIC_OVERWRITE'].includes(checkpoint.status)) {
+      phase = checkpoint.promotionAttempted ? 'PROMOTION' : (checkpoint.deployIntentReached ? 'STAGING' : 'ARM_PREFLIGHT');
+    }
+  }
+
+  let state = 'PRODUCTION_STATE_UNVERIFIED';
+  let action = 'STOP_REVIEW_REQUIRED_NO_AUTOMATIC_RETRY';
+
+  if (checkpoint) {
+    if (checkpoint.status === 'ROLLED_BACK_VERIFIED') {
+      state = 'SAFE_BASELINE_RESTORED_VERIFIED';
+      action = 'REVIEW_REDACTED_CHECKPOINT_NO_AUTOMATIC_RETRY';
+    } else if (checkpoint.status === 'FAILED_BASELINE_UNCHANGED_NO_RETRY' &&
+               checkpoint.productionMutations === 0 &&
+               !checkpoint.staged &&
+               !checkpoint.deployIntentReached &&
+               !checkpoint.promotionAttempted) {
+      state = 'SAFE_BASELINE_UNCHANGED_ZERO_MUTATIONS';
+      action = 'REVIEW_REDACTED_CHECKPOINT_NO_AUTOMATIC_RETRY';
+    } else if (phase === 'ARM_PREFLIGHT' &&
+               (!checkpoint.productionMutations || checkpoint.productionMutations === 0) &&
+               !checkpoint.staged &&
+               !checkpoint.deployIntentReached &&
+               !checkpoint.promotionAttempted &&
+               (checkpoint.status === 'PREPARING' || !checkpoint.status)) {
+      state = 'SAFE_BASELINE_UNCHANGED_ZERO_MUTATIONS';
+      action = 'REVIEW_REDACTED_CHECKPOINT_NO_AUTOMATIC_RETRY';
+    } else {
+      state = 'PRODUCTION_STATE_UNVERIFIED';
+      action = 'STOP_REVIEW_REQUIRED_NO_AUTOMATIC_RETRY';
+    }
+  } else {
+    state = 'PRODUCTION_STATE_UNVERIFIED';
+    action = 'STOP_REVIEW_REQUIRED_NO_AUTOMATIC_RETRY';
+  }
+
   return {
     status: 'PILOT_RUNTIME_STOPPED',
-    error_code: cleanCode,
-    phase: 'ARM_PREFLIGHT',
-    state: 'SAFE_BASELINE_UNCHANGED_ZERO_MUTATIONS',
-    action_required: 'REVIEW_REDACTED_CHECKPOINT_NO_AUTOMATIC_RETRY',
+    error_code: code,
+    phase,
+    state,
+    action_required: action,
   };
 }
-module.exports = { arm, restore, closed, invocation, buildDeployArgs, T671, OFF_BASELINE_SHA, LEGACY_T671_SHA, assertAuthorizedMainSha, REVIEWED_MAIN_SHAS, adapters, assertAttemptAllowed, formatSanitizedFailure };
+module.exports = {
+  arm,
+  restore,
+  closed,
+  invocation,
+  buildDeployArgs,
+  T671,
+  OFF_BASELINE_SHA,
+  LEGACY_T671_SHA,
+  assertAuthorizedMainSha,
+  REVIEWED_MAIN_SHAS,
+  adapters,
+  assertAttemptAllowed,
+  gatherReconciliationEvidence,
+  formatSanitizedFailure,
+  classifyDiagnosticCode,
+  ALLOWED_DIAGNOSTIC_CODES,
+};
 if (require.main === module) main(process.argv.slice(2)).then(r => console.log(JSON.stringify({ status: r.status }))).catch((err) => {
-  const report = formatSanitizedFailure(err);
+  const checkpoint = (err && err.checkpoint) ? err.checkpoint : null;
+  const report = formatSanitizedFailure(err, checkpoint);
   console.error(JSON.stringify(report));
   process.exitCode = 1;
 });
