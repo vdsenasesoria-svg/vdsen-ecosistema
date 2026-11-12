@@ -743,7 +743,7 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .sp-history-reference>b{display:block;font-weight:700;color:var(--tx)}
 .sp-authority{margin:8px 0 14px;font-size:12px;line-height:1.5;overflow-wrap:anywhere;color:var(--mt)}
 .sp-authority>b{display:block;color:var(--tx)}
-.sp-authority-min{margin:0 0 8px;font-size:11px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sp-authority-min{margin:0 0 8px;font-size:11px;line-height:1.35;overflow-wrap:anywhere}
 .sp-authority-min>b{display:inline}
 .sp-authority p{margin:4px 0 0}
 .sp-t-l{font-size:9.5px;letter-spacing:.16em;font-weight:800;color:var(--mt);white-space:nowrap}
@@ -5277,7 +5277,9 @@ function getTodaySummary() {
   const home = _getTodayHomeState(LOGS, CURRENT_WEEK, sesiones);
   const idx = home.dayIndex;
   const hoy = sesiones[idx];
-  const ejercicios = (hoy.contenido||'').split('\n').filter(l=>/\d\s*[×x]\s*\d|RIR/i.test(l)).length;
+  const ejercicios = (Array.isArray(hoy.exercises) && hoy.exercises.length > 0)
+    ? hoy.exercises.filter(function(ej) { return typeof isTechniqueActive !== 'function' || isTechniqueActive(ej, CURRENT_WEEK); }).length
+    : (hoy.contenido||'').split('\n').filter(l=>/\d\s*[×x]\s*\d|RIR/i.test(l)).length;
 
   // Per-state styling -- label text always carries the meaning; color is
   // never the only signal (VDSEN tokens only, no new colors).
@@ -5463,12 +5465,9 @@ function _getTodayHomeState(logs, week, sesiones) {
   var label = _SESSION_LIFECYCLE_LABELS[lifecycle] || 'Pendiente';
 
   var stats = _calcSessionStats(logs, dayIndex, week);
-  var totalSets = 0;
   var ses = sesiones[dayIndex] || {};
-  (ses.exercises || []).forEach(function(ej, ei) {
-    if (typeof isTechniqueActive === 'function' && !isTechniqueActive(ej, week)) return;
-    totalSets += ej.numSeries || (ej.sets ? ej.sets.length : 3);
-  });
+  var _totals = _dayTotals(ses, week);
+  var totalSets = _totals.sets;
 
   var primaryAction, secondaryAction = null, canStart = false, canResume = false, canReview = false;
   switch (lifecycle) {
@@ -11283,7 +11282,8 @@ async function _confirmSessionDone(di) {
   // Guardar inmediatamente (bypass debounce) — crítico en Safari iOS donde los timers
   // se pueden cancelar al cambiar de tab o al apagar pantalla
   if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
-  var _ok = await _doSaveLogs();
+  var _ok = false;
+  try { _ok = await _doSaveLogs(); } catch (_) { _ok = false; }
   if (_ok === false) {
     // No persistió en Firestore — revertir el done_ y avisar al usuario.
     delete LOGS[key];
@@ -11366,7 +11366,8 @@ async function skipSession(di, reason) {
   if (reason && ['TIME','EQUIPMENT','PAIN','OTHER'].indexOf(reason) !== -1) entry.reason = reason;
   LOGS[key] = entry;
   if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
-  var _ok = await _doSaveLogs();
+  var _ok = false;
+  try { _ok = await _doSaveLogs(); } catch (_) { _ok = false; }
   if (_ok === false) {
     delete LOGS[key];
     showToast('⚠ NO SE GUARDÓ — revisa conexión. Reintenta.', true);
