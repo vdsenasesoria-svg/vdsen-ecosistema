@@ -835,7 +835,7 @@ test('SCENARIO 12: T777 reconciliación extraordinaria acotada, /v7/deployments 
     /DEPLOYMENTS_CREATED_DURING_PRIOR_RUN/
   );
 
-  // 12C: assertAttemptAllowed acepta reconciliación extraordinaria T777 para exactamente los 2 runs + nueva corrida
+  // 12C: assertAttemptAllowed acepta reconciliación extraordinaria T779 para exactamente los 3 runs + nueva corrida
   const ev1 = {
     runId: '43156465756',
     baselineDeployment: DEPLOYMENT,
@@ -844,30 +844,39 @@ test('SCENARIO 12: T777 reconciliación extraordinaria acotada, /v7/deployments 
     priorRunMutations: 0,
     evidenceVerified: true,
   };
-  const runs3 = [
+  const ev3 = {
+    runId: '43324111384',
+    baselineDeployment: DEPLOYMENT,
+    currentAlias: DEPLOYMENT,
+    stagedDeploymentsCount: 0,
+    priorRunMutations: 0,
+    evidenceVerified: true,
+  };
+  const runs4 = [
     { id: 43156465756, status: 'completed', conclusion: 'failure' },
     { id: 43310023302, status: 'completed', conclusion: 'failure' },
-    { id: 43320000000, status: 'in_progress' },
+    { id: 43324111384, status: 'completed', conclusion: 'failure' },
+    { id: 43330000000, status: 'in_progress' },
   ];
-  const resT777 = assertAttemptAllowed(runs3, '43320000000', '43156465756,43310023302', [ev1, ev2], ctx);
-  assert.equal(resT777.mode, 'T777_EXTRAORDINARY_TWO_RUN_RECOVERY');
-  assert.equal(resT777.operationId, T777_OP);
+  const resT779 = assertAttemptAllowed(runs4, '43330000000', '43156465756,43310023302,43324111384', [ev1, ev2, ev3], ctx);
+  assert.equal(resT779.mode, 'T779_EXTRAORDINARY_THREE_RUN_RECOVERY');
+  assert.equal(resT779.operationId, T777_OP);
 
-  // 12D: Bloqueo de repetición (4ta corrida), manipulación de operationId, baseline o run IDs
+  // 12D: Bloqueo de repetición (5ta corrida), manipulación de operationId, baseline o run IDs
   assert.throws(
-    () => assertAttemptAllowed([...runs3, { id: 43320000001, status: 'in_progress' }], '43320000001', '43156465756,43310023302', [ev1, ev2], ctx),
+    () => assertAttemptAllowed([...runs4, { id: 43330000001, status: 'in_progress' }], '43330000001', '43156465756,43310023302,43324111384', [ev1, ev2, ev3], ctx),
     /ONE_ATTEMPT_PER_BASELINE_EXCEEDED/
   );
   assert.throws(
-    () => assertAttemptAllowed(runs3, '43320000000', '43156465756,43310023302', [ev1, ev2], { ...ctx, operationId: 'op-other-hijack' }),
+    () => assertAttemptAllowed(runs4, '43330000000', '43156465756,43310023302,43324111384', [ev1, ev2, ev3], { ...ctx, operationId: 'op-other-hijack' }),
     /EXTRAORDINARY_RECOVERY_NOT_AUTHORIZED/
   );
   assert.throws(
-    () => assertAttemptAllowed(runs3, '43320000000', '43156465756,43399999999', [ev1, ev2], ctx),
+    () => assertAttemptAllowed(runs4, '43330000000', '43156465756,43310023302,43399999999', [ev1, ev2, ev3], ctx),
     /EXTRAORDINARY_RECOVERY_NOT_AUTHORIZED/
   );
   assert.throws(
-    () => assertAttemptAllowed(runs3, '43320000000', '43156465756,43310023302', [ev1, { ...ev2, evidenceVerified: false }], ctx),
+    () => assertAttemptAllowed(runs4, '43330000000', '43156465756,43310023302,43324111384', [ev1, ev2, { ...ev3, evidenceVerified: false }], ctx),
     /PRIOR_RUN_EVIDENCE_UNVERIFIED/
   );
 });

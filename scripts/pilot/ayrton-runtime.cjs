@@ -24,7 +24,7 @@ function assertAuthorizedMainSha(mainSha, expectedEnv = process.env.APP_EXPECTED
   return mainSha;
 }
 const T777_EXTRAORDINARY_RECOVERY = Object.freeze({
-  runIds: ['43156465756', '43310023302'],
+  runIds: ['43156465756', '43310023302', '43324111384'],
   baselineDeployment: 'dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8',
   runtimeSha: '3fc264e23d67a8ecb1611a6c8af04ad739f422da',
   operationId: 'op-ayrton-shadow-20261112-c4f8a2e9',
@@ -70,16 +70,16 @@ function assertAttemptAllowed(workflowRuns, currentRunId, reconcileFailedRun = '
     return { mode: 'AUDITED_FAILED_RUN_RECOVERY', currentRunId: String(currentRunId), reconciledRunId: singleId, evidence: reconciliationEvidence };
   }
 
-  // T777 extraordinary single-use recovery strictly bound to the two verified failed runs, baseline, runtime, and operationId
+  // T779 extraordinary single-use recovery strictly bound to the three verified failed runs, baseline, runtime, and operationId
   const sortedRec = [...recIds].sort();
   const sortedExpected = [...T777_EXTRAORDINARY_RECOVERY.runIds].sort();
   assert.deepEqual(sortedRec, sortedExpected, 'EXTRAORDINARY_RECOVERY_NOT_AUTHORIZED');
   assert.equal(context.baselineDeployment, T777_EXTRAORDINARY_RECOVERY.baselineDeployment, 'EXTRAORDINARY_RECOVERY_NOT_AUTHORIZED');
   assert.equal(context.runtimeSha, T777_EXTRAORDINARY_RECOVERY.runtimeSha, 'EXTRAORDINARY_RECOVERY_NOT_AUTHORIZED');
   assert.equal(context.operationId, T777_EXTRAORDINARY_RECOVERY.operationId, 'EXTRAORDINARY_RECOVERY_NOT_AUTHORIZED');
-  assert.equal(workflowRuns.length, 3, 'ONE_ATTEMPT_PER_BASELINE_EXCEEDED');
+  assert.equal(workflowRuns.length, 4, 'ONE_ATTEMPT_PER_BASELINE_EXCEEDED');
 
-  assert.ok(Array.isArray(reconciliationEvidence) && reconciliationEvidence.length === 2, 'PRIOR_RUN_EVIDENCE_MISSING');
+  assert.ok(Array.isArray(reconciliationEvidence) && reconciliationEvidence.length === 3, 'PRIOR_RUN_EVIDENCE_MISSING');
   for (const id of sortedExpected) {
     const prior = workflowRuns.find(w => String(w.id) === id);
     assert.ok(prior, 'RECONCILED_RUN_NOT_FOUND_FOR_CURRENT_BASELINE');
@@ -96,7 +96,7 @@ function assertAttemptAllowed(workflowRuns, currentRunId, reconcileFailedRun = '
   }
 
   return {
-    mode: 'T777_EXTRAORDINARY_TWO_RUN_RECOVERY',
+    mode: 'T779_EXTRAORDINARY_THREE_RUN_RECOVERY',
     currentRunId: String(currentRunId),
     reconciledRunIds: sortedExpected,
     operationId: context.operationId,
