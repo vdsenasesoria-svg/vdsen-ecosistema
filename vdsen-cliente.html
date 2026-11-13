@@ -2627,8 +2627,19 @@ waitFB(() => {
 // T569 — Estado de error recuperable para la carga del plan. Antes no existia ninguno: la
 // pantalla de carga era un callejon sin salida. Distingue "sin conexion" (honesto: no se pudo
 // leer) de "no se pudo cargar", y en ambos casos da un reintento real.
-function showPlanLoadError(user) {
+function showPlanLoadError(user, err) {
   var offline = (typeof navigator !== 'undefined' && navigator.onLine === false);
+  var code = String((err && err.code) || '').toLowerCase();
+  var isPerm = code === 'permission-denied';
+  var isAuth = code === 'unauthenticated' || code.indexOf('auth/') === 0;
+  var title = offline ? 'SIN CONEXIÓN' : (isPerm ? 'SIN PERMISOS DE ACCESO' : (isAuth ? 'SESIÓN INVÁLIDA' : 'NO PUDIMOS CARGAR TU PLAN'));
+  var body = offline
+    ? 'Tu plan ya está guardado. Vuelve a intentarlo cuando recuperes la señal.'
+    : (isPerm
+      ? 'No tenés permisos para acceder a este plan. Cerrá sesión o contactá a tu coach.'
+      : (isAuth
+        ? 'Tu sesión perdió validez. Cerrá sesión y volvé a ingresar.'
+        : 'Es un problema temporal de carga. Tu plan y tus series registradas están a salvo.'));
   var el = document.getElementById('planLoadError');
   if (el) el.remove();
   var wrap = document.createElement('div');
@@ -2639,17 +2650,19 @@ function showPlanLoadError(user) {
   wrap.style.cssText = 'z-index:4000;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px';
   wrap.innerHTML =
     '<div class="loading" style="text-align:center;max-width:420px">' +
-      '<div class="loading-txt" id="pleTitle" style="margin-bottom:10px">' +
-        (offline ? 'SIN CONEXIÓN' : 'NO PUDIMOS CARGAR TU PLAN') +
-      '</div>' +
-      '<div style="color:var(--mt2);font-size:13px;line-height:1.55;margin-bottom:16px">' +
-        (offline
-          ? 'Tu plan ya está guardado. Vuelve a intentarlo cuando recuperes la señal.'
-          : 'Es un problema temporal de carga. Tu plan y tus series registradas están a salvo.') +
-      '</div>' +
+      '<div class="loading-txt" id="pleTitle" style="margin-bottom:10px">' + title + '</div>' +
+      '<div style="color:var(--mt2);font-size:13px;line-height:1.55;margin-bottom:16px">' + body + '</div>' +
       '<button type="button" id="pleRetry" class="btn btn-primary" style="width:100%;min-height:50px">Reintentar</button>' +
+      '<button type="button" id="pleLogout" class="btn btn-ghost" style="width:100%;min-height:48px;margin-top:10px">Cerrar sesión</button>' +
     '</div>';
   document.body.appendChild(wrap);
+  var loBtn = document.getElementById('pleLogout');
+  if (loBtn) {
+    loBtn.addEventListener('click', async function () {
+      wrap.remove();
+      if (typeof doLogout === 'function') await doLogout();
+    });
+  }
   var btn = document.getElementById('pleRetry');
   if (btn) {
     btn.addEventListener('click', async function () {
@@ -2662,7 +2675,7 @@ function showPlanLoadError(user) {
         await loadPlan(u);
       } catch (_retryErr) {
         console.warn('reintento de loadPlan fallido:', _retryErr && _retryErr.message);
-        showPlanLoadError(user);
+        showPlanLoadError(user, _retryErr);
       }
     });
   }
@@ -2802,6 +2815,10 @@ async function doLogout() {
   USER = null;
   _clearLiveListeners();
   await FB.signOut(FB.auth);
+  _authSessionGen++;
+  _syncPending = 0;
+  try { _renderSyncBadge(); } catch(e){}
+  try { var _se = document.getElementById('saveErrBadge'); if (_se) _se.style.display = 'none'; } catch(e){}
   PLAN = null; LOGS = {}; _SET_DRAFTS = Object.create(null);
   _sraPersisted = { clientId: null, planId: null, entries: {}, version: 0 };
   _sraSaveGeneration++;
@@ -3655,11 +3672,17 @@ async function loadPlan(user) {
     } catch(snapErr) { console.warn('onSnapshot no disponible:', snapErr.message); }
   } catch(e) {
     console.error('loadPlan ERROR:', e);
-    const errMsg = (e && e.message) ? e.message : String(e);
-    const errCode = (e && e.code) ? ' ['+e.code+']' : '';
-    showToast('Error: ' + errMsg + errCode, true);
+    if (USER && FB && FB.auth && FB.auth.currentUser && typeof showPlanLoadError === 'function') {
+      showPlanLoadError(user, e);
+      return;
+    }
+    const errCode = (e && e.code) ? String(e.code).toLowerCase() : '';
+    const errMsg = errCode === 'permission-denied'
+      ? 'Sin permisos para acceder a este plan.'
+      : ((e && e.message) ? e.message : String(e));
+    showToast('Error: ' + errMsg, true);
     const liErr = document.getElementById('liErr');
-    if (liErr) liErr.textContent = 'Error al cargar plan: ' + errMsg + errCode;
+    if (liErr) liErr.textContent = 'Error al cargar plan: ' + errMsg;
     showScreen('scrLogin');
   }
 }
@@ -12549,7 +12572,7 @@ function _showSaveOk() {
 // promise of setDoc() only settles once the SERVER confirms. Waiting for it blocked the whole session offline (the button stayed on "GUARDANDO…" forever). A write that is
 // not confirmed within the grace window (immediately when the device reports no connection) is treated as ACCEPTED LOCALLY: the athlete continues, a sticky badge says it is
 // pending, and the real outcome is still handled when the promise settles (confirmed -> badge off; rejected -> visible error, the data stays in LOGS and in the local backup).
-var _WRITE_GRACE_MS = 5000, _syncPending = 0;
+var _WRITE_GRACE_MS = 5000, _syncPending = 0, _authSessionGen = 0;
 function _renderSyncBadge() {
   var el = document.getElementById('syncPendingBadge');
   if (_syncPending <= 0) { if (el) el.style.display = 'none'; return; }
@@ -12561,19 +12584,42 @@ function _renderSyncBadge() {
   el.textContent = '⏳ Sin conexión: tu registro está guardado en este dispositivo y se enviará solo al volver internet.';
   el.style.display = 'block';
 }
+function _showSaveErrBadge(msg) {
+  var errEl = document.getElementById('saveErrBadge');
+  if (!errEl && typeof document !== 'undefined' && document.body) {
+    errEl = document.createElement('div');
+    errEl.id = 'saveErrBadge';
+    errEl.style.cssText = 'position:fixed;bottom:calc(72px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:#3a0a0a;border:1px solid #c94a3a;color:#e07070;font-family:monospace;font-size:11px;padding:8px 16px;z-index:9999;border-radius:8px;text-align:center;max-width:340px;line-height:1.5;cursor:pointer';
+    errEl.title = 'Tap para reintentar';
+    errEl.addEventListener('click', function(){ errEl.style.display='none'; _doSaveLogs(); });
+    document.body.appendChild(errEl);
+  }
+  if (errEl) { errEl.style.display = 'block'; errEl.textContent = msg + ' — tap para reintentar'; }
+}
 function _deferredWriteFailed(err) {
+  if (typeof USER !== 'undefined' && !USER) return;
   var msg = '⚠ No se pudo sincronizar un registro: ' + (err && err.code ? '[' + err.code + '] ' : '') + ((err && err.message) || 'error') + '. Se conserva en este dispositivo; vuelve a guardar para reintentar.';
   try { showToast(msg, true); } catch (e) { /* no-op */ }
-  var errEl = document.getElementById('saveErrBadge');
-  if (errEl) { errEl.style.display = 'block'; errEl.textContent = msg + ' — tap para reintentar'; }
+  try { _showSaveErrBadge(msg); } catch (e) { /* no-op */ }
 }
 // Resolves { state: 'acked' } when the server confirmed within the grace window, { state: 'queued', done } when the SDK holds the write (offline / slow); rejects on a real error.
 function _fbWriteOrQueue(p) {
   return new Promise(function(resolve, reject) {
     var settled = false, offline = (typeof navigator !== 'undefined' && navigator.onLine === false);
+    var _gen = typeof _authSessionGen !== 'undefined' ? _authSessionGen : 0;
+    var _uidAtQueue = (typeof USER !== 'undefined' && USER && USER.uid) || null;
+    function _sameSession() {
+      return (typeof _authSessionGen === 'undefined' || _gen === _authSessionGen) &&
+        (!_uidAtQueue || (typeof USER !== 'undefined' && USER && USER.uid === _uidAtQueue));
+    }
     function queue() {
       if (settled) return; settled = true; _syncPending++; _renderSyncBadge();
-      var done = p.then(function() { _syncPending = Math.max(0, _syncPending - 1); _renderSyncBadge(); }, function(err) { _syncPending = Math.max(0, _syncPending - 1); _renderSyncBadge(); _deferredWriteFailed(err); throw err; });
+      var done = p.then(function() {
+        if (_sameSession()) { _syncPending = Math.max(0, _syncPending - 1); _renderSyncBadge(); }
+      }, function(err) {
+        if (_sameSession()) { _syncPending = Math.max(0, _syncPending - 1); _renderSyncBadge(); _deferredWriteFailed(err); }
+        throw err;
+      });
       done.catch(function() { /* already reported */ });
       resolve({ state: 'queued', done: done });
     }
