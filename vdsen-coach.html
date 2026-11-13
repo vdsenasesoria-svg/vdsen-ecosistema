@@ -3159,19 +3159,25 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     if (user) {
       // CN1: devolver el shell ANTES de inicializar la UI, o initCoachUI escribiría sobre el login.
       _restoreCoachShell();
-      const coachDoc = await getDoc(doc(db, "coaches", user.uid));
-      if (coachDoc.exists()) {
+      try {
+        const coachDoc = await getDoc(doc(db, "coaches", user.uid));
+        if (coachDoc.exists()) {
+          currentCoach = user;
+          initCoachUI();
+        } else {
+          await setDoc(doc(db, "coaches", user.uid), {
+            displayName: user.displayName || user.email.split("@")[0],
+            email: user.email,
+            role: "coach",
+            createdAt: new Date().toISOString()
+          });
+          currentCoach = user;
+          showToast("Perfil de coach creado. Bienvenido.");
+          initCoachUI();
+        }
+      } catch (_coachAuthErr) {
+        console.warn('[AUTH] coaches/{uid} init warning:', _coachAuthErr && (_coachAuthErr.code || _coachAuthErr.message));
         currentCoach = user;
-        initCoachUI();
-      } else {
-        await setDoc(doc(db, "coaches", user.uid), {
-          displayName: user.displayName || user.email.split("@")[0],
-          email: user.email,
-          role: "coach",
-          createdAt: new Date().toISOString()
-        });
-        currentCoach = user;
-        showToast("Perfil de coach creado. Bienvenido.");
         initCoachUI();
       }
     } else {
@@ -3187,6 +3193,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       _detailFichaData = null;
       _detailRenovacionData = null;
       _detailLogsData = null;
+      _detailSeguimientoData = null;
+      _detailSeguimientoRequests = null;
       window._importedPlan = null;
       // CN3 — Memoria privada del coach que sobrevivía al cambio de coach: texto del compendio,
       // borradores de plan e ids en edición, el cliente de intake, el catálogo de ejercicios en
@@ -3403,6 +3411,10 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           const ci = entries['ci_sem_'+week] || {};
           let extraBadges = '';
           if (ci.who5 && parseInt(ci.who5) < 52) extraBadges += '<span class="text-xs ml-1" style="color:#FF4444">WHO5↓</span>';
+          const _segSum = (logData && logData.seguimientoSummary) || entries.seguimientoSummary || null;
+          if (_segSum && Number(_segSum.pendingCount) > 0) {
+            extraBadges += `<span class="text-[10px] ml-1 px-1.5 py-0.5 rounded" style="background:rgba(198,255,0,.14);border:1px solid rgba(198,255,0,.45);color:#C6FF00;font-weight:700" title="Actualización de seguimiento pendiente de revisión">SEG ● ${Number(_segSum.pendingCount)}</span>`;
+          }
           const ciDone = !!(ci.peso || ci.hrv || ci.who5 || ci.energia || ci.sueno);
           let doneCount = 0;
           Object.keys(entries).forEach(k => { if (k.startsWith('done_'+week+'_')) { const _de = entries[k]; if (_de && !(typeof _de === 'object' && _de.skipped)) doneCount++; } });
@@ -3931,6 +3943,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             throw authErr;
           }
         }
+        try { await ensureCoachDoc(); } catch(_) {}
         await setDoc(doc(db, "clients", uid), {
           coachId: currentCoach.uid, email, displayName: name, phone: phoneNormalized,
           role: "client", activePlanId: null, nutritionPlan: {}, supplementPlan: {}
@@ -3947,7 +3960,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           } catch(_ie) { console.warn("No se pudo escribir phone_index:", _ie && _ie.message); }
         }
         if (prefill.fichaData) {
-          try { await setDoc(doc(db, "fichas_onboarding", uid), { schemaVersion: prefill.schemaVersion || "1.1", data: prefill.fichaData, updatedAt: Date.now(), updatedBy: "client" }, { merge: true }); } catch(_fe){}
+          try { await setDoc(doc(db, "fichas_onboarding", uid), { schemaVersion: prefill.schemaVersion || "1.1", status: "recibida", data: prefill.fichaData, updatedAt: Date.now(), updatedBy: "client" }, { merge: true }); } catch(_fe){}
           if (prefill.fichaId) { try { await updateDoc(doc(db, "fichas_publicas", prefill.fichaId), { status: "convertida", clientUid: uid }); } catch(_fu){} }
         }
         modal.style.display = "none";
@@ -9682,10 +9695,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     try {
       setStatus('<span style="color:var(--text-muted)">Leyendo ficha…</span>');
       const fs = await getDoc(doc(db, 'fichas_onboarding', clientId));
-      let ficha = fs.exists() ? fs.data() : null;
-      if (!ficha || !ficha.data) {
+      let ficha = fs.exists() ? _normalizeFichaDoc(fs.data(), null) : null;
+      if (!ficha || !ficha.hasContent) {
         const cd = (await getDoc(doc(db, 'clients', clientId))).data() || {};
-        if (cd.intake && cd.intake.data) ficha = cd.intake;
+        if (cd.intake) ficha = _normalizeFichaDoc(cd.intake, cd);
       }
       if (!ficha || !ficha.data || !Object.keys(ficha.data).length) {
         throw new Error('Este cliente no tiene ficha. Llena la ficha en la pestaña Evaluación primero.');
@@ -12147,7 +12160,72 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   let _detailFichaData      = null;
   let _detailRenovacionData = null;
   let _detailLogsData    = null;   // FASE 61 — logs del cliente para mirror de ejecución
+  let _detailSeguimientoData = null; // T788 — seguimientos periódicos del cliente
+  let _detailSeguimientoRequests = null; // T788 — solicitudes de seguimiento del coach
   let _detailActiveTab  = 'plan';
+
+  // T788: Normaliza cualquier documento de ficha (fichas_onboarding con .data, fichas_onboarding plano de enviarFicha,
+  // clients/{uid}.intake o fichas_publicas) en un contrato uniforme { data: {...}, status, updatedAt, updatedBy, fotometria, ... }
+  function _normalizeFichaDoc(raw, clientDoc) {
+    if (!raw || typeof raw !== 'object') return null;
+    const baseData = (raw.data && typeof raw.data === 'object') ? Object.assign({}, raw.data) : {};
+    // Mapear campos planos legacy de enviarFicha() en vdsen-cliente.html si no están en .data
+    const flatAliases = [
+      ['nombre', 'nombre'],
+      ['edad', 'edad'],
+      ['sexo', 'sexo'],
+      ['peso_kg', 'peso'],
+      ['talla_cm', 'altura'],
+      ['porcentaje_grasa', 'porcentaje_grasa'],
+      ['dias_semana', 'dias'],
+      ['duracion_sesion_min', 'duracion_sesion_min'],
+      ['gimnasio', 'equipo'],
+      ['objetivo_mesociclo', 'objetivo'],
+      ['nivel', 'experiencia'],
+      ['num_comidas', 'comidas'],
+      ['alimentos_disponibles', 'alim_pref'],
+      ['restricciones_alimentarias', 'alergias'],
+      ['objetivo_corto', 'notas']
+    ];
+    for (let i = 0; i < flatAliases.length; i++) {
+      const canon = flatAliases[i][0];
+      const flat = flatAliases[i][1];
+      if ((baseData[canon] === undefined || baseData[canon] === null || baseData[canon] === '') && raw[flat] !== undefined && raw[flat] !== null && raw[flat] !== '') {
+        baseData[canon] = raw[flat];
+      }
+      if ((baseData[canon] === undefined || baseData[canon] === null || baseData[canon] === '') && raw[canon] !== undefined && raw[canon] !== null && raw[canon] !== '') {
+        baseData[canon] = raw[canon];
+      }
+    }
+    if (!baseData.perfil && raw.peds) {
+      const pedsStr = String(raw.peds).toLowerCase();
+      baseData.perfil = (pedsStr.indexOf('natural') >= 0 || pedsStr === 'no') ? 'Natural' : 'PED';
+    }
+    if (clientDoc && !baseData.nombre && clientDoc.displayName) baseData.nombre = clientDoc.displayName;
+    if (clientDoc && !baseData.email && clientDoc.email) baseData.email = clientDoc.email;
+    if (clientDoc && !baseData.telefono && clientDoc.phone) baseData.telefono = clientDoc.phone;
+    const hasFields = Object.keys(baseData).some(k => {
+      if (k === 'nombre' || k === 'email' || k === 'telefono') return false;
+      const v = baseData[k];
+      return v !== undefined && v !== null && v !== '' && (!Array.isArray(v) || v.length > 0);
+    });
+    const updatedAt = raw.updatedAt || raw.completedAt || raw.createdAt || null;
+    const updatedBy = raw.updatedBy || (raw.completedAt ? 'client' : null);
+    let status = raw.status || null;
+    if (!status) {
+      if (!hasFields) status = 'pendiente';
+      else if (updatedBy === 'client' || raw.completedAt) status = 'enviada';
+      else status = 'recibida';
+    }
+    return Object.assign({}, raw, {
+      data: baseData,
+      hasContent: hasFields || Boolean(raw.data && Object.keys(raw.data).length > 0),
+      status: status,
+      updatedAt: updatedAt,
+      updatedBy: updatedBy
+    });
+  }
+  window._normalizeFichaDoc = _normalizeFichaDoc;
 
   // T121-H — Returns true when the currently-open client has at least one log entry.
   // Used to guard structural reorder operations that would misalign positional log keys.
@@ -12286,12 +12364,14 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const fichaSnap = await getDoc(doc(db, 'fichas_onboarding', clientId));
       if (_detailClientId !== clientId) return;  // T127-H
       if (fichaSnap.exists()) {
-        _detailFichaData = fichaSnap.data();
+        _detailFichaData = _normalizeFichaDoc(fichaSnap.data(), c);
       } else {
         // legacy fallback
-        if (c.intake && c.intake.data) _detailFichaData = c.intake;
+        if (c.intake) _detailFichaData = _normalizeFichaDoc(c.intake, c);
       }
-    } catch(_) {}
+    } catch(_) {
+      if (c.intake) _detailFichaData = _normalizeFichaDoc(c.intake, c);
+    }
     if (_detailClientId !== clientId) return;  // T127-H
 
     _detailRenovacionData = null;
@@ -12303,12 +12383,17 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if (_detailClientId !== clientId) return;  // T127-H
 
     _detailLogsData = null;   // FASE 61
+    _detailSeguimientoData = null;
+    _detailSeguimientoRequests = null;
     try {
       const logsSnap = await getDoc(doc(db, 'logs', clientId));
       if (_detailClientId !== clientId) return;  // T127-H
       if (logsSnap.exists()) _detailLogsData = { clientId: clientId, data: logsSnap.data() };  // FASE 65 — provenance
     } catch(_) {}
     if (_detailClientId !== clientId) return;  // T127-H final guard before DOM write
+
+    const _segSum = (_detailLogsData && _detailLogsData.data && (_detailLogsData.data.seguimientoSummary || (_detailLogsData.data.entries && _detailLogsData.data.entries.seguimientoSummary))) || null;
+    const _segPendingInit = _segSum && Number(_segSum.pendingReviewCount) > 0;
 
     body.innerHTML = `
       <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
@@ -12325,12 +12410,14 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid rgba(244,244,240,.1);overflow-x:auto">
         <button id="ctab_ficha"   onclick="_switchClientTab('ficha')"   style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📋 Ficha</button>
         <button id="ctab_plan"    onclick="_switchClientTab('plan')"    style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">🏋️ Plan<span id="dirtyPlanDot" hidden style="color:#FF8844;margin-left:3px;font-size:10px">●</span></button>
+        <button id="ctab_seguimiento" onclick="_switchClientTab('seguimiento')" style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📈 Seguimiento y actualizaciones<span id="seguimientoPendingDot" ${_segPendingInit ? '' : 'hidden'} style="color:#C6FF00;margin-left:5px;font-size:10px">●</span></button>
         <button id="ctab_monitor" onclick="_switchClientTab('monitor')" style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📊 Monitor</button>
         <button id="ctab_notas"   onclick="_switchClientTab('notas')"   style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📝 Notas</button>
         <button id="ctab_inbody"  onclick="_switchClientTab('inbody')"  style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📏 InBody</button>
         <button id="ctab_renovar" onclick="_switchClientTab('renovar')" style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">🔄 Renovar</button>
       </div>
       <div id="clientDetailTabContent"></div>`;
+    if (typeof _refreshClientSeguimientoBadge === 'function') _refreshClientSeguimientoBadge(clientId);
     _switchClientTab(_initialTab);
   }
 
@@ -12393,17 +12480,18 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       markEditorClean();
     }
     _detailActiveTab = tab;
-    ['ficha','plan','monitor','notas','inbody','renovar'].forEach(t => {
+    ['ficha','plan','seguimiento','monitor','notas','inbody','renovar'].forEach(t => {
       const btn = document.getElementById('ctab_'+t);
       if (btn) { btn.style.color = t===tab?'#F4F4F0':'#888'; btn.style.borderBottomColor = t===tab?'#C4FF00':'transparent'; }
     });
     const cont = document.getElementById('clientDetailTabContent');
     if (!cont) return;
-    if (tab === 'ficha')        _renderClientTabFicha(cont);
-    else if (tab === 'plan')    _renderClientTabPlan(cont);
+    if (tab === 'ficha') _renderClientTabFicha(cont);
+    else if (tab === 'plan') _renderClientTabPlan(cont);
+    else if (tab === 'seguimiento') _renderClientTabSeguimiento(cont);
     else if (tab === 'monitor') _renderClientTabMonitor(cont);
-    else if (tab === 'notas')   _renderClientTabNotas(cont);
-    else if (tab === 'inbody')  _renderClientTabInBody(cont);
+    else if (tab === 'notas') _renderClientTabNotas(cont);
+    else if (tab === 'inbody') _renderClientTabInBody(cont);
     else if (tab === 'renovar') _renderClientTabRenovar(cont);
   }
   window._switchClientTab = _switchClientTab;
@@ -12900,10 +12988,16 @@ El esfuerzo no es negociable.
   // ── Ficha tab ──
   function _renderClientTabFicha(cont) {
     const clientId  = _detailClientId;
-    const ficha     = _detailFichaData;
+    const ficha     = _detailFichaData ? _normalizeFichaDoc(_detailFichaData, _detailClientData) : null;
     const fichaData = ficha && ficha.data ? ficha.data : (ficha || null);
-    const hasFicha  = fichaData && Object.keys(fichaData).length > 0;
+    const hasFicha  = Boolean((ficha && ficha.hasContent) || (fichaData && Object.keys(fichaData).some(k => k !== 'nombre' && k !== 'email' && k !== 'telefono' && fichaData[k] !== '' && fichaData[k] != null)));
     const d         = fichaData || {};
+    const fichaStatus = !hasFicha ? 'pendiente' : (ficha && ficha.status ? ficha.status : (ficha && ficha.updatedBy === 'client' ? 'enviada' : 'recibida'));
+    const statusBadgeHtml = fichaStatus === 'enviada'
+      ? '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(198,255,0,.14);border:1px solid #C6FF00;color:#C6FF00;font-weight:700;letter-spacing:.06em;text-transform:uppercase">ENVIADA POR CLIENTE</span>'
+      : (fichaStatus === 'recibida' || fichaStatus === 'convertida'
+        ? '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(68,187,136,.14);border:1px solid #44BB88;color:#44BB88;font-weight:700;letter-spacing:.06em;text-transform:uppercase">RECIBIDA</span>'
+        : '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(255,136,68,.14);border:1px solid #FF8844;color:#FF8844;font-weight:700;letter-spacing:.06em;text-transform:uppercase">PENDIENTE</span>');
 
     const updatedAt = ficha && ficha.updatedAt
       ? new Date(ficha.updatedAt).toLocaleDateString('es-ES', { day:'numeric', month:'short', year:'numeric' })
@@ -13062,10 +13156,16 @@ El esfuerzo no es negociable.
     cont.innerHTML = `
       <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap">
         <div>
-          <div style="font-size:13px;font-weight:700;color:#F4F4F0">${(d.nombre || (_detailClientData && _detailClientData.displayName) || 'Ficha').replace(/</g,'&lt;')}</div>
-          ${updatedAt ? `<div style="font-size:10px;color:#555;margin-top:2px">Actualizado ${updatedAt}</div>` : '<div style="font-size:10px;color:#555;margin-top:2px">Sin ficha</div>'}
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <div style="font-size:13px;font-weight:700;color:#F4F4F0">${(d.nombre || (_detailClientData && _detailClientData.displayName) || 'Ficha').replace(/</g,'&lt;')}</div>
+            ${statusBadgeHtml}
+          </div>
+          ${updatedAt ? `<div style="font-size:10px;color:#555;margin-top:2px">Actualizado ${updatedAt}${ficha && ficha.updatedBy === 'client' ? ' · enviada por cliente' : ''}</div>` : '<div style="font-size:10px;color:#555;margin-top:2px">Sin ficha registrada</div>'}
         </div>
-        <button onclick="_openEvaluacionForClient('${clientId}')" style="padding:6px 14px;border-radius:6px;border:1px solid rgba(196,255,0,.4);background:rgba(196,255,0,.07);color:#C4FF00;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">📝 Editar ficha</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button onclick="_switchClientTab('seguimiento')" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(244,244,240,.22);background:rgba(244,244,240,.05);color:#F4F4F0;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">📈 Ver seguimiento</button>
+          <button onclick="_openEvaluacionForClient('${clientId}')" style="padding:6px 14px;border-radius:6px;border:1px solid rgba(196,255,0,.4);background:rgba(196,255,0,.07);color:#C4FF00;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">📝 Editar ficha</button>
+        </div>
       </div>
 
       ${mainContent}
@@ -13426,6 +13526,354 @@ El esfuerzo no es negociable.
     }
   }
   window.saveRenovacion = saveRenovacion;
+
+  // ── Seguimiento y actualizaciones tab (T788) ──
+  function _segTriggerLabel(tr) {
+    if (tr === 'block_end') return 'Fin de bloque / mesociclo';
+    if (tr === 'coach_request') return 'Solicitud del Coach';
+    if (tr === 'scheduled') return 'Revisión programada';
+    return 'Actualización voluntaria';
+  }
+  function _segStatusBadge(st) {
+    if (st === 'reviewed') {
+      return '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(68,187,136,.15);border:1px solid #44BB88;color:#44BB88;font-weight:700;letter-spacing:.05em">REVISADA</span>';
+    }
+    if (st === 'received') {
+      return '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(198,255,0,.15);border:1px solid #C6FF00;color:#C6FF00;font-weight:700;letter-spacing:.05em">RECIBIDA · PENDIENTE REVISIÓN</span>';
+    }
+    if (st === 'sent') {
+      return '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(198,255,0,.15);border:1px solid #C6FF00;color:#C6FF00;font-weight:700;letter-spacing:.05em">ENVIADA · PENDIENTE REVISIÓN</span>';
+    }
+    return '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(255,136,68,.15);border:1px solid #FF8844;color:#FF8844;font-weight:700;letter-spacing:.05em">PENDIENTE</span>';
+  }
+  function _segToMillis(v) {
+    if (!v) return 0;
+    if (typeof v === 'number') return v;
+    if (typeof v.toMillis === 'function') return v.toMillis();
+    if (typeof v.seconds === 'number') return v.seconds * 1000;
+    const p = Date.parse(String(v));
+    return Number.isFinite(p) ? p : 0;
+  }
+  async function _loadClientSeguimientoBundle(clientId) {
+    const itemsMap = {};
+    const reqMap = {};
+    // 1. Subcolecciones canónicas clients/{clientId}/checkins y clients/{clientId}/checkin_requests
+    try {
+      const snap = await getDocs(collection(db, 'clients', clientId, 'checkins'));
+      snap.forEach(d => {
+        const row = Object.assign({ id: d.id }, d.data());
+        itemsMap[d.id] = row;
+      });
+    } catch (_) {}
+    try {
+      const rSnap = await getDocs(collection(db, 'clients', clientId, 'checkin_requests'));
+      rSnap.forEach(d => {
+        const row = Object.assign({ id: d.id }, d.data());
+        reqMap[d.id] = row;
+      });
+    } catch (_) {}
+    // 2. Respaldo espejo desde logs/{clientId} si existe
+    const logObj = (_detailLogsData && _detailLogsData.clientId === clientId && _detailLogsData.data) ? _detailLogsData.data : null;
+    if (logObj) {
+      const mirrorItems = Array.isArray(logObj.seguimientoItems) ? logObj.seguimientoItems : [];
+      mirrorItems.forEach(it => {
+        if (it && it.id && !itemsMap[it.id]) itemsMap[it.id] = it;
+      });
+      const mirrorReqs = Array.isArray(logObj.seguimientoRequests) ? logObj.seguimientoRequests : [];
+      mirrorReqs.forEach(rq => {
+        if (rq && rq.id && !reqMap[rq.id]) reqMap[rq.id] = rq;
+      });
+    }
+    const items = Object.keys(itemsMap).map(k => itemsMap[k]).sort((a, b) => {
+      return (_segToMillis(b.submittedAt) || _segToMillis(b.createdAtMs) || 0) - (_segToMillis(a.submittedAt) || _segToMillis(a.createdAtMs) || 0);
+    });
+    const requests = Object.keys(reqMap).map(k => reqMap[k]).sort((a, b) => {
+      return (_segToMillis(b.requestedAt) || _segToMillis(b.createdAtMs) || 0) - (_segToMillis(a.requestedAt) || _segToMillis(a.createdAtMs) || 0);
+    });
+    return { items, requests };
+  }
+  async function _refreshClientSeguimientoBadge(clientId) {
+    if (!currentCoach || !clientId) return;
+    try {
+      const bundle = await _loadClientSeguimientoBundle(clientId);
+      if (_detailClientId !== clientId) return;
+      _detailSeguimientoData = bundle.items;
+      _detailSeguimientoRequests = bundle.requests;
+      const pendingCount = bundle.items.filter(it => it.status !== 'reviewed').length;
+      const dot = document.getElementById('seguimientoPendingDot');
+      if (dot) dot.hidden = pendingCount === 0;
+    } catch (_) {}
+  }
+  window._refreshClientSeguimientoBadge = _refreshClientSeguimientoBadge;
+
+  async function _renderClientTabSeguimiento(cont) {
+    const clientId = _detailClientId;
+    if (!cont || !clientId) return;
+    cont.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando seguimientos…</div>`;
+    const bundle = await _loadClientSeguimientoBundle(clientId);
+    if (_detailClientId !== clientId || _detailActiveTab !== 'seguimiento') return;
+    _detailSeguimientoData = bundle.items;
+    _detailSeguimientoRequests = bundle.requests;
+
+    const pendingReviewCount = bundle.items.filter(it => it.status !== 'reviewed').length;
+    const dot = document.getElementById('seguimientoPendingDot');
+    if (dot) dot.hidden = pendingReviewCount === 0;
+
+    const pendingReqs = bundle.requests.filter(r => r.status === 'pending');
+    const c = _detailClientData || {};
+    const activePlanId = c.activePlanId || (_detailPlanData && _detailPlanData.id) || '';
+    const activePlanLabel = (_detailPlanData && (_detailPlanData.name || _detailPlanData.title)) || (activePlanId ? ('Plan ' + activePlanId.slice(0, 12)) : 'Sin plan activo');
+
+    const reqHtml = pendingReqs.length
+      ? pendingReqs.map(r => {
+          const ts = _segToMillis(r.requestedAt) || _segToMillis(r.createdAtMs);
+          const dateStr = ts ? new Date(ts).toLocaleString('es-MX') : 'Reciente';
+          return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;background:rgba(255,136,68,.08);border:1px solid rgba(255,136,68,.28);margin-top:6px;flex-wrap:wrap">
+            <div>
+              <div style="font-size:11px;font-weight:700;color:#FF8844">⏳ Solicitud pendiente · ${_intEsc(_segTriggerLabel(r.trigger))}</div>
+              <div style="font-size:10px;color:#888">${_intEsc(dateStr)}${r.note ? ' · "' + _intEsc(r.note) + '"' : ''}</div>
+            </div>
+            ${_segStatusBadge('pending')}
+          </div>`;
+        }).join('')
+      : `<div style="font-size:11px;color:#666;margin-top:6px">No hay solicitudes pendientes para este cliente.</div>`;
+
+    const historyHtml = bundle.items.length
+      ? bundle.items.map(it => {
+          const ts = _segToMillis(it.submittedAt) || _segToMillis(it.createdAtMs);
+          const dateStr = ts ? new Date(ts).toLocaleString('es-MX') : (it.fechaMedicion || 'Fecha registrada');
+          const revTs = _segToMillis(it.reviewedAt);
+          const revStr = revTs ? new Date(revTs).toLocaleString('es-MX') : '';
+          const isReviewed = it.status === 'reviewed';
+          const effectiveStatus = isReviewed ? 'reviewed' : (it.status === 'sent' ? 'received' : (it.status || 'received'));
+          const planTag = it.planName || (it.planId ? ('Plan ' + String(it.planId).slice(0, 12)) : 'Sin plan vinculado');
+          const periodTag = it.periodoLabel || (it.weekNumber ? ('Semana ' + it.weekNumber) : '');
+          const adhNutri = it.nutricionNoAplica ? 'No aplica' : (it.adherenciaNutricion != null && it.adherenciaNutricion !== '' ? (it.adherenciaNutricion + '%') : '—');
+          const adhEntreno = (it.adherenciaEntreno != null && it.adherenciaEntreno !== '') ? (it.adherenciaEntreno + '%') : '—';
+          const pesoStr = (it.pesoKg != null && it.pesoKg !== '') ? (it.pesoKg + ' kg') : '—';
+
+          return `<div class="seguimiento-card" data-checkin-id="${_intEsc(it.id)}" style="background:#111111;border:1px solid ${isReviewed ? 'rgba(244,244,240,.1)' : 'rgba(198,255,0,.38)'};border-radius:10px;padding:14px;margin-bottom:12px">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+              <div>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <span style="font-size:13px;font-weight:700;color:#F4F4F0">${_intEsc(_segTriggerLabel(it.trigger))}</span>
+                  ${_segStatusBadge(effectiveStatus)}
+                </div>
+                <div style="font-size:11px;color:#888;margin-top:3px">
+                  📅 ${_intEsc(dateStr)}${it.fechaMedicion ? ' · Medición: ' + _intEsc(it.fechaMedicion) : ''} · 🗂 ${_intEsc(planTag)}${periodTag ? ' · ' + _intEsc(periodTag) : ''}
+                </div>
+              </div>
+              <div>
+                ${isReviewed
+                  ? `<div style="font-size:10px;color:#44BB88;font-weight:700">✓ Revisada${revStr ? ' (' + _intEsc(revStr) + ')' : ''}</div>`
+                  : `<button id="btnRevSeg_${_intEsc(it.id)}" onclick="markSeguimientoReviewed('${_intEsc(clientId)}','${_intEsc(it.id)}')" style="padding:6px 12px;border-radius:6px;border:1px solid #C6FF00;background:#C6FF00;color:#0A0A0A;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap">✓ Marcar como revisada</button>`
+                }
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:8px;margin-bottom:10px">
+              <div style="background:#0A0A0A;border:1px solid rgba(244,244,240,.08);border-radius:6px;padding:8px">
+                <div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.06em">Peso actual</div>
+                <div style="font-size:14px;font-weight:800;color:#F4F4F0;font-family:'JetBrains Mono',monospace">${_intEsc(pesoStr)}</div>
+              </div>
+              <div style="background:#0A0A0A;border:1px solid rgba(244,244,240,.08);border-radius:6px;padding:8px">
+                <div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.06em">Recuperación</div>
+                <div style="font-size:14px;font-weight:800;color:#C6FF00;font-family:'JetBrains Mono',monospace">${it.recuperacion != null && it.recuperacion !== '' ? _intEsc(it.recuperacion + ' / 5') : '—'}</div>
+              </div>
+              <div style="background:#0A0A0A;border:1px solid rgba(244,244,240,.08);border-radius:6px;padding:8px">
+                <div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.06em">Energía / Rend.</div>
+                <div style="font-size:14px;font-weight:800;color:#C6FF00;font-family:'JetBrains Mono',monospace">${it.energiaRendimiento != null && it.energiaRendimiento !== '' ? _intEsc(it.energiaRendimiento + ' / 5') : '—'}</div>
+              </div>
+              <div style="background:#0A0A0A;border:1px solid rgba(244,244,240,.08);border-radius:6px;padding:8px">
+                <div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.06em">Sueño</div>
+                <div style="font-size:14px;font-weight:800;color:#F4F4F0;font-family:'JetBrains Mono',monospace">${it.sueno != null && it.sueno !== '' ? _intEsc(it.sueno + ' / 5') : '—'}</div>
+              </div>
+              <div style="background:#0A0A0A;border:1px solid rgba(244,244,240,.08);border-radius:6px;padding:8px">
+                <div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.06em">Adh. Entreno</div>
+                <div style="font-size:14px;font-weight:800;color:#44BB88;font-family:'JetBrains Mono',monospace">${_intEsc(adhEntreno)}</div>
+              </div>
+              <div style="background:#0A0A0A;border:1px solid rgba(244,244,240,.08);border-radius:6px;padding:8px">
+                <div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.06em">Adh. Nutrición</div>
+                <div style="font-size:14px;font-weight:800;color:#44BB88;font-family:'JetBrains Mono',monospace">${_intEsc(adhNutri)}</div>
+              </div>
+            </div>
+            ${it.fatigaMolestias ? `<div style="font-size:11px;color:#F4F4F0;background:rgba(255,136,68,.08);border-left:2px solid #FF8844;padding:6px 10px;margin-bottom:6px"><strong>Fatiga / molestias:</strong> ${_intEsc(it.fatigaMolestias)}</div>` : ''}
+            ${it.comentarios ? `<div style="font-size:11px;color:#e4e4e0;background:rgba(244,244,240,.04);border-left:2px solid #C6FF00;padding:6px 10px"><strong>Comentarios del cliente:</strong> ${_intEsc(it.comentarios)}</div>` : ''}
+            <div style="font-size:10px;color:#555;margin-top:8px">🔒 Datos declarados por el cliente (${_intEsc(it.clientId || clientId)}) · Inmutables por diseño</div>
+          </div>`;
+        }).join('')
+      : `<div style="background:rgba(244,244,240,.03);border:1px solid rgba(244,244,240,.08);border-radius:10px;padding:22px;text-align:center">
+          <div style="font-size:24px;margin-bottom:6px">📈</div>
+          <div style="font-size:13px;font-weight:700;color:#F4F4F0;margin-bottom:4px">Sin actualizaciones periódicas registradas</div>
+          <div style="font-size:11px;color:#888">Solicita una actualización arriba o pide al cliente que envíe su reporte desde "Mi seguimiento". La evaluación 360° inicial en 📋 Ficha se conserva intacta.</div>
+        </div>`;
+
+    cont.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+        <div>
+          <div style="font-size:14px;font-weight:800;color:#F4F4F0">Seguimiento y actualizaciones periódicas</div>
+          <div style="font-size:11px;color:#888">Historial cronológico independiente de la evaluación 360° inicial · Contexto actual: ${_intEsc(activePlanLabel)}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:11px;padding:4px 10px;border-radius:8px;background:${pendingReviewCount ? 'rgba(198,255,0,.14)' : 'rgba(244,244,240,.06)'};border:1px solid ${pendingReviewCount ? '#C6FF00' : 'rgba(244,244,240,.12)'};color:${pendingReviewCount ? '#C6FF00' : '#888'};font-weight:700">
+            ${pendingReviewCount ? (pendingReviewCount + ' pendiente(s) de revisión') : 'Al día'}
+          </span>
+        </div>
+      </div>
+
+      <div style="background:#111111;border:1px solid rgba(198,255,0,.28);border-radius:10px;padding:14px;margin-bottom:16px">
+        <div style="font-size:11px;font-weight:800;color:#C6FF00;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">📣 Solicitar actualización al cliente</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:8px">
+          <div>
+            <label style="font-size:10px;color:#888;display:block;margin-bottom:3px">Motivo de la solicitud</label>
+            <select id="segReqTrigger_${_intEsc(clientId)}" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(244,244,240,.16);background:#0A0A0A;color:#F4F4F0;font-size:12px">
+              <option value="coach_request">Solicitud del Coach</option>
+              <option value="block_end">Fin de bloque / mesociclo</option>
+              <option value="scheduled">Revisión programada</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:10px;color:#888;display:block;margin-bottom:3px">Nota opcional para el cliente</label>
+            <input id="segReqNote_${_intEsc(clientId)}" type="text" maxlength="200" placeholder="Ej. Cerramos semana 4, comparte peso y sensaciones…" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(244,244,240,.16);background:#0A0A0A;color:#F4F4F0;font-size:12px;box-sizing:border-box">
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+          <span id="segReqStatus_${_intEsc(clientId)}" style="font-size:11px;color:#888">El cliente verá el aviso en su inicio y en "Mi seguimiento".</span>
+          <button id="segReqBtn_${_intEsc(clientId)}" onclick="requestClientSeguimiento('${_intEsc(clientId)}')" style="padding:8px 14px;border-radius:6px;border:1px solid #C6FF00;background:#C6FF00;color:#0A0A0A;font-size:11px;font-weight:800;cursor:pointer">📤 Solicitar actualización</button>
+        </div>
+        ${reqHtml}
+      </div>
+
+      <div style="font-size:11px;font-weight:800;color:#888;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">🗂 Historial de actualizaciones (${bundle.items.length})</div>
+      <div id="seguimientoHistoryList">${historyHtml}</div>
+    `;
+  }
+  window._renderClientTabSeguimiento = _renderClientTabSeguimiento;
+
+  let _segReqInFlight = false;
+  async function requestClientSeguimiento(clientId) {
+    if (_segReqInFlight || !currentCoach || !clientId) return;
+    if (!_detailClientData || _detailClientData.coachId !== currentCoach.uid) {
+      showToast('No tienes permisos sobre este cliente.', true);
+      return;
+    }
+    const trigEl = document.getElementById('segReqTrigger_' + clientId);
+    const noteEl = document.getElementById('segReqNote_' + clientId);
+    const btn = document.getElementById('segReqBtn_' + clientId);
+    const statusEl = document.getElementById('segReqStatus_' + clientId);
+    const trigger = trigEl ? trigEl.value : 'coach_request';
+    const note = noteEl ? noteEl.value.trim() : '';
+    const planId = (_detailClientData && _detailClientData.activePlanId) || (_detailPlanData && _detailPlanData.id) || null;
+    const reqId = 'req_' + clientId + '_' + Date.now();
+    const nowMs = Date.now();
+
+    _segReqInFlight = true;
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Enviando…'; }
+    try {
+      const payload = {
+        id: reqId,
+        clientId: clientId,
+        coachId: currentCoach.uid,
+        trigger: trigger,
+        note: note,
+        planId: planId,
+        status: 'pending',
+        createdAtMs: nowMs,
+        requestedAt: serverTimestamp()
+      };
+      let subOk = false, logsOk = false, lastErr = null;
+      try {
+        await setDoc(doc(db, 'clients', clientId, 'checkin_requests', reqId), payload);
+        subOk = true;
+      } catch (eSub) { lastErr = eSub; }
+      // Mirror summary in logs/{clientId} so client & coach lists see pending request without extra reads
+      try {
+        const prevReqs = Array.isArray(_detailSeguimientoRequests) ? _detailSeguimientoRequests.slice(0, 19) : [];
+        const nextReqs = [Object.assign({}, payload, { requestedAt: nowMs })].concat(prevReqs);
+        const pendingRevCount = Array.isArray(_detailSeguimientoData) ? _detailSeguimientoData.filter(x => x.status !== 'reviewed').length : 0;
+        await setDoc(doc(db, 'logs', clientId), {
+          clientId: clientId,
+          seguimientoRequests: nextReqs,
+          seguimientoSummary: {
+            pendingReviewCount: pendingRevCount,
+            hasPendingCoachRequest: true,
+            lastRequestId: reqId,
+            lastRequestTrigger: trigger,
+            lastRequestNote: note,
+            updatedAt: nowMs
+          }
+        }, { merge: true });
+        logsOk = true;
+      } catch (eLogs) { lastErr = lastErr || eLogs; }
+      if (!subOk && !logsOk) throw (lastErr || new Error('No se pudo guardar la solicitud'));
+      if (statusEl) { statusEl.textContent = '✅ Solicitud enviada al cliente'; statusEl.style.color = '#44BB88'; }
+      showToast('Solicitud de seguimiento enviada');
+      if (_detailClientId === clientId && _detailActiveTab === 'seguimiento') {
+        await _renderClientTabSeguimiento(document.getElementById('clientDetailTabContent'));
+      }
+      loadClientList();
+    } catch (e) {
+      if (statusEl) { statusEl.textContent = '❌ Error: ' + (e.message || e); statusEl.style.color = '#FF6060'; }
+      showToast('No se pudo enviar la solicitud: ' + (e.message || e), true);
+    } finally {
+      _segReqInFlight = false;
+      if (btn) { btn.disabled = false; btn.textContent = '📤 Solicitar actualización'; }
+    }
+  }
+  window.requestClientSeguimiento = requestClientSeguimiento;
+
+  async function markSeguimientoReviewed(clientId, checkinId) {
+    if (!currentCoach || !clientId || !checkinId) return;
+    const btn = document.getElementById('btnRevSeg_' + checkinId);
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando…'; }
+    const nowMs = Date.now();
+    try {
+      let subOk = false, logsOk = false, lastErr = null;
+      // Regla estricta: el Coach solo actualiza status, reviewedAt, reviewedByCoachId (sin alterar métricas declaradas por el cliente)
+      try {
+        await updateDoc(doc(db, 'clients', clientId, 'checkins', checkinId), {
+          status: 'reviewed',
+          reviewedAt: serverTimestamp(),
+          reviewedByCoachId: currentCoach.uid
+        });
+        subOk = true;
+      } catch (eSub) { lastErr = eSub; }
+      if (Array.isArray(_detailSeguimientoData)) {
+        _detailSeguimientoData.forEach(it => {
+          if (it && it.id === checkinId) {
+            it.status = 'reviewed';
+            it.reviewedAt = nowMs;
+            it.reviewedByCoachId = currentCoach.uid;
+          }
+        });
+      }
+      const remainingPending = Array.isArray(_detailSeguimientoData)
+        ? _detailSeguimientoData.filter(it => it.status !== 'reviewed').length
+        : 0;
+      try {
+        await setDoc(doc(db, 'logs', clientId), {
+          clientId: clientId,
+          seguimientoItems: Array.isArray(_detailSeguimientoData) ? _detailSeguimientoData.slice(0, 25) : [],
+          seguimientoSummary: {
+            pendingReviewCount: remainingPending,
+            lastReviewedId: checkinId,
+            lastReviewedAt: nowMs,
+            updatedAt: nowMs
+          }
+        }, { merge: true });
+        logsOk = true;
+      } catch (eLogs) { lastErr = lastErr || eLogs; }
+      if (!subOk && !logsOk) throw (lastErr || new Error('No se pudo actualizar el estado'));
+      showToast('Seguimiento marcado como revisado');
+      if (_detailClientId === clientId && _detailActiveTab === 'seguimiento') {
+        await _renderClientTabSeguimiento(document.getElementById('clientDetailTabContent'));
+      }
+      loadClientList();
+    } catch (e) {
+      if (btn) { btn.disabled = false; btn.textContent = '✓ Marcar como revisada'; }
+      showToast('No se pudo actualizar el estado: ' + (e.message || e), true);
+    }
+  }
+  window.markSeguimientoReviewed = markSeguimientoReviewed;
 
   function _copyRenovacionText(clientId) {
     const fld       = id => { const el = document.getElementById('ren_'+id); return el ? el.value.trim() : ''; };
@@ -14729,10 +15177,10 @@ El esfuerzo no es negociable.
     try {
       setStatus('<span style="color:#888">Leyendo ficha…</span>');
       const fs = await getDoc(doc(db, 'fichas_onboarding', clientId));
-      let ficha = fs.exists() ? fs.data() : null;
-      if (!ficha || !ficha.data) {
+      let ficha = fs.exists() ? _normalizeFichaDoc(fs.data(), _detailClientData) : null;
+      if (!ficha || !ficha.hasContent) {
         const cd = (await getDoc(doc(db, 'clients', clientId))).data() || {};
-        if (cd.intake && cd.intake.data) ficha = cd.intake;
+        if (cd.intake) ficha = _normalizeFichaDoc(cd.intake, cd);
       }
       if (!ficha || !ficha.data || !Object.keys(ficha.data).length) {
         throw new Error('Sin ficha de evaluación. Completa la ficha del cliente primero.');
@@ -23821,43 +24269,105 @@ El esfuerzo no es negociable.
   }
 
   let _fichasUnsub = null;
+  let _fichasPublicasCache = [];
+  let _fichasClientesCache = [];
   function _renderFichas(items, box){
-    if(!items.length){ box.innerHTML = '<div class="text-xs" style="color:var(--text-muted)">Aún no hay fichas recibidas. Comparte el link de arriba.</div>'; return; }
+    if(!items.length){ box.innerHTML = '<div class="text-xs" style="color:var(--text-muted)">Aún no hay fichas recibidas. Comparte el link de arriba o pide a tus clientes completar su evaluación.</div>'; return; }
     const rendered = items.map(f=>{
       try {
-        const fecha = f.createdAt ? new Date(f.createdAt).toLocaleString('es-MX') : '';
-        const conv = f.status==='convertida';
+        const ts = f.updatedAt || f.completedAt || f.createdAt || 0;
+        const fecha = ts ? new Date(ts).toLocaleString('es-MX') : '';
+        const isClientFicha = f._source === 'fichas_onboarding';
+        const conv = f.status === 'convertida';
+        const statusLabel = isClientFicha
+          ? (f.status === 'pendiente' ? '⏳ PENDIENTE' : (f.updatedBy === 'client' || f.status === 'enviada' ? '📩 ENVIADA POR CLIENTE' : '✅ RECIBIDA'))
+          : (conv ? '✅ CONVERTIDA' : '📥 RECIBIDA · PROSPECTO');
+        const statusColor = f.status === 'pendiente' ? '#FF8844' : (conv ? '#44BB88' : '#C6FF00');
         const dataTxt = _fichaDataToText(f.data||{});
-        return '<div class="card p-3 mb-2" style="'+(conv?'opacity:.6':'')+'">'
+        const domId = (isClientFicha ? 'cli_' : 'pub_') + f.id;
+        return '<div class="card p-3 mb-2" style="'+(conv?'opacity:.75':'')+'">'
           + '<div class="flex justify-between items-center gap-2 flex-wrap">'
           + '<div><strong style="color:var(--text-primary)">'+_intEsc(f.nombre||'—')+'</strong>'
+          + ' <span style="font-size:10px;padding:1px 7px;border-radius:8px;border:1px solid '+statusColor+';color:'+statusColor+';font-weight:700">'+statusLabel+'</span>'
           + '<span class="text-xs" style="color:var(--text-muted)"> · 📱 '+_intEsc(f.telefono||'—')+(f.email?' · '+_intEsc(f.email):'')+'</span>'
-          + '<div class="text-xs" style="color:var(--text-muted)">'+fecha+(conv?' · ✅ convertida':'')+'</div></div>'
+          + '<div class="text-xs" style="color:var(--text-muted)">'+fecha+'</div></div>'
           + '<div class="flex gap-2 flex-wrap">'
-          + (conv?'':'<button onclick="convertFicha(\''+f.id+'\')" class="text-xs px-3 py-1 rounded" style="border:1px solid #C4FF00;background:rgba(196,255,0,.15);color:#C4FF00;cursor:pointer;font-weight:600">➕ Convertir a cliente</button>')
-          + '<button onclick="_toggleFicha(\''+f.id+'\')" class="btn-secondary text-xs">👁 Ver datos</button>'
-          + '<button onclick="discardFicha(\''+f.id+'\')" class="text-xs px-2 py-1 rounded" style="border:1px solid #FF4444;background:rgba(255,68,68,.1);color:#FF4444;cursor:pointer">🗑</button>'
+          + (isClientFicha
+              ? '<button onclick="showClientDetail(\''+_intEsc(f.clientId || f.id)+'\',{tab:\'ficha\'})" class="text-xs px-3 py-1 rounded" style="border:1px solid #C6FF00;background:rgba(198,255,0,.15);color:#C6FF00;cursor:pointer;font-weight:700">📂 Abrir expediente</button>'
+              : (conv?'':'<button onclick="convertFicha(\''+f.id+'\')" class="text-xs px-3 py-1 rounded" style="border:1px solid #C4FF00;background:rgba(196,255,0,.15);color:#C4FF00;cursor:pointer;font-weight:600">➕ Convertir a cliente</button>'))
+          + '<button onclick="_toggleFicha(\''+domId+'\')" class="btn-secondary text-xs">👁 Ver datos</button>'
+          + (isClientFicha ? '' : '<button onclick="discardFicha(\''+f.id+'\')" class="text-xs px-2 py-1 rounded" style="border:1px solid #FF4444;background:rgba(255,68,68,.1);color:#FF4444;cursor:pointer">🗑</button>')
           + '</div></div>'
-          + '<pre id="fd_'+f.id+'" style="display:none;white-space:pre-wrap;font-family:\'Courier Prime\',monospace;font-size:11px;color:var(--text-primary);margin-top:8px;background:#0D0D0D;padding:8px;border-radius:2px;overflow-x:auto">'+_intEsc(dataTxt)+'</pre>'
+          + '<pre id="fd_'+domId+'" style="display:none;white-space:pre-wrap;font-family:\'Courier Prime\',monospace;font-size:11px;color:var(--text-primary);margin-top:8px;background:#0D0D0D;padding:8px;border-radius:2px;overflow-x:auto">'+_intEsc(dataTxt)+'</pre>'
           + '</div>';
       } catch(re){ console.error('[FICHAS] render error', f.id, re); return ''; }
     });
     box.innerHTML = rendered.join('') || '<div class="text-xs" style="color:var(--text-muted)">Sin fichas renderizables.</div>';
+  }
+  function _mergeAndRenderFichas(box) {
+    if (!box) return;
+    const combined = _fichasClientesCache.concat(_fichasPublicasCache);
+    combined.sort((a, b) => ((b.updatedAt || b.completedAt || b.createdAt || 0) - (a.updatedAt || a.completedAt || a.createdAt || 0)));
+    _renderFichas(combined, box);
+  }
+  async function _loadCoachClientFichas(box) {
+    if (!currentCoach) return;
+    try {
+      const cSnap = await getDocs(query(collection(db, 'clients'), where('coachId', '==', currentCoach.uid)));
+      const clientDocs = [];
+      cSnap.forEach(d => clientDocs.push({ id: d.id, data: d.data() || {} }));
+      const results = await Promise.all(clientDocs.map(async (cItem) => {
+        try {
+          const fSnap = await getDoc(doc(db, 'fichas_onboarding', cItem.id));
+          const raw = fSnap.exists() ? fSnap.data() : (cItem.data.intake || null);
+          if (!raw) return null;
+          const norm = _normalizeFichaDoc(raw, cItem.data);
+          if (!norm || !norm.hasContent) return null;
+          return {
+            id: cItem.id,
+            clientId: cItem.id,
+            _source: 'fichas_onboarding',
+            nombre: (norm.data && norm.data.nombre) || cItem.data.displayName || cItem.data.email || cItem.id,
+            email: (norm.data && norm.data.email) || cItem.data.email || '',
+            telefono: (norm.data && norm.data.telefono) || cItem.data.phone || '',
+            status: norm.status || 'enviada',
+            updatedAt: norm.updatedAt || cItem.data.createdAt || 0,
+            updatedBy: norm.updatedBy || 'client',
+            data: norm.data || {}
+          };
+        } catch (_) { return null; }
+      }));
+      _fichasClientesCache = results.filter(Boolean);
+      _mergeAndRenderFichas(box);
+    } catch (_) {}
   }
   function loadFichasRecibidas(){
     const box = document.getElementById('fichasRecibidas');
     if(!box || !currentCoach) return;
     box.innerHTML = '<div class="text-xs" style="color:var(--text-muted)">Cargando…</div>';
     if(_fichasUnsub){ _fichasUnsub(); _fichasUnsub = null; }
-    // T538: filtrado por coachId (las reglas solo permiten las fichas dirigidas a este coach)
+    _fichasPublicasCache = [];
+    _fichasClientesCache = [];
+    try { ensureCoachDoc().catch(()=>{}); } catch(_) {}
+    _loadCoachClientFichas(box);
+    // T538 / T788: filtrado por coachId (las reglas solo permiten las fichas dirigidas a este coach)
     _fichasUnsub = onSnapshot(query(collection(db,'fichas_publicas'), where('coachId','==',currentCoach.uid)), snap=>{
       const items = [];
-      snap.forEach(d=>items.push(Object.assign({id:d.id}, d.data())));
+      snap.forEach(d=>{
+        const raw = d.data() || {};
+        const norm = _normalizeFichaDoc(raw, null);
+        items.push(Object.assign({ id: d.id, _source: 'fichas_publicas' }, raw, { data: (norm && norm.data) || raw.data || {} }));
+      });
       items.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-      _renderFichas(items, box);
+      _fichasPublicasCache = items;
+      _mergeAndRenderFichas(box);
     }, err=>{
       console.error('[FICHAS] onSnapshot error:', err);
-      box.innerHTML = '<div class="text-xs" style="color:var(--danger)">Error: '+_intEsc(err.message||err)+'</div>';
+      if (_fichasClientesCache.length > 0) {
+        _mergeAndRenderFichas(box);
+      } else {
+        box.innerHTML = '<div class="text-xs" style="color:var(--danger)">No se pudieron consultar las fichas públicas ('+_intEsc(err.code||err.message||err)+').</div>';
+      }
     });
   }
   window.loadFichasRecibidas = loadFichasRecibidas;
@@ -23903,26 +24413,49 @@ El esfuerzo no es negociable.
     _intakeFotometria = null;
     status.textContent = 'Cargando…';
     try {
-      const cd = (await getDoc(doc(db,'clients',clientId))).data() || {};
-      // Fuente única: fichas_onboarding/{uid} (lecto-escribible por coach y cliente)
-      const fs = await getDoc(doc(db,'fichas_onboarding',clientId));
-      const ficha = fs.exists()? fs.data() : null;
-      // Fallback de migración: intake antiguo guardado en clients/{uid}.intake
-      const legacy = (cd.intake && cd.intake.data) ? cd.intake : null;
-      const src = (ficha && ficha.data) ? ficha : legacy;
-      const intake = (src && src.data) ? { ...src.data } : {};
+      const cSnap = await getDoc(doc(db,'clients',clientId));
+      if (!cSnap.exists()) { status.textContent = 'Cliente no encontrado o sin acceso.'; return; }
+      const cd = cSnap.data() || {};
+      // Fuente 1: fichas_onboarding/{uid} (tanto en formato .data como en formato plano de enviarFicha)
+      let rawFicha = null;
+      try {
+        const fs = await getDoc(doc(db,'fichas_onboarding',clientId));
+        if (fs.exists()) rawFicha = fs.data();
+      } catch (_fErr) {
+        console.warn('[INTAKE] fichas_onboarding read warning:', _fErr && _fErr.code);
+      }
+      let norm = rawFicha ? _normalizeFichaDoc(rawFicha, cd) : null;
+      // Fuente 2: Fallback de migración en clients/{uid}.intake
+      if ((!norm || !norm.hasContent) && cd.intake) {
+        const legacyNorm = _normalizeFichaDoc(cd.intake, cd);
+        if (legacyNorm && legacyNorm.hasContent) norm = legacyNorm;
+      }
+      // Fuente 3: Fallback en fichas_publicas del propio coach asociadas por clientUid o email
+      if ((!norm || !norm.hasContent) && currentCoach) {
+        try {
+          const pubSnap = await getDocs(query(collection(db,'fichas_publicas'), where('coachId','==',currentCoach.uid)));
+          pubSnap.forEach(d => {
+            const p = d.data() || {};
+            if (p.clientUid === clientId || (cd.email && p.email && String(p.email).toLowerCase() === String(cd.email).toLowerCase())) {
+              const pNorm = _normalizeFichaDoc(p, cd);
+              if (pNorm && pNorm.hasContent) norm = pNorm;
+            }
+          });
+        } catch (_) {}
+      }
+      const intake = (norm && norm.data) ? Object.assign({}, norm.data) : {};
       if(!intake.nombre && cd.displayName) intake.nombre = cd.displayName;
       renderIntakeForm(intake);
       actions.style.display = 'flex';
-      status.textContent = (src && src.updatedAt)
-        ? ('Última actualización: ' + new Date(src.updatedAt).toLocaleString('es-MX') + (src.updatedBy? ' · por '+(src.updatedBy==='client'?'el cliente':'ti') : ''))
+      status.textContent = (norm && norm.updatedAt)
+        ? ('Última actualización: ' + new Date(norm.updatedAt).toLocaleString('es-MX') + (norm.updatedBy? ' · por '+(norm.updatedBy==='client'?'el cliente':'ti') : ''))
         : 'Sin evaluación previa — formulario nuevo.';
       // Fotogrametría guardada en el mismo doc (nivel raíz)
-      _intakeFotometria = (ficha && ficha.fotometria) ? ficha.fotometria : null;
+      _intakeFotometria = (rawFicha && rawFicha.fotometria) ? rawFicha.fotometria : null;
       analysisCard.style.display = 'block';
       document.getElementById('intakeAnalysisInput').value = _intakeFotometria ? JSON.stringify(_intakeFotometria, null, 2) : '';
-      document.getElementById('intakeAnalysisStatus').textContent = (ficha && ficha.fotometriaUpdatedAt)
-        ? ('Guardado: ' + new Date(ficha.fotometriaUpdatedAt).toLocaleString('es-MX'))
+      document.getElementById('intakeAnalysisStatus').textContent = (rawFicha && rawFicha.fotometriaUpdatedAt)
+        ? ('Guardado: ' + new Date(rawFicha.fotometriaUpdatedAt).toLocaleString('es-MX'))
         : (_intakeFotometria ? '' : 'Sin análisis guardado');
       renderFotometriaSummary(_intakeFotometria);
     } catch(e){ status.textContent = 'Error al cargar: '+e.message; }
