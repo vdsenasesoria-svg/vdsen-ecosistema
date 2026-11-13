@@ -11109,10 +11109,14 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const clientData = clientSnap.data();
     if (clientData.coachId !== coachId) throw new Error('FOREIGN_OWNER: este cliente no está asignado a tu cuenta');
 
-    // Idempotency: use requestId as document ID; detect conflicts if doc exists with different identity
+    // Idempotency: use requestId as document ID; detect conflicts if doc exists with different identity.
+    // Note: firestore.rules denies reads on non-existent plans/{id} (null resource); treat permission-denied on pre-read as absent so setDoc creates or rules reject a foreign-owned existing doc.
     const planRef = doc(db, 'plans', requestId);
-    const existing = await getDoc(planRef);
-    if (existing.exists()) {
+    const existing = await getDoc(planRef).catch((err) => {
+      if (err && err.code === 'permission-denied') return null;
+      throw err;
+    });
+    if (existing && existing.exists()) {
       const existingData = existing.data();
       if (existingData.clientId !== clientId || existingData.coachId !== coachId) {
         throw new Error('IDEMPOTENCY_CONFLICT: El requestId "' + requestId +
@@ -11321,16 +11325,39 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
   // ── D.2 button click handlers (called from HTML onclick) ───────────────────
 
+  function _vdsenCoachErrorMessage(err) {
+    const code = err && err.code;
+    const msg = (err && err.message) || '';
+    if (code === 'permission-denied' || /Missing or insufficient permissions|evaluation error/i.test(msg)) {
+      return 'No tenés permiso para operar sobre este cliente o plan (permission-denied). No se guardó ningún cambio.';
+    }
+    if (code === 'unauthenticated') {
+      return 'Tu sesión de coach expiró. Vuelve a iniciar sesión e inténtalo de nuevo.';
+    }
+    if (code === 'unavailable' || code === 'deadline-exceeded' || /network|offline|Failed to fetch|connection/i.test(msg)) {
+      return 'Error de conexión o tiempo de espera agotado (' + (code || 'red') + '). Verifica tu conexión y reintenta de forma segura.';
+    }
+    return msg || 'Error desconocido';
+  }
+
+  let _vdsenSavingDraft = false;
   window._vdsenSaveDraftClick = async function() {
+    if (_vdsenSavingDraft) return;
     const btn        = document.getElementById('vdsenPreview_saveDraftBtn');
     const d2Status   = document.getElementById('vdsenPreview_d2Status');
     const activateBtn = document.getElementById('vdsenPreview_activateBtn');
     const badge      = document.getElementById('vdsenPreview_badge');
 
+    if (!currentCoach) {
+      if (d2Status) d2Status.innerHTML = '<span style="color:#ef4444">❌ Sin sesión activa de coach — vuelve a iniciar sesión</span>';
+      return;
+    }
     if (!_vdsenCurrentPreview) {
       if (d2Status) d2Status.innerHTML = '<span style="color:#ef4444">❌ Error: sin preview activo</span>';
       return;
     }
+    const _clientIdSnap = _vdsenCurrentPreview.clientId;
+    const _coachUidSnap = currentCoach.uid;
     // T145-H: block if the coach has since selected a different client — this
     // preview belongs to _vdsenCurrentPreview.clientId, not whatever is
     // currently in #planClientSelect.
@@ -11338,11 +11365,18 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if (d2Status) d2Status.innerHTML = '<span style="color:#ef4444">❌ Este preview es de otro cliente — vuelve a seleccionarlo para guardar el borrador</span>';
       return;
     }
+    _vdsenSavingDraft = true;
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando…'; }
     if (d2Status) d2Status.innerHTML = '';
 
     try {
       const result = await _vdsenSaveDraftToFirestore();
+      if (!currentCoach || currentCoach.uid !== _coachUidSnap) return;
+      if (document.getElementById('planClientSelect')?.value !== _clientIdSnap) {
+        if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar borrador aprobado'; }
+        if (d2Status) d2Status.innerHTML = '<span style="color:#f59e0b">⚠️ Cambiaste de cliente durante el guardado — vuelve a seleccionar al cliente para verificar</span>';
+        return;
+      }
       _vdsenDraftPlanId = result.planId;
 
       if (btn) btn.style.display = 'none';
@@ -11359,12 +11393,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         badge.style.color = '#3b82f6';
       }
 
-      _vdsenShowPrevPlanInfo(_vdsenCurrentPreview.clientId);
+      _vdsenShowPrevPlanInfo(_clientIdSnap);
 
     } catch (err) {
+      if (!currentCoach || currentCoach.uid !== _coachUidSnap) return;
       if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar borrador aprobado'; }
-      if (d2Status) d2Status.innerHTML = '<span style="color:#ef4444">❌ ' + _escH(err.message || 'Error desconocido') + '</span>';
+      if (d2Status) d2Status.innerHTML = '<span style="color:#ef4444">❌ ' + _escH(_vdsenCoachErrorMessage(err)) + '</span>';
       console.error('[VDSEN D.2-A] Save draft error:', err);
+    } finally {
+      _vdsenSavingDraft = false;
     }
   };
 
@@ -11377,6 +11414,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const btn          = document.getElementById('vdsenPreview_activateBtn');
     const d2Status     = document.getElementById('vdsenPreview_d2Status');
     const badge        = document.getElementById('vdsenPreview_badge');
+
+    if (!currentCoach) {
+      if (d2Status) d2Status.innerHTML = '<span style="color:#ef4444">❌ Sin sesión activa de coach — vuelve a iniciar sesión</span>';
+      return;
+    }
+    const _coachUidSnap = currentCoach.uid;
 
     // T145-H: block if the coach has since selected a different client — same
     // guard as _vdsenSaveDraftClick, checked again here since activation can
@@ -11394,6 +11437,17 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     // click handler in this file, set before the confirm dialog so it also
     // covers the (event-loop-theoretical) gap between clicks.
     _vdsenActivatingPlan = true;
+    const _markActivatedUI = (statusText) => {
+      if (btn) { btn.disabled = true; btn.textContent = '✅ Plan activado'; }
+      if (badge) {
+        badge.textContent = '✅ PLAN ACTIVO';
+        badge.style.background = 'rgba(34,197,94,.2)';
+        badge.style.color = '#22c55e';
+      }
+      if (d2Status) d2Status.innerHTML = '<span style="color:#22c55e">' + _escH(statusText) + '</span>';
+      const prevPlanEl = document.getElementById('vdsenPreview_d2PrevPlan');
+      if (prevPlanEl) prevPlanEl.style.display = 'none';
+    };
     try {
       const confirmed = window.confirm(
         '¿Activar plan para este cliente?\n\n' +
@@ -11408,26 +11462,39 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if (btn) { btn.disabled = true; btn.textContent = '⏳ Activando…'; }
       if (d2Status) d2Status.innerHTML = '';
 
-      // T146-H: back up the outgoing active plan (if any) to plans_backup before
-      // replacing it — same pattern as every other plan-replacing path
-      // (saveManualPlan/duplicatePlan/_applyTemplateToClient/_autoGenerateForModal).
-      // No-ops safely when there is no active plan yet (first activation).
-      await backupPlanIfExists(clientId);
-      await _vdsenActivatePlanInFirestore(planId, clientId);
-
-      if (btn) { btn.disabled = true; btn.textContent = '✅ Plan activado'; }
-      if (badge) {
-        badge.textContent = '✅ PLAN ACTIVO';
-        badge.style.background = 'rgba(34,197,94,.2)';
-        badge.style.color = '#22c55e';
+      // T146-H / T787: back up the outgoing active plan (if any) to plans_backup before
+      // replacing it — skip backup if activePlanId is already planId (idempotent retry).
+      const _preActSnap = await getDoc(doc(db, 'clients', clientId)).catch(() => null);
+      if (!_preActSnap || !_preActSnap.exists() || _preActSnap.data().activePlanId !== planId) {
+        await backupPlanIfExists(clientId);
       }
-      if (d2Status) d2Status.innerHTML = '<span style="color:#22c55e">✅ Plan activado. El cliente tiene acceso al nuevo plan inmediatamente.</span>';
-      const prevPlanEl = document.getElementById('vdsenPreview_d2PrevPlan');
-      if (prevPlanEl) prevPlanEl.style.display = 'none';
+      await _vdsenActivatePlanInFirestore(planId, clientId);
+      if (!currentCoach || currentCoach.uid !== _coachUidSnap) return;
+      if (document.getElementById('planClientSelect')?.value !== clientId) {
+        if (btn) { btn.disabled = false; btn.textContent = '⚡ Activar plan'; }
+        if (d2Status) d2Status.innerHTML = '<span style="color:#f59e0b">⚠️ Cambiaste de cliente durante la activación — vuelve a seleccionar al cliente para verificar</span>';
+        return;
+      }
+
+      _markActivatedUI('✅ Plan activado. El cliente tiene acceso al nuevo plan inmediatamente.');
 
     } catch (err) {
+      if (!currentCoach || currentCoach.uid !== _coachUidSnap) return;
+      const _errCode = err && err.code;
+      const _definitive = _errCode === 'permission-denied' || _errCode === 'unauthenticated' || /Plan en estado inválido|Plan no encontrado|Cliente no encontrado|FOREIGN_OWNER|Sin sesión/i.test((err && err.message) || '');
+      if (!_definitive) {
+        try {
+          const _cSnap = await getDoc(doc(db, 'clients', clientId));
+          if (_cSnap.exists() && _cSnap.data().activePlanId === planId) {
+            if (document.getElementById('planClientSelect')?.value === clientId) {
+              _markActivatedUI('✅ Plan activado (confirmado en servidor tras error de red).');
+            }
+            return;
+          }
+        } catch (_) {}
+      }
       if (btn) { btn.disabled = false; btn.textContent = '⚡ Activar plan'; }
-      if (d2Status) d2Status.innerHTML = '<span style="color:#ef4444">❌ ' + _escH(err.message || 'Error desconocido') + '</span>';
+      if (d2Status) d2Status.innerHTML = '<span style="color:#ef4444">❌ ' + _escH(_vdsenCoachErrorMessage(err)) + '</span>';
       console.error('[VDSEN D.2-B] Activate plan error:', err);
     } finally {
       _vdsenActivatingPlan = false;
