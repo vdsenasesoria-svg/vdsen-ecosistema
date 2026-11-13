@@ -268,3 +268,47 @@ test('T786 legacy auto-alias exception: allows only vdsen-ecosistema-vdsenasesor
   assert.equal(badRes.verdict, 'BLOCKED');
   assert.equal(badRes.reason, 'LEGACY_HAS_ACTIVE_ALIAS');
 });
+
+test('T789 Firestore contract & diagnostics: 404 on releaseControl is closed fence; 403/404 on client/coach surfaces exact which + http_status; 43360451208 is reconciled', async () => {
+  // 1. releaseControl/autonomousProgression 404 (never created) with disabled or absent coach canary is a valid closed barrier
+  const w404WithCanary = world();
+  const orig1 = w404WithCanary.fetch;
+  w404WithCanary.fetch = async (url, o) => (String(url).includes('/releaseControl/autonomousProgression') ? respond({ status: 404, body: {} }) : orig1(url, o));
+  assert.equal((await run(w404WithCanary)).verdict, 'LEGACY_RETIRED_VERIFIED');
+
+  const w404NoCanary = world({ coach: {} });
+  const orig2 = w404NoCanary.fetch;
+  w404NoCanary.fetch = async (url, o) => (String(url).includes('/releaseControl/autonomousProgression') ? respond({ status: 404, body: {} }) : orig2(url, o));
+  assert.equal((await run(w404NoCanary)).verdict, 'LEGACY_RETIRED_VERIFIED');
+
+  // 2. 404 on releaseControl with enabled coach canary still blocks
+  const w404EnabledCanary = world({ coach: { autoApplyCanary: { enabled: true, clientIds: [UID] } } });
+  const orig3 = w404EnabledCanary.fetch;
+  w404EnabledCanary.fetch = async (url, o) => (String(url).includes('/releaseControl/autonomousProgression') ? respond({ status: 404, body: {} }) : orig3(url, o));
+  await blocked(w404EnabledCanary, /COACH_CANARY_NOT_DISABLED/);
+
+  // 3. Exact which + http_status diagnostics when Firestore returns 403
+  for (const [subpath, expectedWhich] of [
+    ['/clients/' + UID, 'client'],
+    ['/releaseControl/autonomousProgression', 'release'],
+    ['/coaches/' + COACH, 'coach'],
+  ]) {
+    const w = world();
+    const orig = w.fetch;
+    w.fetch = async (url, o) => (String(url).includes('firestore') && String(url).includes(subpath) ? respond({ status: 403, body: {} }) : orig(url, o));
+    const r = await blocked(w, /FIRESTORE_READ_UNAVAILABLE/);
+    assert.equal(r.which, expectedWhich);
+    assert.equal(r.http_status, 403);
+  }
+
+  // 4. Reconciled prior blocked run 43360451208 is allowed; any unreconciled failed retirement run blocks
+  const wReconciled = world({
+    history: [{ id: 43360451208, path: '.github/workflows/vdsen-retire-legacy-deployment.yml', conclusion: 'failure' }],
+  });
+  assert.equal((await run(wReconciled)).verdict, 'LEGACY_RETIRED_VERIFIED');
+
+  const wUnreconciled = world({
+    history: [{ id: 43399999999, path: '.github/workflows/vdsen-retire-legacy-deployment.yml', conclusion: 'failure' }],
+  });
+  await blocked(wUnreconciled, /PRIOR_RETIREMENT_FAILED_UNRECONCILED/);
+});

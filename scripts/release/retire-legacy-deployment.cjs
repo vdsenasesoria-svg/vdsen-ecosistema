@@ -31,6 +31,7 @@ const CANONICAL_REPOSITORY = 'vdsenasesoria-svg/vdsen-ecosistema';
 const CANONICAL_REF = 'refs/heads/codex/client-app-next';
 const AYRTON_UID = 'z82EDPvsCaabfMN3eGAP3rpxeMt1';
 const RETIRE_WORKFLOW = 'vdsen-retire-legacy-deployment.yml';
+const RECONCILED_PRIOR_BLOCKED_RUNS = Object.freeze(['43360451208']);
 const PRODUCTION_WORKFLOWS = Object.freeze(['vdsen-retire-legacy-deployment.yml', 'vdsen-release-prod.yml', 'vdsen-app-release-prod.yml',
   'vdsen-ayrton-runtime.yml', 'vdsen-rollback.yml', 'vdsen-numeric-pilot.yml']);
 const VERCEL_API = 'https://api.vercel.com';
@@ -116,30 +117,42 @@ async function readConcurrency(ctx) {
   const prior = await listRuns(ctx, '/actions/workflows/' + RETIRE_WORKFLOW + '/runs?per_page=100');
   if (!prior) return block('RETIREMENT_HISTORY_UNAVAILABLE');
   if (prior.some((r) => String(r.id) !== self && ['cancelled', 'timed_out', 'startup_failure', 'action_required'].includes(r.conclusion))) return block('PRIOR_RETIREMENT_UNCERTAIN');
+  if (prior.some((r) => String(r.id) !== self && r.conclusion === 'failure' && !RECONCILED_PRIOR_BLOCKED_RUNS.includes(String(r.id)))) return block('PRIOR_RETIREMENT_FAILED_UNRECONCILED');
   return { ok: true };
 }
 
 async function readFences(ctx, now) {
-  if (!ctx.googleToken) return block('FIRESTORE_READ_UNAVAILABLE');
+  if (!ctx.googleToken) return block('FIRESTORE_READ_UNAVAILABLE', { which: 'credential', http_status: 'MISSING_TOKEN' });
   try { P.exactUid(AYRTON_UID); } catch (e) { return block('AYRTON_UID_CONTRACT_BROKEN'); }
   const h = { Authorization: 'Bearer ' + ctx.googleToken };
-  const doc = async (p) => {
+  const doc = async (p, allow404 = false) => {
     const r = await get(FIRESTORE_DOCS + p, h, ctx.fetch);
-    if (!r.ok || !isObj(r.data.fields) || typeof r.data.updateTime !== 'string') return null;
-    return { fields: C.decDoc(r.data), updateTime: r.data.updateTime };
+    if (allow404 && r.status === 404) return { ok: true, status: 404, missing: true, fields: null, updateTime: 'ABSENT_404' };
+    if (!r.ok) return { ok: false, status: r.malformed ? 'MALFORMED_200' : r.status };
+    if (!isObj(r.data.fields) || typeof r.data.updateTime !== 'string') return { ok: false, status: 'MALFORMED_DOC' };
+    return { ok: true, status: 200, missing: false, fields: C.decDoc(r.data), updateTime: r.data.updateTime };
   };
   const client = await doc('clients/' + AYRTON_UID);
-  if (!client || typeof client.fields.coachId !== 'string' || !/^[A-Za-z0-9]{20,40}$/.test(client.fields.coachId)) return block('FIRESTORE_READ_UNAVAILABLE', { which: 'client' });
-  const release = await doc(C.RELEASE_PATH);
+  if (!client.ok) return block('FIRESTORE_READ_UNAVAILABLE', { which: 'client', http_status: client.status });
+  if (typeof client.fields.coachId !== 'string' || !/^[A-Za-z0-9]{20,40}$/.test(client.fields.coachId)) return block('FIRESTORE_READ_UNAVAILABLE', { which: 'client', http_status: 'INVALID_COACH_ID' });
+  const release = await doc(C.RELEASE_PATH, true);
+  if (!release.ok) return block('FIRESTORE_READ_UNAVAILABLE', { which: 'release', http_status: release.status });
   const coach = await doc('coaches/' + client.fields.coachId);
-  if (!release || !coach) return block('FIRESTORE_READ_UNAVAILABLE', { which: release ? 'coach' : 'release' });
+  if (!coach.ok) return block('FIRESTORE_READ_UNAVAILABLE', { which: 'coach', http_status: coach.status });
   const canary = coach.fields.autoApplyCanary;
   const only = (x) => isObj(x) && Array.isArray(x.clientIds) && x.clientIds.length === 1 && x.clientIds[0] === AYRTON_UID;
-  if (release.fields.enabled !== false) return block('RELEASE_FENCE_NOT_DISABLED');
-  if (!isObj(canary) || canary.enabled !== false) return block('COACH_CANARY_NOT_DISABLED');
-  const exp = Date.parse(release.fields.expiresAt);
-  if (typeof release.fields.expiresAt !== 'string' || !Number.isFinite(exp) || exp > now) return block('RELEASE_WINDOW_STILL_VALID_OR_UNREADABLE');
-  if (!only(release.fields) || !only(canary)) return block('FENCE_SCOPE_NOT_AYRTON_ONLY');
+  if (!release.missing) {
+    if (release.fields.enabled !== false) return block('RELEASE_FENCE_NOT_DISABLED');
+    const exp = Date.parse(release.fields.expiresAt);
+    if (typeof release.fields.expiresAt !== 'string' || !Number.isFinite(exp) || exp > now) return block('RELEASE_WINDOW_STILL_VALID_OR_UNREADABLE');
+    if (!only(release.fields)) return block('FENCE_SCOPE_NOT_AYRTON_ONLY');
+  }
+  if (canary === undefined || canary === null) {
+    if (!release.missing) return block('COACH_CANARY_NOT_DISABLED');
+  } else {
+    if (!isObj(canary) || canary.enabled !== false) return block('COACH_CANARY_NOT_DISABLED');
+    if (!only(canary)) return block('FENCE_SCOPE_NOT_AYRTON_ONLY');
+  }
   return { ok: true, versions: { release: release.updateTime, coach: coach.updateTime } };
 }
 
@@ -205,7 +218,7 @@ async function snapshot(ctx) {
 // Takes the snapshot twice; the second one is taken immediately before the DELETE and must match the first exactly.
 async function preflight(ctx) {
   const first = await snapshot(ctx); if (!first.ok) return first;
-  const second = await snapshot(ctx); if (!second.ok) return block('RECHECK_' + second.reason);
+  const second = await snapshot(ctx); if (!second.ok) return block('RECHECK_' + second.reason, { which: second.which, http_status: second.http_status });
   if (JSON.stringify(first.fingerprint) !== JSON.stringify(second.fingerprint)) return block('STATE_CHANGED_BEFORE_DELETE');
   return { ok: true, fingerprint: second.fingerprint };
 }
@@ -240,7 +253,12 @@ async function retireLegacyDeployment(s, opts = {}) {
   const ctx = { s, env: opts.env || process.env, fetch: opts.fetch || fetch, now: opts.now || Date.now,
     vercelToken: opts.vercelToken, googleToken: opts.googleToken, githubToken: opts.githubToken };
   const pre = await preflight(ctx);
-  if (!pre.ok) return { verdict: 'BLOCKED', reason: pre.reason, target: LEGACY_ARMED_DEPLOYMENT };
+  if (!pre.ok) {
+    const out = { verdict: 'BLOCKED', reason: pre.reason, target: LEGACY_ARMED_DEPLOYMENT };
+    if (pre.which !== undefined) out.which = pre.which;
+    if (pre.http_status !== undefined) out.http_status = pre.http_status;
+    return out;
+  }
   const del = await executeSingleDelete(ctx); // exactly one; never retried
   const post = await verifyPostRetirement(ctx);
   if (del.clean && post.verified) return { verdict: 'LEGACY_RETIRED_VERIFIED', target: LEGACY_ARMED_DEPLOYMENT, delete_status: del.status, post_verification: post };
@@ -251,6 +269,8 @@ async function main() {
   if (process.env.CONFIRM_DEPLOYMENT_ID !== LEGACY_ARMED_DEPLOYMENT) { console.error('ERROR: CONFIRM_DEPLOYMENT_ID must match exactly ' + LEGACY_ARMED_DEPLOYMENT); process.exit(1); }
   const result = await retireLegacyDeployment(state(), { vercelToken: process.env.VERCEL_TOKEN, googleToken: process.env.GOOGLE_ACCESS_TOKEN, githubToken: process.env.GITHUB_TOKEN });
   const lines = ['## Legacy armed deployment controlled retirement', '', '| Item | Value |', '|---|---|', '| Target | `' + result.target + '` |', '| Verdict | **' + result.verdict + '** |', '| Reason | ' + (result.reason || 'OK') + ' |'];
+  if (result.which !== undefined) lines.push('| Diagnostic source | `' + result.which + '` |');
+  if (result.http_status !== undefined) lines.push('| Diagnostic status | `' + result.http_status + '` |');
   if (result.post_verification) {
     const p = result.post_verification;
     lines.push('', '| Post check | HTTP | Valid |', '|---|---|---|', '| production (before) | ' + p.production_before.status + ' | ' + p.production_before.valid + ' |', '| rollback OFF | ' + p.rollback.status + ' | ' + p.rollback.valid + ' |',
@@ -265,5 +285,5 @@ async function main() {
 
 if (require.main === module) main().catch((e) => { console.error('FATAL_RETIREMENT_ERROR: ' + (e && e.message ? e.message : String(e))); process.exit(3); });
 
-module.exports = { LEGACY_ARMED_DEPLOYMENT, PROTECTED_PROD_DEPLOYMENT, PROTECTED_ROLLBACK_DEPLOYMENT, EXPECTED_PROJECT, EXPECTED_TEAM, CANONICAL_REF, AYRTON_UID,
+module.exports = { LEGACY_ARMED_DEPLOYMENT, PROTECTED_PROD_DEPLOYMENT, PROTECTED_ROLLBACK_DEPLOYMENT, EXPECTED_PROJECT, EXPECTED_TEAM, CANONICAL_REF, AYRTON_UID, RECONCILED_PRIOR_BLOCKED_RUNS,
   validateProduction, validateRollback, snapshot, preflight, executeSingleDelete, verifyPostRetirement, retireLegacyDeployment };
