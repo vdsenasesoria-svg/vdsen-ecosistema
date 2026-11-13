@@ -3,11 +3,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { assertAuthorizedMainSha, REVIEWED_MAIN_SHAS } = require('../scripts/pilot/ayrton-runtime.cjs');
 
-test('T776-M1: current real main SHA (post-PR171) and historical baseline are authorized', () => {
+test('T776-M1: current real main SHA (post-PR179 & post-PR171) and historical baseline are authorized', () => {
+  const postPr179Main = '5f25b5b9a3c45b425bad4d8eadd145cf7423aec7';
   const currentMain = 'eee34ea6442381ef7af086d08f149445f347efb6';
   const historicalMain = 'f6596ba5207dc158b8a9b01483cd0fe0ebeb274c';
+  assert.equal(assertAuthorizedMainSha(postPr179Main), postPr179Main);
   assert.equal(assertAuthorizedMainSha(currentMain), currentMain);
   assert.equal(assertAuthorizedMainSha(historicalMain), historicalMain);
+  assert.ok(REVIEWED_MAIN_SHAS.includes(postPr179Main));
   assert.ok(REVIEWED_MAIN_SHAS.includes(currentMain));
   assert.ok(REVIEWED_MAIN_SHAS.includes(historicalMain));
 });

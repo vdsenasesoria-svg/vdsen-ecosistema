@@ -10,6 +10,7 @@ const LEGACY_T671_SHA = 'a8cf462c78c4bd795cc9f485a82f64429c179f00';
 const T671 = OFF_BASELINE_SHA;
 const FILE = 'release-output/ayrton-runtime.json';
 const REVIEWED_MAIN_SHAS = [
+  '5f25b5b9a3c45b425bad4d8eadd145cf7423aec7', // Post-PR179 merge: alias restore & legacy retirement workflow registration (T786)
   'eee34ea6442381ef7af086d08f149445f347efb6', // Post-PR171 merge: Ayrton pilot runtime workflow registration (T776)
   'f6596ba5207dc158b8a9b01483cd0fe0ebeb274c', // Pinned initial main baseline
 ];
@@ -364,7 +365,15 @@ function adapters(s) {
     current: () => A.currentApp(s),
     validateSource: async sha => {
       git('merge-base', '--is-ancestor', sha, 'HEAD');
-      git('diff', '--exit-code', sha, 'HEAD', '--', 'api', ...require('../release/deployed-product.cjs').SERVED, 'package.json', 'package-lock.json');
+      const dp = require('../release/deployed-product.cjs');
+      dp.verify(sha, dp.MANIFEST);
+      git('diff', '--exit-code', sha, 'HEAD', '--', 'api',
+        'assets/progression-application-consumer.js',
+        'assets/progression-auto-apply-shadow.js',
+        'assets/progression-effective-prescription.js',
+        'assets/progression-equipment-resolver.js',
+        'assets/progression-magnitude-policy.js',
+        'firestore.rules', 'firestore.indexes.json', 'package.json', 'package-lock.json');
       G.assertContractCoverage(G.discoverRuntimeEnvNames(sha, git));
       assert.ok(git('show', sha + ':api/autonomous-progression-trigger.js').includes('vdsen-progression-runtime-v1'), 'PROBE_NOT_IN_RUNTIME');
       const main = git('ls-remote', 'origin', 'refs/heads/main').split(/\s/)[0];
@@ -402,14 +411,21 @@ function adapters(s) {
       return G.evaluateProductionEnv(r.envs, { project: P.PROJECT, team: P.TEAM });
     },
     assertNoPriorOperation: async id => {
+      const releaseCompletedMs = s.app_release && s.app_release.completed_at ? Date.parse(s.app_release.completed_at) : NaN;
+      const minTimestampMs = Number.isFinite(releaseCompletedMs) ? releaseCompletedMs - 60000 : NaN;
       let until = null;
       const allDeployments = [];
-      for (let page = 0; page < 10; page++) {
-        const query = '/v6/deployments?projectId=' + P.PROJECT + '&limit=100' + (until ? '&until=' + until : '');
+      for (let page = 0; page < 20; page++) {
+        const query = '/v7/deployments?projectId=' + P.PROJECT + '&limit=100' + (until ? '&until=' + until : '');
         const r = await vget(query);
         assert.ok(Array.isArray(r.deployments), 'MALFORMED_VERCEL_DEPLOYMENTS_RESPONSE');
         allDeployments.push(...r.deployments);
-        if (!r.pagination || !r.pagination.next) {
+        let oldestInPage = Infinity;
+        for (const d of r.deployments) {
+          const dCreated = typeof d.created === 'number' ? d.created : Date.parse(d.createdAt || d.created);
+          if (Number.isFinite(dCreated) && dCreated < oldestInPage) oldestInPage = dCreated;
+        }
+        if (!r.pagination || !r.pagination.next || (Number.isFinite(minTimestampMs) && oldestInPage < minTimestampMs)) {
           until = null;
           break;
         }
