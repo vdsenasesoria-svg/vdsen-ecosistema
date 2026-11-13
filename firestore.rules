@@ -82,6 +82,39 @@ service cloud.firestore {
       allow update: if request.auth != null && request.auth.uid == clientId
         && request.resource.data.diff(resource.data).affectedKeys()
            .hasOnly(['phone', 'phoneConfirmedAt', 'phoneSkippedAt']);
+      // T788: periodic client check-ins (independent of fichas_onboarding).
+      // Client writes only own check-in with server timestamp and initial status 'sent';
+      // Owner coach can only transition review metadata and cannot alter client-declared fields.
+      match /checkins/{checkinId} {
+        allow read: if isSelfOrOwnerCoach(clientId);
+        allow create: if request.auth != null && request.auth.uid == clientId
+          && request.resource.data.id == checkinId
+          && request.resource.data.clientId == clientId
+          && request.resource.data.status == 'sent'
+          && request.resource.data.submittedAt == request.time;
+        allow update: if ownsClient(clientId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewedAt', 'reviewedByCoachId', 'coachNote'])
+          && request.resource.data.status in ['received', 'reviewed']
+          && request.resource.data.reviewedByCoachId == request.auth.uid;
+      }
+      // T788: Coach requests for periodic check-ins.
+      match /checkin_requests/{requestId} {
+        allow read: if isSelfOrOwnerCoach(clientId);
+        allow create: if ownsClient(clientId)
+          && request.resource.data.id == requestId
+          && request.resource.data.clientId == clientId
+          && request.resource.data.coachId == request.auth.uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.requestedAt == request.time;
+        allow update: if (request.auth != null && request.auth.uid == clientId
+            && resource.data.status == 'pending'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'checkinId', 'fulfilledAt'])
+            && request.resource.data.status == 'sent'
+            && request.resource.data.fulfilledAt == request.time)
+          || (ownsClient(clientId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewedAt'])
+            && request.resource.data.status in ['received', 'reviewed']);
+      }
       // T603: COACH DECISION RECORD. The instant a Coach decision takes effect is the DATABASE's, not the Coach device clock: one immutable document per intervention id
       // (create-only, owner Coach only, `at` must equal request.time, never updated or deleted). `coachInterventions[].decidedAt` stays as display text; trusted evaluation
       // uses this record whenever it exists.
@@ -221,10 +254,12 @@ service cloud.firestore {
     }
     match /fichas_publicas/{docId} {
       allow create: if request.resource.data.coachId is string
+                    && request.resource.data.coachId.size() > 0
                     && request.resource.data.nombre is string
                     && request.resource.data.nombre.size() > 0;
-      // T538: a prospect form is readable / manageable only by the coach it was sent to.
-      allow read, update, delete: if isCoachUser() && resource.data.get('coachId', '') == request.auth.uid;
+      // T538 / T788: a prospect form is readable / manageable only by the coach it was sent to.
+      // Direct field equality (resource.data.coachId == request.auth.uid) is required for Firestore list queries.
+      allow read, update, delete: if isCoachUser() && resource.data.coachId == request.auth.uid;
     }
     // Backups de planes anteriores — acceso a cualquier coach autenticado
     match /plans_backup/{backupId} {
