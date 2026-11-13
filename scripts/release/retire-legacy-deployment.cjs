@@ -31,7 +31,7 @@ const CANONICAL_REPOSITORY = 'vdsenasesoria-svg/vdsen-ecosistema';
 const CANONICAL_REF = 'refs/heads/codex/client-app-next';
 const AYRTON_UID = 'z82EDPvsCaabfMN3eGAP3rpxeMt1';
 const RETIRE_WORKFLOW = 'vdsen-retire-legacy-deployment.yml';
-const RECONCILED_PRIOR_BLOCKED_RUNS = Object.freeze(['43360451208']);
+const RECONCILED_PRIOR_BLOCKED_RUNS = Object.freeze(['43360451208', '43363910678']);
 const PRODUCTION_WORKFLOWS = Object.freeze(['vdsen-retire-legacy-deployment.yml', 'vdsen-release-prod.yml', 'vdsen-app-release-prod.yml',
   'vdsen-ayrton-runtime.yml', 'vdsen-rollback.yml', 'vdsen-numeric-pilot.yml']);
 const VERCEL_API = 'https://api.vercel.com';

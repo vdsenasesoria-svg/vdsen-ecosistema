@@ -301,9 +301,12 @@ test('T789 Firestore contract & diagnostics: 404 on releaseControl is closed fen
     assert.equal(r.http_status, 403);
   }
 
-  // 4. Reconciled prior blocked run 43360451208 is allowed; any unreconciled failed retirement run blocks
+  // 4. Reconciled prior blocked runs 43360451208 and 43363910678 are allowed; any unreconciled failed retirement run blocks
   const wReconciled = world({
-    history: [{ id: 43360451208, path: '.github/workflows/vdsen-retire-legacy-deployment.yml', conclusion: 'failure' }],
+    history: [
+      { id: 43360451208, path: '.github/workflows/vdsen-retire-legacy-deployment.yml', conclusion: 'failure' },
+      { id: 43363910678, path: '.github/workflows/vdsen-retire-legacy-deployment.yml', conclusion: 'failure' },
+    ],
   });
   assert.equal((await run(wReconciled)).verdict, 'LEGACY_RETIRED_VERIFIED');
 
