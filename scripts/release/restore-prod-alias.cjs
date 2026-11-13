@@ -22,6 +22,10 @@ const EXPECTED_TEAM = 'team_VZc5H7Q1DBIJ3g0mwrSBz1o8';
 const EXPECTED_OFF_BASELINE = 'dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8';
 const EXPECTED_OFF_SHA = '3fc264e23d67a8ecb1611a6c8af04ad739f422da';
 const EXPECTED_ORIGIN = 'https://vdsen-ecosistema.vercel.app';
+const ACCREDITED_MAIN_DRIFT_DEPLOYMENT = 'dpl_4Kw3Ts9Ym9XhEFruckdENDhDi1u1';
+const ACCREDITED_MAIN_DRIFT_SHA = 'eee34ea6442381ef7af086d08f149445f347efb6';
+const EXPECTED_GH_ORG = 'vdsenasesoria-svg';
+const EXPECTED_GH_REPO = 'vdsen-ecosistema';
 
 function validateStateManifest(s) {
   assert.ok(s && typeof s === 'object', 'STATE_MANIFEST_MISSING');
@@ -56,23 +60,39 @@ function assertTargetEligible(targetDep, s) {
   };
 }
 
-function assertCurrentIsAccidentalMainDrift(currentDep, expectedCurrentId, mainSha) {
+function assertCurrentIsAccidentalMainDrift(currentDep, expectedCurrentId, targetMeta, s) {
   assert.ok(currentDep && typeof currentDep === 'object', 'CURRENT_DEPLOYMENT_MISSING');
   const id = currentDep.id || currentDep.uid;
-  assert.equal(id, expectedCurrentId, 'CURRENT_DEPLOYMENT_ID_MISMATCH');
+  assert.equal(expectedCurrentId, ACCREDITED_MAIN_DRIFT_DEPLOYMENT, 'CURRENT_DEPLOYMENT_NOT_ACCREDITED_DRIFT');
+  assert.equal(id, ACCREDITED_MAIN_DRIFT_DEPLOYMENT, 'CURRENT_DEPLOYMENT_ID_MISMATCH');
   assert.equal(currentDep.projectId, EXPECTED_PROJECT, 'CURRENT_PROJECT_MISMATCH');
   assert.equal(currentDep.teamId || currentDep.ownerId, EXPECTED_TEAM, 'CURRENT_TEAM_MISMATCH');
+  assert.equal(currentDep.readyState, 'READY', 'CURRENT_DEPLOYMENT_NOT_READY');
+  assert.equal(currentDep.target, 'production', 'CURRENT_DEPLOYMENT_NOT_PRODUCTION');
   const meta = currentDep.meta || {};
   assert.equal(meta.githubCommitRef, 'main', 'REFUSING_OVERWRITE_NON_MAIN_DEPLOYMENT');
-  assert.match(String(mainSha || ''), /^[0-9a-f]{40}$/, 'MAIN_SHA_INVALID');
-  assert.equal(meta.githubCommitSha, mainSha, 'REFUSING_OVERWRITE_UNKNOWN_COMMIT');
+  assert.equal(meta.githubCommitSha, ACCREDITED_MAIN_DRIFT_SHA, 'REFUSING_OVERWRITE_UNACCREDITED_MAIN_SHA');
+  if (meta.githubCommitOrg !== undefined) assert.equal(meta.githubCommitOrg, EXPECTED_GH_ORG, 'CURRENT_ORG_MISMATCH');
+  if (meta.githubCommitRepo !== undefined) assert.equal(meta.githubCommitRepo, EXPECTED_GH_REPO, 'CURRENT_REPO_MISMATCH');
+
+  const currentCreated = Number(currentDep.createdAt || currentDep.created);
+  const targetCreated = Number(targetMeta && targetMeta.createdAt);
+  assert.ok(Number.isFinite(currentCreated) && Number.isFinite(targetCreated), 'DEPLOYMENT_TIMESTAMPS_MISSING');
+  assert.ok(currentCreated > targetCreated, 'DRIFT_MUST_POSTDATE_OFF_BASELINE');
+  if (s && s.app_release && s.app_release.completed_at) {
+    const offCompleted = Date.parse(s.app_release.completed_at);
+    if (Number.isFinite(offCompleted)) {
+      assert.ok(currentCreated > offCompleted, 'DRIFT_MUST_POSTDATE_OFF_RELEASE');
+    }
+  }
+
   return {
     id,
     githubCommitSha: meta.githubCommitSha,
     githubCommitRef: meta.githubCommitRef,
-    readyState: currentDep.readyState || null,
-    target: currentDep.target || null,
-    createdAt: currentDep.createdAt || currentDep.created || null,
+    readyState: currentDep.readyState,
+    target: currentDep.target,
+    createdAt: currentCreated,
   };
 }
 
@@ -92,7 +112,6 @@ async function restoreProdAlias(opts = {}) {
   const revertAppFn = opts.revertApp || appLive.revertApp;
   const verifyBytesFn = opts.verifyPublicBytes || ((st, sha, paths) => appLive.verifyPublicBytes(st, sha, paths));
   const httpSurfaceFn = opts.httpServedSurface || appLive.httpServedSurface;
-  const getMainShaFn = opts.getMainSha || (() => git('ls-remote', 'origin', 'refs/heads/main').trim().split(/\s/)[0]);
   const writeResultFn = opts.writeResult || ((out) => {
     fs.mkdirSync('release-output', { recursive: true });
     fs.writeFileSync('release-output/alias-restore-result.json', JSON.stringify(out, null, 2) + '\n');
@@ -102,12 +121,11 @@ async function restoreProdAlias(opts = {}) {
   const liveBefore1 = await currentAppFn(s);
   assert.equal(liveBefore1, expectedCurrentId, 'LIVE_ALIAS_MISMATCH_BEFORE');
 
-  const mainSha = getMainShaFn();
-  const currentDep = await deploymentFn(s, expectedCurrentId);
-  const currentMeta = assertCurrentIsAccidentalMainDrift(currentDep, expectedCurrentId, mainSha);
-
   const targetDep = await deploymentFn(s, targetId);
   const targetMeta = assertTargetEligible(targetDep, s);
+
+  const currentDep = await deploymentFn(s, expectedCurrentId);
+  const currentMeta = assertCurrentIsAccidentalMainDrift(currentDep, expectedCurrentId, targetMeta, s);
 
   // 2. Live read #2 immediately before mutating (reject concurrent change)
   const liveBefore2 = await currentAppFn(s);

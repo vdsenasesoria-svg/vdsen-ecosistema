@@ -6,12 +6,13 @@ const fs = require('node:fs');
 const R = require('../scripts/release/retire-legacy-deployment.cjs');
 const { LEGACY_ARMED_DEPLOYMENT: LEGACY, PROTECTED_PROD_DEPLOYMENT: PROD, PROTECTED_ROLLBACK_DEPLOYMENT: ROLLBACK, EXPECTED_PROJECT: PROJECT, EXPECTED_TEAM: TEAM, AYRTON_UID: UID } = R;
 
-const RUNTIME_SHA = 'ec3b30f99d095c90fc8e1d54cf05366a0427205a';
-const ROLLBACK_SHA = '353df8c12982cad7f4dc89b3622a6b63b3127b52';
+const RUNTIME_SHA = '3fc264e23d67a8ecb1611a6c8af04ad739f422da';
+const ROLLBACK_SHA = 'ec3b30f99d095c90fc8e1d54cf05366a0427205a';
 const SECRET = 'SECRET_VERCEL_TOKEN_VALUE', GSECRET = 'SECRET_GOOGLE_TOKEN_VALUE', HSECRET = 'SECRET_GITHUB_TOKEN_VALUE';
 const NOW = Date.parse('2026-11-10T03:00:00Z');
 const STATE = Object.freeze({
   production_deployment: PROD, rollback_deployment: ROLLBACK, production_project: PROJECT, vercel_team: TEAM, runtime_sha: RUNTIME_SHA, rollback_runtime_sha: ROLLBACK_SHA,
+  numeric_apply_enabled: false,
   production_origin: 'https://vdsen-ecosistema.vercel.app',
   app_release: { safe_recovery_deployment: ROLLBACK, safe_recovery_runtime_sha: ROLLBACK_SHA },
 });
@@ -224,7 +225,7 @@ test('T733 post verification: mismatching or failing identity after DELETE is UN
 });
 
 test('T733 safety: constants are immutable, the DELETE target is fixed, no credential is ever echoed', async () => {
-  assert.equal(LEGACY, 'dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K'); assert.equal(PROD, 'dpl_4CxS8VeoTwWFEJa37tqiHRGGuj4H'); assert.equal(ROLLBACK, 'dpl_AuykDuRaXejkbUzFNjFz6XocNPZt');
+  assert.equal(LEGACY, 'dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K'); assert.equal(PROD, 'dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8'); assert.equal(ROLLBACK, 'dpl_4CxS8VeoTwWFEJa37tqiHRGGuj4H');
   assert.equal(PROJECT, 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN'); assert.equal(TEAM, 'team_VZc5H7Q1DBIJ3g0mwrSBz1o8');
   assert.equal(R.executeSingleDelete.length, 1, 'takes only a context: no caller-supplied deployment ID');
   for (const w of [world(), world({ deleteResponse: { status: 403, body: {} } }), world({ prodAlias: {} })]) {
@@ -250,4 +251,20 @@ test('T733 workflow: canonical-only, non-cancelling shared lock, no reruns, read
   assert.ok(code.includes('dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K') && !code.includes(PROD) && !code.includes(ROLLBACK));
   assert.ok(!/echo[^\n]*(VERCEL_TOKEN|GOOGLE_ACCESS_TOKEN|GITHUB_TOKEN|secrets\.)/.test(code));
   assert.ok(!/\$\{\{\s*inputs\.[^}]*\}\}/.test(code.split('\n').filter((l) => /^\s+run:/.test(l)).join('\n')), 'inputs never interpolated into shell');
+});
+
+test('T786 legacy auto-alias exception: allows only vdsen-ecosistema-vdsenasesoria-svgs-projects.vercel.app and rejects any other alias', async () => {
+  const allowedW = world({
+    legacyAliases: { aliases: [{ alias: 'vdsen-ecosistema-vdsenasesoria-svgs-projects.vercel.app' }] },
+    projectAliases: [{ aliases: [{ alias: 'vdsen-ecosistema.vercel.app', deploymentId: PROD }, { alias: 'vdsen-ecosistema-vdsenasesoria-svgs-projects.vercel.app', deploymentId: LEGACY }], pagination: { next: null } }],
+  });
+  const okRes = await run(allowedW);
+  assert.equal(okRes.verdict, 'LEGACY_RETIRED_VERIFIED');
+
+  const blockedW = world({
+    legacyAliases: { aliases: [{ alias: 'other-custom.vercel.app' }] },
+  });
+  const badRes = await run(blockedW);
+  assert.equal(badRes.verdict, 'BLOCKED');
+  assert.equal(badRes.reason, 'LEGACY_HAS_ACTIVE_ALIAS');
 });
