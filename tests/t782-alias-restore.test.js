@@ -34,7 +34,7 @@ function sampleTargetDep(overrides = {}) {
     teamId: TEAM,
     readyState: 'READY',
     target: 'production',
-    createdAt: 1762909500000,
+    createdAt: 1794446152342,
     meta: { githubCommitSha: OFF_SHA, githubCommitRef: 'codex/client-app-next' },
     ...overrides,
   };
@@ -47,13 +47,18 @@ function sampleDriftDep(overrides = {}) {
     teamId: TEAM,
     readyState: 'READY',
     target: 'production',
-    createdAt: 1762921142000,
-    meta: { githubCommitSha: MAIN_SHA, githubCommitRef: 'main' },
+    createdAt: 1794457145671,
+    meta: {
+      githubCommitSha: MAIN_SHA,
+      githubCommitRef: 'main',
+      githubCommitOrg: 'vdsenasesoria-svg',
+      githubCommitRepo: 'vdsen-ecosistema',
+    },
     ...overrides,
   };
 }
 
-test('restoreProdAlias succeeds on accidental main drift and verifies smoke', async () => {
+test('restoreProdAlias succeeds on accredited historical main drift even after main HEAD advances', async () => {
   let aliasState = DRIFT_ID;
   let revertCalledWith = null;
   let written = null;
@@ -65,7 +70,6 @@ test('restoreProdAlias succeeds on accidental main drift and verifies smoke', as
       EXPECTED_CURRENT_DEPLOYMENT: DRIFT_ID,
       GITHUB_RUN_ID: '99999',
     },
-    getMainSha: () => MAIN_SHA,
     currentApp: async () => aliasState,
     deployment: async (_s, id) => (id === DRIFT_ID ? sampleDriftDep() : sampleTargetDep()),
     revertApp: async (_s, id) => { revertCalledWith = id; aliasState = id; return id; },
@@ -97,7 +101,6 @@ test('restoreProdAlias rejects concurrent alias change before mutating', async (
         TARGET_DEPLOYMENT: BASELINE_ID,
         EXPECTED_CURRENT_DEPLOYMENT: DRIFT_ID,
       },
-      getMainSha: () => MAIN_SHA,
       currentApp: async () => (++calls === 1 ? DRIFT_ID : 'dpl_OtherConcurrent123'),
       deployment: async (_s, id) => (id === DRIFT_ID ? sampleDriftDep() : sampleTargetDep()),
       revertApp: async () => { mutated = true; },
@@ -108,14 +111,35 @@ test('restoreProdAlias rejects concurrent alias change before mutating', async (
   assert.equal(mutated, false);
 });
 
-test('assertCurrentIsAccidentalMainDrift refuses overwriting non-main deployment', () => {
+test('assertCurrentIsAccidentalMainDrift rejects unknown deployment, wrong SHA, non-main ref, and invalid temporality', () => {
+  const targetMeta = { createdAt: 1794446152342 };
+  assert.throws(
+    () => assertCurrentIsAccidentalMainDrift(sampleDriftDep({ id: 'dpl_UnknownMain999' }), 'dpl_UnknownMain999', targetMeta),
+    /CURRENT_DEPLOYMENT_NOT_ACCREDITED_DRIFT/
+  );
+  assert.throws(
+    () => assertCurrentIsAccidentalMainDrift(
+      sampleDriftDep({ meta: { githubCommitSha: '5f25b5b9a3c45b425bad4d8eadd145cf7423aec7', githubCommitRef: 'main' } }),
+      DRIFT_ID,
+      targetMeta
+    ),
+    /REFUSING_OVERWRITE_UNACCREDITED_MAIN_SHA/
+  );
   assert.throws(
     () => assertCurrentIsAccidentalMainDrift(
       sampleDriftDep({ meta: { githubCommitSha: OFF_SHA, githubCommitRef: 'codex/client-app-next' } }),
       DRIFT_ID,
-      MAIN_SHA
+      targetMeta
     ),
     /REFUSING_OVERWRITE_NON_MAIN_DEPLOYMENT/
+  );
+  assert.throws(
+    () => assertCurrentIsAccidentalMainDrift(
+      sampleDriftDep({ createdAt: 1794446152000 }),
+      DRIFT_ID,
+      targetMeta
+    ),
+    /DRIFT_MUST_POSTDATE_OFF_BASELINE/
   );
 });
 

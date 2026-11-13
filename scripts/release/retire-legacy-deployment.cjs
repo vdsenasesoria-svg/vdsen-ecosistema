@@ -21,8 +21,10 @@ const P = require('../pilot/window-protocol.cjs');
 const C = require('../pilot/ayrton-canary.cjs');
 
 const LEGACY_ARMED_DEPLOYMENT = P.LEGACY_ARMED_DEPLOYMENT; // dpl_9w1SAJULqvH2HoDftuXNJmjPbv5K
-const PROTECTED_PROD_DEPLOYMENT = 'dpl_4CxS8VeoTwWFEJa37tqiHRGGuj4H';
-const PROTECTED_ROLLBACK_DEPLOYMENT = 'dpl_AuykDuRaXejkbUzFNjFz6XocNPZt';
+const PROTECTED_PROD_DEPLOYMENT = 'dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8';
+const PROTECTED_ROLLBACK_DEPLOYMENT = 'dpl_4CxS8VeoTwWFEJa37tqiHRGGuj4H';
+const EXPECTED_OFF_SHA = '3fc264e23d67a8ecb1611a6c8af04ad739f422da';
+const ALLOWED_LEGACY_AUTO_ALIAS = 'vdsen-ecosistema-vdsenasesoria-svgs-projects.vercel.app';
 const EXPECTED_PROJECT = 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN';
 const EXPECTED_TEAM = 'team_VZc5H7Q1DBIJ3g0mwrSBz1o8';
 const CANONICAL_REPOSITORY = 'vdsenasesoria-svg/vdsen-ecosistema';
@@ -153,19 +155,19 @@ async function readAliases(ctx) {
   if (a.projectId !== undefined && a.projectId !== s.production_project) return block('PROD_ALIAS_PROJECT_MISMATCH');
   if (aliasDep === LEGACY_ARMED_DEPLOYMENT) return block('LEGACY_IS_PRODUCTION_ALIAS_TARGET');
   if (aliasDep !== s.production_deployment) return block('PROD_ALIAS_TARGET_MISMATCH');
-  // Aliases attached to the legacy deployment itself.
+  // Aliases attached to the legacy deployment itself (only the verified non-production project auto-alias is permitted).
   const la = await vget(ctx, '/v2/deployments/' + encodeURIComponent(LEGACY_ARMED_DEPLOYMENT) + '/aliases');
   if (!la.ok) return block('LEGACY_ALIASES_READ_FAILED_' + la.status);
   if (!Array.isArray(la.data.aliases) || !la.data.aliases.every((x) => isObj(x) && typeof x.alias === 'string')) return block('LEGACY_ALIASES_MALFORMED');
-  if (la.data.aliases.length > 0) return block('LEGACY_HAS_ACTIVE_ALIAS');
-  // Every alias of the project: none may target the legacy deployment.
+  if (la.data.aliases.some((x) => x.alias !== ALLOWED_LEGACY_AUTO_ALIAS)) return block('LEGACY_HAS_ACTIVE_ALIAS');
+  // Every alias of the project: none may target the legacy deployment except the verified auto-alias.
   let until = null, seen = 0;
   for (let page = 0; page < MAX_ALIAS_PAGES; page++) {
     const r = await vget(ctx, '/v4/aliases?projectId=' + encodeURIComponent(s.production_project) + '&limit=' + ALIAS_PAGE_LIMIT + (until ? '&until=' + encodeURIComponent(until) : ''));
     if (!r.ok) return block('PROJECT_ALIASES_READ_FAILED_' + r.status);
     const list = r.data.aliases;
     if (!Array.isArray(list) || !list.every((x) => isObj(x) && typeof x.alias === 'string')) return block('PROJECT_ALIASES_MALFORMED');
-    if (list.some((x) => x.deploymentId === LEGACY_ARMED_DEPLOYMENT)) return block('LEGACY_HAS_ACTIVE_ALIAS');
+    if (list.some((x) => x.deploymentId === LEGACY_ARMED_DEPLOYMENT && x.alias !== ALLOWED_LEGACY_AUTO_ALIAS)) return block('LEGACY_HAS_ACTIVE_ALIAS');
     seen += list.length;
     const next = isObj(r.data.pagination) ? r.data.pagination.next : (list.length >= ALIAS_PAGE_LIMIT ? undefined : null);
     if (next === undefined) return block('PROJECT_ALIASES_PAGINATION_MALFORMED');
@@ -179,6 +181,7 @@ async function readAliases(ctx) {
 async function snapshot(ctx) {
   const s = ctx.s;
   if (s.production_deployment !== PROTECTED_PROD_DEPLOYMENT || s.rollback_deployment !== PROTECTED_ROLLBACK_DEPLOYMENT
+    || s.runtime_sha !== EXPECTED_OFF_SHA || s.numeric_apply_enabled !== false
     || s.production_project !== EXPECTED_PROJECT || s.vercel_team !== EXPECTED_TEAM) return block('MANIFEST_CONTRACT_MISMATCH');
   for (const t of [ctx.vercelToken, ctx.googleToken, ctx.githubToken]) if (!t) return block('MISSING_CREDENTIAL');
   const c = await readContext(ctx); if (!c.ok) return c;
