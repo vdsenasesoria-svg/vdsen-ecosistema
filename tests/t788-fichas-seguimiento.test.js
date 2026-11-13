@@ -84,9 +84,12 @@ test('T788.1 Prioridad 0: firestore.rules permite consulta tenant-scoped de fich
   // Contrato separado de revisión del Coach bajo clients/{clientId}/checkin_reviews/{reviewId}
   const revIdx = rulesSrc.indexOf('match /checkin_reviews/{reviewId}');
   assert.ok(revIdx !== -1, 'match /checkin_reviews/{reviewId} debe existir bajo clients/{clientId}');
-  const revBlock = rulesSrc.slice(revIdx, revIdx + 600);
+  const revBlock = rulesSrc.slice(revIdx, revIdx + 850);
   assert.match(revBlock, /allow read:\s*if isSelfOrOwnerCoach\(clientId\);/);
-  assert.match(revBlock, /allow create, update:\s*if ownsClient\(clientId\)/);
+  assert.match(revBlock, /allow create:\s*if ownsClient\(clientId\)/);
+  assert.doesNotMatch(revBlock, /allow update:/);
+  assert.match(revBlock, /reviewId == 'rev_' \+ request\.resource\.data\.checkinId/);
+  assert.match(revBlock, /exists\(\/databases\/\$\(database\)\/documents\/clients\/\$\(clientId\)\/checkins\/\$\(request\.resource\.data\.checkinId\)\)/);
   assert.match(revBlock, /request\.resource\.data\.status == 'reviewed'/);
   assert.match(rulesDocSrc, /Ruta de despliegue independiente/);
 });
@@ -194,6 +197,36 @@ test('T788.4 Prioridad 1: App Cliente incluye sección Mi seguimiento independie
   assert.match(logoutBody, /_seguimientoDraft = null;/);
 });
 
+test('T788.4b FE151: Cliente recibe solicitud e historial desde logs y descarta lectura de otra cuenta', async () => {
+  const loadBody = extractFn(clientSrc, 'async function loadClientSeguimiento()');
+  const ctx = {
+    window: {}, console, USER: { uid: 'cliente-a' },
+    _seguimientoHistory: [], _seguimientoRequests: [], _seguimientoDraft: null,
+    _segCliToMs: v => Number(v) || 0,
+    localStorage: { getItem: () => '1' },
+    FB: {
+      db: {}, collection: (...parts) => parts, doc: (...parts) => parts,
+      getDocs: async () => { throw Object.assign(new Error('FE151'), { code: 'permission-denied' }); },
+      getDoc: async () => ({ exists: () => true, data: () => ({
+        seguimientoItems: [{ id: 'chk-a', clientId: 'cliente-a', createdAtMs: 1 }],
+        seguimientoRequests: [{ id: 'req-a', clientId: 'cliente-a', status: 'pending', createdAtMs: 2 }]
+      }) })
+    }
+  };
+  vm.createContext(ctx);
+  vm.runInContext(loadBody, ctx);
+  await ctx.loadClientSeguimiento();
+  assert.equal(ctx._seguimientoHistory.length, 1);
+  assert.equal(ctx._seguimientoHistory[0].id, 'chk-a');
+  assert.equal(ctx._seguimientoRequests[0].id, 'req-a');
+
+  ctx._seguimientoHistory = [];
+  ctx._seguimientoRequests = [];
+  ctx.FB.getDoc = async () => { ctx.USER = { uid: 'cliente-b' }; return { exists: () => true, data: () => ({ seguimientoRequests: [{ id: 'req-a' }] }) }; };
+  await ctx.loadClientSeguimiento();
+  assert.equal(ctx._seguimientoRequests.length, 0);
+});
+
 test('T788.5 Prioridad 0, 2 y 3: App Coach distingue permission-denied de ficha inexistente, integra Seguimiento y persiste 4 contratos separados', () => {
   const showDetailBody = extractFn(coachSrc, 'async function showClientDetail(clientId, opts)');
   assert.match(showDetailBody, /ctab_seguimiento/);
@@ -202,9 +235,11 @@ test('T788.5 Prioridad 0, 2 y 3: App Coach distingue permission-denied de ficha 
   assert.match(showDetailBody, /_detailFichaError\s*=\s*\{/);
 
   const renderFichaBody = extractFn(coachSrc, 'function _renderClientTabFicha(cont)');
-  assert.match(renderFichaBody, /Error de permisos al consultar la ficha/);
+  assert.match(renderFichaBody, /Error al consultar la ficha/);
   assert.match(renderFichaBody, /no se interpreta como ficha inexistente/);
   assert.match(renderFichaBody, /_retryDetailFichaLoad/);
+  assert.match(renderFichaBody, /const fichaReadErr = _detailFichaError;/);
+  assert.match(showDetailBody, /catch\(_fErr\)\s*\{\s*_detailFichaError\s*=/);
 
   const loadIntakeBody = extractFn(coachSrc, 'async function loadIntakeForClient(clientId)');
   assert.match(loadIntakeBody, /ensureCoachDoc\(\)/);
@@ -217,6 +252,7 @@ test('T788.5 Prioridad 0, 2 y 3: App Coach distingue permission-denied de ficha 
   const reqFnBody = extractFn(coachSrc, 'async function requestClientSeguimiento(clientId)');
   assert.match(reqFnBody, /doc\(db, 'clients', clientId, 'checkin_requests', reqId\)/);
   assert.match(reqFnBody, /status:\s*'pending'/);
+  assert.match(reqFnBody, /_detailSeguimientoRequests \|\| \[\]\)\.some\(r => r && r\.status === 'pending'/);
 
   const revFnBody = extractFn(coachSrc, 'async function markSeguimientoReviewed(clientId, checkinId)');
   assert.match(revFnBody, /setDoc\(doc\(db, 'clients', clientId, 'checkin_reviews', reviewId\)/);

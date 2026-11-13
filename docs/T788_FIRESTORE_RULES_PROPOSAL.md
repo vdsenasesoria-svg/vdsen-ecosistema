@@ -84,12 +84,14 @@ match /checkin_requests/{requestId} {
 ```javascript
 match /checkin_reviews/{reviewId} {
   allow read: if isSelfOrOwnerCoach(clientId);
-  allow create, update: if ownsClient(clientId)
+  allow create: if ownsClient(clientId)
     && request.resource.data.id == reviewId
+    && reviewId == 'rev_' + request.resource.data.checkinId
     && request.resource.data.clientId == clientId
     && request.resource.data.coachId == request.auth.uid
     && request.resource.data.status == 'reviewed'
-    && request.resource.data.reviewedAt == request.time;
+    && request.resource.data.reviewedAt == request.time
+    && exists(/databases/$(database)/documents/clients/$(clientId)/checkins/$(request.resource.data.checkinId));
 }
 ```
 

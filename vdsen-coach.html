@@ -12373,13 +12373,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         if (c.intake) _detailFichaData = _normalizeFichaDoc(c.intake, c);
       }
     } catch(_fErr) {
+      _detailFichaError = {
+        code: (_fErr && _fErr.code) || 'unknown',
+        message: (_fErr && _fErr.message) || 'No se pudo consultar la ficha.'
+      };
       if (c.intake) {
         _detailFichaData = _normalizeFichaDoc(c.intake, c);
-      } else {
-        _detailFichaError = {
-          code: (_fErr && _fErr.code) || 'permission-denied',
-          message: (_fErr && _fErr.message) || 'Missing or insufficient permissions.'
-        };
       }
     }
     if (_detailClientId !== clientId) return;  // T127-H
@@ -13002,10 +13001,10 @@ El esfuerzo no es negociable.
     const fichaData = ficha && ficha.data ? ficha.data : (ficha || null);
     const hasFicha  = Boolean((ficha && ficha.hasContent) || (fichaData && Object.keys(fichaData).some(k => k !== 'nombre' && k !== 'email' && k !== 'telefono' && fichaData[k] !== '' && fichaData[k] != null)));
     const d         = fichaData || {};
-    const fichaReadErr = (!hasFicha && _detailFichaError) ? _detailFichaError : null;
+    const fichaReadErr = _detailFichaError;
     const fichaStatus = fichaReadErr ? 'error' : (!hasFicha ? 'pendiente' : (ficha && ficha.status ? ficha.status : (ficha && ficha.updatedBy === 'client' ? 'enviada' : 'recibida')));
     const statusBadgeHtml = fichaStatus === 'error'
-      ? '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(255,68,68,.14);border:1px solid #FF4444;color:#FF4444;font-weight:700;letter-spacing:.06em;text-transform:uppercase">ERROR DE PERMISOS</span>'
+      ? '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(255,68,68,.14);border:1px solid #FF4444;color:#FF4444;font-weight:700;letter-spacing:.06em;text-transform:uppercase">ERROR DE LECTURA</span>'
       : (fichaStatus === 'enviada'
         ? '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(198,255,0,.14);border:1px solid #C6FF00;color:#C6FF00;font-weight:700;letter-spacing:.06em;text-transform:uppercase">ENVIADA POR CLIENTE</span>'
         : (fichaStatus === 'recibida' || fichaStatus === 'convertida'
@@ -13156,12 +13155,12 @@ El esfuerzo no es negociable.
           ${allSecs || '<div style="color:#555;font-size:12px;text-align:center;padding:8px">Sin campos completados todavía.</div>'}
         </div>`;
     } else if (fichaReadErr) {
-      const errCodeSafe = String(fichaReadErr.code || 'permission-denied').replace(/</g, '&lt;');
-      const errMsgSafe = String(fichaReadErr.message || 'Missing or insufficient permissions.').replace(/</g, '&lt;');
+      const errCodeSafe = String(fichaReadErr.code || 'unknown').replace(/</g, '&lt;');
+      const errMsgSafe = String(fichaReadErr.message || 'No se pudo consultar la ficha.').replace(/</g, '&lt;');
       mainContent = `
         <div style="background:rgba(255,68,68,.06);border:1px solid rgba(255,68,68,.35);border-radius:10px;padding:20px;margin-bottom:4px;text-align:center">
           <div style="font-size:26px;margin-bottom:8px">⚠️</div>
-          <div style="color:#FF6666;font-weight:700;font-size:13px;margin-bottom:6px">Error de permisos al consultar la ficha (${errCodeSafe})</div>
+          <div style="color:#FF6666;font-weight:700;font-size:13px;margin-bottom:6px">Error al consultar la ficha (${errCodeSafe})</div>
           <div style="color:#999;font-size:12px;line-height:1.6;margin-bottom:10px">${errMsgSafe}<br>Este fallo de acceso no se interpreta como ficha inexistente.</div>
           <button onclick="_retryDetailFichaLoad('${clientId}')" style="padding:7px 14px;border-radius:6px;border:1px solid #FF6666;background:rgba(255,68,68,.12);color:#FF8888;font-size:11px;font-weight:700;cursor:pointer">🔄 Reintentar lectura de ficha</button>
         </div>`;
@@ -13183,7 +13182,7 @@ El esfuerzo no es negociable.
             <div style="font-size:13px;font-weight:700;color:#F4F4F0">${(d.nombre || (_detailClientData && _detailClientData.displayName) || 'Ficha').replace(/</g,'&lt;')}</div>
             ${statusBadgeHtml}
           </div>
-          ${updatedAt ? `<div style="font-size:10px;color:#555;margin-top:2px">Actualizado ${updatedAt}${ficha && ficha.updatedBy === 'client' ? ' · enviada por cliente' : ''}</div>` : (fichaReadErr ? `<div style="font-size:10px;color:#FF6666;margin-top:2px">Error de lectura (${String(fichaReadErr.code || 'permission-denied').replace(/</g,'&lt;')}) — no se interpreta como ficha inexistente</div>` : '<div style="font-size:10px;color:#555;margin-top:2px">Sin ficha registrada</div>')}
+          ${fichaReadErr ? `<div style="font-size:10px;color:#FF6666;margin-top:2px">Error de lectura (${String(fichaReadErr.code || 'unknown').replace(/</g,'&lt;')}) — se muestran datos legacy sin confirmar la ficha</div>` : (updatedAt ? `<div style="font-size:10px;color:#555;margin-top:2px">Actualizado ${updatedAt}${ficha && ficha.updatedBy === 'client' ? ' · enviada por cliente' : ''}</div>` : '<div style="font-size:10px;color:#555;margin-top:2px">Sin ficha registrada</div>')}
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button onclick="_switchClientTab('seguimiento')" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(244,244,240,.22);background:rgba(244,244,240,.05);color:#F4F4F0;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">📈 Ver seguimiento</button>
@@ -13262,13 +13261,12 @@ El esfuerzo no es negociable.
         _detailFichaData = _normalizeFichaDoc(_detailClientData.intake, _detailClientData);
       }
     } catch (_fErr) {
+      _detailFichaError = {
+        code: (_fErr && _fErr.code) || 'unknown',
+        message: (_fErr && _fErr.message) || 'No se pudo consultar la ficha.'
+      };
       if (_detailClientData && _detailClientData.intake) {
         _detailFichaData = _normalizeFichaDoc(_detailClientData.intake, _detailClientData);
-      } else {
-        _detailFichaError = {
-          code: (_fErr && _fErr.code) || 'permission-denied',
-          message: (_fErr && _fErr.message) || 'Missing or insufficient permissions.'
-        };
       }
     }
     if (_detailClientId === clientId && _detailActiveTab === 'ficha') {
@@ -13818,6 +13816,10 @@ El esfuerzo no es negociable.
       showToast('No tienes permisos sobre este cliente.', true);
       return;
     }
+    if ((_detailSeguimientoRequests || []).some(r => r && r.status === 'pending')) {
+      showToast('Ya existe una solicitud de seguimiento pendiente para este cliente.', true);
+      return;
+    }
     const trigEl = document.getElementById('segReqTrigger_' + clientId);
     const noteEl = document.getElementById('segReqNote_' + clientId);
     const btn = document.getElementById('segReqBtn_' + clientId);
@@ -13865,6 +13867,10 @@ El esfuerzo no es negociable.
           }
         }, { merge: true });
         logsOk = true;
+        if (_detailLogsData && _detailLogsData.clientId === clientId && _detailLogsData.data) {
+          _detailLogsData.data.seguimientoRequests = nextReqs;
+        }
+        _detailSeguimientoRequests = nextReqs;
       } catch (eLogs) { lastErr = lastErr || eLogs; }
       if (!subOk && !logsOk) throw (lastErr || new Error('No se pudo guardar la solicitud'));
       if (statusEl) { statusEl.textContent = '✅ Solicitud enviada al cliente'; statusEl.style.color = '#44BB88'; }
@@ -24541,10 +24547,10 @@ El esfuerzo no es negociable.
       if(!intake.nombre && cd.displayName) intake.nombre = cd.displayName;
       renderIntakeForm(intake);
       actions.style.display = 'flex';
-      status.textContent = (norm && norm.updatedAt)
-        ? ('Última actualización: ' + new Date(norm.updatedAt).toLocaleString('es-MX') + (norm.updatedBy? ' · por '+(norm.updatedBy==='client'?'el cliente':'ti') : ''))
-        : (fichaReadErr
-          ? ('⚠️ Error de permisos al consultar fichas_onboarding (' + ((fichaReadErr && fichaReadErr.code) || 'permission-denied') + ') — no se interpreta como ficha inexistente.')
+      status.textContent = fichaReadErr
+        ? ('⚠️ Error al consultar fichas_onboarding (' + ((fichaReadErr && fichaReadErr.code) || 'unknown') + ') — no se interpreta como ficha inexistente; se muestran datos alternativos sin confirmar la ficha.')
+        : ((norm && norm.updatedAt)
+          ? ('Última actualización: ' + new Date(norm.updatedAt).toLocaleString('es-MX') + (norm.updatedBy? ' · por '+(norm.updatedBy==='client'?'el cliente':'ti') : ''))
           : 'Sin evaluación previa — formulario nuevo.');
       // Fotogrametría guardada en el mismo doc (nivel raíz)
       _intakeFotometria = (rawFicha && rawFicha.fotometria) ? rawFicha.fotometria : null;

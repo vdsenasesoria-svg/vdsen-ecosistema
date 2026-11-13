@@ -118,12 +118,14 @@ service cloud.firestore {
       // T788: Separate Coach review contract for periodic check-ins.
       match /checkin_reviews/{reviewId} {
         allow read: if isSelfOrOwnerCoach(clientId);
-        allow create, update: if ownsClient(clientId)
+        allow create: if ownsClient(clientId)
           && request.resource.data.id == reviewId
+          && reviewId == 'rev_' + request.resource.data.checkinId
           && request.resource.data.clientId == clientId
           && request.resource.data.coachId == request.auth.uid
           && request.resource.data.status == 'reviewed'
-          && request.resource.data.reviewedAt == request.time;
+          && request.resource.data.reviewedAt == request.time
+          && exists(/databases/$(database)/documents/clients/$(clientId)/checkins/$(request.resource.data.checkinId));
       }
       // T603: COACH DECISION RECORD. The instant a Coach decision takes effect is the DATABASE's, not the Coach device clock: one immutable document per intervention id
       // (create-only, owner Coach only, `at` must equal request.time, never updated or deleted). `coachInterventions[].decidedAt` stays as display text; trusted evaluation
