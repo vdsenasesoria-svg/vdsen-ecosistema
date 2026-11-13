@@ -193,6 +193,102 @@ async function probe(label, url, token) {
   }
 }
 
+function summarizeDeploymentMeta(d) {
+  if (!d || typeof d !== 'object') return null;
+  const meta = d.meta && typeof d.meta === 'object' ? d.meta : {};
+  return {
+    id: d.id || d.uid || null,
+    projectId: d.projectId || null,
+    teamId: d.teamId || d.ownerId || null,
+    readyState: d.readyState || null,
+    target: d.target || null,
+    createdAt: d.createdAt || d.created || null,
+    aliases: Array.isArray(d.alias) ? d.alias : [],
+    githubCommitSha: typeof meta.githubCommitSha === 'string' ? meta.githubCommitSha : null,
+    githubCommitRef: typeof meta.githubCommitRef === 'string' ? meta.githubCommitRef : null,
+    githubCommitRepo: typeof meta.githubCommitRepo === 'string' ? meta.githubCommitRepo : null,
+    githubCommitOrg: typeof meta.githubCommitOrg === 'string' ? meta.githubCommitOrg : null,
+  };
+}
+
+async function collectDriftAndProjectEvidence(s, token, opts = {}) {
+  const customFetch = opts.fetch || fetch;
+  const base = 'https://api.vercel.com';
+  const teamQ = '?teamId=' + encodeURIComponent(s.vercel_team);
+  const host = new URL(s.production_origin).hostname;
+  const out = {
+    alias_live: null,
+    live_deployment: null,
+    baseline_deployment: null,
+    legacy_deployment: null,
+    project_git_config: null,
+  };
+
+  try {
+    const r = await customFetch(base + '/v4/aliases/' + encodeURIComponent(host) + teamQ, {
+      method: 'GET',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(30000),
+      redirect: 'error',
+    });
+    if (r.status === 200) {
+      const a = await r.json();
+      const liveId = a && a.deployment ? (a.deployment.id || a.deployment.uid || null) : null;
+      out.alias_live = {
+        status: 200,
+        alias: a.alias || host,
+        deploymentId: liveId,
+        projectId: a.projectId || null,
+        createdAt: a.createdAt || a.created || null,
+      };
+      if (liveId && /^dpl_[A-Za-z0-9]+$/.test(liveId)) {
+        const liveRes = await fetchDeployment(liveId, s, token, customFetch);
+        out.live_deployment = liveRes.ok ? summarizeDeploymentMeta(liveRes.data) : { status: liveRes.status };
+      }
+    } else {
+      out.alias_live = { status: r.status };
+    }
+  } catch (e) {
+    out.alias_live = { status: 'NETWORK' };
+  }
+
+  const baseRes = await fetchDeployment(s.production_deployment, s, token, customFetch);
+  out.baseline_deployment = baseRes.ok ? summarizeDeploymentMeta(baseRes.data) : { status: baseRes.status };
+
+  const legRes = await fetchDeployment(LEGACY_ARMED_DEPLOYMENT, s, token, customFetch);
+  out.legacy_deployment = legRes.ok ? summarizeDeploymentMeta(legRes.data) : { status: legRes.status };
+
+  try {
+    const pr = await customFetch(base + '/v9/projects/' + encodeURIComponent(s.production_project) + teamQ, {
+      method: 'GET',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(30000),
+      redirect: 'error',
+    });
+    if (pr.status === 200) {
+      const p = await pr.json();
+      const link = p && p.link && typeof p.link === 'object' ? p.link : {};
+      out.project_git_config = {
+        status: 200,
+        id: p.id || null,
+        accountId: p.accountId || null,
+        autoAssignCustomDomains: p.autoAssignCustomDomains ?? null,
+        commandForIgnoringBuildStep: p.commandForIgnoringBuildStep ?? null,
+        linkType: link.type || null,
+        linkRepo: link.repo || null,
+        productionBranch: link.productionBranch || null,
+        gitForkProtection: p.gitForkProtection ?? null,
+      };
+    } else {
+      out.project_git_config = { status: pr.status };
+    }
+  } catch (e) {
+    out.project_git_config = { status: 'NETWORK' };
+  }
+
+  return out;
+}
+
 async function diagnose() {
   const s = state();
   const token = process.env.VERCEL_TOKEN;
@@ -223,6 +319,7 @@ async function diagnose() {
 
   // Strict GET-only accreditation of the legacy armed deployment retirement.
   const legacyCheck = await verifyLegacyDeploymentRetirement(s, token);
+  const driftEvidence = await collectDriftAndProjectEvidence(s, token);
 
   const lines = ['## App lane read diagnostics', '', '| read | status | ms | detail |', '|---|---|---|---|'];
   for (const r of results) lines.push('| ' + r.label + ' | ' + r.status + ' | ' + r.ms + ' | ' + String(r.detail).replace(/\|/g, '/') + ' |');
@@ -238,11 +335,12 @@ async function diagnose() {
     '| control after status | ' + (legacyCheck.control_after ? legacyCheck.control_after.status : '(not reached)') + ' |',
     '| verdict | **' + legacyCheck.verdict + '** |'
   );
+  lines.push('', '### Drift & project git metadata (read-only)', '', '```json', JSON.stringify(driftEvidence, null, 2), '```');
   lines.push('', 'No token, variable value or response body is printed. Candidate: ' + (process.env.APP_RUNTIME_SHA || '(none)'));
   const summary = lines.join('\n');
 
   fs.mkdirSync('release-output', { recursive: true });
-  fs.writeFileSync('release-output/app-diagnostics.json', JSON.stringify({ sdk_version: sdkVersion, results, shape, legacy_deployment_check: legacyCheck }, null, 2) + '\n');
+  fs.writeFileSync('release-output/app-diagnostics.json', JSON.stringify({ sdk_version: sdkVersion, results, shape, legacy_deployment_check: legacyCheck, drift_evidence: driftEvidence }, null, 2) + '\n');
   try { if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary + '\n'); } catch (e) {}
   console.log(summary);
 }
@@ -297,5 +395,7 @@ module.exports = {
   fetchDeployment,
   validateControlDeployment,
   verifyLegacyDeploymentRetirement,
+  collectDriftAndProjectEvidence,
+  summarizeDeploymentMeta,
   LEGACY_ARMED_DEPLOYMENT,
 };

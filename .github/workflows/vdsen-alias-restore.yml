@@ -1,0 +1,71 @@
+name: VDSEN restore production alias (app-only)
+
+# Controlled, app-only restoration of vdsen-ecosistema.vercel.app back to the
+# accredited OFF baseline deployment (dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8).
+#
+# - No Firestore access (no Google OIDC auth, no GOOGLE_ACCESS_TOKEN).
+# - No Numeric Apply changes (numeric_apply_enabled must be false).
+# - No new deployments created (uses official Vercel rollback endpoint only).
+# - Refuses to overwrite non-main deployments or concurrent alias changes.
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_current_deployment:
+        description: 'Live deployment ID currently on alias (e.g. dpl_4Kw3Ts9Ym9XhEFruckdENDhDi1u1)'
+        required: true
+        type: string
+      target_deployment:
+        description: 'Accredited OFF baseline deployment ID (dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: vdsen-production
+  cancel-in-progress: false
+
+jobs:
+  restore-alias:
+    if: github.repository == 'vdsenasesoria-svg/vdsen-ecosistema' && github.ref == 'refs/heads/codex/client-app-next' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1
+    environment: Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLIENT_APP_RELEASE_ENABLED: ${{ vars.CLIENT_APP_RELEASE_ENABLED }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      EXPECTED_CURRENT_DEPLOYMENT: ${{ inputs.expected_current_deployment }}
+      TARGET_DEPLOYMENT: ${{ inputs.target_deployment }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: App kill switch and canonical ref check
+        run: |
+          if [ "$CLIENT_APP_RELEASE_ENABLED" != "true" ]; then
+            echo "::error::CLIENT_APP_RELEASE_ENABLED must be true to restore alias"
+            exit 1
+          fi
+          if [ "$GITHUB_REF" != "refs/heads/codex/client-app-next" ]; then
+            echo "::error::Must run on refs/heads/codex/client-app-next"
+            exit 1
+          fi
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Restore production alias to accredited OFF baseline (no Firestore, no new build)
+        run: node scripts/release/restore-prod-alias.cjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: alias-restore-result-${{ github.run_id }}
+          path: release-output/alias-restore-result.json
+          if-no-files-found: warn
+          retention-days: 90
