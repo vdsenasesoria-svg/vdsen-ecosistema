@@ -13787,21 +13787,25 @@ El esfuerzo no es negociable.
       } catch (eSub) { lastErr = eSub; }
       // Mirror summary in logs/{clientId} so client & coach lists see pending request without extra reads
       try {
-        const prevReqs = Array.isArray(_detailSeguimientoRequests) ? _detailSeguimientoRequests.slice(0, 19) : [];
-        const nextReqs = [Object.assign({}, payload, { requestedAt: nowMs })].concat(prevReqs);
-        const pendingRevCount = Array.isArray(_detailSeguimientoData) ? _detailSeguimientoData.filter(x => x.status !== 'reviewed').length : 0;
-        await setDoc(doc(db, 'logs', clientId), {
-          clientId: clientId,
-          seguimientoRequests: nextReqs,
-          seguimientoSummary: {
-            pendingReviewCount: pendingRevCount,
-            hasPendingCoachRequest: true,
-            lastRequestId: reqId,
-            lastRequestTrigger: trigger,
-            lastRequestNote: note,
-            updatedAt: nowMs
-          }
-        }, { merge: true });
+        await runTransaction(db, async tx => {
+          const ref = doc(db, 'logs', clientId);
+          const snap = await tx.get(ref);
+          const old = snap.exists() ? snap.data() : {};
+          const prevReqs = Array.isArray(old.seguimientoRequests) ? old.seguimientoRequests : [];
+          const nextReqs = prevReqs.some(r => r && r.id === reqId)
+            ? prevReqs : [Object.assign({}, payload, { requestedAt: nowMs })].concat(prevReqs);
+          tx.set(ref, {
+            clientId: clientId,
+            seguimientoRequests: nextReqs,
+            seguimientoSummary: Object.assign({}, old.seguimientoSummary || {}, {
+              hasPendingCoachRequest: true,
+              lastRequestId: reqId,
+              lastRequestTrigger: trigger,
+              lastRequestNote: note,
+              updatedAt: nowMs
+            })
+          }, { merge: true });
+        });
         logsOk = true;
       } catch (eLogs) { lastErr = lastErr || eLogs; }
       if (!subOk && !logsOk) throw (lastErr || new Error('No se pudo guardar la solicitud'));
@@ -13837,6 +13841,32 @@ El esfuerzo no es negociable.
         });
         subOk = true;
       } catch (eSub) { lastErr = eSub; }
+      try {
+        await runTransaction(db, async tx => {
+          const ref = doc(db, 'logs', clientId);
+          const snap = await tx.get(ref);
+          const old = snap.exists() ? snap.data() : {};
+          const oldItems = Array.isArray(old.seguimientoItems) ? old.seguimientoItems.slice() : [];
+          (_detailSeguimientoData || []).forEach(it => {
+            if (it && it.id && !oldItems.some(x => x && x.id === it.id)) oldItems.push(it);
+          });
+          const nextItems = oldItems.map(it => it && it.id === checkinId
+            ? Object.assign({}, it, { status: 'reviewed', reviewedAt: nowMs, reviewedByCoachId: currentCoach.uid }) : it);
+          if (!nextItems.some(it => it && it.id === checkinId)) throw new Error('Seguimiento no encontrado');
+          tx.set(ref, {
+            clientId: clientId,
+            seguimientoItems: nextItems,
+            seguimientoSummary: Object.assign({}, old.seguimientoSummary || {}, {
+              pendingReviewCount: nextItems.filter(it => it && it.status !== 'reviewed').length,
+              lastReviewedId: checkinId,
+              lastReviewedAt: nowMs,
+              updatedAt: nowMs
+            })
+          }, { merge: true });
+        });
+        logsOk = true;
+      } catch (eLogs) { lastErr = lastErr || eLogs; }
+      if (!subOk && !logsOk) throw (lastErr || new Error('No se pudo actualizar el estado'));
       if (Array.isArray(_detailSeguimientoData)) {
         _detailSeguimientoData.forEach(it => {
           if (it && it.id === checkinId) {
@@ -13846,23 +13876,6 @@ El esfuerzo no es negociable.
           }
         });
       }
-      const remainingPending = Array.isArray(_detailSeguimientoData)
-        ? _detailSeguimientoData.filter(it => it.status !== 'reviewed').length
-        : 0;
-      try {
-        await setDoc(doc(db, 'logs', clientId), {
-          clientId: clientId,
-          seguimientoItems: Array.isArray(_detailSeguimientoData) ? _detailSeguimientoData.slice(0, 25) : [],
-          seguimientoSummary: {
-            pendingReviewCount: remainingPending,
-            lastReviewedId: checkinId,
-            lastReviewedAt: nowMs,
-            updatedAt: nowMs
-          }
-        }, { merge: true });
-        logsOk = true;
-      } catch (eLogs) { lastErr = lastErr || eLogs; }
-      if (!subOk && !logsOk) throw (lastErr || new Error('No se pudo actualizar el estado'));
       showToast('Seguimiento marcado como revisado');
       if (_detailClientId === clientId && _detailActiveTab === 'seguimiento') {
         await _renderClientTabSeguimiento(document.getElementById('clientDetailTabContent'));
