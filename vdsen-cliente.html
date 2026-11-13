@@ -2830,6 +2830,7 @@ async function doLogout() {
   _weeksExpanded = false;
   CALIB_VOLUMETRICA = null;
   _preSelState = {}; _postSessionDi = null;
+  _seguimientoHistory = []; _seguimientoRequests = []; _seguimientoDraft = null; _seguimientoDraftId = null; _savingSeguimiento = false;
   if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
   if (_ciAutoSaveTimer) { clearTimeout(_ciAutoSaveTimer); _ciAutoSaveTimer = null; }
   if (window._sesTimerInterval) { clearInterval(window._sesTimerInterval); window._sesTimerInterval = null; }
@@ -3332,6 +3333,8 @@ async function loadPlan(user) {
 
     if (_mySeq !== _loadPlanSeq || !USER || USER.uid !== user.uid) return;
     PLAN = {
+      id: activePlanId,
+      planName: planData.name || planData.title || '',
       nombre: clientData.displayName || user.email,
       objetivo: clientData.objetivo || '',
       peso: clientData.peso || '',
@@ -3513,6 +3516,7 @@ async function loadPlan(user) {
     document.getElementById('hdName').textContent = (PLAN.nombre||'').toUpperCase();
     document.getElementById('hdGoal').textContent = PLAN.objetivo || '—';
     _updateHdrWeek();
+    if (typeof loadClientSeguimiento === 'function') { loadClientSeguimiento().catch(function(){}); }
 
     try {
       renderAll();
@@ -4008,6 +4012,30 @@ async function guardarFicha() {
   btn.disabled = true;
   btn.textContent = 'ENVIANDO...';
 
+  var nowMs = Date.now();
+  var canonSexo = (sexo === 'Masculino' ? 'H' : (sexo === 'Femenino' ? 'M' : sexo));
+  var canonPerfil = (String(peds).toLowerCase() === 'no' ? 'Natural' : 'PED');
+  var canonData = {
+    nombre: nombre,
+    email: email,
+    telefono: tel,
+    edad: +edad,
+    sexo: canonSexo,
+    peso_kg: +peso,
+    talla_cm: +altura,
+    objetivo_mesociclo: obj,
+    nivel: exp,
+    dias_semana: +dias || dias,
+    gimnasio: equipo,
+    restricciones_lesiones: ob_get('ob_lesiones') || 'Ninguna',
+    num_comidas: +comidas || comidas,
+    alimentos_disponibles: ob_get('ob_alim_pref') || '',
+    alimentos_excluidos: ob_get('ob_alim_no') || '',
+    restricciones_alimentarias: ob_get('ob_alergias') || 'Ninguna',
+    condiciones_salud: ob_get('ob_enfermedades') || 'Ninguna',
+    perfil: canonPerfil,
+    objetivo_corto: ob_get('ob_notas') || ''
+  };
   var ficha = {
     nombre, email, tel, edad: +edad, sexo,
     peso: +peso, altura: +altura,
@@ -4022,12 +4050,18 @@ async function guardarFicha() {
     peds,
     notas:       ob_get('ob_notas')      || '',
     enviado:     true,
-    fechaFicha:  new Date().toISOString()
+    status:      'enviada',
+    schemaVersion: '1.1',
+    updatedAt:   nowMs,
+    completedAt: nowMs,
+    updatedBy:   'client',
+    data:        canonData,
+    fechaFicha:  new Date(nowMs).toISOString()
   };
 
   try {
     var docId = (USER && USER.uid) ? USER.uid : email.replace(/[.@]/g, '_');
-    await FB.setDoc(FB.doc(FB.db, 'fichas_onboarding', docId), ficha);
+    await FB.setDoc(FB.doc(FB.db, 'fichas_onboarding', docId), ficha, { merge: true });
     // Mostrar pantalla de espera
     renderEspera();
   } catch(e) {
@@ -4323,7 +4357,7 @@ async function saveIntakeClient(){
   if(!FB || !USER){ err.textContent = '⚠ Sin conexión. Intenta de nuevo.'; return; }
   var btn = document.getElementById('ciIntakeSave'); btn.disabled=true; var t=btn.textContent; btn.textContent='GUARDANDO…';
   try {
-    var payload = { schemaVersion: CI_INTAKE_SCHEMA.schemaVersion, updatedAt: Date.now(), updatedBy: 'client', data: ciCollect() };
+    var payload = { schemaVersion: CI_INTAKE_SCHEMA.schemaVersion, status: 'enviada', updatedAt: Date.now(), updatedBy: 'client', data: ciCollect() };
     await FB.setDoc(FB.doc(FB.db,'fichas_onboarding',USER.uid), payload, { merge:true });
     document.getElementById('ciIntakeStatus').textContent = 'Guardado: '+new Date(payload.updatedAt).toLocaleString('es-MX');
     err.style.color = 'var(--accent)'; err.textContent = '✓ Ficha guardada. Tu coach ya puede verla.';
@@ -5119,9 +5153,10 @@ function buildVolumenMesocicloWidget() {
 // no duplicar la lógica de agregación por ejercicio/semana que ya usa buildHistorialWidget().
 function buildMesocicloReportWidget() {
   if (!PLAN || !PLAN.entrenamiento) return '';
+  var segBanner = (typeof _buildSeguimientoHomeBanner === 'function') ? _buildSeguimientoHomeBanner() : '';
   var totalW = getTotalWeeks();
   var isFinalWeek = (CURRENT_WEEK === totalW);
-  if (CURRENT_WEEK < 2) return '';
+  if (CURRENT_WEEK < 2) return segBanner;
 
   var totalSes = countSessions();
   var doneSes  = countDone();
@@ -5130,7 +5165,7 @@ function buildMesocicloReportWidget() {
   if (!isFinalWeek) {
     var progressPct = Math.round((CURRENT_WEEK - 1) / Math.max(totalW - 1, 1) * 100);
     var adherPctMid = totalSes > 0 ? Math.round(doneSes / totalSes * 100) : 0;
-    return '<div class="card" style="margin-top:8px;border-color:rgba(107,107,102,.3)">'+
+    return segBanner + '<div class="card" style="margin-top:8px;border-color:rgba(107,107,102,.3)">'+
       '<div class="card-title">PROGRESO DEL MESOCICLO</div>'+
       '<div style="margin-top:8px">'+
         '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--mt);margin-bottom:5px">'+
@@ -5188,7 +5223,7 @@ function buildMesocicloReportWidget() {
   var pesoCol = pesoDelta === null ? 'var(--mt)' : pesoDelta < 0 ? 'var(--grn)' : pesoDelta > 0 ? 'var(--red)' : 'var(--mt)';
   var loadCol = avgLoadPct === null ? 'var(--mt)' : avgLoadPct > 0 ? 'var(--grn)' : 'var(--red)';
 
-  return '<div class="card" style="margin-top:8px;border-color:rgba(107,107,102,.4)">'+
+  return segBanner + '<div class="card" style="margin-top:8px;border-color:rgba(107,107,102,.4)">'+
     '<div class="card-title">🏁 CIERRE DE MESOCICLO — '+CURRENT_WEEK+' SEMANAS</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">'+
       '<div style="background:var(--dk);border:1px solid var(--bd);padding:10px;text-align:center">'+
@@ -14708,6 +14743,447 @@ function _buildWeightSparkline() {
     +'</div>';
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// T788 — MI SEGUIMIENTO PERIÓDICO (Independiente de la ficha 360° inicial)
+// ══════════════════════════════════════════════════════════════════════
+var _seguimientoHistory = [];
+var _seguimientoRequests = [];
+var _seguimientoDraft = null;
+var _seguimientoDraftId = null;
+var _savingSeguimiento = false;
+
+function _segCliTriggerLabel(tr) {
+  if (tr === 'block_end') return 'Fin de bloque / mesociclo';
+  if (tr === 'coach_request') return 'Solicitud del Coach';
+  if (tr === 'scheduled') return 'Revisión programada';
+  return 'Actualización voluntaria';
+}
+function _segCliStatusChip(st) {
+  if (st === 'reviewed') {
+    return '<span class="chip done" style="font-size:10px">✓ REVISADA POR COACH</span>';
+  }
+  if (st === 'received') {
+    return '<span class="chip" style="font-size:10px;border-color:var(--accent);color:var(--accent)">📥 RECIBIDA</span>';
+  }
+  if (st === 'sent') {
+    return '<span class="chip" style="font-size:10px;border-color:var(--accent);color:var(--accent)">📤 ENVIADA</span>';
+  }
+  return '<span class="chip idle" style="font-size:10px">· PENDIENTE</span>';
+}
+function _segCliToMs(v) {
+  if (!v) return 0;
+  if (typeof v === 'number') return v;
+  if (typeof v.toMillis === 'function') return v.toMillis();
+  if (typeof v.seconds === 'number') return v.seconds * 1000;
+  var p = Date.parse(String(v));
+  return isFinite(p) ? p : 0;
+}
+function _initSeguimientoDraft() {
+  if (_seguimientoDraft && (!USER || !_seguimientoDraft.clientId || _seguimientoDraft.clientId === USER.uid)) return _seguimientoDraft;
+  var pendingReq = (_seguimientoRequests || []).find(function(r) { return r && r.status === 'pending'; });
+  var isBlockEnd = PLAN && CURRENT_WEEK >= getTotalWeeks();
+  var defaultTrigger = pendingReq ? (pendingReq.trigger || 'coach_request') : (isBlockEnd ? 'block_end' : 'voluntary');
+  _seguimientoDraftId = 'chk_' + (USER ? USER.uid : 'anon') + '_' + Date.now();
+  _seguimientoDraft = {
+    draftId: _seguimientoDraftId,
+    clientId: USER ? USER.uid : '',
+    trigger: defaultTrigger,
+    requestId: pendingReq ? pendingReq.id : null,
+    pesoKg: '',
+    fechaMedicion: new Date().toISOString().slice(0, 10),
+    recuperacion: null,
+    energiaRendimiento: null,
+    sueno: null,
+    fatigaMolestias: '',
+    adherenciaEntreno: '',
+    adherenciaNutricion: '',
+    nutricionNoAplica: false,
+    comentarios: ''
+  };
+  return _seguimientoDraft;
+}
+function _persistSeguimientoDraft() {
+  if (!_seguimientoDraft || !USER) return;
+  _seguimientoDraft.clientId = USER.uid;
+}
+async function loadClientSeguimiento() {
+  if (!FB || !USER || !USER.uid) return;
+  var uidAtStart = USER.uid;
+  var itemsMap = {};
+  var reqsMap = {};
+  try {
+    var cSnap = await FB.getDocs(FB.collection(FB.db, 'clients', uidAtStart, 'checkins'));
+    if (!USER || USER.uid !== uidAtStart) return;
+    cSnap.forEach(function(d) { itemsMap[d.id] = Object.assign({ id: d.id }, d.data()); });
+  } catch (_) {}
+  try {
+    var rSnap = await FB.getDocs(FB.collection(FB.db, 'clients', uidAtStart, 'checkin_requests'));
+    if (!USER || USER.uid !== uidAtStart) return;
+    rSnap.forEach(function(d) { reqsMap[d.id] = Object.assign({ id: d.id }, d.data()); });
+  } catch (_) {}
+  if (!USER || USER.uid !== uidAtStart) return;
+  _seguimientoHistory = Object.keys(itemsMap).map(function(k) { return itemsMap[k]; }).sort(function(a, b) {
+    return (_segCliToMs(b.submittedAt) || _segCliToMs(b.createdAtMs) || 0) - (_segCliToMs(a.submittedAt) || _segCliToMs(a.createdAtMs) || 0);
+  });
+  _seguimientoRequests = Object.keys(reqsMap).map(function(k) { return reqsMap[k]; }).sort(function(a, b) {
+    return (_segCliToMs(b.requestedAt) || _segCliToMs(b.createdAtMs) || 0) - (_segCliToMs(a.requestedAt) || _segCliToMs(a.createdAtMs) || 0);
+  });
+  var pendingReq = _seguimientoRequests.find(function(r) { return r && r.status === 'pending'; });
+  if (pendingReq && _seguimientoDraft) {
+    _seguimientoDraft.requestId = pendingReq.id;
+    _seguimientoDraft.trigger = pendingReq.trigger || 'coach_request';
+  }
+  try {
+    var activeTab = parseInt(localStorage.getItem('vdsen_last_tab') || '1');
+    if (activeTab === 3) renderCheckin();
+    if (activeTab === 0) renderResumen();
+  } catch (_) {}
+}
+window.loadClientSeguimiento = loadClientSeguimiento;
+
+function openMiSeguimiento(triggerOverride) {
+  var d = _initSeguimientoDraft();
+  if (triggerOverride) {
+    d.trigger = triggerOverride;
+    _persistSeguimientoDraft();
+  }
+  showScreen('scrApp');
+  goTab(3);
+  setTimeout(function() {
+    var el = document.getElementById('miSeguimientoCard');
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 60);
+}
+window.openMiSeguimiento = openMiSeguimiento;
+
+function _buildSeguimientoHomeBanner() {
+  if (!PLAN || !USER) return '';
+  var pendingReq = (_seguimientoRequests || []).find(function(r) { return r && r.status === 'pending'; });
+  var totalW = getTotalWeeks();
+  var isBlockEnd = CURRENT_WEEK >= totalW;
+  var hasBlockEndCheckin = (_seguimientoHistory || []).some(function(it) {
+    return it && it.planId === (PLAN && PLAN.id) && (it.trigger === 'block_end' || Number(it.weekNumber) >= totalW);
+  });
+  if (!pendingReq && (!isBlockEnd || hasBlockEndCheckin)) return '';
+  var title = pendingReq ? 'SOLICITUD DE SEGUIMIENTO DEL COACH' : 'ACTUALIZACIÓN DE FIN DE BLOQUE';
+  var desc = pendingReq
+    ? (_segCliTriggerLabel(pendingReq.trigger) + (pendingReq.note ? (' — "' + _escHTml(pendingReq.note) + '"') : ''))
+    : ('Estás en la semana ' + CURRENT_WEEK + ' de ' + totalW + '. Comparte tu seguimiento periódico para el siguiente bloque.');
+  var trig = pendingReq ? (pendingReq.trigger || 'coach_request') : 'block_end';
+  return '<div class="card" id="homeSeguimientoBanner" style="margin-top:8px;border:1px solid var(--accent);background:rgba(198,255,0,.06)">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px">' +
+      '<div class="card-title" style="color:var(--accent)">📈 ' + title + '</div>' +
+      _segCliStatusChip('pending') +
+    '</div>' +
+    '<div style="font-size:12px;color:var(--tx);line-height:1.5;margin-bottom:10px">' + desc + '</div>' +
+    '<button type="button" onclick="openMiSeguimiento(\'' + trig + '\')" class="btn ci-cta" style="background:var(--accent-fill);color:var(--on-accent);border:none;font-weight:800">' +
+      'COMPLETAR MI SEGUIMIENTO <svg class="ico sm" aria-hidden="true" focusable="false"><use href="#i-chev-r"/></svg>' +
+    '</button>' +
+  '</div>';
+}
+window._buildSeguimientoHomeBanner = _buildSeguimientoHomeBanner;
+
+function _setSegTrigger(val) {
+  var d = _initSeguimientoDraft();
+  d.trigger = val;
+  _persistSeguimientoDraft();
+  ['voluntary','block_end','coach_request','scheduled'].forEach(function(k) {
+    var b = document.getElementById('segTrigBtn_' + k);
+    if (!b) return;
+    var on = k === val;
+    b.style.borderColor = on ? 'var(--accent)' : 'var(--bd)';
+    b.style.background = on ? 'rgba(198,255,0,.12)' : 'var(--dk)';
+    b.style.color = on ? 'var(--accent)' : 'var(--mt)';
+  });
+}
+window._setSegTrigger = _setSegTrigger;
+
+function _setSegScale(field, val) {
+  var d = _initSeguimientoDraft();
+  d[field] = (d[field] === val) ? null : val;
+  _persistSeguimientoDraft();
+  for (var v = 1; v <= 5; v++) {
+    var b = document.getElementById('segScale_' + field + '_' + v);
+    if (!b) continue;
+    var on = d[field] === v;
+    b.style.borderColor = on ? 'var(--accent)' : 'var(--bd)';
+    b.style.background = on ? 'rgba(198,255,0,.14)' : 'var(--dk)';
+    b.style.color = on ? 'var(--accent)' : 'var(--mt)';
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+}
+window._setSegScale = _setSegScale;
+
+function _toggleSegNutriNA() {
+  var d = _initSeguimientoDraft();
+  d.nutricionNoAplica = !d.nutricionNoAplica;
+  if (d.nutricionNoAplica) d.adherenciaNutricion = '';
+  _persistSeguimientoDraft();
+  var inp = document.getElementById('seg_adherenciaNutricion');
+  var btn = document.getElementById('seg_nutriNABtn');
+  if (inp) { inp.disabled = d.nutricionNoAplica; if (d.nutricionNoAplica) inp.value = ''; }
+  if (btn) {
+    btn.style.borderColor = d.nutricionNoAplica ? 'var(--accent)' : 'var(--bd)';
+    btn.style.background = d.nutricionNoAplica ? 'rgba(198,255,0,.14)' : 'var(--dk)';
+    btn.style.color = d.nutricionNoAplica ? 'var(--accent)' : 'var(--mt)';
+  }
+}
+window._toggleSegNutriNA = _toggleSegNutriNA;
+
+function _onSegDraftInput(field, val) {
+  var d = _initSeguimientoDraft();
+  d[field] = val;
+  _persistSeguimientoDraft();
+}
+window._onSegDraftInput = _onSegDraftInput;
+
+async function saveSeguimientoClient() {
+  if (_savingSeguimiento) return false;
+  var errEl = document.getElementById('segSaveFeedback');
+  if (errEl) { errEl.textContent = ''; errEl.style.color = 'var(--mt)'; }
+  if (!FB || !USER || !USER.uid) {
+    if (errEl) { errEl.textContent = '⚠ Sesión no disponible. Inicia sesión de nuevo.'; errEl.style.color = 'var(--red)'; }
+    return false;
+  }
+  var d = _initSeguimientoDraft();
+  // Read live inputs from DOM
+  ['pesoKg','fechaMedicion','fatigaMolestias','adherenciaEntreno','adherenciaNutricion','comentarios'].forEach(function(f) {
+    var el = document.getElementById('seg_' + f);
+    if (el && !el.disabled) d[f] = el.value.trim();
+  });
+  var hasAnyField = Boolean(
+    (d.pesoKg !== '' && d.pesoKg != null) ||
+    d.recuperacion != null ||
+    d.energiaRendimiento != null ||
+    d.sueno != null ||
+    (d.fatigaMolestias && d.fatigaMolestias.length > 0) ||
+    (d.adherenciaEntreno !== '' && d.adherenciaEntreno != null) ||
+    (d.adherenciaNutricion !== '' && d.adherenciaNutricion != null) ||
+    d.nutricionNoAplica === true ||
+    (d.comentarios && d.comentarios.length > 0)
+  );
+  if (!hasAnyField) {
+    if (errEl) { errEl.textContent = '⚠ Completa al menos un dato antes de enviar tu seguimiento.'; errEl.style.color = 'var(--red)'; }
+    return false;
+  }
+
+  var uidAtStart = USER.uid;
+  var checkinId = d.draftId || ('chk_' + uidAtStart + '_' + Date.now());
+  d.draftId = checkinId;
+  _savingSeguimiento = true;
+  var btn = document.getElementById('btnSaveSeguimiento');
+  if (btn) { btn.disabled = true; btn.textContent = 'ENVIANDO SEGUIMIENTO…'; }
+
+  var nowMs = Date.now();
+  var pendingReq = (_seguimientoRequests || []).find(function(r) { return r && r.status === 'pending'; });
+  var reqIdToFulfill = d.requestId || (pendingReq ? pendingReq.id : null);
+  var payload = {
+    id: checkinId,
+    clientId: uidAtStart,
+    coachId: (PLAN && PLAN.coachId) || null,
+    planId: (PLAN && PLAN.id) || ACTIVE_PLAN_ID || null,
+    planName: (PLAN && (PLAN.planName || PLAN.objetivo)) || null,
+    weekNumber: CURRENT_WEEK || 1,
+    periodoLabel: 'Semana ' + (CURRENT_WEEK || 1) + (PLAN && PLAN.totalWeeks ? (' de ' + PLAN.totalWeeks) : ''),
+    trigger: d.trigger || (pendingReq ? pendingReq.trigger : 'voluntary'),
+    requestId: reqIdToFulfill || null,
+    pesoKg: (d.pesoKg !== '' && d.pesoKg != null && !isNaN(parseFloat(d.pesoKg))) ? parseFloat(d.pesoKg) : null,
+    fechaMedicion: d.fechaMedicion || new Date(nowMs).toISOString().slice(0, 10),
+    recuperacion: d.recuperacion != null ? Number(d.recuperacion) : null,
+    energiaRendimiento: d.energiaRendimiento != null ? Number(d.energiaRendimiento) : null,
+    sueno: d.sueno != null ? Number(d.sueno) : null,
+    fatigaMolestias: d.fatigaMolestias || '',
+    adherenciaEntreno: (d.adherenciaEntreno !== '' && d.adherenciaEntreno != null && !isNaN(parseFloat(d.adherenciaEntreno))) ? Math.max(0, Math.min(100, parseFloat(d.adherenciaEntreno))) : null,
+    adherenciaNutricion: (!d.nutricionNoAplica && d.adherenciaNutricion !== '' && d.adherenciaNutricion != null && !isNaN(parseFloat(d.adherenciaNutricion))) ? Math.max(0, Math.min(100, parseFloat(d.adherenciaNutricion))) : null,
+    nutricionNoAplica: Boolean(d.nutricionNoAplica),
+    comentarios: d.comentarios || '',
+    status: 'sent',
+    createdAtMs: nowMs,
+    submittedAt: (typeof FB.serverTimestamp === 'function') ? FB.serverTimestamp() : nowMs
+  };
+
+  try {
+    var subOk = false, logsOk = false, lastErr = null;
+    try {
+      await FB.setDoc(FB.doc(FB.db, 'clients', uidAtStart, 'checkins', checkinId), payload);
+      subOk = true;
+    } catch (eSub) { lastErr = eSub; }
+    if (!USER || USER.uid !== uidAtStart) return false;
+
+    if (reqIdToFulfill) {
+      try {
+        await FB.updateDoc(FB.doc(FB.db, 'clients', uidAtStart, 'checkin_requests', reqIdToFulfill), {
+          status: 'sent',
+          checkinId: checkinId,
+          fulfilledAt: (typeof FB.serverTimestamp === 'function') ? FB.serverTimestamp() : nowMs
+        });
+      } catch (_) {}
+    }
+
+    // Actualizar resumen en logs/{uid} para que App Coach vea el badge sin lecturas extra y funcione bajo reglas FE151 y T788
+    var localRecord = Object.assign({}, payload, { submittedAt: nowMs });
+    _seguimientoHistory = [localRecord].concat((_seguimientoHistory || []).filter(function(x) { return x && x.id !== checkinId; }));
+    if (reqIdToFulfill) {
+      (_seguimientoRequests || []).forEach(function(r) { if (r && r.id === reqIdToFulfill) r.status = 'sent'; });
+    }
+    var pendingRevCount = _seguimientoHistory.filter(function(x) { return x && x.status !== 'reviewed'; }).length;
+    try {
+      await FB.setDoc(FB.doc(FB.db, 'logs', uidAtStart), {
+        clientId: uidAtStart,
+        seguimientoItems: _seguimientoHistory.slice(0, 25),
+        seguimientoRequests: (_seguimientoRequests || []).slice(0, 20),
+        seguimientoSummary: {
+          pendingReviewCount: pendingRevCount,
+          hasPendingCoachRequest: false,
+          lastCheckinId: checkinId,
+          lastSubmittedAt: nowMs,
+          lastTrigger: payload.trigger,
+          lastPesoKg: payload.pesoKg,
+          updatedAt: nowMs
+        }
+      }, { merge: true });
+      logsOk = true;
+    } catch (eLogs) { lastErr = lastErr || eLogs; }
+    if (!subOk && !logsOk) throw (lastErr || new Error('error de red'));
+
+    // Reset draft con nuevo ID para evitar envíos duplicados accidentales
+    _seguimientoDraft = null;
+    _seguimientoDraftId = null;
+    _initSeguimientoDraft();
+
+    showToast('✓ Seguimiento enviado a tu coach');
+    renderCheckin();
+    renderResumen();
+    var fbAfter = document.getElementById('segSaveFeedback');
+    if (fbAfter) { fbAfter.textContent = '✓ Seguimiento enviado correctamente. Tu coach lo verá en tu expediente.'; fbAfter.style.color = 'var(--accent)'; }
+    return true;
+  } catch (e) {
+    // En fallo de red o permisos: conservar borrador intacto para reintento seguro
+    _persistSeguimientoDraft();
+    if (errEl) {
+      errEl.textContent = '⚠ No se pudo enviar (' + ((e && e.code) || (e && e.message) || 'error de red') + '). Tus datos siguen en pantalla para reintentar.';
+      errEl.style.color = 'var(--red)';
+    }
+    showToast('⚠ No se pudo enviar el seguimiento — reintenta', true);
+    return false;
+  } finally {
+    _savingSeguimiento = false;
+    var btnNow = document.getElementById('btnSaveSeguimiento');
+    if (btnNow) { btnNow.disabled = false; btnNow.textContent = '📤 ENVIAR ACTUALIZACIÓN AL COACH'; }
+  }
+}
+window.saveSeguimientoClient = saveSeguimientoClient;
+
+function _buildMiSeguimientoSection() {
+  var d = _initSeguimientoDraft();
+  var pendingReq = (_seguimientoRequests || []).find(function(r) { return r && r.status === 'pending'; });
+  if (pendingReq && !d.requestId) {
+    d.requestId = pendingReq.id;
+    d.trigger = pendingReq.trigger || 'coach_request';
+  }
+  var triggers = [
+    { id: 'voluntary', label: 'Voluntario' },
+    { id: 'block_end', label: 'Fin de bloque' },
+    { id: 'coach_request', label: 'Solicitud Coach' },
+    { id: 'scheduled', label: 'Programado' }
+  ];
+  var trigBtns = triggers.map(function(t) {
+    var on = d.trigger === t.id;
+    return '<button type="button" id="segTrigBtn_' + t.id + '" onclick="_setSegTrigger(\'' + t.id + '\')" style="padding:8px 10px;border-radius:6px;border:1px solid ' + (on ? 'var(--accent)' : 'var(--bd)') + ';background:' + (on ? 'rgba(198,255,0,.12)' : 'var(--dk)') + ';color:' + (on ? 'var(--accent)' : 'var(--mt)') + ';font-family:var(--ff);font-size:11px;font-weight:700;cursor:pointer">' + t.label + '</button>';
+  }).join('');
+
+  function scaleRow(field, title, lowLbl, highLbl) {
+    var btns = [1, 2, 3, 4, 5].map(function(v) {
+      var on = d[field] === v;
+      return '<button type="button" id="segScale_' + field + '_' + v + '" aria-pressed="' + (on ? 'true' : 'false') + '" onclick="_setSegScale(\'' + field + '\',' + v + ')" style="flex:1;min-height:42px;border-radius:6px;border:1px solid ' + (on ? 'var(--accent)' : 'var(--bd)') + ';background:' + (on ? 'rgba(198,255,0,.14)' : 'var(--dk)') + ';color:' + (on ? 'var(--accent)' : 'var(--mt)') + ';font-family:var(--ff);font-size:15px;font-weight:800;cursor:pointer">' + v + '</button>';
+    }).join('');
+    return '<div style="margin-bottom:12px">' +
+      '<div style="font-size:11px;font-family:var(--ff);color:var(--tx);letter-spacing:.8px;margin-bottom:5px">' + title + ' <span style="color:var(--mt);font-weight:400">(opcional)</span></div>' +
+      '<div style="display:flex;gap:5px">' + btns + '</div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--mt);margin-top:3px"><span>1 · ' + lowLbl + '</span><span>5 · ' + highLbl + '</span></div>' +
+    '</div>';
+  }
+
+  var reqAlertHtml = pendingReq
+    ? '<div style="background:rgba(198,255,0,.08);border:1px solid var(--accent);border-radius:8px;padding:10px 12px;margin-bottom:12px">' +
+        '<div style="font-size:11px;font-weight:800;color:var(--accent);letter-spacing:.8px">📣 TU COACH SOLICITÓ UNA ACTUALIZACIÓN (' + _escHTml(_segCliTriggerLabel(pendingReq.trigger)) + ')</div>' +
+        (pendingReq.note ? '<div style="font-size:12px;color:var(--tx);margin-top:4px">"' + _escHTml(pendingReq.note) + '"</div>' : '') +
+      '</div>'
+    : '';
+
+  var histItems = (_seguimientoHistory || []).slice(0, 6);
+  var histHtml = histItems.length
+    ? '<div style="margin-top:14px;border-top:1px solid var(--bd);padding-top:12px">' +
+        '<div style="font-size:10px;font-family:var(--ff);letter-spacing:1.5px;color:var(--mt);margin-bottom:8px">HISTORIAL DE ACTUALIZACIONES ENVIADAS (' + _seguimientoHistory.length + ')</div>' +
+        histItems.map(function(it) {
+          var ts = _segCliToMs(it.submittedAt) || _segCliToMs(it.createdAtMs);
+          var fStr = ts ? new Date(ts).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }) : (it.fechaMedicion || '');
+          var pTag = it.periodoLabel || (it.weekNumber ? ('Sem ' + it.weekNumber) : '');
+          return '<div class="seg-history-row" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;background:var(--dk);border:1px solid var(--bd);border-radius:6px;margin-bottom:6px;flex-wrap:wrap">' +
+            '<div>' +
+              '<div style="font-size:12px;font-weight:700;color:var(--tx)">' + _escHTml(_segCliTriggerLabel(it.trigger)) + (it.pesoKg ? (' · ' + it.pesoKg + ' kg') : '') + '</div>' +
+              '<div style="font-size:10px;color:var(--mt)">' + _escHTml(fStr) + (pTag ? (' · ' + _escHTml(pTag)) : '') + '</div>' +
+            '</div>' +
+            _segCliStatusChip(it.status || 'sent') +
+          '</div>';
+        }).join('') +
+      '</div>'
+    : '';
+
+  return '<section id="miSeguimientoCard" style="background:var(--card);border:1px solid rgba(198,255,0,.32);padding:16px;margin-bottom:14px;border-radius:8px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:8px">' +
+      '<div>' +
+        '<div class="sec-kicker" style="color:var(--accent)">MI SEGUIMIENTO PERIÓDICO</div>' +
+        '<div style="font-size:11px;color:var(--mt);line-height:1.45;margin-top:2px">Actualización breve para tu coach (independiente de tu evaluación 360° inicial). Todos los campos son opcionales.</div>' +
+      '</div>' +
+      (pendingReq ? _segCliStatusChip('pending') : (_seguimientoHistory.length ? _segCliStatusChip(_seguimientoHistory[0].status) : '')) +
+    '</div>' +
+    reqAlertHtml +
+    '<div style="margin-bottom:12px">' +
+      '<div style="font-size:10px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:5px">MOTIVO DE ACTUALIZACIÓN</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px">' + trigBtns + '</div>' +
+    '</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">' +
+      '<div>' +
+        '<label for="seg_pesoKg" style="display:block;font-size:10px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:4px">PESO ACTUAL (kg)</label>' +
+        '<input id="seg_pesoKg" type="number" step="0.1" min="20" max="300" inputmode="decimal" value="' + _escHTml(String(d.pesoKg || '')) + '" placeholder="Ej. 78.4" oninput="_onSegDraftInput(\'pesoKg\',this.value)" style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid var(--bd);color:var(--tx);font-family:var(--ff);font-size:16px;padding:10px;border-radius:6px">' +
+      '</div>' +
+      '<div>' +
+        '<label for="seg_fechaMedicion" style="display:block;font-size:10px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:4px">FECHA MEDICIÓN</label>' +
+        '<input id="seg_fechaMedicion" type="date" value="' + _escHTml(String(d.fechaMedicion || '')) + '" oninput="_onSegDraftInput(\'fechaMedicion\',this.value)" style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid var(--bd);color:var(--tx);font-family:var(--fb);font-size:13px;padding:10px;border-radius:6px">' +
+      '</div>' +
+    '</div>' +
+    scaleRow('recuperacion', 'RECUPERACIÓN GENERAL (1–5)', 'Baja', 'Óptima') +
+    scaleRow('energiaRendimiento', 'ENERGÍA Y RENDIMIENTO (1–5)', 'Bajo', 'Alto') +
+    scaleRow('sueno', 'CALIDAD DE SUEÑO (1–5)', 'Deficiente', 'Reparador') +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">' +
+      '<div>' +
+        '<label for="seg_adherenciaEntreno" style="display:block;font-size:10px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:4px">ADHERENCIA ENTRENO (%)</label>' +
+        '<input id="seg_adherenciaEntreno" type="number" min="0" max="100" step="1" inputmode="numeric" value="' + _escHTml(String(d.adherenciaEntreno || '')) + '" placeholder="0–100%" oninput="_onSegDraftInput(\'adherenciaEntreno\',this.value)" style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid var(--bd);color:var(--tx);font-family:var(--ff);font-size:15px;padding:10px;border-radius:6px">' +
+      '</div>' +
+      '<div>' +
+        '<label for="seg_adherenciaNutricion" style="display:block;font-size:10px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:4px">ADHERENCIA NUTRICIÓN</label>' +
+        '<div style="display:flex;gap:6px">' +
+          '<input id="seg_adherenciaNutricion" type="number" min="0" max="100" step="1" inputmode="numeric" ' + (d.nutricionNoAplica ? 'disabled ' : '') + 'value="' + _escHTml(String(d.adherenciaNutricion || '')) + '" placeholder="%" oninput="_onSegDraftInput(\'adherenciaNutricion\',this.value)" style="flex:1;min-width:0;box-sizing:border-box;background:var(--bk);border:1px solid var(--bd);color:var(--tx);font-family:var(--ff);font-size:15px;padding:10px;border-radius:6px">' +
+          '<button type="button" id="seg_nutriNABtn" onclick="_toggleSegNutriNA()" style="padding:0 10px;border-radius:6px;border:1px solid ' + (d.nutricionNoAplica ? 'var(--accent)' : 'var(--bd)') + ';background:' + (d.nutricionNoAplica ? 'rgba(198,255,0,.14)' : 'var(--dk)') + ';color:' + (d.nutricionNoAplica ? 'var(--accent)' : 'var(--mt)') + ';font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap">N/A</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+    '<div style="margin-bottom:10px">' +
+      '<label for="seg_fatigaMolestias" style="display:block;font-size:10px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:4px">FATIGA O MOLESTIAS RELEVANTES (opcional)</label>' +
+      '<input id="seg_fatigaMolestias" type="text" maxlength="240" value="' + _escHTml(String(d.fatigaMolestias || '')) + '" placeholder="Articulaciones, sobrecarga o sin molestias…" oninput="_onSegDraftInput(\'fatigaMolestias\',this.value)" style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid var(--bd);color:var(--tx);font-family:var(--fb);font-size:13px;padding:10px;border-radius:6px">' +
+    '</div>' +
+    '<div style="margin-bottom:12px">' +
+      '<label for="seg_comentarios" style="display:block;font-size:10px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:4px">COMENTARIOS PARA EL SIGUIENTE BLOQUE (opcional)</label>' +
+      '<textarea id="seg_comentarios" rows="2" maxlength="500" placeholder="Disponibilidad de días, horarios, sensaciones del bloque o preferencias…" oninput="_onSegDraftInput(\'comentarios\',this.value)" style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid var(--bd);color:var(--tx);font-family:var(--fb);font-size:13px;padding:10px;border-radius:6px;resize:vertical">' + _escHTml(String(d.comentarios || '')) + '</textarea>' +
+    '</div>' +
+    '<button type="button" id="btnSaveSeguimiento" onclick="saveSeguimientoClient()" style="width:100%;padding:14px;background:var(--accent-fill);color:var(--on-accent);font-family:var(--font-display);font-size:16px;font-weight:800;letter-spacing:2px;border:none;border-radius:6px;cursor:pointer">📤 ENVIAR ACTUALIZACIÓN AL COACH</button>' +
+    '<div id="segSaveFeedback" style="font-size:12px;color:var(--mt);text-align:center;margin-top:8px;min-height:18px"></div>' +
+    histHtml +
+  '</section>';
+}
+window._buildMiSeguimientoSection = _buildMiSeguimientoSection;
+
 function renderCheckin() {
   var cont = document.getElementById('tabCheckin');
   if (!cont || !PLAN) return;
@@ -14800,6 +15276,7 @@ function renderCheckin() {
     '<div id="ciFloatSave" class="ci-float">'
     +   '<button onclick="guardarCI()">GUARDAR CHECK-IN</button>'
     + '</div>'
+    + _buildMiSeguimientoSection()
     + '<div class="sec-kicker">CHECK-IN SEM ' + sem + '</div>'
     + '<div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--mt);margin-bottom:12px">SEMANA ' + CURRENT_WEEK + ' DE ' + getTotalWeeks() + '</div>'
 
@@ -15100,7 +15577,8 @@ function renderPerfil() {
       <div style="font-family:var(--ff);font-size:10px;letter-spacing:2px;color:var(--gold);margin-bottom:8px">💬 MENSAJE DE TU COACH</div>
       <div style="font-size:13px;color:var(--tx);line-height:1.65;white-space:pre-wrap">${PLAN.clientMessage.replace(/</g,'&lt;')}</div>
     </div>` : ''}
-    <button onclick="openIntake()" style="width:100%;background:rgba(196,255,0,.08);border:1px solid rgba(196,255,0,.30);color:var(--accent);font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer;margin-top:14px">📋 FICHA DE EVALUACIÓN COMPLETA</button>
+    <button onclick="openMiSeguimiento()" style="width:100%;background:rgba(198,255,0,.14);border:1px solid var(--accent);color:var(--accent);font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:800;padding:14px;border-radius:10px;cursor:pointer;margin-top:14px">📈 MI SEGUIMIENTO PERIÓDICO</button>
+    <button onclick="openIntake()" style="width:100%;background:rgba(196,255,0,.08);border:1px solid rgba(196,255,0,.30);color:var(--accent);font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer;margin-top:10px">📋 FICHA DE EVALUACIÓN 360° INICIAL</button>
     <button onclick="showFAQModal()" style="width:100%;background:rgba(107,107,102,.08);border:1px solid rgba(107,107,102,.35);color:var(--gold);font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer;margin-top:14px">❓ AYUDA · CÓMO USAR LA APP</button>
     <div id="_coachContactBtn" style="margin-top:10px"><button onclick="_loadCoachContact()" style="width:100%;background:rgba(37,211,102,.08);border:1px solid rgba(37,211,102,.4);color:var(--whatsapp);font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer">💬 CONTACTAR A MI COACH</button></div>
     <button class="pdf-btn" onclick="downloadMyPlanPDF()" style="margin-top:10px">⬇ DESCARGAR MI PLAN PDF</button>
