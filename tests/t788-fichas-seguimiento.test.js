@@ -80,6 +80,14 @@ test('T788.1 Prioridad 0: firestore.rules permite consulta tenant-scoped de fich
   const reqBlock = rulesSrc.slice(reqIdx, reqIdx + 950);
   assert.match(reqBlock, /allow read:\s*if isSelfOrOwnerCoach\(clientId\);/);
   assert.match(reqBlock, /allow create:\s*if ownsClient\(clientId\)/);
+
+  // Contrato separado de revisión del Coach bajo clients/{clientId}/checkin_reviews/{reviewId}
+  const revIdx = rulesSrc.indexOf('match /checkin_reviews/{reviewId}');
+  assert.ok(revIdx !== -1, 'match /checkin_reviews/{reviewId} debe existir bajo clients/{clientId}');
+  const revBlock = rulesSrc.slice(revIdx, revIdx + 600);
+  assert.match(revBlock, /allow read:\s*if isSelfOrOwnerCoach\(clientId\);/);
+  assert.match(revBlock, /allow create, update:\s*if ownsClient\(clientId\)/);
+  assert.match(revBlock, /request\.resource\.data\.status == 'reviewed'/);
   assert.match(rulesDocSrc, /Ruta de despliegue independiente/);
 });
 
@@ -158,12 +166,14 @@ test('T788.4 Prioridad 1: App Cliente incluye sección Mi seguimiento independie
   assert.match(buildSegBody, /block_end/);
   assert.match(buildSegBody, /coach_request/);
   assert.match(buildSegBody, /scheduled/);
-  // Campos breves y opcionales
+  // Campos breves y opcionales (incluyendo escalas 1-5 completas: energia, recuperacion, sueno, fatiga, rendimiento)
   assert.match(buildSegBody, /seg_pesoKg/);
   assert.match(buildSegBody, /seg_fechaMedicion/);
+  assert.match(buildSegBody, /energia/);
   assert.match(buildSegBody, /recuperacion/);
-  assert.match(buildSegBody, /energiaRendimiento/);
   assert.match(buildSegBody, /sueno/);
+  assert.match(buildSegBody, /fatiga/);
+  assert.match(buildSegBody, /rendimiento/);
   assert.match(buildSegBody, /seg_adherenciaEntreno/);
   assert.match(buildSegBody, /seg_adherenciaNutricion/);
   assert.match(buildSegBody, /seg_nutriNABtn/);
@@ -184,11 +194,21 @@ test('T788.4 Prioridad 1: App Cliente incluye sección Mi seguimiento independie
   assert.match(logoutBody, /_seguimientoDraft = null;/);
 });
 
-test('T788.5 Prioridad 2 y 3: App Coach integra Seguimiento y actualizaciones en expediente, solicitudes por cliente y revisión inmutable', () => {
+test('T788.5 Prioridad 0, 2 y 3: App Coach distingue permission-denied de ficha inexistente, integra Seguimiento y persiste 4 contratos separados', () => {
   const showDetailBody = extractFn(coachSrc, 'async function showClientDetail(clientId, opts)');
   assert.match(showDetailBody, /ctab_seguimiento/);
   assert.match(showDetailBody, /Seguimiento y actualizaciones/);
   assert.match(showDetailBody, /seguimientoPendingDot/);
+  assert.match(showDetailBody, /_detailFichaError\s*=\s*\{/);
+
+  const renderFichaBody = extractFn(coachSrc, 'function _renderClientTabFicha(cont)');
+  assert.match(renderFichaBody, /Error de permisos al consultar la ficha/);
+  assert.match(renderFichaBody, /no se interpreta como ficha inexistente/);
+  assert.match(renderFichaBody, /_retryDetailFichaLoad/);
+
+  const loadIntakeBody = extractFn(coachSrc, 'async function loadIntakeForClient(clientId)');
+  assert.match(loadIntakeBody, /ensureCoachDoc\(\)/);
+  assert.match(loadIntakeBody, /no se interpreta como ficha inexistente/);
 
   const switchTabBody = extractFn(coachSrc, 'async function _switchClientTab(tab)');
   assert.match(switchTabBody, /tab === 'seguimiento'/);
@@ -199,6 +219,7 @@ test('T788.5 Prioridad 2 y 3: App Coach integra Seguimiento y actualizaciones en
   assert.match(reqFnBody, /status:\s*'pending'/);
 
   const revFnBody = extractFn(coachSrc, 'async function markSeguimientoReviewed(clientId, checkinId)');
+  assert.match(revFnBody, /setDoc\(doc\(db, 'clients', clientId, 'checkin_reviews', reviewId\)/);
   assert.match(revFnBody, /updateDoc\(doc\(db, 'clients', clientId, 'checkins', checkinId\)/);
   assert.match(revFnBody, /status:\s*'reviewed'/);
   assert.match(revFnBody, /reviewedByCoachId:\s*currentCoach\.uid/);

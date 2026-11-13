@@ -14791,9 +14791,12 @@ function _initSeguimientoDraft() {
     requestId: pendingReq ? pendingReq.id : null,
     pesoKg: '',
     fechaMedicion: new Date().toISOString().slice(0, 10),
+    energia: null,
     recuperacion: null,
-    energiaRendimiento: null,
     sueno: null,
+    fatiga: null,
+    rendimiento: null,
+    energiaRendimiento: null,
     fatigaMolestias: '',
     adherenciaEntreno: '',
     adherenciaNutricion: '',
@@ -14953,9 +14956,12 @@ async function saveSeguimientoClient() {
   });
   var hasAnyField = Boolean(
     (d.pesoKg !== '' && d.pesoKg != null) ||
+    d.energia != null ||
     d.recuperacion != null ||
-    d.energiaRendimiento != null ||
     d.sueno != null ||
+    d.fatiga != null ||
+    d.rendimiento != null ||
+    d.energiaRendimiento != null ||
     (d.fatigaMolestias && d.fatigaMolestias.length > 0) ||
     (d.adherenciaEntreno !== '' && d.adherenciaEntreno != null) ||
     (d.adherenciaNutricion !== '' && d.adherenciaNutricion != null) ||
@@ -14989,9 +14995,12 @@ async function saveSeguimientoClient() {
     requestId: reqIdToFulfill || null,
     pesoKg: (d.pesoKg !== '' && d.pesoKg != null && !isNaN(parseFloat(d.pesoKg))) ? parseFloat(d.pesoKg) : null,
     fechaMedicion: d.fechaMedicion || new Date(nowMs).toISOString().slice(0, 10),
+    energia: d.energia != null ? Number(d.energia) : (d.energiaRendimiento != null ? Number(d.energiaRendimiento) : null),
     recuperacion: d.recuperacion != null ? Number(d.recuperacion) : null,
-    energiaRendimiento: d.energiaRendimiento != null ? Number(d.energiaRendimiento) : null,
     sueno: d.sueno != null ? Number(d.sueno) : null,
+    fatiga: d.fatiga != null ? Number(d.fatiga) : null,
+    rendimiento: d.rendimiento != null ? Number(d.rendimiento) : (d.energiaRendimiento != null ? Number(d.energiaRendimiento) : null),
+    energiaRendimiento: d.energiaRendimiento != null ? Number(d.energiaRendimiento) : (d.energia != null ? Number(d.energia) : (d.rendimiento != null ? Number(d.rendimiento) : null)),
     fatigaMolestias: d.fatigaMolestias || '',
     adherenciaEntreno: (d.adherenciaEntreno !== '' && d.adherenciaEntreno != null && !isNaN(parseFloat(d.adherenciaEntreno))) ? Math.max(0, Math.min(100, parseFloat(d.adherenciaEntreno))) : null,
     adherenciaNutricion: (!d.nutricionNoAplica && d.adherenciaNutricion !== '' && d.adherenciaNutricion != null && !isNaN(parseFloat(d.adherenciaNutricion))) ? Math.max(0, Math.min(100, parseFloat(d.adherenciaNutricion))) : null,
@@ -15153,9 +15162,11 @@ function _buildMiSeguimientoSection() {
         '<input id="seg_fechaMedicion" type="date" value="' + _escHTml(String(d.fechaMedicion || '')) + '" oninput="_onSegDraftInput(\'fechaMedicion\',this.value)" style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid var(--bd);color:var(--tx);font-family:var(--fb);font-size:13px;padding:10px;border-radius:6px">' +
       '</div>' +
     '</div>' +
+    scaleRow('energia', 'ENERGÍA PERCIBIDA (1–5)', 'Baja', 'Alta') +
     scaleRow('recuperacion', 'RECUPERACIÓN GENERAL (1–5)', 'Baja', 'Óptima') +
-    scaleRow('energiaRendimiento', 'ENERGÍA Y RENDIMIENTO (1–5)', 'Bajo', 'Alto') +
     scaleRow('sueno', 'CALIDAD DE SUEÑO (1–5)', 'Deficiente', 'Reparador') +
+    scaleRow('fatiga', 'FATIGA PERCIBIDA (1–5)', 'Mínima', 'Alta') +
+    scaleRow('rendimiento', 'RENDIMIENTO PERCIBIDO (1–5)', 'Bajo', 'Óptimo') +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">' +
       '<div>' +
         '<label for="seg_adherenciaEntreno" style="display:block;font-size:10px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:4px">ADHERENCIA ENTRENO (%)</label>' +

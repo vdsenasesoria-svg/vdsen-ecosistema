@@ -3191,6 +3191,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       _detailPlanData = null;
       _detailPrevPlanData = null;
       _detailFichaData = null;
+      _detailFichaError = null;
       _detailRenovacionData = null;
       _detailLogsData = null;
       _detailSeguimientoData = null;
@@ -12158,6 +12159,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   let _detailPlanData   = null;
   let _detailPrevPlanData   = null;   // FASE 26 — plan anterior (lazy, desde plans_backup)
   let _detailFichaData      = null;
+  let _detailFichaError     = null;
   let _detailRenovacionData = null;
   let _detailLogsData    = null;   // FASE 61 — logs del cliente para mirror de ejecución
   let _detailSeguimientoData = null; // T788 — seguimientos periódicos del cliente
@@ -12360,6 +12362,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     }
 
     _detailFichaData = null;
+    _detailFichaError = null;
     try {
       const fichaSnap = await getDoc(doc(db, 'fichas_onboarding', clientId));
       if (_detailClientId !== clientId) return;  // T127-H
@@ -12369,8 +12372,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         // legacy fallback
         if (c.intake) _detailFichaData = _normalizeFichaDoc(c.intake, c);
       }
-    } catch(_) {
-      if (c.intake) _detailFichaData = _normalizeFichaDoc(c.intake, c);
+    } catch(_fErr) {
+      if (c.intake) {
+        _detailFichaData = _normalizeFichaDoc(c.intake, c);
+      } else {
+        _detailFichaError = {
+          code: (_fErr && _fErr.code) || 'permission-denied',
+          message: (_fErr && _fErr.message) || 'Missing or insufficient permissions.'
+        };
+      }
     }
     if (_detailClientId !== clientId) return;  // T127-H
 
@@ -12992,12 +13002,15 @@ El esfuerzo no es negociable.
     const fichaData = ficha && ficha.data ? ficha.data : (ficha || null);
     const hasFicha  = Boolean((ficha && ficha.hasContent) || (fichaData && Object.keys(fichaData).some(k => k !== 'nombre' && k !== 'email' && k !== 'telefono' && fichaData[k] !== '' && fichaData[k] != null)));
     const d         = fichaData || {};
-    const fichaStatus = !hasFicha ? 'pendiente' : (ficha && ficha.status ? ficha.status : (ficha && ficha.updatedBy === 'client' ? 'enviada' : 'recibida'));
-    const statusBadgeHtml = fichaStatus === 'enviada'
-      ? '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(198,255,0,.14);border:1px solid #C6FF00;color:#C6FF00;font-weight:700;letter-spacing:.06em;text-transform:uppercase">ENVIADA POR CLIENTE</span>'
-      : (fichaStatus === 'recibida' || fichaStatus === 'convertida'
-        ? '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(68,187,136,.14);border:1px solid #44BB88;color:#44BB88;font-weight:700;letter-spacing:.06em;text-transform:uppercase">RECIBIDA</span>'
-        : '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(255,136,68,.14);border:1px solid #FF8844;color:#FF8844;font-weight:700;letter-spacing:.06em;text-transform:uppercase">PENDIENTE</span>');
+    const fichaReadErr = (!hasFicha && _detailFichaError) ? _detailFichaError : null;
+    const fichaStatus = fichaReadErr ? 'error' : (!hasFicha ? 'pendiente' : (ficha && ficha.status ? ficha.status : (ficha && ficha.updatedBy === 'client' ? 'enviada' : 'recibida')));
+    const statusBadgeHtml = fichaStatus === 'error'
+      ? '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(255,68,68,.14);border:1px solid #FF4444;color:#FF4444;font-weight:700;letter-spacing:.06em;text-transform:uppercase">ERROR DE PERMISOS</span>'
+      : (fichaStatus === 'enviada'
+        ? '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(198,255,0,.14);border:1px solid #C6FF00;color:#C6FF00;font-weight:700;letter-spacing:.06em;text-transform:uppercase">ENVIADA POR CLIENTE</span>'
+        : (fichaStatus === 'recibida' || fichaStatus === 'convertida'
+          ? '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(68,187,136,.14);border:1px solid #44BB88;color:#44BB88;font-weight:700;letter-spacing:.06em;text-transform:uppercase">RECIBIDA</span>'
+          : '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(255,136,68,.14);border:1px solid #FF8844;color:#FF8844;font-weight:700;letter-spacing:.06em;text-transform:uppercase">PENDIENTE</span>'));
 
     const updatedAt = ficha && ficha.updatedAt
       ? new Date(ficha.updatedAt).toLocaleDateString('es-ES', { day:'numeric', month:'short', year:'numeric' })
@@ -13142,6 +13155,16 @@ El esfuerzo no es negociable.
         <div style="background:rgba(244,244,240,.02);border:1px solid rgba(244,244,240,.07);border-radius:10px;padding:14px 16px">
           ${allSecs || '<div style="color:#555;font-size:12px;text-align:center;padding:8px">Sin campos completados todavía.</div>'}
         </div>`;
+    } else if (fichaReadErr) {
+      const errCodeSafe = String(fichaReadErr.code || 'permission-denied').replace(/</g, '&lt;');
+      const errMsgSafe = String(fichaReadErr.message || 'Missing or insufficient permissions.').replace(/</g, '&lt;');
+      mainContent = `
+        <div style="background:rgba(255,68,68,.06);border:1px solid rgba(255,68,68,.35);border-radius:10px;padding:20px;margin-bottom:4px;text-align:center">
+          <div style="font-size:26px;margin-bottom:8px">⚠️</div>
+          <div style="color:#FF6666;font-weight:700;font-size:13px;margin-bottom:6px">Error de permisos al consultar la ficha (${errCodeSafe})</div>
+          <div style="color:#999;font-size:12px;line-height:1.6;margin-bottom:10px">${errMsgSafe}<br>Este fallo de acceso no se interpreta como ficha inexistente.</div>
+          <button onclick="_retryDetailFichaLoad('${clientId}')" style="padding:7px 14px;border-radius:6px;border:1px solid #FF6666;background:rgba(255,68,68,.12);color:#FF8888;font-size:11px;font-weight:700;cursor:pointer">🔄 Reintentar lectura de ficha</button>
+        </div>`;
     } else {
       mainContent = `
         <div style="background:rgba(255,200,0,.05);border:1px solid rgba(255,200,0,.22);border-radius:10px;padding:20px;margin-bottom:4px;text-align:center">
@@ -13160,7 +13183,7 @@ El esfuerzo no es negociable.
             <div style="font-size:13px;font-weight:700;color:#F4F4F0">${(d.nombre || (_detailClientData && _detailClientData.displayName) || 'Ficha').replace(/</g,'&lt;')}</div>
             ${statusBadgeHtml}
           </div>
-          ${updatedAt ? `<div style="font-size:10px;color:#555;margin-top:2px">Actualizado ${updatedAt}${ficha && ficha.updatedBy === 'client' ? ' · enviada por cliente' : ''}</div>` : '<div style="font-size:10px;color:#555;margin-top:2px">Sin ficha registrada</div>'}
+          ${updatedAt ? `<div style="font-size:10px;color:#555;margin-top:2px">Actualizado ${updatedAt}${ficha && ficha.updatedBy === 'client' ? ' · enviada por cliente' : ''}</div>` : (fichaReadErr ? `<div style="font-size:10px;color:#FF6666;margin-top:2px">Error de lectura (${String(fichaReadErr.code || 'permission-denied').replace(/</g,'&lt;')}) — no se interpreta como ficha inexistente</div>` : '<div style="font-size:10px;color:#555;margin-top:2px">Sin ficha registrada</div>')}
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button onclick="_switchClientTab('seguimiento')" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(244,244,240,.22);background:rgba(244,244,240,.05);color:#F4F4F0;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">📈 Ver seguimiento</button>
@@ -13223,6 +13246,37 @@ El esfuerzo no es negociable.
       </div>`;
   }
   window._renderClientTabFicha = _renderClientTabFicha;
+
+  async function _retryDetailFichaLoad(clientId) {
+    if (!clientId || _detailClientId !== clientId) return;
+    try { await ensureCoachDoc(); } catch (_) {}
+    if (_detailClientId !== clientId) return;
+    _detailFichaData = null;
+    _detailFichaError = null;
+    try {
+      const fichaSnap = await getDoc(doc(db, 'fichas_onboarding', clientId));
+      if (_detailClientId !== clientId) return;
+      if (fichaSnap.exists()) {
+        _detailFichaData = _normalizeFichaDoc(fichaSnap.data(), _detailClientData || {});
+      } else if (_detailClientData && _detailClientData.intake) {
+        _detailFichaData = _normalizeFichaDoc(_detailClientData.intake, _detailClientData);
+      }
+    } catch (_fErr) {
+      if (_detailClientData && _detailClientData.intake) {
+        _detailFichaData = _normalizeFichaDoc(_detailClientData.intake, _detailClientData);
+      } else {
+        _detailFichaError = {
+          code: (_fErr && _fErr.code) || 'permission-denied',
+          message: (_fErr && _fErr.message) || 'Missing or insufficient permissions.'
+        };
+      }
+    }
+    if (_detailClientId === clientId && _detailActiveTab === 'ficha') {
+      const cont = document.getElementById('clientDetailTabContent');
+      if (cont) _renderClientTabFicha(cont);
+    }
+  }
+  window._retryDetailFichaLoad = _retryDetailFichaLoad;
 
   // ── Ehrenstein — Calibración Volumétrica (Módulo A) ──────────────────────
   function _calcVMEVMR(f) {
@@ -13676,16 +13730,24 @@ El esfuerzo no es negociable.
                 <div style="font-size:14px;font-weight:800;color:#F4F4F0;font-family:'JetBrains Mono',monospace">${_intEsc(pesoStr)}</div>
               </div>
               <div style="background:#0A0A0A;border:1px solid rgba(244,244,240,.08);border-radius:6px;padding:8px">
+                <div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.06em">Energía</div>
+                <div style="font-size:14px;font-weight:800;color:#C6FF00;font-family:'JetBrains Mono',monospace">${(it.energia != null && it.energia !== '') ? _intEsc(it.energia + ' / 5') : (it.energiaRendimiento != null && it.energiaRendimiento !== '' ? _intEsc(it.energiaRendimiento + ' / 5') : '—')}</div>
+              </div>
+              <div style="background:#0A0A0A;border:1px solid rgba(244,244,240,.08);border-radius:6px;padding:8px">
                 <div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.06em">Recuperación</div>
                 <div style="font-size:14px;font-weight:800;color:#C6FF00;font-family:'JetBrains Mono',monospace">${it.recuperacion != null && it.recuperacion !== '' ? _intEsc(it.recuperacion + ' / 5') : '—'}</div>
               </div>
               <div style="background:#0A0A0A;border:1px solid rgba(244,244,240,.08);border-radius:6px;padding:8px">
-                <div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.06em">Energía / Rend.</div>
-                <div style="font-size:14px;font-weight:800;color:#C6FF00;font-family:'JetBrains Mono',monospace">${it.energiaRendimiento != null && it.energiaRendimiento !== '' ? _intEsc(it.energiaRendimiento + ' / 5') : '—'}</div>
-              </div>
-              <div style="background:#0A0A0A;border:1px solid rgba(244,244,240,.08);border-radius:6px;padding:8px">
                 <div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.06em">Sueño</div>
                 <div style="font-size:14px;font-weight:800;color:#F4F4F0;font-family:'JetBrains Mono',monospace">${it.sueno != null && it.sueno !== '' ? _intEsc(it.sueno + ' / 5') : '—'}</div>
+              </div>
+              <div style="background:#0A0A0A;border:1px solid rgba(244,244,240,.08);border-radius:6px;padding:8px">
+                <div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.06em">Fatiga</div>
+                <div style="font-size:14px;font-weight:800;color:#F4F4F0;font-family:'JetBrains Mono',monospace">${it.fatiga != null && it.fatiga !== '' ? _intEsc(it.fatiga + ' / 5') : '—'}</div>
+              </div>
+              <div style="background:#0A0A0A;border:1px solid rgba(244,244,240,.08);border-radius:6px;padding:8px">
+                <div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.06em">Rendimiento</div>
+                <div style="font-size:14px;font-weight:800;color:#C6FF00;font-family:'JetBrains Mono',monospace">${(it.rendimiento != null && it.rendimiento !== '') ? _intEsc(it.rendimiento + ' / 5') : (it.energiaRendimiento != null && it.energiaRendimiento !== '' ? _intEsc(it.energiaRendimiento + ' / 5') : '—')}</div>
               </div>
               <div style="background:#0A0A0A;border:1px solid rgba(244,244,240,.08);border-radius:6px;padding:8px">
                 <div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.06em">Adh. Entreno</div>
@@ -13828,6 +13890,20 @@ El esfuerzo no es negociable.
     const nowMs = Date.now();
     try {
       let subOk = false, logsOk = false, lastErr = null;
+      const reviewId = 'rev_' + checkinId;
+      // Contrato separado 4/4: clients/{clientId}/checkin_reviews/{reviewId}
+      try {
+        await setDoc(doc(db, 'clients', clientId, 'checkin_reviews', reviewId), {
+          id: reviewId,
+          checkinId: checkinId,
+          clientId: clientId,
+          coachId: currentCoach.uid,
+          status: 'reviewed',
+          createdAtMs: nowMs,
+          reviewedAt: serverTimestamp()
+        });
+        subOk = true;
+      } catch (eRev) { lastErr = eRev; }
       // Regla estricta: el Coach solo actualiza status, reviewedAt, reviewedByCoachId (sin alterar métricas declaradas por el cliente)
       try {
         await updateDoc(doc(db, 'clients', clientId, 'checkins', checkinId), {
@@ -13836,7 +13912,7 @@ El esfuerzo no es negociable.
           reviewedByCoachId: currentCoach.uid
         });
         subOk = true;
-      } catch (eSub) { lastErr = eSub; }
+      } catch (eSub) { lastErr = lastErr || eSub; }
       if (Array.isArray(_detailSeguimientoData)) {
         _detailSeguimientoData.forEach(it => {
           if (it && it.id === checkinId) {
@@ -13849,10 +13925,24 @@ El esfuerzo no es negociable.
       const remainingPending = Array.isArray(_detailSeguimientoData)
         ? _detailSeguimientoData.filter(it => it.status !== 'reviewed').length
         : 0;
+      const prevReviews = (_detailLogsData && _detailLogsData.data && Array.isArray(_detailLogsData.data.seguimientoReviews))
+        ? _detailLogsData.data.seguimientoReviews.slice(0, 24)
+        : [];
+      const reviewEntry = {
+        id: reviewId,
+        checkinId: checkinId,
+        clientId: clientId,
+        coachId: currentCoach.uid,
+        status: 'reviewed',
+        createdAtMs: nowMs,
+        reviewedAt: nowMs
+      };
+      const nextReviews = [reviewEntry].concat(prevReviews.filter(r => r && r.checkinId !== checkinId));
       try {
         await setDoc(doc(db, 'logs', clientId), {
           clientId: clientId,
           seguimientoItems: Array.isArray(_detailSeguimientoData) ? _detailSeguimientoData.slice(0, 25) : [],
+          seguimientoReviews: nextReviews,
           seguimientoSummary: {
             pendingReviewCount: remainingPending,
             lastReviewedId: checkinId,
@@ -24312,6 +24402,7 @@ El esfuerzo no es negociable.
   }
   async function _loadCoachClientFichas(box) {
     if (!currentCoach) return;
+    try { await ensureCoachDoc(); } catch (_) {}
     try {
       const cSnap = await getDocs(query(collection(db, 'clients'), where('coachId', '==', currentCoach.uid)));
       const clientDocs = [];
@@ -24413,15 +24504,18 @@ El esfuerzo no es negociable.
     _intakeFotometria = null;
     status.textContent = 'Cargando…';
     try {
+      try { await ensureCoachDoc(); } catch (_) {}
       const cSnap = await getDoc(doc(db,'clients',clientId));
       if (!cSnap.exists()) { status.textContent = 'Cliente no encontrado o sin acceso.'; return; }
       const cd = cSnap.data() || {};
       // Fuente 1: fichas_onboarding/{uid} (tanto en formato .data como en formato plano de enviarFicha)
       let rawFicha = null;
+      let fichaReadErr = null;
       try {
         const fs = await getDoc(doc(db,'fichas_onboarding',clientId));
         if (fs.exists()) rawFicha = fs.data();
       } catch (_fErr) {
+        fichaReadErr = _fErr;
         console.warn('[INTAKE] fichas_onboarding read warning:', _fErr && _fErr.code);
       }
       let norm = rawFicha ? _normalizeFichaDoc(rawFicha, cd) : null;
@@ -24449,7 +24543,9 @@ El esfuerzo no es negociable.
       actions.style.display = 'flex';
       status.textContent = (norm && norm.updatedAt)
         ? ('Última actualización: ' + new Date(norm.updatedAt).toLocaleString('es-MX') + (norm.updatedBy? ' · por '+(norm.updatedBy==='client'?'el cliente':'ti') : ''))
-        : 'Sin evaluación previa — formulario nuevo.';
+        : (fichaReadErr
+          ? ('⚠️ Error de permisos al consultar fichas_onboarding (' + ((fichaReadErr && fichaReadErr.code) || 'permission-denied') + ') — no se interpreta como ficha inexistente.')
+          : 'Sin evaluación previa — formulario nuevo.');
       // Fotogrametría guardada en el mismo doc (nivel raíz)
       _intakeFotometria = (rawFicha && rawFicha.fotometria) ? rawFicha.fotometria : null;
       analysisCard.style.display = 'block';
