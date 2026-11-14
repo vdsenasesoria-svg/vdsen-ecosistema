@@ -9,7 +9,7 @@ const { randomUUID } = require('node:crypto');
 const { initializeApp, deleteApp } = require('firebase/app');
 const {
   getFirestore, connectFirestoreEmulator, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
-  collection, query, where, serverTimestamp
+  collection, query, where, serverTimestamp, writeBatch, runTransaction
 } = require('firebase/firestore');
 const { initializeApp: initAdmin, deleteApp: deleteAdmin } = require('firebase-admin/app');
 const { getFirestore: getAdminFirestore } = require('firebase-admin/firestore');
@@ -139,4 +139,90 @@ test('T795.2 firestore.t788.rules: 4-contract seguimiento lifecycle, metric immu
   // 6. Audit proof: logs/{clientId} allows owner coach overwrite (NOT immutable)
   await allowed(setDoc(doc(dbO, 'logs', C), { seguimientoItems: [{ id: chkId, pesoKg: 99 }] }, { merge: true }),
     'owner coach retains write access on logs/{clientId} mirror');
+
+  // 7. Adversarial: client cannot forge checkin_reviews or write checkin_request_lock
+  await denied(setDoc(doc(dbC, 'clients', C, 'checkin_reviews', 'rev_fake_' + id), {
+    id: 'rev_fake_' + id, checkinId: chkId, clientId: C, coachId: O, status: 'reviewed', reviewedAt: serverTimestamp()
+  }), 'client cannot forge checkin_review');
+  await denied(setDoc(doc(dbC, 'clients', C, 'checkin_request_lock', 'active'), {
+    clientId: C, coachId: O, activeRequestId: reqId
+  }), 'client cannot write checkin_request_lock');
+  await denied(setDoc(doc(dbX, 'clients', C, 'checkin_request_lock', 'active'), {
+    clientId: C, coachId: X, activeRequestId: reqId
+  }), 'other coach cannot write checkin_request_lock');
+});
+
+test('T795.3 firestore.t788.rules: atomic writeBatch/existsAfter and single-pending-request lock', async () => {
+  const id = randomUUID().slice(0, 8);
+  const O = 'coach-o3-' + id, C = 'cli-a3-' + id, C2 = 'cli-b3-' + id;
+  await adminDb.doc('coaches/' + O).set({ role: 'coach' });
+  await adminDb.doc('clients/' + C).set({ coachId: O, email: 'c3@x.com' });
+  await adminDb.doc('clients/' + C2).set({ coachId: O, email: 'c3b@x.com' });
+
+  const dbO = await as(O), dbC = await as(C), dbC2 = await as(C2);
+  const reqId = 'req_bat_' + id, chkId = 'chk_bat_' + id, otherChkId = 'chk_other_' + id;
+
+  // Coach creates request + lock atomically via runTransaction
+  await allowed(runTransaction(dbO, async tx => {
+    const lockRef = doc(dbO, 'clients', C, 'checkin_request_lock', 'active');
+    const lockSnap = await tx.get(lockRef);
+    assert.equal(lockSnap.exists(), false);
+    tx.set(doc(dbO, 'clients', C, 'checkin_requests', reqId), {
+      id: reqId, clientId: C, coachId: O, status: 'pending', requestedAt: serverTimestamp()
+    });
+    tx.set(lockRef, { clientId: C, coachId: O, activeRequestId: reqId, updatedAtMs: Date.now() });
+  }), 'coach creates request + active lock atomically');
+
+  // Other client creates its own checkin
+  await allowed(setDoc(doc(dbC2, 'clients', C2, 'checkins', otherChkId), {
+    id: otherChkId, clientId: C2, status: 'sent', submittedAt: serverTimestamp()
+  }), 'other client creates own checkin');
+
+  // DENY: client C tries to fulfill reqId with non-existent checkinId
+  await denied(updateDoc(doc(dbC, 'clients', C, 'checkin_requests', reqId), {
+    status: 'sent', checkinId: 'nonexistent_' + id, fulfilledAt: serverTimestamp()
+  }), 'cannot fulfill request with nonexistent checkinId');
+
+  // DENY: client C tries to fulfill reqId with another client's checkinId
+  await denied(updateDoc(doc(dbC, 'clients', C, 'checkin_requests', reqId), {
+    status: 'sent', checkinId: otherChkId, fulfilledAt: serverTimestamp()
+  }), 'cannot fulfill request with another client checkinId');
+
+  // ALLOW: atomic writeBatch creating checkins/{chkId} AND fulfilling checkin_requests/{reqId} (existsAfter)
+  const batch = writeBatch(dbC);
+  batch.set(doc(dbC, 'clients', C, 'checkins', chkId), {
+    id: chkId, clientId: C, requestId: reqId, status: 'sent', pesoKg: 80.2, submittedAt: serverTimestamp()
+  });
+  batch.update(doc(dbC, 'clients', C, 'checkin_requests', reqId), {
+    status: 'sent', checkinId: chkId, fulfilledAt: serverTimestamp()
+  });
+  await allowed(batch.commit(), 'atomic writeBatch checkin + checkin_request succeeds via existsAfter');
+});
+
+test('T795.4 FE151 (firestore.rules): subcollections denied, unfiltered fichas_publicas denied, and logs mirror writable by coach', async () => {
+  await putRules('firestore.rules');
+  try {
+    const id = randomUUID().slice(0, 8);
+    const O = 'coach-fe-' + id, X = 'coach-fe-x-' + id, C = 'cli-fe-' + id;
+    await adminDb.doc('coaches/' + O).set({ role: 'coach' });
+    await adminDb.doc('coaches/' + X).set({ role: 'coach' });
+    await adminDb.doc('clients/' + C).set({ coachId: O, email: 'cfe@x.com' });
+    await adminDb.doc('fichas_publicas/fp_fe_' + id).set({ coachId: O, nombre: 'Prospecto FE151' });
+    await adminDb.doc('fichas_publicas/fp_fe_x_' + id).set({ coachId: X, nombre: 'Prospecto Otro' });
+    const dbO = await as(O), dbC = await as(C);
+    await denied(getDocs(collection(dbO, 'fichas_publicas')), 'FE151 denies unfiltered fichas_publicas list');
+    await denied(setDoc(doc(dbC, 'clients', C, 'checkins', 'chk_fe_' + id), {
+      id: 'chk_fe_' + id, clientId: C, status: 'sent', submittedAt: serverTimestamp()
+    }), 'FE151 denies clients/{id}/checkins');
+    await denied(setDoc(doc(dbO, 'clients', C, 'checkin_requests', 'req_fe_' + id), {
+      id: 'req_fe_' + id, clientId: C, coachId: O, status: 'pending', requestedAt: serverTimestamp()
+    }), 'FE151 denies clients/{id}/checkin_requests');
+    await denied(setDoc(doc(dbO, 'clients', C, 'checkin_reviews', 'rev_fe_' + id), {
+      id: 'rev_fe_' + id, checkinId: 'chk_fe_' + id, clientId: C, coachId: O, status: 'reviewed', reviewedAt: serverTimestamp()
+    }), 'FE151 denies clients/{id}/checkin_reviews');
+    await allowed(setDoc(doc(dbO, 'logs', C), { seguimientoItems: [{ id: 'chk_fe_' + id }] }, { merge: true }),
+      'FE151 allows coach write on logs/{clientId} mirror');
+  } finally {
+    await putRules('firestore.t788.rules');
+  }
 });
