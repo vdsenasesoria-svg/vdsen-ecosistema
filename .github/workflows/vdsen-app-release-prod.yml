@@ -56,7 +56,7 @@ jobs:
       # Pinned on purpose: the lane refuses to release if `main` is not exactly this commit.
       # It was missing, so the baseline check compared a real SHA against undefined and failed
       # with 'main moved' on every attempt.
-      APP_EXPECTED_MAIN_SHA: eee34ea6442381ef7af086d08f149445f347efb6
+      APP_EXPECTED_MAIN_SHA: 5f25b5b9a3c45b425bad4d8eadd145cf7423aec7
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
