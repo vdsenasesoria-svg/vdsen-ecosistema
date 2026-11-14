@@ -199,8 +199,8 @@ test('T795.3 firestore.t788.rules: atomic writeBatch/existsAfter and single-pend
   await allowed(batch.commit(), 'atomic writeBatch checkin + checkin_request succeeds via existsAfter');
 });
 
-test('T795.4 FE151 (firestore.rules): subcollections denied, unfiltered fichas_publicas denied, and logs mirror writable by coach', async () => {
-  await putRules('firestore.rules');
+test('T795.4 FE151 rollback ruleset: subcollections denied, unfiltered fichas_publicas denied, and logs mirror writable by coach', async () => {
+  await putRules('.release/rollback/firestore.rules.fe1517306bebd4bd529adfc51a406c5e97cac6b2dfd7fcae61c87318dd2e21e0.rules');
   try {
     const id = randomUUID().slice(0, 8);
     const O = 'coach-fe-' + id, X = 'coach-fe-x-' + id, C = 'cli-fe-' + id;
