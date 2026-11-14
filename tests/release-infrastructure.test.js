@@ -11,7 +11,7 @@ const { resolveRulesSha } = require('../scripts/release/check.cjs');
 const deployedProduct = require('../scripts/release/deployed-product.cjs');
 const state = json('.release/vdsen-client.json');
 // The reviewed rules_only package (PR #147 head, immutable): tests of the Rules lane model THAT package even after the committed state moved to app_only (T658-B).
-const rulesState = state.release_mode === 'rules_only' ? state : JSON.parse(git('show', '4fba5fe49388882ca3db8933aba61f6b6418b8d7:.release/vdsen-client.json'));
+const rulesState = JSON.parse(git('show', '4fba5fe49388882ca3db8933aba61f6b6418b8d7:.release/vdsen-client.json'));
 const clone = x => JSON.parse(JSON.stringify(x));
 
 // check() and apply() deliberately read the reviewed package from disk and Git.
@@ -32,7 +32,7 @@ function withRulesOnlyPackage(mutate, run) {
     const reviewed = json(path.join(temp, '.release', 'vdsen-client.json'));
     reviewed.release_mode = 'rules_only';
     reviewed.rules_sha = packageSha;
-    delete reviewed.app_release; delete reviewed.published_rules; reviewed.rules_transition = clone(rulesState.rules_transition);
+    delete reviewed.app_release; delete reviewed.published_rules; reviewed.rules_transition = clone((state.release_mode === 'rules_only' ? state : rulesState).rules_transition);
     mutate(reviewed);
     fs.writeFileSync(path.join(temp, '.release', 'vdsen-client.json'), JSON.stringify(reviewed, null, 2) + '\n');
     return run(temp, reviewed);
@@ -416,8 +416,8 @@ test('release apply path is rules_only: pinned immutable provenance, no deploy/p
   // Rollback order and pinned identities.
   const rec = src.slice(src.indexOf('async function recover'), src.indexOf('async function apply()'));
   assert.ok(rec.indexOf('restoreRules(') < rec.indexOf('switchApp('));
-  assert.equal(state.rollback_deployment, 'dpl_4CxS8VeoTwWFEJa37tqiHRGGuj4H'); assert.equal(state.rollback_runtime_sha, 'ec3b30f99d095c90fc8e1d54cf05366a0427205a');
-  assert.equal(state.runtime_sha, '3fc264e23d67a8ecb1611a6c8af04ad739f422da');
+  assert.equal(state.rollback_deployment, 'dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8'); assert.equal(state.rollback_runtime_sha, '3fc264e23d67a8ecb1611a6c8af04ad739f422da');
+  assert.equal(state.runtime_sha, 'f6b90e401d093bc68c648541dd36c946794cff48');
   assert.equal(state.rules_transition.rollback_order, 'rules_then_app');
 });
 test('kill switch off, missing runtime SHA or missing gate/rollback artifacts stop apply and prepare before any network request', async () => {

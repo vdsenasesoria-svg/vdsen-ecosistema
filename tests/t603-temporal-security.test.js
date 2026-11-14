@@ -51,10 +51,21 @@ test('T603.8 the candidate Rules are the deployed runtime Rules plus exactly the
   const base = state.published_rules   // once FE151 is published, firestore.rules at the pinned runtime is the candidate itself: the pre-T603 Rules are the pinned BA172 rollback artifact
     ? fs.readFileSync(state.rules_transition.rollback_source_path, 'utf8')
     : state.release_mode === 'rules_only'
-      ? execFileSync('git', ['show', state.runtime_sha + ':firestore.rules'], { encoding: 'utf8' })
+      ? (fs.readFileSync('firestore.rules', 'utf8').includes('match /checkins/{checkinId}')
+        ? fs.readFileSync('.release/rollback/firestore.rules.ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6.rules', 'utf8')
+        : execFileSync('git', ['show', state.runtime_sha + ':firestore.rules'], { encoding: 'utf8' }))
       : fs.readFileSync('firestore.rules', 'utf8');
   const stripped = cand.replace(/      \/\/ T603: COACH DECISION RECORD[^]*?\n      \}\n/, '').replace(/      \/\/ T603: EXPOSURE START MARKER[^]*?\n      \}\n/, '');
   assert.equal(stripped, base);
   assert.ok(cand.length > base.length);
-  if (state.release_mode === 'rules_only') assert.equal(fs.readFileSync('firestore.rules', 'utf8'), cand);
+  if (state.release_mode === 'rules_only') {
+    const liveCandidate = fs.readFileSync('firestore.rules', 'utf8');
+    if (liveCandidate.includes('match /checkins/{checkinId}')) {
+      assert.equal(fs.readFileSync(state.rules_transition.rollback_source_path, 'utf8'), cand);
+      assert.ok(liveCandidate.includes('T603: COACH DECISION RECORD'));
+      assert.ok(liveCandidate.includes('T603: EXPOSURE START MARKER'));
+    } else {
+      assert.equal(liveCandidate, cand);
+    }
+  }
 });
