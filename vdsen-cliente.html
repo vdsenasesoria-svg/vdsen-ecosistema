@@ -15045,26 +15045,43 @@ async function saveSeguimientoClient() {
 
     // Actualizar resumen en logs/{uid} para que App Coach vea el badge sin lecturas extra y funcione bajo reglas FE151 y T788
     var localRecord = Object.assign({}, payload, { submittedAt: nowMs });
-    _seguimientoHistory = [localRecord].concat((_seguimientoHistory || []).filter(function(x) { return x && x.id !== checkinId; }));
-    if (reqIdToFulfill) {
-      (_seguimientoRequests || []).forEach(function(r) { if (r && r.id === reqIdToFulfill) r.status = 'sent'; });
-    }
-    var pendingRevCount = _seguimientoHistory.filter(function(x) { return x && x.status !== 'reviewed'; }).length;
     try {
-      await FB.setDoc(FB.doc(FB.db, 'logs', uidAtStart), {
-        clientId: uidAtStart,
-        seguimientoItems: _seguimientoHistory.slice(0, 25),
-        seguimientoRequests: (_seguimientoRequests || []).slice(0, 20),
-        seguimientoSummary: {
-          pendingReviewCount: pendingRevCount,
-          hasPendingCoachRequest: false,
-          lastCheckinId: checkinId,
-          lastSubmittedAt: nowMs,
-          lastTrigger: payload.trigger,
-          lastPesoKg: payload.pesoKg,
-          updatedAt: nowMs
-        }
-      }, { merge: true });
+      var savedMirror = await FB.runTransaction(FB.db, async function(tx) {
+        var ref = FB.doc(FB.db, 'logs', uidAtStart);
+        var snap = await tx.get(ref);
+        var old = snap.exists() ? snap.data() : {};
+        var oldItems = Array.isArray(old.seguimientoItems) ? old.seguimientoItems.slice() : [];
+        (_seguimientoHistory || []).forEach(function(x) {
+          if (x && x.id && !oldItems.some(function(y) { return y && y.id === x.id; })) oldItems.push(x);
+        });
+        var nextItems = oldItems.some(function(x) { return x && x.id === checkinId; })
+          ? oldItems : [localRecord].concat(oldItems);
+        var oldReqs = Array.isArray(old.seguimientoRequests) ? old.seguimientoRequests.slice() : [];
+        (_seguimientoRequests || []).forEach(function(r) {
+          if (r && r.id && !oldReqs.some(function(x) { return x && x.id === r.id; })) oldReqs.push(r);
+        });
+        var nextReqs = oldReqs.map(function(r) {
+          return r && r.id === reqIdToFulfill ? Object.assign({}, r, { status: 'sent', checkinId: checkinId }) : r;
+        });
+        var pendingRevCount = nextItems.filter(function(x) { return x && x.status !== 'reviewed'; }).length;
+        tx.set(ref, {
+          clientId: uidAtStart,
+          seguimientoItems: nextItems,
+          seguimientoRequests: nextReqs,
+          seguimientoSummary: Object.assign({}, old.seguimientoSummary || {}, {
+            pendingReviewCount: pendingRevCount,
+            hasPendingCoachRequest: nextReqs.some(function(r) { return r && r.status === 'pending'; }),
+            lastCheckinId: checkinId,
+            lastSubmittedAt: nowMs,
+            lastTrigger: payload.trigger,
+            lastPesoKg: payload.pesoKg,
+            updatedAt: nowMs
+          })
+        }, { merge: true });
+        return { items: nextItems, requests: nextReqs };
+      });
+      _seguimientoHistory = savedMirror.items;
+      _seguimientoRequests = savedMirror.requests;
       logsOk = true;
     } catch (eLogs) { lastErr = lastErr || eLogs; }
     if (!subOk && !logsOk) throw (lastErr || new Error('error de red'));

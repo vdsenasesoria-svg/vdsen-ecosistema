@@ -262,3 +262,82 @@ test('T788.5 Prioridad 0, 2 y 3: App Coach distingue permission-denied de ficha 
   // Nunca sobrescribe pesoKg ni métricas del cliente al marcar como revisada
   assert.doesNotMatch(revFnBody, /pesoKg/);
 });
+
+test('T792: una solicitud del Coach conserva otra solicitud escrita mientras la vista estaba abierta', async () => {
+  const body = extractFn(coachSrc, 'async function requestClientSeguimiento(clientId)');
+  const logs = { seguimientoRequests: [{ id: 'req_other', status: 'pending' }] };
+  const ctx = {
+    currentCoach: { uid: 'coach_A' },
+    _detailClientData: { coachId: 'coach_A', activePlanId: 'plan_A' },
+    _detailPlanData: null, _detailSeguimientoRequests: [], _detailSeguimientoData: [],
+    _detailClientId: null, _detailActiveTab: '', _segReqInFlight: false,
+    document: { getElementById: () => null },
+    Date: class extends Date { static now() { return 1000; } },
+    db: {}, serverTimestamp: () => 'server-time',
+    doc: (_db, ...parts) => parts.join('/'),
+    setDoc: async (ref, data) => {
+      if (ref.startsWith('clients/')) throw new Error('FE151');
+      Object.assign(logs, data);
+    },
+    runTransaction: async (_db, fn) => fn({
+      get: async () => ({ exists: () => true, data: () => ({ ...logs }) }),
+      set: (_ref, data) => Object.assign(logs, data)
+    }),
+    showToast: () => {}, loadClientList: () => {}
+  };
+  vm.createContext(ctx);
+  vm.runInContext(body, ctx);
+  await ctx.requestClientSeguimiento('client_A');
+  assert.equal(logs.seguimientoRequests.length, 2);
+  assert.ok(logs.seguimientoRequests.some(x => x.id === 'req_other'));
+  await ctx.requestClientSeguimiento('client_A');
+  assert.equal(logs.seguimientoRequests.length, 2, 'un reintento conserva la identidad de la solicitud');
+});
+
+test('T792: un fallo del espejo y de la subcolección no confirma la solicitud', async () => {
+  const body = extractFn(coachSrc, 'async function requestClientSeguimiento(clientId)');
+  const notices = [];
+  const ctx = {
+    currentCoach: { uid: 'coach_A' }, _detailClientData: { coachId: 'coach_A' },
+    _detailPlanData: null, _detailSeguimientoRequests: [], _detailSeguimientoData: [], _detailClientId: null, _detailActiveTab: '', _segReqInFlight: false,
+    document: { getElementById: () => null }, db: {},
+    doc: (_db, ...parts) => parts.join('/'), serverTimestamp: () => 'server-time',
+    setDoc: async () => { throw new Error('FE151'); },
+    runTransaction: async () => { throw new Error('offline'); },
+    showToast: (message, error) => notices.push({ message, error }), loadClientList: () => {}
+  };
+  vm.createContext(ctx);
+  vm.runInContext(body, ctx);
+  await ctx.requestClientSeguimiento('client_A');
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0].error, true);
+  assert.doesNotMatch(notices[0].message, /Solicitud de seguimiento enviada/);
+});
+
+test('T792: el Cliente conserva historial concurrente en FE151 y solo confirma tras guardar', async () => {
+  const body = extractFn(clientSrc, 'async function saveSeguimientoClient()');
+  const logs = { seguimientoItems: [{ id: 'chk_existing', status: 'sent' }], seguimientoRequests: [] };
+  const notices = [];
+  const ctx = {
+    _savingSeguimiento: false, _seguimientoHistory: [], _seguimientoRequests: [],
+    _seguimientoDraft: { draftId: 'chk_new', comentarios: 'Actualización' }, _seguimientoDraftId: 'chk_new',
+    _initSeguimientoDraft: () => ctx._seguimientoDraft, _persistSeguimientoDraft: () => {},
+    USER: { uid: 'client_A' }, PLAN: null, ACTIVE_PLAN_ID: null, CURRENT_WEEK: 1,
+    document: { getElementById: () => null },
+    FB: {
+      db: {}, doc: (_db, ...parts) => parts.join('/'), serverTimestamp: () => 'server-time',
+      setDoc: async () => { throw new Error('FE151'); }, updateDoc: async () => {},
+      runTransaction: async (_db, fn) => fn({
+        get: async () => ({ exists: () => true, data: () => ({ ...logs }) }),
+        set: (_ref, data) => Object.assign(logs, data)
+      })
+    },
+    showToast: (message, error) => notices.push({ message, error }),
+    renderCheckin: () => {}, renderResumen: () => {}
+  };
+  vm.createContext(ctx);
+  vm.runInContext(body, ctx);
+  assert.equal(await ctx.saveSeguimientoClient(), true);
+  assert.deepEqual(Array.from(logs.seguimientoItems, x => x.id).sort(), ['chk_existing', 'chk_new']);
+  assert.ok(notices.some(x => /Seguimiento enviado/.test(x.message) && !x.error));
+});
