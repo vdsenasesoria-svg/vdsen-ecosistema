@@ -51,7 +51,8 @@ const SUITES = [
   { name: 'numeric pilot contract', file: path.join('tests', 't699-numeric-emulator.cjs') },
   { name: 'numeric ops emulator', file: path.join('tests', 't699-ops-emulator.cjs') },
   { name: 'numeric operations ledger', file: path.join('tests', 't699-operations-ledger-emulator.cjs') },
-  { name: 'numeric transaction races', file: path.join('tests', 't699-transaction-races-emulator.cjs') }
+  { name: 'numeric transaction races', file: path.join('tests', 't699-transaction-races-emulator.cjs') },
+  { name: 'T795 T788 rules candidate', file: path.join('tests', 't795-t788-rules-emulator.cjs') }
 ].filter(x => fs.existsSync(path.join(__dirname, '..', x.file)));
 const ONLY = process.env.VDSEN_EMU_ONLY;   // e.g. "rules" to run a single suite (used for RED demonstrations)
 const isWin = process.platform === 'win32';
