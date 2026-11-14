@@ -14988,6 +14988,10 @@ async function saveSeguimientoClient() {
   }
 
   var uidAtStart = USER.uid;
+  var genAtStart = (typeof _authSessionGen !== 'undefined') ? _authSessionGen : 0;
+  function _isSameSegSession() {
+    return Boolean(USER && USER.uid === uidAtStart && ((typeof _authSessionGen === 'undefined') || _authSessionGen === genAtStart));
+  }
   var checkinId = d.draftId || ('chk_' + uidAtStart + '_' + Date.now());
   d.draftId = checkinId;
   _savingSeguimiento = true;
@@ -15028,20 +15032,39 @@ async function saveSeguimientoClient() {
   try {
     var subOk = false, logsOk = false, lastErr = null;
     try {
-      await FB.setDoc(FB.doc(FB.db, 'clients', uidAtStart, 'checkins', checkinId), payload);
+      if (typeof FB.runTransaction === 'function') {
+        await FB.runTransaction(FB.db, async function(tx) {
+          var checkinRef = FB.doc(FB.db, 'clients', uidAtStart, 'checkins', checkinId);
+          var checkinSnap = (typeof tx.get === 'function') ? await tx.get(checkinRef) : null;
+          var reqSnap = null, reqRef = null;
+          if (reqIdToFulfill && typeof tx.get === 'function') {
+            reqRef = FB.doc(FB.db, 'clients', uidAtStart, 'checkin_requests', reqIdToFulfill);
+            reqSnap = await tx.get(reqRef);
+          }
+          if (!checkinSnap || !checkinSnap.exists()) {
+            tx.set(checkinRef, payload);
+          }
+          if (reqSnap && reqSnap.exists() && (reqSnap.data() || {}).status === 'pending') {
+            tx.update(reqRef, {
+              status: 'sent',
+              checkinId: checkinId,
+              fulfilledAt: (typeof FB.serverTimestamp === 'function') ? FB.serverTimestamp() : nowMs
+            });
+          }
+        });
+      } else {
+        await FB.setDoc(FB.doc(FB.db, 'clients', uidAtStart, 'checkins', checkinId), payload);
+        if (reqIdToFulfill) {
+          await FB.updateDoc(FB.doc(FB.db, 'clients', uidAtStart, 'checkin_requests', reqIdToFulfill), {
+            status: 'sent',
+            checkinId: checkinId,
+            fulfilledAt: (typeof FB.serverTimestamp === 'function') ? FB.serverTimestamp() : nowMs
+          });
+        }
+      }
       subOk = true;
     } catch (eSub) { lastErr = eSub; }
-    if (!USER || USER.uid !== uidAtStart) return false;
-
-    if (reqIdToFulfill) {
-      try {
-        await FB.updateDoc(FB.doc(FB.db, 'clients', uidAtStart, 'checkin_requests', reqIdToFulfill), {
-          status: 'sent',
-          checkinId: checkinId,
-          fulfilledAt: (typeof FB.serverTimestamp === 'function') ? FB.serverTimestamp() : nowMs
-        });
-      } catch (_) {}
-    }
+    if (!_isSameSegSession()) return false;
 
     // Actualizar resumen en logs/{uid} para que App Coach vea el badge sin lecturas extra y funcione bajo reglas FE151 y T788
     var localRecord = Object.assign({}, payload, { submittedAt: nowMs });
@@ -15051,15 +15074,9 @@ async function saveSeguimientoClient() {
         var snap = await tx.get(ref);
         var old = snap.exists() ? snap.data() : {};
         var oldItems = Array.isArray(old.seguimientoItems) ? old.seguimientoItems.slice() : [];
-        (_seguimientoHistory || []).forEach(function(x) {
-          if (x && x.id && !oldItems.some(function(y) { return y && y.id === x.id; })) oldItems.push(x);
-        });
         var nextItems = oldItems.some(function(x) { return x && x.id === checkinId; })
           ? oldItems : [localRecord].concat(oldItems);
         var oldReqs = Array.isArray(old.seguimientoRequests) ? old.seguimientoRequests.slice() : [];
-        (_seguimientoRequests || []).forEach(function(r) {
-          if (r && r.id && !oldReqs.some(function(x) { return x && x.id === r.id; })) oldReqs.push(r);
-        });
         var nextReqs = oldReqs.map(function(r) {
           return r && r.id === reqIdToFulfill ? Object.assign({}, r, { status: 'sent', checkinId: checkinId }) : r;
         });
@@ -15080,10 +15097,12 @@ async function saveSeguimientoClient() {
         }, { merge: true });
         return { items: nextItems, requests: nextReqs };
       });
+      if (!_isSameSegSession()) return false;
       _seguimientoHistory = savedMirror.items;
       _seguimientoRequests = savedMirror.requests;
       logsOk = true;
     } catch (eLogs) { lastErr = lastErr || eLogs; }
+    if (!_isSameSegSession()) return false;
     if (!subOk && !logsOk) throw (lastErr || new Error('error de red'));
 
     // Reset draft con nuevo ID para evitar envíos duplicados accidentales
@@ -15098,6 +15117,7 @@ async function saveSeguimientoClient() {
     if (fbAfter) { fbAfter.textContent = '✓ Seguimiento enviado correctamente. Tu coach lo verá en tu expediente.'; fbAfter.style.color = 'var(--accent)'; }
     return true;
   } catch (e) {
+    if (!_isSameSegSession()) return false;
     // En fallo de red o permisos: conservar borrador intacto para reintento seguro
     _persistSeguimientoDraft();
     if (errEl) {
@@ -15107,9 +15127,11 @@ async function saveSeguimientoClient() {
     showToast('⚠ No se pudo enviar el seguimiento — reintenta', true);
     return false;
   } finally {
-    _savingSeguimiento = false;
-    var btnNow = document.getElementById('btnSaveSeguimiento');
-    if (btnNow) { btnNow.disabled = false; btnNow.textContent = '📤 ENVIAR ACTUALIZACIÓN AL COACH'; }
+    if (_isSameSegSession()) {
+      _savingSeguimiento = false;
+      var btnNow = document.getElementById('btnSaveSeguimiento');
+      if (btnNow) { btnNow.disabled = false; btnNow.textContent = '📤 ENVIAR ACTUALIZACIÓN AL COACH'; }
+    }
   }
 }
 window.saveSeguimientoClient = saveSeguimientoClient;

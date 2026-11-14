@@ -13624,6 +13624,19 @@ El esfuerzo no es negociable.
         reqMap[d.id] = row;
       });
     } catch (_) {}
+    try {
+      const revSnap = await getDocs(collection(db, 'clients', clientId, 'checkin_reviews'));
+      revSnap.forEach(d => {
+        const rev = d.data() || {};
+        if (rev.checkinId && itemsMap[rev.checkinId]) {
+          itemsMap[rev.checkinId] = Object.assign({}, itemsMap[rev.checkinId], {
+            status: 'reviewed',
+            reviewedAt: rev.reviewedAt || itemsMap[rev.checkinId].reviewedAt || rev.createdAtMs || null,
+            reviewedByCoachId: rev.coachId || itemsMap[rev.checkinId].reviewedByCoachId || null
+          });
+        }
+      });
+    } catch (_) {}
     // 2. Respaldo espejo desde logs/{clientId} si existe
     const logObj = (_detailLogsData && _detailLogsData.clientId === clientId && _detailLogsData.data) ? _detailLogsData.data : null;
     if (logObj) {
@@ -13830,13 +13843,14 @@ El esfuerzo no es negociable.
     const reqId = 'req_' + clientId + '_' + Date.now();
     const nowMs = Date.now();
 
+    const coachUidAtStart = currentCoach.uid;
     _segReqInFlight = true;
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Enviando…'; }
     try {
       const payload = {
         id: reqId,
         clientId: clientId,
-        coachId: currentCoach.uid,
+        coachId: coachUidAtStart,
         trigger: trigger,
         note: note,
         planId: planId,
@@ -13844,18 +13858,53 @@ El esfuerzo no es negociable.
         createdAtMs: nowMs,
         requestedAt: serverTimestamp()
       };
-      let subOk = false, logsOk = false, lastErr = null;
+      let subOk = false, logsOk = false, alreadyPending = false, lastErr = null;
       try {
-        await setDoc(doc(db, 'clients', clientId, 'checkin_requests', reqId), payload);
-        subOk = true;
+        if (typeof runTransaction === 'function') {
+          const subRes = await runTransaction(db, async tx => {
+            const lockRef = doc(db, 'clients', clientId, 'checkin_request_lock', 'active');
+            const lockSnap = (typeof tx.get === 'function') ? await tx.get(lockRef) : null;
+            if (lockSnap && lockSnap.exists() && (lockSnap.data() || {}).activeRequestId) {
+              const prevId = lockSnap.data().activeRequestId;
+              const prevSnap = await tx.get(doc(db, 'clients', clientId, 'checkin_requests', prevId));
+              if (prevSnap.exists() && (prevSnap.data() || {}).status === 'pending' && prevId !== reqId) {
+                return { alreadyPending: true };
+              }
+            }
+            tx.set(doc(db, 'clients', clientId, 'checkin_requests', reqId), payload);
+            tx.set(lockRef, {
+              clientId: clientId,
+              coachId: coachUidAtStart,
+              activeRequestId: reqId,
+              updatedAtMs: nowMs
+            });
+            return { alreadyPending: false };
+          });
+          alreadyPending = Boolean(subRes && subRes.alreadyPending);
+        } else {
+          await setDoc(doc(db, 'clients', clientId, 'checkin_requests', reqId), payload);
+        }
+        subOk = !alreadyPending;
       } catch (eSub) { lastErr = eSub; }
+      if (!currentCoach || currentCoach.uid !== coachUidAtStart) return;
+      if (alreadyPending) {
+        showToast('Ya existe una solicitud de seguimiento pendiente para este cliente.', true);
+        if (_detailClientId === clientId && _detailActiveTab === 'seguimiento') {
+          await _renderClientTabSeguimiento(document.getElementById('clientDetailTabContent'));
+        }
+        return;
+      }
       // Mirror summary in logs/{clientId} so client & coach lists see pending request without extra reads
       try {
-        await runTransaction(db, async tx => {
+        const txMirror = await runTransaction(db, async tx => {
           const ref = doc(db, 'logs', clientId);
           const snap = await tx.get(ref);
           const old = snap.exists() ? snap.data() : {};
           const prevReqs = Array.isArray(old.seguimientoRequests) ? old.seguimientoRequests : [];
+          const existingPending = prevReqs.find(r => r && r.status === 'pending' && r.id !== reqId);
+          if (existingPending) {
+            return { alreadyPending: true, requests: prevReqs };
+          }
           const nextReqs = prevReqs.some(r => r && r.id === reqId)
             ? prevReqs : [Object.assign({}, payload, { requestedAt: nowMs })].concat(prevReqs);
           tx.set(ref, {
@@ -13869,12 +13918,22 @@ El esfuerzo no es negociable.
               updatedAt: nowMs
             })
           }, { merge: true });
+          return { alreadyPending: false, requests: nextReqs };
         });
-        logsOk = true;
+        if (!currentCoach || currentCoach.uid !== coachUidAtStart) return;
+        const resolvedReqs = (txMirror && Array.isArray(txMirror.requests)) ? txMirror.requests : [];
         if (_detailLogsData && _detailLogsData.clientId === clientId && _detailLogsData.data) {
-          _detailLogsData.data.seguimientoRequests = nextReqs;
+          _detailLogsData.data.seguimientoRequests = resolvedReqs;
         }
-        _detailSeguimientoRequests = nextReqs;
+        _detailSeguimientoRequests = resolvedReqs;
+        if (txMirror && txMirror.alreadyPending) {
+          showToast('Ya existe una solicitud de seguimiento pendiente para este cliente.', true);
+          if (_detailClientId === clientId && _detailActiveTab === 'seguimiento') {
+            await _renderClientTabSeguimiento(document.getElementById('clientDetailTabContent'));
+          }
+          return;
+        }
+        logsOk = true;
       } catch (eLogs) { lastErr = lastErr || eLogs; }
       if (!subOk && !logsOk) throw (lastErr || new Error('No se pudo guardar la solicitud'));
       if (statusEl) { statusEl.textContent = '✅ Solicitud enviada al cliente'; statusEl.style.color = '#44BB88'; }

@@ -110,10 +110,24 @@ service cloud.firestore {
             && resource.data.status == 'pending'
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'checkinId', 'fulfilledAt'])
             && request.resource.data.status == 'sent'
-            && request.resource.data.fulfilledAt == request.time)
+            && request.resource.data.checkinId is string
+            && request.resource.data.checkinId.size() > 0
+            && request.resource.data.fulfilledAt == request.time
+            && existsAfter(/databases/$(database)/documents/clients/$(clientId)/checkins/$(request.resource.data.checkinId))
+            && getAfter(/databases/$(database)/documents/clients/$(clientId)/checkins/$(request.resource.data.checkinId)).data.clientId == clientId)
           || (ownsClient(clientId)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewedAt'])
             && request.resource.data.status in ['received', 'reviewed']);
+      }
+      // T795: Single-pending-request concurrency lock per client (historical checkin_requests remain intact).
+      match /checkin_request_lock/{lockId} {
+        allow read: if isSelfOrOwnerCoach(clientId);
+        allow create, update: if ownsClient(clientId)
+          && lockId == 'active'
+          && request.resource.data.clientId == clientId
+          && request.resource.data.coachId == request.auth.uid
+          && request.resource.data.activeRequestId is string
+          && request.resource.data.activeRequestId.size() > 0;
       }
       // T788: Separate Coach review contract for periodic check-ins.
       match /checkin_reviews/{reviewId} {

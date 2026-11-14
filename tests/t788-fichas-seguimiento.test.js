@@ -263,25 +263,26 @@ test('T788.5 Prioridad 0, 2 y 3: App Coach distingue permission-denied de ficha 
   assert.doesNotMatch(revFnBody, /pesoKg/);
 });
 
-test('T792: una solicitud del Coach conserva otra solicitud escrita mientras la vista estaba abierta', async () => {
+test('T792/T795: una solicitud del Coach conserva historial ya cumplido y asigna _detailSeguimientoRequests desde nextReqs', async () => {
   const body = extractFn(coachSrc, 'async function requestClientSeguimiento(clientId)');
-  const logs = { seguimientoRequests: [{ id: 'req_other', status: 'pending' }] };
+  const logs = { seguimientoRequests: [{ id: 'req_other', status: 'sent' }] };
   const ctx = {
     currentCoach: { uid: 'coach_A' },
     _detailClientData: { coachId: 'coach_A', activePlanId: 'plan_A' },
     _detailPlanData: null, _detailSeguimientoRequests: [], _detailSeguimientoData: [],
+    _detailLogsData: { clientId: 'client_A', data: {} },
     _detailClientId: null, _detailActiveTab: '', _segReqInFlight: false,
     document: { getElementById: () => null },
     Date: class extends Date { static now() { return 1000; } },
     db: {}, serverTimestamp: () => 'server-time',
     doc: (_db, ...parts) => parts.join('/'),
-    setDoc: async (ref, data) => {
-      if (ref.startsWith('clients/')) throw new Error('FE151');
-      Object.assign(logs, data);
-    },
+    setDoc: async () => {},
     runTransaction: async (_db, fn) => fn({
-      get: async () => ({ exists: () => true, data: () => ({ ...logs }) }),
-      set: (_ref, data) => Object.assign(logs, data)
+      get: async ref => {
+        if (String(ref).startsWith('clients/')) return { exists: () => false, data: () => ({}) };
+        return { exists: () => true, data: () => ({ ...logs }) };
+      },
+      set: (ref, data) => { if (String(ref).startsWith('logs/')) Object.assign(logs, data); }
     }),
     showToast: () => {}, loadClientList: () => {}
   };
@@ -290,8 +291,41 @@ test('T792: una solicitud del Coach conserva otra solicitud escrita mientras la 
   await ctx.requestClientSeguimiento('client_A');
   assert.equal(logs.seguimientoRequests.length, 2);
   assert.ok(logs.seguimientoRequests.some(x => x.id === 'req_other'));
+  assert.equal(ctx._detailSeguimientoRequests.length, 2, 'nextReqs se devuelve de la transacción y actualiza _detailSeguimientoRequests');
   await ctx.requestClientSeguimiento('client_A');
-  assert.equal(logs.seguimientoRequests.length, 2, 'un reintento conserva la identidad de la solicitud');
+  assert.equal(logs.seguimientoRequests.length, 2, 'un reintento conserva el invariante de única solicitud pendiente');
+});
+
+test('T795 Prioridad 3: dos pestañas concurrentes del Coach no crean solicitudes pendientes duplicadas', async () => {
+  const body = extractFn(coachSrc, 'async function requestClientSeguimiento(clientId)');
+  const logs = { seguimientoRequests: [{ id: 'req_tab1', status: 'pending' }] };
+  const notices = [];
+  const ctx = {
+    currentCoach: { uid: 'coach_A' },
+    _detailClientData: { coachId: 'coach_A', activePlanId: 'plan_A' },
+    _detailPlanData: null, _detailSeguimientoRequests: [], _detailSeguimientoData: [],
+    _detailLogsData: { clientId: 'client_A', data: {} },
+    _detailClientId: null, _detailActiveTab: '', _segReqInFlight: false,
+    document: { getElementById: () => null },
+    Date: class extends Date { static now() { return 2000; } },
+    db: {}, serverTimestamp: () => 'server-time',
+    doc: (_db, ...parts) => parts.join('/'),
+    runTransaction: async (_db, fn) => fn({
+      get: async ref => {
+        if (String(ref).startsWith('clients/')) throw new Error('FE151');
+        return { exists: () => true, data: () => ({ ...logs }) };
+      },
+      set: (ref, data) => { if (String(ref).startsWith('logs/')) Object.assign(logs, data); }
+    }),
+    showToast: (message, error) => notices.push({ message, error }), loadClientList: () => {}
+  };
+  vm.createContext(ctx);
+  vm.runInContext(body, ctx);
+  await ctx.requestClientSeguimiento('client_A');
+  assert.equal(logs.seguimientoRequests.length, 1);
+  assert.equal(logs.seguimientoRequests[0].id, 'req_tab1');
+  assert.equal(ctx._detailSeguimientoRequests.length, 1);
+  assert.ok(notices.some(n => n.error === true && /pendiente/i.test(n.message)));
 });
 
 test('T792: un fallo del espejo y de la subcolección no confirma la solicitud', async () => {
@@ -328,8 +362,12 @@ test('T792: el Cliente conserva historial concurrente en FE151 y solo confirma t
       db: {}, doc: (_db, ...parts) => parts.join('/'), serverTimestamp: () => 'server-time',
       setDoc: async () => { throw new Error('FE151'); }, updateDoc: async () => {},
       runTransaction: async (_db, fn) => fn({
-        get: async () => ({ exists: () => true, data: () => ({ ...logs }) }),
-        set: (_ref, data) => Object.assign(logs, data)
+        get: async ref => {
+          if (String(ref).startsWith('clients/')) throw new Error('FE151');
+          return { exists: () => true, data: () => ({ ...logs }) };
+        },
+        set: (ref, data) => { if (String(ref).startsWith('logs/')) Object.assign(logs, data); },
+        update: () => {}
       })
     },
     showToast: (message, error) => notices.push({ message, error }),
@@ -340,4 +378,108 @@ test('T792: el Cliente conserva historial concurrente en FE151 y solo confirma t
   assert.equal(await ctx.saveSeguimientoClient(), true);
   assert.deepEqual(Array.from(logs.seguimientoItems, x => x.id).sort(), ['chk_existing', 'chk_new']);
   assert.ok(notices.some(x => /Seguimiento enviado/.test(x.message) && !x.error));
+});
+
+test('T795 Prioridad 0: cambio de cuenta Cliente A -> Cliente B durante saveSeguimientoClient no contamina la sesión B', async () => {
+  const body = extractFn(clientSrc, 'async function saveSeguimientoClient()');
+  const logsA = { seguimientoItems: [], seguimientoRequests: [] };
+  const notices = [];
+  let renderCalls = 0;
+  let persistCalls = 0;
+  const ctx = {
+    _authSessionGen: 1,
+    _savingSeguimiento: false,
+    _seguimientoHistory: [{ id: 'chk_A_old', clientId: 'client_A' }],
+    _seguimientoRequests: [],
+    _seguimientoDraft: { draftId: 'chk_A_new', comentarios: 'Dato privado de A' },
+    _seguimientoDraftId: 'chk_A_new',
+    _initSeguimientoDraft: () => ctx._seguimientoDraft,
+    _persistSeguimientoDraft: () => { persistCalls++; },
+    USER: { uid: 'client_A' }, PLAN: null, ACTIVE_PLAN_ID: null, CURRENT_WEEK: 1,
+    document: { getElementById: () => null },
+    FB: {
+      db: {}, doc: (_db, ...parts) => parts.join('/'), serverTimestamp: () => 'server-time',
+      runTransaction: async (_db, fn) => {
+        const res = await fn({
+          get: async ref => {
+            if (String(ref).startsWith('clients/')) throw new Error('FE151');
+            return { exists: () => true, data: () => ({ ...logsA }) };
+          },
+          set: (ref, data) => { if (String(ref).startsWith('logs/')) Object.assign(logsA, data); },
+          update: () => {}
+        });
+        // Simular logout de A e inicio de sesión de B mientras la transacción de logs/{client_A} resolvía
+        ctx.USER = { uid: 'client_B' };
+        ctx._authSessionGen = 2;
+        ctx._seguimientoHistory = [{ id: 'chk_B_only', clientId: 'client_B' }];
+        ctx._seguimientoRequests = [{ id: 'req_B_only', clientId: 'client_B', status: 'pending' }];
+        ctx._seguimientoDraft = { draftId: 'chk_B_draft', comentarios: 'Borrador de B' };
+        ctx._seguimientoDraftId = 'chk_B_draft';
+        return res;
+      }
+    },
+    showToast: (message, error) => notices.push({ message, error }),
+    renderCheckin: () => { renderCalls++; }, renderResumen: () => { renderCalls++; }
+  };
+  vm.createContext(ctx);
+  vm.runInContext(body, ctx);
+  const ok = await ctx.saveSeguimientoClient();
+  assert.equal(ok, false);
+  assert.deepEqual(ctx._seguimientoHistory.map(x => x.id), ['chk_B_only']);
+  assert.deepEqual(ctx._seguimientoRequests.map(x => x.id), ['req_B_only']);
+  assert.equal(ctx._seguimientoDraft.draftId, 'chk_B_draft');
+  assert.equal(notices.length, 0);
+  assert.equal(renderCalls, 0);
+  assert.equal(persistCalls, 0);
+});
+
+test('T795 Prioridad 1: check-in y cumplimiento de checkin_requests son atómicos y un fallo parcial no confirma éxito', async () => {
+  const body = extractFn(clientSrc, 'async function saveSeguimientoClient()');
+  const notices = [];
+  let committedCheckin = null;
+  let committedReq = { id: 'req_1', status: 'pending' };
+  const ctx = {
+    _authSessionGen: 1,
+    _savingSeguimiento: false,
+    _seguimientoHistory: [],
+    _seguimientoRequests: [{ id: 'req_1', status: 'pending' }],
+    _seguimientoDraft: { draftId: 'chk_1', requestId: 'req_1', comentarios: 'Listo' },
+    _seguimientoDraftId: 'chk_1',
+    _initSeguimientoDraft: () => ctx._seguimientoDraft,
+    _persistSeguimientoDraft: () => {},
+    USER: { uid: 'client_A' }, PLAN: null, ACTIVE_PLAN_ID: null, CURRENT_WEEK: 1,
+    document: { getElementById: () => null },
+    FB: {
+      db: {}, doc: (_db, ...parts) => parts.join('/'), serverTimestamp: () => 'server-time',
+      runTransaction: async (_db, fn) => {
+        let stageCheckin = committedCheckin;
+        let stageReq = { ...committedReq };
+        await fn({
+          get: async ref => {
+            if (String(ref).includes('/checkins/')) return { exists: () => Boolean(stageCheckin), data: () => stageCheckin };
+            if (String(ref).includes('/checkin_requests/')) return { exists: () => true, data: () => stageReq };
+            throw new Error('logs unreachable');
+          },
+          set: (ref, data) => {
+            if (String(ref).includes('/checkins/')) stageCheckin = data;
+          },
+          update: (ref) => {
+            if (String(ref).includes('/checkin_requests/')) throw new Error('simulated request update failure');
+          }
+        });
+        committedCheckin = stageCheckin;
+        committedReq = stageReq;
+      }
+    },
+    showToast: (message, error) => notices.push({ message, error }),
+    renderCheckin: () => {}, renderResumen: () => {}
+  };
+  vm.createContext(ctx);
+  vm.runInContext(body, ctx);
+  const ok = await ctx.saveSeguimientoClient();
+  assert.equal(ok, false);
+  assert.equal(committedCheckin, null, 'el fallo de solicitud revierte el check-in en la operación atómica');
+  assert.equal(committedReq.status, 'pending');
+  assert.ok(notices.some(n => n.error === true));
+  assert.ok(!notices.some(n => /Seguimiento enviado/.test(n.message) && !n.error));
 });
