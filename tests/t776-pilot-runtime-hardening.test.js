@@ -21,7 +21,7 @@ const PLAN = 'D5fVjlS3NysTD6Yg2ZpW';
 const PID = 'ab150537-0d02-423b-a7e0-2b2f1a8a9a83';
 const RUNTIME_SHA = '3fc264e23d67a8ecb1611a6c8af04ad739f422da';
 const DEPLOYMENT = 'dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8';
-const EXPIRES_AT = '2026-11-14T04:00:00Z';
+const EXPIRES_AT = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
 const OPERATION_ID = 'op-ayrton-shadow-t776-test0001';
 
 const sampleWindow = () => ({

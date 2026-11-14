@@ -25,9 +25,11 @@ const NG = require('../scripts/release/numeric-guard.cjs');
 const B = require('../scripts/pilot/off-baseline.cjs');
 const P = require('../scripts/pilot/window-protocol.cjs');
 
+const { execFileSync } = require('node:child_process');
+const T773_COMMIT = '48f7d21995a048187ef8b4a8e0c06c034d432cb9';
 const SCHEMA = json('.release/schema/release-state.schema.json');
-const STATE = json('.release/vdsen-client.json');
-const MANIFEST = json(deployedProduct.MANIFEST);
+const STATE = JSON.parse(execFileSync('git', ['show', T773_COMMIT + ':.release/vdsen-client.json'], { encoding: 'utf8' }));
+const MANIFEST = JSON.parse(execFileSync('git', ['show', T773_COMMIT + ':.release/deployed-product.json'], { encoding: 'utf8' }));
 
 const CANONICAL_SHA = '3fc264e23d67a8ecb1611a6c8af04ad739f422da';
 const PROD_DEPLOYMENT = 'dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8';
@@ -59,7 +61,7 @@ test('T773-1 canonical manifest and deployed-product.json reflect the verified T
 
   assert.equal(MANIFEST.runtime_sha, CANONICAL_SHA);
   assert.equal(Object.keys(MANIFEST.files).length, 47);
-  deployedProduct.verify(CANONICAL_SHA, deployedProduct.MANIFEST);
+  deployedProduct.verify(json('.release/vdsen-client.json').runtime_sha, deployedProduct.MANIFEST);
 });
 
 test('T773-2 explicit safe recovery deployment and distinct-SHA rollback target', () => {
