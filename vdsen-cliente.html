@@ -14791,9 +14791,12 @@ function _initSeguimientoDraft() {
     requestId: pendingReq ? pendingReq.id : null,
     pesoKg: '',
     fechaMedicion: new Date().toISOString().slice(0, 10),
+    energia: null,
     recuperacion: null,
-    energiaRendimiento: null,
     sueno: null,
+    fatiga: null,
+    rendimiento: null,
+    energiaRendimiento: null,
     fatigaMolestias: '',
     adherenciaEntreno: '',
     adherenciaNutricion: '',
@@ -14821,6 +14824,20 @@ async function loadClientSeguimiento() {
     if (!USER || USER.uid !== uidAtStart) return;
     rSnap.forEach(function(d) { reqsMap[d.id] = Object.assign({ id: d.id }, d.data()); });
   } catch (_) {}
+  // FE151: las subcolecciones T788 aún no están publicadas; leer el espejo durable.
+  try {
+    var logSnap = await FB.getDoc(FB.doc(FB.db, 'logs', uidAtStart));
+    if (!USER || USER.uid !== uidAtStart) return;
+    if (logSnap.exists()) {
+      var logData = logSnap.data() || {};
+      (Array.isArray(logData.seguimientoItems) ? logData.seguimientoItems : []).forEach(function(it) {
+        if (it && it.id && !itemsMap[it.id]) itemsMap[it.id] = it;
+      });
+      (Array.isArray(logData.seguimientoRequests) ? logData.seguimientoRequests : []).forEach(function(rq) {
+        if (rq && rq.id && !reqsMap[rq.id]) reqsMap[rq.id] = rq;
+      });
+    }
+  } catch (e) { console.warn('[SEGUIMIENTO] No se pudo leer logs:', e && e.code); }
   if (!USER || USER.uid !== uidAtStart) return;
   _seguimientoHistory = Object.keys(itemsMap).map(function(k) { return itemsMap[k]; }).sort(function(a, b) {
     return (_segCliToMs(b.submittedAt) || _segCliToMs(b.createdAtMs) || 0) - (_segCliToMs(a.submittedAt) || _segCliToMs(a.createdAtMs) || 0);
@@ -14953,9 +14970,12 @@ async function saveSeguimientoClient() {
   });
   var hasAnyField = Boolean(
     (d.pesoKg !== '' && d.pesoKg != null) ||
+    d.energia != null ||
     d.recuperacion != null ||
-    d.energiaRendimiento != null ||
     d.sueno != null ||
+    d.fatiga != null ||
+    d.rendimiento != null ||
+    d.energiaRendimiento != null ||
     (d.fatigaMolestias && d.fatigaMolestias.length > 0) ||
     (d.adherenciaEntreno !== '' && d.adherenciaEntreno != null) ||
     (d.adherenciaNutricion !== '' && d.adherenciaNutricion != null) ||
@@ -14989,9 +15009,12 @@ async function saveSeguimientoClient() {
     requestId: reqIdToFulfill || null,
     pesoKg: (d.pesoKg !== '' && d.pesoKg != null && !isNaN(parseFloat(d.pesoKg))) ? parseFloat(d.pesoKg) : null,
     fechaMedicion: d.fechaMedicion || new Date(nowMs).toISOString().slice(0, 10),
+    energia: d.energia != null ? Number(d.energia) : (d.energiaRendimiento != null ? Number(d.energiaRendimiento) : null),
     recuperacion: d.recuperacion != null ? Number(d.recuperacion) : null,
-    energiaRendimiento: d.energiaRendimiento != null ? Number(d.energiaRendimiento) : null,
     sueno: d.sueno != null ? Number(d.sueno) : null,
+    fatiga: d.fatiga != null ? Number(d.fatiga) : null,
+    rendimiento: d.rendimiento != null ? Number(d.rendimiento) : (d.energiaRendimiento != null ? Number(d.energiaRendimiento) : null),
+    energiaRendimiento: d.energiaRendimiento != null ? Number(d.energiaRendimiento) : (d.energia != null ? Number(d.energia) : (d.rendimiento != null ? Number(d.rendimiento) : null)),
     fatigaMolestias: d.fatigaMolestias || '',
     adherenciaEntreno: (d.adherenciaEntreno !== '' && d.adherenciaEntreno != null && !isNaN(parseFloat(d.adherenciaEntreno))) ? Math.max(0, Math.min(100, parseFloat(d.adherenciaEntreno))) : null,
     adherenciaNutricion: (!d.nutricionNoAplica && d.adherenciaNutricion !== '' && d.adherenciaNutricion != null && !isNaN(parseFloat(d.adherenciaNutricion))) ? Math.max(0, Math.min(100, parseFloat(d.adherenciaNutricion))) : null,
@@ -15022,26 +15045,43 @@ async function saveSeguimientoClient() {
 
     // Actualizar resumen en logs/{uid} para que App Coach vea el badge sin lecturas extra y funcione bajo reglas FE151 y T788
     var localRecord = Object.assign({}, payload, { submittedAt: nowMs });
-    _seguimientoHistory = [localRecord].concat((_seguimientoHistory || []).filter(function(x) { return x && x.id !== checkinId; }));
-    if (reqIdToFulfill) {
-      (_seguimientoRequests || []).forEach(function(r) { if (r && r.id === reqIdToFulfill) r.status = 'sent'; });
-    }
-    var pendingRevCount = _seguimientoHistory.filter(function(x) { return x && x.status !== 'reviewed'; }).length;
     try {
-      await FB.setDoc(FB.doc(FB.db, 'logs', uidAtStart), {
-        clientId: uidAtStart,
-        seguimientoItems: _seguimientoHistory.slice(0, 25),
-        seguimientoRequests: (_seguimientoRequests || []).slice(0, 20),
-        seguimientoSummary: {
-          pendingReviewCount: pendingRevCount,
-          hasPendingCoachRequest: false,
-          lastCheckinId: checkinId,
-          lastSubmittedAt: nowMs,
-          lastTrigger: payload.trigger,
-          lastPesoKg: payload.pesoKg,
-          updatedAt: nowMs
-        }
-      }, { merge: true });
+      var savedMirror = await FB.runTransaction(FB.db, async function(tx) {
+        var ref = FB.doc(FB.db, 'logs', uidAtStart);
+        var snap = await tx.get(ref);
+        var old = snap.exists() ? snap.data() : {};
+        var oldItems = Array.isArray(old.seguimientoItems) ? old.seguimientoItems.slice() : [];
+        (_seguimientoHistory || []).forEach(function(x) {
+          if (x && x.id && !oldItems.some(function(y) { return y && y.id === x.id; })) oldItems.push(x);
+        });
+        var nextItems = oldItems.some(function(x) { return x && x.id === checkinId; })
+          ? oldItems : [localRecord].concat(oldItems);
+        var oldReqs = Array.isArray(old.seguimientoRequests) ? old.seguimientoRequests.slice() : [];
+        (_seguimientoRequests || []).forEach(function(r) {
+          if (r && r.id && !oldReqs.some(function(x) { return x && x.id === r.id; })) oldReqs.push(r);
+        });
+        var nextReqs = oldReqs.map(function(r) {
+          return r && r.id === reqIdToFulfill ? Object.assign({}, r, { status: 'sent', checkinId: checkinId }) : r;
+        });
+        var pendingRevCount = nextItems.filter(function(x) { return x && x.status !== 'reviewed'; }).length;
+        tx.set(ref, {
+          clientId: uidAtStart,
+          seguimientoItems: nextItems,
+          seguimientoRequests: nextReqs,
+          seguimientoSummary: Object.assign({}, old.seguimientoSummary || {}, {
+            pendingReviewCount: pendingRevCount,
+            hasPendingCoachRequest: nextReqs.some(function(r) { return r && r.status === 'pending'; }),
+            lastCheckinId: checkinId,
+            lastSubmittedAt: nowMs,
+            lastTrigger: payload.trigger,
+            lastPesoKg: payload.pesoKg,
+            updatedAt: nowMs
+          })
+        }, { merge: true });
+        return { items: nextItems, requests: nextReqs };
+      });
+      _seguimientoHistory = savedMirror.items;
+      _seguimientoRequests = savedMirror.requests;
       logsOk = true;
     } catch (eLogs) { lastErr = lastErr || eLogs; }
     if (!subOk && !logsOk) throw (lastErr || new Error('error de red'));
@@ -15153,9 +15193,11 @@ function _buildMiSeguimientoSection() {
         '<input id="seg_fechaMedicion" type="date" value="' + _escHTml(String(d.fechaMedicion || '')) + '" oninput="_onSegDraftInput(\'fechaMedicion\',this.value)" style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid var(--bd);color:var(--tx);font-family:var(--fb);font-size:13px;padding:10px;border-radius:6px">' +
       '</div>' +
     '</div>' +
+    scaleRow('energia', 'ENERGÍA PERCIBIDA (1–5)', 'Baja', 'Alta') +
     scaleRow('recuperacion', 'RECUPERACIÓN GENERAL (1–5)', 'Baja', 'Óptima') +
-    scaleRow('energiaRendimiento', 'ENERGÍA Y RENDIMIENTO (1–5)', 'Bajo', 'Alto') +
     scaleRow('sueno', 'CALIDAD DE SUEÑO (1–5)', 'Deficiente', 'Reparador') +
+    scaleRow('fatiga', 'FATIGA PERCIBIDA (1–5)', 'Mínima', 'Alta') +
+    scaleRow('rendimiento', 'RENDIMIENTO PERCIBIDO (1–5)', 'Bajo', 'Óptimo') +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">' +
       '<div>' +
         '<label for="seg_adherenciaEntreno" style="display:block;font-size:10px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:4px">ADHERENCIA ENTRENO (%)</label>' +

@@ -80,6 +80,17 @@ test('T788.1 Prioridad 0: firestore.rules permite consulta tenant-scoped de fich
   const reqBlock = rulesSrc.slice(reqIdx, reqIdx + 950);
   assert.match(reqBlock, /allow read:\s*if isSelfOrOwnerCoach\(clientId\);/);
   assert.match(reqBlock, /allow create:\s*if ownsClient\(clientId\)/);
+
+  // Contrato separado de revisión del Coach bajo clients/{clientId}/checkin_reviews/{reviewId}
+  const revIdx = rulesSrc.indexOf('match /checkin_reviews/{reviewId}');
+  assert.ok(revIdx !== -1, 'match /checkin_reviews/{reviewId} debe existir bajo clients/{clientId}');
+  const revBlock = rulesSrc.slice(revIdx, revIdx + 850);
+  assert.match(revBlock, /allow read:\s*if isSelfOrOwnerCoach\(clientId\);/);
+  assert.match(revBlock, /allow create:\s*if ownsClient\(clientId\)/);
+  assert.doesNotMatch(revBlock, /allow update:/);
+  assert.match(revBlock, /reviewId == 'rev_' \+ request\.resource\.data\.checkinId/);
+  assert.match(revBlock, /exists\(\/databases\/\$\(database\)\/documents\/clients\/\$\(clientId\)\/checkins\/\$\(request\.resource\.data\.checkinId\)\)/);
+  assert.match(revBlock, /request\.resource\.data\.status == 'reviewed'/);
   assert.match(rulesDocSrc, /Ruta de despliegue independiente/);
 });
 
@@ -158,12 +169,14 @@ test('T788.4 Prioridad 1: App Cliente incluye sección Mi seguimiento independie
   assert.match(buildSegBody, /block_end/);
   assert.match(buildSegBody, /coach_request/);
   assert.match(buildSegBody, /scheduled/);
-  // Campos breves y opcionales
+  // Campos breves y opcionales (incluyendo escalas 1-5 completas: energia, recuperacion, sueno, fatiga, rendimiento)
   assert.match(buildSegBody, /seg_pesoKg/);
   assert.match(buildSegBody, /seg_fechaMedicion/);
+  assert.match(buildSegBody, /energia/);
   assert.match(buildSegBody, /recuperacion/);
-  assert.match(buildSegBody, /energiaRendimiento/);
   assert.match(buildSegBody, /sueno/);
+  assert.match(buildSegBody, /fatiga/);
+  assert.match(buildSegBody, /rendimiento/);
   assert.match(buildSegBody, /seg_adherenciaEntreno/);
   assert.match(buildSegBody, /seg_adherenciaNutricion/);
   assert.match(buildSegBody, /seg_nutriNABtn/);
@@ -184,11 +197,53 @@ test('T788.4 Prioridad 1: App Cliente incluye sección Mi seguimiento independie
   assert.match(logoutBody, /_seguimientoDraft = null;/);
 });
 
-test('T788.5 Prioridad 2 y 3: App Coach integra Seguimiento y actualizaciones en expediente, solicitudes por cliente y revisión inmutable', () => {
+test('T788.4b FE151: Cliente recibe solicitud e historial desde logs y descarta lectura de otra cuenta', async () => {
+  const loadBody = extractFn(clientSrc, 'async function loadClientSeguimiento()');
+  const ctx = {
+    window: {}, console, USER: { uid: 'cliente-a' },
+    _seguimientoHistory: [], _seguimientoRequests: [], _seguimientoDraft: null,
+    _segCliToMs: v => Number(v) || 0,
+    localStorage: { getItem: () => '1' },
+    FB: {
+      db: {}, collection: (...parts) => parts, doc: (...parts) => parts,
+      getDocs: async () => { throw Object.assign(new Error('FE151'), { code: 'permission-denied' }); },
+      getDoc: async () => ({ exists: () => true, data: () => ({
+        seguimientoItems: [{ id: 'chk-a', clientId: 'cliente-a', createdAtMs: 1 }],
+        seguimientoRequests: [{ id: 'req-a', clientId: 'cliente-a', status: 'pending', createdAtMs: 2 }]
+      }) })
+    }
+  };
+  vm.createContext(ctx);
+  vm.runInContext(loadBody, ctx);
+  await ctx.loadClientSeguimiento();
+  assert.equal(ctx._seguimientoHistory.length, 1);
+  assert.equal(ctx._seguimientoHistory[0].id, 'chk-a');
+  assert.equal(ctx._seguimientoRequests[0].id, 'req-a');
+
+  ctx._seguimientoHistory = [];
+  ctx._seguimientoRequests = [];
+  ctx.FB.getDoc = async () => { ctx.USER = { uid: 'cliente-b' }; return { exists: () => true, data: () => ({ seguimientoRequests: [{ id: 'req-a' }] }) }; };
+  await ctx.loadClientSeguimiento();
+  assert.equal(ctx._seguimientoRequests.length, 0);
+});
+
+test('T788.5 Prioridad 0, 2 y 3: App Coach distingue permission-denied de ficha inexistente, integra Seguimiento y persiste 4 contratos separados', () => {
   const showDetailBody = extractFn(coachSrc, 'async function showClientDetail(clientId, opts)');
   assert.match(showDetailBody, /ctab_seguimiento/);
   assert.match(showDetailBody, /Seguimiento y actualizaciones/);
   assert.match(showDetailBody, /seguimientoPendingDot/);
+  assert.match(showDetailBody, /_detailFichaError\s*=\s*\{/);
+
+  const renderFichaBody = extractFn(coachSrc, 'function _renderClientTabFicha(cont)');
+  assert.match(renderFichaBody, /Error al consultar la ficha/);
+  assert.match(renderFichaBody, /no se interpreta como ficha inexistente/);
+  assert.match(renderFichaBody, /_retryDetailFichaLoad/);
+  assert.match(renderFichaBody, /const fichaReadErr = _detailFichaError;/);
+  assert.match(showDetailBody, /catch\(_fErr\)\s*\{\s*_detailFichaError\s*=/);
+
+  const loadIntakeBody = extractFn(coachSrc, 'async function loadIntakeForClient(clientId)');
+  assert.match(loadIntakeBody, /ensureCoachDoc\(\)/);
+  assert.match(loadIntakeBody, /no se interpreta como ficha inexistente/);
 
   const switchTabBody = extractFn(coachSrc, 'async function _switchClientTab(tab)');
   assert.match(switchTabBody, /tab === 'seguimiento'/);
@@ -197,11 +252,92 @@ test('T788.5 Prioridad 2 y 3: App Coach integra Seguimiento y actualizaciones en
   const reqFnBody = extractFn(coachSrc, 'async function requestClientSeguimiento(clientId)');
   assert.match(reqFnBody, /doc\(db, 'clients', clientId, 'checkin_requests', reqId\)/);
   assert.match(reqFnBody, /status:\s*'pending'/);
+  assert.match(reqFnBody, /_detailSeguimientoRequests \|\| \[\]\)\.some\(r => r && r\.status === 'pending'/);
 
   const revFnBody = extractFn(coachSrc, 'async function markSeguimientoReviewed(clientId, checkinId)');
+  assert.match(revFnBody, /setDoc\(doc\(db, 'clients', clientId, 'checkin_reviews', reviewId\)/);
   assert.match(revFnBody, /updateDoc\(doc\(db, 'clients', clientId, 'checkins', checkinId\)/);
   assert.match(revFnBody, /status:\s*'reviewed'/);
   assert.match(revFnBody, /reviewedByCoachId:\s*currentCoach\.uid/);
   // Nunca sobrescribe pesoKg ni métricas del cliente al marcar como revisada
   assert.doesNotMatch(revFnBody, /pesoKg/);
+});
+
+test('T792: una solicitud del Coach conserva otra solicitud escrita mientras la vista estaba abierta', async () => {
+  const body = extractFn(coachSrc, 'async function requestClientSeguimiento(clientId)');
+  const logs = { seguimientoRequests: [{ id: 'req_other', status: 'pending' }] };
+  const ctx = {
+    currentCoach: { uid: 'coach_A' },
+    _detailClientData: { coachId: 'coach_A', activePlanId: 'plan_A' },
+    _detailPlanData: null, _detailSeguimientoRequests: [], _detailSeguimientoData: [],
+    _detailClientId: null, _detailActiveTab: '', _segReqInFlight: false,
+    document: { getElementById: () => null },
+    Date: class extends Date { static now() { return 1000; } },
+    db: {}, serverTimestamp: () => 'server-time',
+    doc: (_db, ...parts) => parts.join('/'),
+    setDoc: async (ref, data) => {
+      if (ref.startsWith('clients/')) throw new Error('FE151');
+      Object.assign(logs, data);
+    },
+    runTransaction: async (_db, fn) => fn({
+      get: async () => ({ exists: () => true, data: () => ({ ...logs }) }),
+      set: (_ref, data) => Object.assign(logs, data)
+    }),
+    showToast: () => {}, loadClientList: () => {}
+  };
+  vm.createContext(ctx);
+  vm.runInContext(body, ctx);
+  await ctx.requestClientSeguimiento('client_A');
+  assert.equal(logs.seguimientoRequests.length, 2);
+  assert.ok(logs.seguimientoRequests.some(x => x.id === 'req_other'));
+  await ctx.requestClientSeguimiento('client_A');
+  assert.equal(logs.seguimientoRequests.length, 2, 'un reintento conserva la identidad de la solicitud');
+});
+
+test('T792: un fallo del espejo y de la subcolección no confirma la solicitud', async () => {
+  const body = extractFn(coachSrc, 'async function requestClientSeguimiento(clientId)');
+  const notices = [];
+  const ctx = {
+    currentCoach: { uid: 'coach_A' }, _detailClientData: { coachId: 'coach_A' },
+    _detailPlanData: null, _detailSeguimientoRequests: [], _detailSeguimientoData: [], _detailClientId: null, _detailActiveTab: '', _segReqInFlight: false,
+    document: { getElementById: () => null }, db: {},
+    doc: (_db, ...parts) => parts.join('/'), serverTimestamp: () => 'server-time',
+    setDoc: async () => { throw new Error('FE151'); },
+    runTransaction: async () => { throw new Error('offline'); },
+    showToast: (message, error) => notices.push({ message, error }), loadClientList: () => {}
+  };
+  vm.createContext(ctx);
+  vm.runInContext(body, ctx);
+  await ctx.requestClientSeguimiento('client_A');
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0].error, true);
+  assert.doesNotMatch(notices[0].message, /Solicitud de seguimiento enviada/);
+});
+
+test('T792: el Cliente conserva historial concurrente en FE151 y solo confirma tras guardar', async () => {
+  const body = extractFn(clientSrc, 'async function saveSeguimientoClient()');
+  const logs = { seguimientoItems: [{ id: 'chk_existing', status: 'sent' }], seguimientoRequests: [] };
+  const notices = [];
+  const ctx = {
+    _savingSeguimiento: false, _seguimientoHistory: [], _seguimientoRequests: [],
+    _seguimientoDraft: { draftId: 'chk_new', comentarios: 'Actualización' }, _seguimientoDraftId: 'chk_new',
+    _initSeguimientoDraft: () => ctx._seguimientoDraft, _persistSeguimientoDraft: () => {},
+    USER: { uid: 'client_A' }, PLAN: null, ACTIVE_PLAN_ID: null, CURRENT_WEEK: 1,
+    document: { getElementById: () => null },
+    FB: {
+      db: {}, doc: (_db, ...parts) => parts.join('/'), serverTimestamp: () => 'server-time',
+      setDoc: async () => { throw new Error('FE151'); }, updateDoc: async () => {},
+      runTransaction: async (_db, fn) => fn({
+        get: async () => ({ exists: () => true, data: () => ({ ...logs }) }),
+        set: (_ref, data) => Object.assign(logs, data)
+      })
+    },
+    showToast: (message, error) => notices.push({ message, error }),
+    renderCheckin: () => {}, renderResumen: () => {}
+  };
+  vm.createContext(ctx);
+  vm.runInContext(body, ctx);
+  assert.equal(await ctx.saveSeguimientoClient(), true);
+  assert.deepEqual(Array.from(logs.seguimientoItems, x => x.id).sort(), ['chk_existing', 'chk_new']);
+  assert.ok(notices.some(x => /Seguimiento enviado/.test(x.message) && !x.error));
 });

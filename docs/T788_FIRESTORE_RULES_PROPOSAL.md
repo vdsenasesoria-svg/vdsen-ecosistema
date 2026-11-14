@@ -80,13 +80,35 @@ match /checkin_requests/{requestId} {
 }
 ```
 
+### 3.4. `match /clients/{clientId}/checkin_reviews/{reviewId}`
+```javascript
+match /checkin_reviews/{reviewId} {
+  allow read: if isSelfOrOwnerCoach(clientId);
+  allow create: if ownsClient(clientId)
+    && request.resource.data.id == reviewId
+    && reviewId == 'rev_' + request.resource.data.checkinId
+    && request.resource.data.clientId == clientId
+    && request.resource.data.coachId == request.auth.uid
+    && request.resource.data.status == 'reviewed'
+    && request.resource.data.reviewedAt == request.time
+    && exists(/databases/$(database)/documents/clients/$(clientId)/checkins/$(request.resource.data.checkinId));
+}
+```
+
 ---
 
-## 4. Compatibilidad dual en App Coach y App Cliente antes del despliegue de reglas
+## 4. Separación de los 4 contratos y compatibilidad dual antes del despliegue de reglas
+
+Los cuatro tipos de información quedan separados en contratos independientes:
+1. **Ficha inicial 360**: `fichas_onboarding/{clientId}` (`status`, `submittedAt`, `updatedAt`, `updatedBy`, `coachId`, `clientId`, `data`).
+2. **Solicitud de actualización del Coach**: `clients/{clientId}/checkin_requests/{requestId}` (`id`, `clientId`, `coachId`, `status`, `note`, `createdAtMs`, `requestedAt`).
+3. **Actualización enviada por el Cliente**: `clients/{clientId}/checkins/{checkinId}` (`id`, `clientId`, `coachId`, `requestId`, `status`, `createdAtMs`, `submittedAt`, `data`).
+4. **Revisión del Coach**: `clients/{clientId}/checkin_reviews/{reviewId}` (`id`, `checkinId`, `clientId`, `coachId`, `status`, `createdAtMs`, `reviewedAt`).
 
 Mientras `FE151` permanece activo en producción:
-- App Coach y App Cliente persisten y sincronizan el seguimiento periódico y las solicitudes del Coach a través de `logs/{clientId}` (`seguimientoItems`, `seguimientoRequests`, `seguimientoSummary`), ruta ya autorizada bajo `FE151` exclusivamente para `isSelfOrOwnerCoach(clientId)` sin tocar claves canónicas (`canonicalKeys()`).
-- En paralelo, cuando `firestore.t788.rules` esté desplegado, las escrituras y lecturas utilizan también las subcolecciones dedicadas `clients/{clientId}/checkins/{checkinId}` y `clients/{clientId}/checkin_requests/{requestId}`.
+- App Coach y App Cliente persisten y sincronizan el seguimiento periódico y las solicitudes del Coach a través de `logs/{clientId}` (`seguimientoItems`, `seguimientoRequests`, `seguimientoReviews`, `seguimientoSummary`), ruta ya autorizada bajo `FE151` exclusivamente para `isSelfOrOwnerCoach(clientId)` sin tocar claves canónicas (`canonicalKeys()`).
+- **Auditoría de inmutabilidad (`logs/{clientId}` vs subcolecciones):** Tanto bajo `FE151` como bajo `firestore.t788.rules`, `match /logs/{userId}` concede `allow create, update, delete: if ownsClient(userId)` para el estado canónico de progresión. Por ello, las métricas declaradas por el cliente almacenadas en el espejo temporal `logs/{clientId}` **NO son inmutables** frente al Coach propietario y **nunca deben presentarse como evidencia inmutable**. La inmutabilidad real de las métricas declaradas por el cliente y de las revisiones del Coach se garantiza exclusivamente mediante `clients/{clientId}/checkins/{checkinId}` (creación exclusiva del cliente con `submittedAt == request.time`, y actualización del Coach restringida a `status`, `reviewedAt`, `reviewedByCoachId`, `coachNote`) y `clients/{clientId}/checkin_reviews/{reviewId}` (creación exclusiva del Coach propietario) una vez desplegado `firestore.t788.rules`.
+- En paralelo, cuando `firestore.t788.rules` esté desplegado, las escrituras y lecturas utilizan también las subcolecciones dedicadas `clients/{clientId}/checkins/{checkinId}`, `clients/{clientId}/checkin_requests/{requestId}` y `clients/{clientId}/checkin_reviews/{reviewId}`.
 
 ---
 
