@@ -211,3 +211,56 @@ test('T816.3 _buildExCard forwards non-unauthorized executionExerciseId to _seri
   const buildCardSrc = extractFn(CLIENT_HTML, '_buildExCard');
   assert.match(buildCardSrc, /_seriesAuthority\s*\(\s*ej\s*,\s*di\s*,\s*ei\s*,\s*unit\s*,\s*_isUnauthSub\s*\?\s*null\s*:\s*_execId\s*\)/);
 });
+
+test('T816.4 Coach presentation formats SETS, FREEZE, and DELOAD without mislabeling them as reps', () => {
+  const COACH_HTML = fs.readFileSync(path.join(ROOT, 'vdsen-coach.html'), 'utf8');
+  const ctx = vm.createContext({
+    _escH: s => String(s == null ? '' : s),
+    _REVIEW_BRANCH: {},
+    _REVIEW_REASON: {},
+    _reviewRequiredLines: () => []
+  });
+  vm.runInContext(extractFn(COACH_HTML, '_renderModuloDShadow') + '\n' + extractFn(COACH_HTML, '_renderShadowMagnitude'), ctx);
+
+  const shadowHtml = ctx._renderModuloDShadow([
+    {
+      ei: 0, name: 'Press banca', pid: 'pid-1', status: 'PENDING',
+      record: {
+        nextExposure: { week: 3, dayIndex: 0 },
+        magnitude: {
+          mode: 'SHADOW', ruleId: 'S-ADD', methodologyFamily: 'VDSEN', evidenceLevel: 'B', comparableExposureCount: 2, eligible: true,
+          evidence: { rirPrescribed: 2, rirObserved: 2, repsTarget: 8, repsExecuted: 8 },
+          candidates: [
+            { dimension: 'SETS', ruleId: 'S-ADD', rawCandidate: 4, finalCandidate: 4 },
+            { dimension: 'FREEZE', ruleId: 'S-FREEZE-ZERO', rawCandidate: 80 },
+            { dimension: 'DELOAD', ruleId: 'S-DELOAD', rawCandidate: 2 }
+          ],
+          activationBlockers: ['NUMERIC_ACTIVATION_DISABLED']
+        }
+      }
+    }
+  ], 2, 0);
+  assert.match(shadowHtml, /series 4 \(final: 4\)/);
+  assert.match(shadowHtml, /carga congelada 80/);
+  assert.match(shadowHtml, /descarga 2/);
+  assert.doesNotMatch(shadowHtml, /reps 4|reps 80|reps 2/);
+
+  const magHtml = ctx._renderShadowMagnitude({
+    state: 'PENDING',
+    magnitude: {
+      methodologyFamily: 'VDSEN', evidenceLevel: 'B', comparableExposureCount: 2, eligible: true,
+      candidates: [{ dimension: 'SETS', ruleId: 'S-ADD', rawCandidate: 4 }]
+    }
+  });
+  assert.match(magHtml, /SETS → 4 series/);
+
+  assert.match(COACH_HTML, /_LIFECYCLE_DIM\s*=\s*\{[^}]*SETS:\s*'series'[^}]*FREEZE:\s*'carga congelada'[^}]*DELOAD:\s*'descarga'/);
+});
+
+test('T816.5 NUMERIC_APPLY_ENABLED remains false across all canonical progression modules', () => {
+  const shadow = require('../assets/progression-auto-apply-shadow.js');
+  const consumer = require('../assets/progression-application-consumer.js');
+  assert.equal(shadow.NUMERIC_APPLY_ENABLED, false);
+  assert.equal(eff.NUMERIC_APPLY_ENABLED, false);
+  assert.equal(consumer.NUMERIC_APPLY_ENABLED, false);
+});
