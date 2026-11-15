@@ -324,8 +324,11 @@
   function describeProgression(input) {
     input = input || {};
     var result = resolveEffective(input), applied = result.provenance === PROVENANCE.CANONICAL_OVERLAY || result.provenance === PROVENANCE.CARRIED_OVERLAY;
+    var targetExecId = input.executionExerciseId || input.pid;
     var records = _values(input.records).filter(function(r) { var t = r && r.nextExposure;
-      return r && r.clientId === input.clientId && r.planId === input.planId && r.prescriptionExerciseId === input.pid && t && t.week === input.week && t.dayIndex === input.dayIndex;
+      var recExecId = (r && r.executionExerciseId) || (r && r.prescriptionExerciseId);
+      return r && r.clientId === input.clientId && r.planId === input.planId && r.prescriptionExerciseId === input.pid &&
+        recExecId === targetExecId && t && t.week === input.week && t.dayIndex === input.dayIndex;
     }).sort(function(a, b) { return (_time(b.source && b.source.calculatedAt) || 0) - (_time(a.source && a.source.calculatedAt) || 0); });
     var rec = records[0] || null, m = rec && rec.magnitude, state = applied ? (result.state || 'CONSUMED') : 'NO_AUTHORIZED_ADJUSTMENT';
     var reasons = [];

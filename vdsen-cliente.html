@@ -7428,7 +7428,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     // PENDING stays out of this path and the base Coach set remains visible.
     var _psReps = setSpec ? setSpec.repsTarget : null;
     var _psRir  = (setSpec && setSpec.rirTarget !== undefined && setSpec.rirTarget !== null) ? setSpec.rirTarget : null;
-    var _authority = _seriesAuthority(ej, di, ei, unit);
+    var _authority = _seriesAuthority(ej, di, ei, unit, _isUnauthSub ? null : _execId);
     var _setTargetHtml = _effectiveSetTargetHtml(setSpec, _ovEff ? 'AUTOAJUSTE VDSEN' : 'COACH', unit, isIsometric,
       { sets: numSeries, hasAppliedLoad: _authority && _authority.hasAppliedLoad });
     var _historyReferenceHtml = _logbookReferenceHtml(histEx, unit, isIsometric);
@@ -12403,14 +12403,17 @@ function _resolveOverlayForExercise(ej, di, unit, executionExerciseId) {
   return (r.provenance === 'CANONICAL_OVERLAY' || r.provenance === 'CARRIED_OVERLAY') ? r : null;
 }
 // T599: describe the SAME server-confirmed authority used by the operational consumer.
-function _seriesAuthority(ej, di, ei, unit) {
+function _seriesAuthority(ej, di, ei, unit, executionExerciseId) {
   var st = LIFECYCLE_STATE, eff = window.VDSEN_EFFECTIVE_PRESCRIPTION;
   if (!USER || !eff || !st || st.uid !== USER.uid || st.planId !== ACTIVE_PLAN_ID || !st.planDoc || !ej.prescriptionExerciseId) return null;
   var day = (st.planDoc.days || []).filter(function(d) { return d.dayIndex === di; })[0];
   var original = ((day && day.exercises) || []).filter(function(e) { return e.prescriptionExerciseId === ej.prescriptionExerciseId; })[0];
-  if (!original || isY3TExercise(ej) || LOGS['exsub_'+CURRENT_WEEK+'_'+di+'_'+ei]) return null;
+  var _hasSub = !!LOGS['exsub_'+CURRENT_WEEK+'_'+di+'_'+ei];
+  if (!original || isY3TExercise(ej) || (_hasSub && (!executionExerciseId || executionExerciseId === ej.prescriptionExerciseId))) return null;
+  var _vi = typeof window !== 'undefined' ? window.VDSEN_VARIANT_IDENTITY : null;
+  if (_hasSub && _vi && _vi.parseExecutionId(executionExerciseId).isAuthorized === false) return null;
   var view = eff.describeProgression({ clientId: USER.uid, planId: ACTIVE_PLAN_ID, activePlanId: ACTIVE_PLAN_ID, pid: ej.prescriptionExerciseId,
-    week: CURRENT_WEEK, dayIndex: di, records: st.records, overlays: st.overlays, interventions: st.interventions, plan: st.planDoc,
+    executionExerciseId: executionExerciseId, week: CURRENT_WEEK, dayIndex: di, records: st.records, overlays: st.overlays, interventions: st.interventions, plan: st.planDoc,
     entries: LOGS, baseSets: original.sets || [], unit: unit, canonicalOverlayRead: true });
   view.baseSets = original.sets || []; view.unit = unit;
   return view;
