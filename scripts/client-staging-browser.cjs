@@ -51,23 +51,45 @@ async function restGet(cfg, email, password, docPath) {
     await p.click('.today-action'); await p.waitForTimeout(700);
     check('HOME_CTA_OPENS_TRAINING', await p.isVisible('#tabEntr') && await p.isVisible('#exPanel')); await S('05-training'); await overflow('training');
     // ---- prescription is Coach-owned and shown separately from execution
-    check('PRESCRIPTION_LABELLED', /PRESCRIPCIÓN/.test(await p.textContent('.spec-cap')) && /COACH/.test(await p.textContent('.spec-cap')));
-    check('EXECUTION_LABELLED', /REGISTRO/.test(await p.textContent('.sp-head')) && /RIR REAL/.test(await p.textContent('.sp-gl')));
-    check('PRESCRIBED_RIR_SEPARATE_FROM_OBSERVED', (await p.textContent('.sp-t-r')).includes('RIR 2') && (await p.textContent('#exPanel')).includes('RIR REAL'));
-    // ---- rest timer via an intermediate set
-    await p.click('.setp >> nth=0'); await p.waitForTimeout(500);
-    check('REST_TIMER_OPENS', await p.isVisible('#restTimerOverlay')); await S('06-rest-timer');
-    check('REST_TIMER_READS', /\d+:\d\d/.test(await p.textContent('#restTimerNum')));
-    await p.click('#restTimerOverlay .btn-mini'); await p.waitForTimeout(300);
-    check('REST_TIMER_MINIMIZES', await p.isVisible('#timerPill') && !(await p.isVisible('#restTimerOverlay'))); await S('07-timer-pill');
-    await p.click('#timerPill'); await p.waitForTimeout(200); check('REST_TIMER_RESTORES', await p.isVisible('#restTimerOverlay'));
-    await p.mouse.click(10, 10); await p.waitForTimeout(300); check('REST_TIMER_CLOSES', !(await p.isVisible('#restTimerOverlay')));
-    // ---- execution: load / reps / observed RIR
-    await p.fill('#xcarga_0_0', '82.5'); await p.fill('#xreps_0_0', '6'); await p.click('#xrir_0_0_2'); await p.fill('#xics_0_0', '8'); await p.click('#xpump_0_0_1');
-    check('OBSERVED_RIR_SELECTED', (await p.getAttribute('#xrir_0_0_2', 'aria-pressed')) === 'true' && (await p.inputValue('#xrir_val_0_0')) === '2'); await S('08-set-filled');
-    await p.click('.set-save-primary'); await p.waitForTimeout(1500);
-    check('EXERCISE_REGISTERED', await p.isVisible('.setdone') && /82\.5/.test(await p.textContent('.setdone'))); await S('09-registered');
-    if (await p.isVisible('#restTimerOverlay')) { await S('09b-rest-after-exercise'); await p.mouse.click(10, 10); await p.waitForTimeout(300); }
+    const specCap = (await p.textContent('.spec-cap')) || '';
+    check('PRESCRIPTION_LABELLED', /PRESCRIPCIÓN|ESTRUCTURA/.test(specCap) && /COACH/.test(specCap), specCap.trim());
+    const isExpress = !!(await p.$('#xcarga_0_0'));
+    const execHd = isExpress ? await p.textContent('.sp-head') : await p.textContent('.pw-ex');
+    check('EXECUTION_LABELLED', /REGISTRO|TU EJECUCIÓN/.test(execHd || '') && /RIR REAL/.test((await p.textContent('.sp-gl')) || ''));
+    const panelText = (await p.textContent('#exPanel')) || '';
+    check('PRESCRIBED_RIR_SEPARATE_FROM_OBSERVED', (isExpress ? ((await p.textContent('.sp-t-r')) || '').includes('RIR 2') : /RIR\s*2/.test((await p.textContent('.spec')) || panelText)) && panelText.includes('RIR REAL'));
+    if (isExpress) {
+      // ---- rest timer via an intermediate set (Express mode)
+      await p.click('.setp >> nth=0'); await p.waitForTimeout(500);
+      check('REST_TIMER_OPENS', await p.isVisible('#restTimerOverlay')); await S('06-rest-timer');
+      check('REST_TIMER_READS', /\d+:\d\d/.test(await p.textContent('#restTimerNum')));
+      await p.click('#restTimerOverlay .btn-mini'); await p.waitForTimeout(300);
+      check('REST_TIMER_MINIMIZES', await p.isVisible('#timerPill') && !(await p.isVisible('#restTimerOverlay'))); await S('07-timer-pill');
+      await p.click('#timerPill'); await p.waitForTimeout(200); check('REST_TIMER_RESTORES', await p.isVisible('#restTimerOverlay'));
+      await p.mouse.click(10, 10); await p.waitForTimeout(300); check('REST_TIMER_CLOSES', !(await p.isVisible('#restTimerOverlay')));
+      // ---- execution: load / reps / observed RIR
+      await p.fill('#xcarga_0_0', '82.5'); await p.fill('#xreps_0_0', '6'); await p.click('#xrir_0_0_2'); await p.fill('#xics_0_0', '8'); await p.click('#xpump_0_0_1');
+      check('OBSERVED_RIR_SELECTED', (await p.getAttribute('#xrir_0_0_2', 'aria-pressed')) === 'true' && (await p.inputValue('#xrir_val_0_0')) === '2'); await S('08-set-filled');
+      await p.click('.set-save-primary'); await p.waitForTimeout(1500);
+      check('EXERCISE_REGISTERED', await p.isVisible('.setdone') && /82\.5/.test(await p.textContent('.setdone'))); await S('09-registered');
+      if (await p.isVisible('#restTimerOverlay')) { await S('09b-rest-after-exercise'); await p.mouse.click(10, 10); await p.waitForTimeout(300); }
+    } else {
+      // ---- execution: load / reps / observed RIR (Per-set detailed mode)
+      const cargaEl = await p.waitForSelector('input[id^="carga_"]', { timeout: 10000 });
+      const key = (await cargaEl.getAttribute('id')).replace('carga_', '');
+      await p.fill('#carga_' + key, '82.5'); await p.fill('#reps_' + key, '6'); await p.click('#rir_btn_' + key + '_2'); await p.fill('#ics_' + key, '8'); await p.click('#pump_' + key + '_1');
+      check('OBSERVED_RIR_SELECTED', (await p.getAttribute('#rir_btn_' + key + '_2', 'aria-pressed')) === 'true' && (await p.inputValue('#rir_' + key)) === '2'); await S('08-set-filled');
+      await p.click('.set-save-primary');
+      await p.waitForSelector('#restTimerOverlay', { state: 'visible', timeout: 10000 }).catch(() => {});
+      // ---- rest timer opens after saving set 1
+      check('REST_TIMER_OPENS', await p.isVisible('#restTimerOverlay')); await S('06-rest-timer');
+      check('REST_TIMER_READS', /\d+:\d\d/.test((await p.textContent('#restTimerNum')) || ''));
+      await p.click('#restTimerOverlay .btn-mini'); await p.waitForTimeout(300);
+      check('REST_TIMER_MINIMIZES', await p.isVisible('#timerPill') && !(await p.isVisible('#restTimerOverlay'))); await S('07-timer-pill');
+      await p.click('#timerPill'); await p.waitForTimeout(200); check('REST_TIMER_RESTORES', await p.isVisible('#restTimerOverlay'));
+      await p.mouse.click(10, 10); await p.waitForTimeout(300); check('REST_TIMER_CLOSES', !(await p.isVisible('#restTimerOverlay')));
+      check('EXERCISE_REGISTERED', await p.isVisible('.workout-set-saved') && /82[.,]5/.test((await p.textContent('.workout-set-saved')) || '')); await S('09-registered');
+    }
     // ---- session close + post-session check-in (accessible radios, keyboard-safe)
     await p.click('.sess-hdr-btn.sess-live'); await p.waitForTimeout(600);
     if (await p.isVisible('#postSessionModal')) {
@@ -75,18 +97,27 @@ async function restGet(cfg, email, password, docPath) {
       check('POSTSESSION_MODAL_OPENS', true);
       await p.click('#eimd2'); await p.click('#artNoBtn'); await p.click('#psSuenoGrid button[data-val="8"]');
       check('POSTSESSION_CHOICES_STATE', (await p.getAttribute('#eimd2', 'aria-checked')) === 'true' && (await p.inputValue('#psSueno')) === '8' && (await p.inputValue('#psEimd')) === '2');
-      await p.click('.ps-go'); await p.waitForTimeout(2500);
+      await p.click('.ps-go'); await p.waitForSelector('#postSessionModal', { state: 'hidden', timeout: 10000 }).catch(() => {}); await p.waitForTimeout(800);
       check('POSTSESSION_MODAL_CLOSES', !(await p.isVisible('#postSessionModal')));
     } else check('POSTSESSION_MODAL_OPENS', false, 'modal not visible after COMPLETAR');
     if (await p.isVisible('#restTimerOverlay')) { await p.mouse.click(10, 10); await p.waitForTimeout(300); }
     // ---- persisted evidence (read back with the athlete's own token)
-    let doc = null; for (let i = 0; i < 8 && !doc; i++) { await p.waitForTimeout(1000); const d = await restGet(cfg, seed.athlete.email, seed.athlete.password, 'logs/' + seed.athlete.uid + '/mesos/' + seed.planId); if (d && d.fields) doc = d; }
-    const ent = doc && doc.fields && doc.fields.entries && doc.fields.entries.mapValue && doc.fields.entries.mapValue.fields || {};
-    const keys = Object.keys(ent);
+    let doc = null, ent = {}, keys = [];
+    for (let i = 0; i < 12; i++) {
+      await p.waitForTimeout(1000);
+      const d = await restGet(cfg, seed.athlete.email, seed.athlete.password, 'logs/' + seed.athlete.uid + '/mesos/' + seed.planId);
+      if (d && d.fields) {
+        doc = d;
+        ent = d.fields.entries && d.fields.entries.mapValue && d.fields.entries.mapValue.fields || {};
+        keys = Object.keys(ent);
+        if (keys.some(k => /^done_1_0$/.test(k)) && keys.some(k => /^postsession_1_0$/.test(k))) break;
+      }
+    }
     check('EVIDENCE_PERSISTED_IN_STAGING', !!doc && keys.some(k => /^exexpress_1_0_0$|^log_1_0_0_s\d+$/.test(k)), keys.slice(0, 4).join(','));
     check('SESSION_CLOSURE_PERSISTED', keys.some(k => /^done_1_0$/.test(k)) && keys.some(k => /^postsession_1_0$/.test(k)), keys.filter(k => /^(done|postsession|progrec)_/.test(k)).join(','));
     check('NO_CANONICAL_FIELDS_WRITTEN_BY_ATHLETE', !!doc && !doc.fields.progressionApplications && !doc.fields.nextExposureOverlays);
-    // ---- tabs
+    // ---- tabs (dismiss any post-session celebration/modal if shown)
+    await p.keyboard.press('Escape').catch(() => {}); await p.waitForTimeout(200);
     for (const [i, n] of [[2, 'nutrition'], [3, 'checkin'], [4, 'profile']]) { await p.click('#nb' + i); await p.waitForTimeout(700); await S('1' + i + '-' + n); await overflow(n); check('TAB_' + n.toUpperCase(), await p.isVisible('#nb' + i + '.on') || (await p.getAttribute('#nb' + i, 'aria-current')) === 'page'); }
     // ---- offline banner
     await ctx.setOffline(true); await p.evaluate(() => window.dispatchEvent(new Event('offline'))); await p.waitForTimeout(400);
