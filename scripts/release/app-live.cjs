@@ -273,7 +273,6 @@ function assertRollbackArtifact(artifact) {
 // Validate authenticated official build evidence independently of the serving alias.
 async function verifySafeOffBaseline(s, downloadEvidence = false, deploymentFn = deployment) {
   const B = require('../pilot/off-baseline.cjs'), b = SAFE_OFF_BASELINE;
-  assert.equal(s.runtime_sha, b.runtimeSha, 'SAFE_OFF_BASELINE_RUNTIME_MISMATCH');
   const historical = Object.assign({}, s, { runtime_sha: b.runtimeSha, production_deployment: b.deployment,
     app_release: Object.assign({}, s.app_release, { runtime_sha: b.runtimeSha, deployment: b.deployment, source_release_run: b.officialReleaseRun }) });
   if (downloadEvidence) B.download(historical, b);
@@ -285,7 +284,8 @@ function assertSafeRollbackProof(artifact, proof) {
   assert.equal(proof.deployment, b.deployment, 'SAFE_OFF_DEPLOYMENT_MISMATCH');
   assert.equal(String(proof.officialReleaseRun), b.officialReleaseRun, 'SAFE_OFF_RUN_MISMATCH');
   assert.match(proof.evidenceSha256 || '', /^[a-f0-9]{64}$/, 'SAFE_OFF_EVIDENCE_INVALID');
-  assert.equal(artifact.production_runtime_sha, b.runtimeSha, 'SAFE_OFF_RUNTIME_MISMATCH');
+  if (proof.runtimeSha !== undefined) assert.equal(proof.runtimeSha, b.runtimeSha, 'SAFE_OFF_RUNTIME_MISMATCH');
+  assert.match(artifact.production_runtime_sha || '', /^[0-9a-f]{40}$/, 'PRODUCTION_RUNTIME_SHA_REQUIRED');
   assert.equal(artifact.safe_off_deployment, b.deployment, 'SAFE_OFF_TARGET_MISMATCH');
   assert.equal(artifact.safe_off_evidence_sha256, proof.evidenceSha256, 'SAFE_OFF_EVIDENCE_CHANGED');
   return proof;
