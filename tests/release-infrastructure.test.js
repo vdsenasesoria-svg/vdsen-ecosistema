@@ -33,6 +33,7 @@ function withRulesOnlyPackage(mutate, run) {
     reviewed.release_mode = 'rules_only';
     reviewed.rules_sha = packageSha;
     delete reviewed.app_release; delete reviewed.published_rules; reviewed.rules_transition = clone((state.release_mode === 'rules_only' ? state : rulesState).rules_transition);
+    reviewed.rules_transition.target_sha256 = hash(git('show', packageSha + ':firestore.rules'));
     mutate(reviewed);
     fs.writeFileSync(path.join(temp, '.release', 'vdsen-client.json'), JSON.stringify(reviewed, null, 2) + '\n');
     return run(temp, reviewed);

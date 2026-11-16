@@ -1,6 +1,5 @@
 {
   "runtime_sha": "f6b90e401d093bc68c648541dd36c946794cff48",
-  "rules_sha": "3fb0d3d866889d12143511e337f142e4fc0d180e",
   "production_deployment": "dpl_BpiwPJNVs1CXwX2nkotXLzquZmBv",
   "rollback_deployment": "dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8",
   "rollback_runtime_sha": "3fc264e23d67a8ecb1611a6c8af04ad739f422da",
@@ -11,7 +10,7 @@
   "firebase_project": "vdsen-ecosistema",
   "numeric_apply_enabled": false,
   "rules_transition": {
-    "target_sha256": "486606574a2f10d65212cedb26fe7f73686e5d6610995e9c4bfe4a424972c460",
+    "target_sha256": "fe1517306bebd4bd529adfc51a406c5e97cac6b2dfd7fcae61c87318dd2e21e0",
     "order": "verify_current_app_then_rules",
     "rollback_order": "rules_then_app",
     "rollback_sha256": "fe1517306bebd4bd529adfc51a406c5e97cac6b2dfd7fcae61c87318dd2e21e0",
@@ -42,18 +41,22 @@
     "preview_production_env_verified": true,
     "human_ux_approved": true
   },
-  "observation_source": "T799 rules_only preparation after T798 official app-only release run 43554088508. Production serves dpl_BpiwPJNVs1CXwX2nkotXLzquZmBv (runtime f6b90e401d093bc68c648541dd36c946794cff48, promoted at 2026-11-14T04:06:10Z after 46 verified surfaces, rules_mutated=false, main_unchanged=true). Previous production baseline is dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8 (runtime 3fc264e23d67a8ecb1611a6c8af04ad739f422da); prior safe OFF recovery dpl_4CxS8VeoTwWFEJa37tqiHRGGuj4H (runtime ec3b30f99d095c90fc8e1d54cf05366a0427205a) remains in provenance. Live rules baseline FE151 (sha256 fe1517306bebd4bd529adfc51a406c5e97cac6b2dfd7fcae61c87318dd2e21e0) captured from Firebase Rules API in .release/rollback/firestore.rules.fe1517306bebd4bd529adfc51a406c5e97cac6b2dfd7fcae61c87318dd2e21e0.rules; target T788 rules (sha256 486606574a2f10d65212cedb26fe7f73686e5d6610995e9c4bfe4a424972c460) staged in firestore.rules at commit 3fb0d3d866889d12143511e337f142e4fc0d180e.",
-  "release_mode": "rules_only",
+  "observation_source": "T819 transition from rules_only to app_only after T810 rules release run 43620978036 (T788 rules sha256 486606574a2f10d65212cedb26fe7f73686e5d6610995e9c4bfe4a424972c460 active) and T818R canonical integration at 076c8c70a276cb80d669d7cd187861756405871f. Live production currently serves dpl_BpiwPJNVs1CXwX2nkotXLzquZmBv (runtime f6b90e401d093bc68c648541dd36c946794cff48); candidate 076c8c70a276cb80d669d7cd187861756405871f verified via read-only diagnostics run 43873615975 (dpl_HFxrj2ssiAXhJn6uNQLhfvcEjN3j, READY, eligible=true, Numeric Apply DISARMED).",
+  "release_mode": "app_only",
   "app_release": {
     "runtime_sha": "f6b90e401d093bc68c648541dd36c946794cff48",
     "deployment": "dpl_BpiwPJNVs1CXwX2nkotXLzquZmBv",
     "promotion_model": "staged_production",
     "previous_deployment": "dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8",
     "previous_runtime_sha": "3fc264e23d67a8ecb1611a6c8af04ad739f422da",
-    "safe_recovery_deployment": "dpl_4CxS8VeoTwWFEJa37tqiHRGGuj4H",
-    "safe_recovery_runtime_sha": "ec3b30f99d095c90fc8e1d54cf05366a0427205a",
     "verified_surfaces": 46,
     "source_release_run": "43554088508",
     "completed_at": "2026-11-14T04:06:10Z"
+  },
+  "published_rules": {
+    "sha256": "486606574a2f10d65212cedb26fe7f73686e5d6610995e9c4bfe4a424972c460",
+    "rules_sha": "3fb0d3d866889d12143511e337f142e4fc0d180e",
+    "source_release_run": "43620978036",
+    "completed_at": "2026-11-14T17:34:15Z"
   }
 }
