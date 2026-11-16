@@ -312,11 +312,19 @@ function check(id, pass, note) {
       clientA: createdUsers[2] && createdUsers[2].token
     };
     let docsDeleted = 0;
+    let adminTok = null;
+    try {
+      adminTok = require('node:child_process').execSync('gcloud auth print-access-token', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
+    } catch (_) {}
+    const residualDocs = [];
     for (const [who, p] of docPathsToDelete.reverse()) {
       const t = tokenMap[who] || tokenMap.coachA;
-      if (!t) continue;
-      const r = await fsDel(t, p).catch(() => ({ s: 0 }));
-      if (ok(r)) docsDeleted++;
+      let r = t ? await fsDel(t, p).catch(() => ({ s: 0 })) : { s: 0 };
+      if (!ok(r) && r.s !== 404 && adminTok && cfg.projectId === 'vdsen-ecosistema-staging') {
+        r = await fsDel(adminTok, p).catch(() => ({ s: 0 }));
+      }
+      if (ok(r) || r.s === 404) docsDeleted++;
+      else residualDocs.push({ path: p, status: r.s });
     }
     let usersDeleted = 0;
     for (const u of createdUsers) {
@@ -329,8 +337,8 @@ function check(id, pass, note) {
       checks: results.length,
       passed: results.length - failed.length,
       failed: failed.map(f => f.id + ':' + f.note),
-      cleanup: { docsAttempted: docPathsToDelete.length, docsDeleted, usersCreated: createdUsers.length, usersDeleted }
+      cleanup: { docsAttempted: docPathsToDelete.length, docsDeleted, residualDocs, usersCreated: createdUsers.length, usersDeleted }
     }, null, 2));
-    process.exit(failed.length === 0 ? 0 : 1);
+    process.exit(failed.length === 0 && residualDocs.length === 0 ? 0 : 1);
   }
 })();
