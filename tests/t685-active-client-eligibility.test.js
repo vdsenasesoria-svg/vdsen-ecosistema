@@ -954,7 +954,7 @@ test('T685.1 Obligatory 10 cases: strict gate enforcement across evaluation, swe
     'logs/c8-active/mesos/plan-active-1': { planId: 'plan-active-1', entries: recentLogs, updatedAt: 2 },
     'logs/c8-active/starts/plan-active-1_1_0_0': { planId: 'plan-active-1', week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0', at: new Date(NOW_MS - 4 * DAY_MS).toISOString() },
     'logs/c8-active/starts/plan-active-1_1_2_0': { planId: 'plan-active-1', week: 1, dayIndex: 2, exerciseIndex: 0, setKey: 'log_1_2_0_s0', at: new Date(NOW_MS - 2 * DAY_MS).toISOString() },
-    'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: ['c8-inactive', 'c8-active'] },
+    'releaseControl/autonomousProgression': { schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(NOW_MS + 36e5).toISOString(), clientIds: ['c8-inactive', 'c8-active'] },
     'coaches/coach-1': { autoApplyCanary: { enabled: true, clientIds: ['c8-inactive', 'c8-active'], prescriptionExerciseIds: [] } }
   });
   var sweepOut8 = await sweep.runSweep({ db: db8, enabled: true, numericApplyEnabled: true, clock: () => NOW_ISO });
@@ -975,7 +975,8 @@ test('T685.1 Obligatory 10 cases: strict gate enforcement across evaluation, swe
     db: db8,
     verifyIdToken: async function() { return { uid: 'c8-inactive' }; },
     enabled: true,
-    numericApplyEnabled: true
+    numericApplyEnabled: true,
+    clock: () => NOW_ISO
   });
   await postHandler({ method: 'POST', headers: { authorization: 'Bearer token-ok' }, body: { planId: 'plan-inact-1' } }, fakeRes);
   assert.equal(postResStatus, 200);
@@ -988,7 +989,8 @@ test('T685.1 Obligatory 10 cases: strict gate enforcement across evaluation, swe
     db: db8,
     verifyIdToken: async function() { return { uid: 'c8-active' }; },
     enabled: true,
-    numericApplyEnabled: true
+    numericApplyEnabled: true,
+    clock: () => NOW_ISO
   });
   await postActiveRevoked({ method: 'POST', headers: { authorization: 'Bearer token-ok' }, body: { planId: 'plan-active-1' } }, fakeRes);
   assert.equal(postResBody.status, 'OUT_OF_CANARY', 'Case 9: revocation in canary immediately blocks athlete');

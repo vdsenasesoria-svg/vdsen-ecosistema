@@ -112,7 +112,7 @@ test('T685.E1 cohort selection & execution on emulator: recurrent (PRIORITY_A) a
   await db.doc('releaseControl/autonomousProgression').set({
     schema: 'vdsen-autonomous-release-v1',
     enabled: true,
-    expiresAt: new Date(Date.now() + 36e5).toISOString(),
+    expiresAt: new Date(T_NOW + 36e5).toISOString(),
     clientIds: [recurrent.uid, newIdle.uid, noPlan.uid, importedOnly.uid, inactive.uid]
   });
 
@@ -270,7 +270,7 @@ test('T685.E3 plan suspension, draft status, or client deactivation immediately 
   const logs = makeRecurrentLogs();
 
   await db.doc('coaches/' + coach.uid).set({ role: 'coach', autoApplyCanary: { enabled: true, clientIds: [athlete.uid], prescriptionExerciseIds: [PID] } });
-  await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(Date.now() + 36e5).toISOString(), clientIds: [athlete.uid] });
+  await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, expiresAt: new Date(T_NOW + 36e5).toISOString(), clientIds: [athlete.uid] });
   await db.doc('clients/' + athlete.uid).set({ coachId: coach.uid, activePlanId: planId });
   await db.doc('plans/' + planId).set(makePlanDoc(athlete.uid, coach.uid, { status: 'suspended' }));
   await db.doc('logs/' + athlete.uid).set({ planId, entries: logs, updatedAt: 2 });

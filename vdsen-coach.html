@@ -20284,6 +20284,9 @@ El esfuerzo no es negociable.
       var cands = (m.candidates || []).map(function(c) {
         var txt = c.dimension === 'REST' ? '+' + cell(c.deltaSeconds) + ' s descanso (primera intervención)'
           : c.dimension === 'LOAD' ? 'carga cruda ' + cell(c.rawCandidate) + ' (final: ' + cell(c.finalCandidate) + ')'
+          : c.dimension === 'SETS' ? 'series ' + cell(c.rawCandidate) + ' (final: ' + cell(c.finalCandidate) + ')'
+          : c.dimension === 'FREEZE' ? 'carga congelada ' + cell(c.rawCandidate)
+          : c.dimension === 'DELOAD' ? 'descarga ' + cell(c.rawCandidate)
           : 'reps ' + cell(c.rawCandidate) + ' (final: ' + cell(c.finalCandidate) + ')';
         return _escH('Regla ' + c.ruleId + ' · ') + txt + (c.blockers && c.blockers.length ? ' · ' + _escH(c.blockers.join(', ')) : '');
       });
@@ -20319,7 +20322,7 @@ El esfuerzo no es negociable.
   // T534: lifecycle audit (APPLIED / CONSUMED / OVERRIDDEN / REVERTED / STALE-after-apply). Compact: what changed (before -> after), why (rule), the equipment
   // resolution used, timestamps and the Coach action. The record itself carries these facts (record.lifecycle), so the feed needs no extra reads.
   var _LIFECYCLE_LABEL = { PENDING: 'PENDIENTE', APPLIED: 'APLICADA', CONSUMED: 'CONSUMIDA', OVERRIDDEN: 'SUPERADA POR COACH', REVERTED: 'REVERTIDA', STALE: 'OBSOLETA', REJECTED: 'RECHAZADA' };
-  var _LIFECYCLE_DIM = { LOAD: 'carga', REPS: 'reps', REST: 's de descanso' };
+  var _LIFECYCLE_DIM = { LOAD: 'carga', REPS: 'reps', REST: 's de descanso', SETS: 'series', FREEZE: 'carga congelada', DELOAD: 'descarga' };
   function _fmtAt(iso) { return iso ? String(iso).replace('T', ' ').slice(0, 16) : '—'; }
   function _lifecycleLines(item) {
     var lc = item && item.lifecycle;
@@ -20369,7 +20372,7 @@ El esfuerzo no es negociable.
     if (!m) return '';
     var parts = (m.candidates || []).map(function(c) {
       var raw = c.rawCandidate === null || c.rawCandidate === undefined ? '—' : c.rawCandidate;
-      var unit = c.dimension === 'LOAD' ? ' (carga cruda)' : c.dimension === 'REPS' ? ' reps' : c.dimension === 'REST' ? ' s descanso' : '';
+      var unit = c.dimension === 'LOAD' ? ' (carga cruda)' : c.dimension === 'REPS' ? ' reps' : c.dimension === 'REST' ? ' s descanso' : c.dimension === 'SETS' ? ' series' : '';
       return _escH('Regla ' + c.ruleId + ' · ' + c.dimension + ' → ' + raw + unit);
     });
     var notes = [];
