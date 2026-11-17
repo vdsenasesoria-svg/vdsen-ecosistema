@@ -285,7 +285,7 @@ test('M & N: STATUS and ENABLE readback preserve Numeric Apply OFF and bind to S
     }),
   });
   assert.equal(res.deployment, STAGE1_DEPLOYMENT);
-  assert.equal(res.wrote, 3);
+  assert.equal(res.wrote, 4);
   assert.equal(res.readback.releaseEnabled, true);
   assert.equal(res.readback.coachEnabled, true);
   fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -308,10 +308,11 @@ test('J & K & L: STOP recovers expired window without runtime/Vercel/ID-token/EN
       coachEnabled = false;
       revoked = true;
       relExp = new Date(Date.now() - 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
-      return { status: 200, body: { writeResults: [{ updateTime: '2026-11-17T04:12:00Z' }, { updateTime: '2026-11-17T04:12:00Z' }, { updateTime: '2026-11-17T04:12:00Z' }, { updateTime: '2026-11-17T04:12:00Z' }] } };
+      return { status: 200, body: { writeResults: [{ updateTime: '2026-11-17T04:12:00Z' }, { updateTime: '2026-11-17T04:12:00Z' }, { updateTime: '2026-11-17T04:12:00Z' }, { updateTime: '2026-11-17T04:12:00Z' }, { updateTime: '2026-11-17T04:12:00Z' }] } };
     }
     if (p.startsWith('releaseControl/ayrtonRevocation_')) return revoked ? { status: 200, body: encDoc({ revoked: true, operationId: OP_ID }) } : { status: 404, body: {} };
     if (p.startsWith('releaseControl/ayrtonOperation_')) return revoked ? { status: 200, body: encDoc({ status: 'REVOKED', operationId: OP_ID }) } : { status: 404, body: {} };
+    if (p === 'releaseControl/ayrtonActiveWindow') return revoked ? { status: 200, body: encDoc({ active: false, operationId: OP_ID }) } : { status: 404, body: {} };
     if (p === C.RELEASE_PATH) return { status: 200, body: encDoc({ schema: 'vdsen-autonomous-release-v1', enabled: relEnabled, clientIds: [UID], expiresAt: relExp }) };
     if (p.startsWith('coaches/')) return { status: 200, body: encDoc({ autoApplyCanary: { enabled: coachEnabled, clientIds: [UID], prescriptionExerciseIds: [AUTHORIZED_PID] } }) };
     if (p.startsWith('clients/')) return { status: 200, body: encDoc({ coachId: COACH, activePlanId: PLAN }) };
@@ -326,9 +327,12 @@ test('J & K & L: STOP recovers expired window without runtime/Vercel/ID-token/EN
     currentApp: async () => { throw new Error('VERCEL_UNREACHABLE'); },
     runtimeEvidence: async () => { throw new Error('RUNTIME_DOWN_502'); },
   });
-  assert.equal(first.wrote, 4);
+  assert.equal(first.wrote, 5);
+  assert.equal(first.operationRevoked, true);
+  assert.equal(first.revocationScope, 'DURABLE_OPERATION_REVOCATION_VERIFIED');
   assert.equal(first.readback.releaseEnabled, false);
   assert.equal(first.readback.coachEnabled, false);
+  assert.equal(first.readback.revocationVerified, true);
 
   const second = await executeWindowAction('STOP', {
     env: baseEnv({ AYRTON_WINDOW_RELEASE_ENABLED: 'false', INPUT_PLAN: '', INPUT_EXPIRY: '', INPUT_ARM_RUN_ID: '' }),
@@ -447,8 +451,70 @@ test('T832 D/E/F/G/J/K: STOP/ENABLE concurrency race, durable revocation, no dup
   // K: Uncertain Firestore COMMIT (500) must fail closed without declaring success
   await assert.rejects(() => executeWindowAction('STOP', {
     ...commonOpts(storeFG),
+    report: validArmReport({ operationId: 'op-t832-uncertain-500', window: { ...validArmReport().window, operationId: 'op-t832-uncertain-500' } }),
     env: baseEnv({ AYRTON_WINDOW_RELEASE_ENABLED: 'false', INPUT_OPERATION: 'op-t832-uncertain-500' }),
     http: async (m, p, tok, body) => (m === 'COMMIT' ? { status: 500, body: {} } : storeFG.http(m, p, tok, body)),
+  }), /WINDOW_STOPPED_REVIEW_EVIDENCE_NO_RETRY/);
+
+  // T833 A/C/D/E: STOP without INPUT_OPERATION resolves authentic operationId from ARM artifact, blocks concurrent/subsequent ENABLE, and rejects mismatched operationId
+  const storeT833 = createStore();
+  let t833StopRan = false;
+  const wrappedT833 = async (m, p, tok, body) => {
+    if (m === 'COMMIT' && !t833StopRan) {
+      t833StopRan = true;
+      const stopRes = await executeWindowAction('STOP', {
+        ...commonOpts(storeT833),
+        env: baseEnv({ AYRTON_WINDOW_RELEASE_ENABLED: 'false', INPUT_OPERATION: '', INPUT_PLAN: '', INPUT_EXPIRY: '' }),
+      });
+      assert.equal(stopRes.operationId, OP_ID);
+      assert.equal(stopRes.operationRevoked, true);
+      assert.equal(stopRes.revocationScope, 'DURABLE_OPERATION_REVOCATION_VERIFIED');
+      assert.equal(stopRes.readback.revocationVerified, true);
+    }
+    return storeT833.http(m, p, tok, body);
+  };
+  await assert.rejects(() => executeWindowAction('ENABLE', {
+    ...commonOpts(storeT833),
+    http: wrappedT833,
+    env: baseEnv({ AYRTON_WINDOW_RELEASE_ENABLED: 'true', VDSEN_PILOT_ID_TOKEN: 'tok' }),
+  }), /WINDOW_STOPPED_REVIEW_EVIDENCE_NO_RETRY/);
+  assert.equal(storeT833.docs[C.RELEASE_PATH].data.enabled, false);
+  assert.equal(storeT833.docs['releaseControl/ayrtonRevocation_' + OP_ID].data.revoked, true);
+  assert.equal(storeT833.docs['releaseControl/ayrtonRevocation_op-emergency-stop'], undefined);
+
+  // T833 C: STOP with operationId different from ARM artifact fails closed
+  await assert.rejects(() => executeWindowAction('STOP', {
+    ...commonOpts(storeT833),
+    env: baseEnv({ AYRTON_WINDOW_RELEASE_ENABLED: 'false', INPUT_OPERATION: 'op-other-not-arm' }),
+  }), /ARM_OPERATION_ID_MISMATCH/);
+
+  // T833 B: STOP without operationId and without ARM/active-window evidence closes fences atomically without inventing op-emergency-stop
+  const storeUnresolved = createStore();
+  storeUnresolved.docs[C.RELEASE_PATH].data.enabled = true;
+  storeUnresolved.docs['coaches/' + COACH].data.autoApplyCanary.enabled = true;
+  const unresolvedRes = await executeWindowAction('STOP', {
+    ...commonOpts(storeUnresolved),
+    env: baseEnv({ AYRTON_WINDOW_RELEASE_ENABLED: 'false', INPUT_ARM_RUN_ID: '', INPUT_OPERATION: '', INPUT_PLAN: '', INPUT_EXPIRY: '' }),
+  });
+  assert.equal(unresolvedRes.operationId, null);
+  assert.equal(unresolvedRes.operationRevoked, false);
+  assert.equal(unresolvedRes.revocationScope, 'EMERGENCY_FENCES_CLOSED_OPERATION_UNVERIFIED');
+  assert.equal(unresolvedRes.readback.releaseEnabled, false);
+  assert.equal(unresolvedRes.readback.coachEnabled, false);
+  assert.equal(storeUnresolved.docs['releaseControl/ayrtonRevocation_op-emergency-stop'], undefined);
+
+  // T833 H/I: Post-commit revocation readback failure reports uncertain state without claiming success
+  const storeReadbackFail = createStore();
+  await assert.rejects(() => executeWindowAction('STOP', {
+    ...commonOpts(storeReadbackFail),
+    env: baseEnv({ AYRTON_WINDOW_RELEASE_ENABLED: 'false' }),
+    http: async (m, p, tok, body) => {
+      const r = await storeReadbackFail.http(m, p, tok, body);
+      if (m === 'GET' && p.startsWith('releaseControl/ayrtonRevocation_') && storeReadbackFail.docs['releaseControl/ayrtonRevocation_' + OP_ID]) {
+        return { status: 503, body: {} };
+      }
+      return r;
+    },
   }), /WINDOW_STOPPED_REVIEW_EVIDENCE_NO_RETRY/);
 
   fs.rmSync(tmpDir, { recursive: true, force: true });

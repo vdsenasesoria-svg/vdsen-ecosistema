@@ -73,11 +73,11 @@ async function verifyArmArtifact(opts = {}) {
   const gh = opts.gh || defaultGh;
   const uid = P.exactUid(String(opts.uid || '').trim());
   const coachId = String(opts.coachId || '').trim();
-  const planId = String(opts.planId || '').trim();
+  let planId = String(opts.planId || '').trim();
   const pid = String(opts.pid || AUTHORIZED_PID).trim();
-  const runtimeSha = String(opts.runtimeSha || '').trim();
-  const operationId = String(opts.operationId || '').trim();
-  const expiresAt = String(opts.expiresAt || '').trim();
+  let runtimeSha = String(opts.runtimeSha || '').trim();
+  let operationId = String(opts.operationId || '').trim();
+  let expiresAt = String(opts.expiresAt || '').trim();
 
   // 1. Verify workflow run provenance via GitHub API
   const run = JSON.parse(gh(['api', 'repos/' + REPO + '/actions/runs/' + armRunId]));
@@ -103,8 +103,18 @@ async function verifyArmArtifact(opts = {}) {
   assert.equal(report.schema, 'vdsen-ayrton-runtime-release-v1', 'ARM_ARTIFACT_SCHEMA_INVALID');
   assert.equal(report.status, 'RUNTIME_READY_FENCES_CLOSED_NOT_ACTIVATED', 'ARM_ARTIFACT_STATUS_INVALID');
   assert.equal(report.mode, 'STAGE1_SHADOW', 'ARM_ARTIFACT_MODE_INVALID');
-  assert.equal(report.operationId, operationId, 'ARM_OPERATION_ID_MISMATCH');
-  assert.equal(report.runtimeSha, runtimeSha, 'ARM_RUNTIME_SHA_MISMATCH');
+  if (operationId) {
+    assert.equal(report.operationId, operationId, 'ARM_OPERATION_ID_MISMATCH');
+  } else {
+    assert.ok(opts.allowDiscoverOperation === true && typeof report.operationId === 'string' && /^[a-zA-Z0-9-]{8,80}$/.test(report.operationId), 'ARM_OPERATION_ID_MISMATCH');
+    operationId = report.operationId;
+  }
+  if (runtimeSha) {
+    assert.equal(report.runtimeSha, runtimeSha, 'ARM_RUNTIME_SHA_MISMATCH');
+  } else {
+    assert.ok(opts.allowDiscoverOperation === true && /^[a-f0-9]{40}$/.test(String(report.runtimeSha || '')), 'ARM_RUNTIME_SHA_MISMATCH');
+    runtimeSha = report.runtimeSha;
+  }
   assert.ok(report.staged && typeof report.staged.id === 'string' && /^dpl_[A-Za-z0-9]+$/.test(report.staged.id), 'ARM_STAGED_DEPLOYMENT_MISSING');
   assert.notEqual(report.staged.id, s.production_deployment, 'ARM_DEPLOYMENT_IS_OFF_BASELINE');
   assert.ok(!report.baseline || report.staged.id !== report.baseline.deployment, 'ARM_DEPLOYMENT_IS_OFF_BASELINE');
@@ -112,10 +122,12 @@ async function verifyArmArtifact(opts = {}) {
   assert.equal(report.window.deployment, report.staged.id, 'ARM_WINDOW_DEPLOYMENT_MISMATCH');
   assert.equal(report.window.uid, uid, 'ARM_WINDOW_UID_MISMATCH');
   assert.equal(report.window.coachId, coachId, 'ARM_WINDOW_COACH_MISMATCH');
-  assert.equal(report.window.planId, planId, 'ARM_WINDOW_PLAN_MISMATCH');
+  if (planId) assert.equal(report.window.planId, planId, 'ARM_WINDOW_PLAN_MISMATCH');
+  else planId = report.window.planId;
   assert.equal(report.window.pid || report.pid, AUTHORIZED_PID, 'ONLY_AUTHORIZED_PID');
   assert.equal(pid, AUTHORIZED_PID, 'ONLY_AUTHORIZED_PID');
-  assert.equal(report.window.expiresAt, expiresAt, 'ARM_WINDOW_EXPIRY_MISMATCH');
+  if (expiresAt) assert.equal(report.window.expiresAt, expiresAt, 'ARM_WINDOW_EXPIRY_MISMATCH');
+  else expiresAt = report.window.expiresAt;
   assert.ok(report.fencesAfter && report.fencesAfter.releaseEnabled === false && report.fencesAfter.coachEnabled === false, 'ARM_FENCES_NOT_CLOSED');
 
   // 4. Verify live Vercel alias and deployment match staged.id (unless explicitly skipped for STOP recovery)
@@ -224,27 +236,25 @@ async function executeStatus(opts = {}) {
 
 async function resolveStopWindow(env, s, opts = {}) {
   const armRunId = String(opts.armRunId || env.INPUT_ARM_RUN_ID || '').trim();
+  const explicitOpId = String(opts.operationId || env.INPUT_OPERATION || '').trim();
   if (armRunId) {
-    try {
-      const verified = await verifyArmArtifact({
-        armRunId,
-        state: s,
-        uid: env.INPUT_UID,
-        coachId: env.INPUT_COACH,
-        planId: env.INPUT_PLAN,
-        pid: env.INPUT_PID || AUTHORIZED_PID,
-        runtimeSha: env.INPUT_RUNTIME || s.runtime_sha,
-        operationId: env.INPUT_OPERATION,
-        expiresAt: env.INPUT_EXPIRY,
-        gh: opts.gh,
-        report: opts.report,
-        skipVercelCheck: true,
-      });
-      P.windowSpec(verified.window, opts.now, true);
-      return verified.window;
-    } catch (_) {
-      // Fall through to live Firestore/Vercel recovery if artifact is missing/partial during emergency STOP.
-    }
+    const verified = await verifyArmArtifact({
+      armRunId,
+      state: s,
+      uid: env.INPUT_UID,
+      coachId: env.INPUT_COACH,
+      planId: env.INPUT_PLAN,
+      pid: env.INPUT_PID || AUTHORIZED_PID,
+      runtimeSha: env.INPUT_RUNTIME || s.runtime_sha,
+      operationId: explicitOpId,
+      expiresAt: env.INPUT_EXPIRY,
+      gh: opts.gh,
+      report: opts.report,
+      allowDiscoverOperation: true,
+      skipVercelCheck: true,
+    });
+    P.windowSpec(verified.window, opts.now, true);
+    return verified.window;
   }
 
   const uid = P.exactUid(String(env.INPUT_UID || '').trim());
@@ -254,15 +264,25 @@ async function resolveStopWindow(env, s, opts = {}) {
 
   let planId = String(env.INPUT_PLAN || '').trim();
   let expiresAt = String(env.INPUT_EXPIRY || '').trim();
-  if ((!planId || !expiresAt) && token) {
-    const [clientRes, relRes] = await Promise.all([
+  let operationId = explicitOpId || null;
+
+  if (token) {
+    const [clientRes, relRes, activeRes] = await Promise.all([
       http('GET', 'clients/' + uid + '?mask.fieldPaths=coachId&mask.fieldPaths=activePlanId', token),
       http('GET', C.RELEASE_PATH, token),
+      http('GET', 'releaseControl/ayrtonActiveWindow', token),
     ]);
     const cdoc = clientRes.status === 200 ? (C.decDoc(clientRes.body) || {}) : {};
     const rdoc = relRes.status === 200 ? (C.decDoc(relRes.body) || {}) : {};
+    const adoc = activeRes.status === 200 ? (C.decDoc(activeRes.body) || {}) : {};
     if (!planId && typeof cdoc.activePlanId === 'string') planId = cdoc.activePlanId;
     if (!expiresAt && typeof rdoc.expiresAt === 'string') expiresAt = rdoc.expiresAt;
+    if (typeof adoc.operationId === 'string' && /^[a-zA-Z0-9-]{8,80}$/.test(adoc.operationId)) {
+      if (operationId && operationId !== adoc.operationId && adoc.active === true) {
+        throw new Error('STOP_OPERATION_ID_MISMATCH');
+      }
+      if (!operationId) operationId = adoc.operationId;
+    }
   }
 
   let deployment = s.production_deployment;
@@ -283,9 +303,9 @@ async function resolveStopWindow(env, s, opts = {}) {
     runtimeSha: String(env.INPUT_RUNTIME || s.runtime_sha || '').trim(),
     deployment,
     expiresAt: expiresAt || new Date(Date.now() - 60000).toISOString().replace(/\.\d{3}Z$/, 'Z'),
-    operationId: String(env.INPUT_OPERATION || 'op-emergency-stop').trim(),
+    operationId,
   };
-  P.windowSpec(w, opts.now, true);
+  P.windowSpec({ ...w, operationId: operationId || 'unresolved-emergency-stop' }, opts.now, true);
   return w;
 }
 
@@ -350,7 +370,9 @@ async function executeWindowAction(action, opts = {}) {
   ];
   const res = await runMain(args, {
     token: typeof token === 'function' ? token : () => token,
-    operationId: w.operationId,
+    operationId: w.operationId || undefined,
+    allowUnresolvedOperation: act === 'STOP' && !w.operationId,
+    forceFenceBump: act === 'STOP' && !w.operationId,
     oidcToken: act === 'ENABLE' ? oidcToken : undefined,
     idToken: act === 'ENABLE' ? idToken : undefined,
     http: opts.http,
@@ -360,10 +382,13 @@ async function executeWindowAction(action, opts = {}) {
     fetch: opts.fetch,
   });
 
+  const operationRevoked = act === 'STOP' && Boolean(w.operationId && res.readback && res.readback.revocationVerified);
   return {
     schema: 'vdsen-ayrton-window-result-v1',
     action: act,
     operationId: res.operationId,
+    operationRevoked,
+    revocationScope: act === 'STOP' ? (operationRevoked ? 'DURABLE_OPERATION_REVOCATION_VERIFIED' : 'EMERGENCY_FENCES_CLOSED_OPERATION_UNVERIFIED') : undefined,
     deployment: res.deployment,
     runtimeSha: res.runtimeSha,
     wrote: res.wrote || 0,

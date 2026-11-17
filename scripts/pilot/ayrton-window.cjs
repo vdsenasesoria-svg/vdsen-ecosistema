@@ -45,10 +45,16 @@ async function main(argv, deps = {}) {
   const arg = n => { const i = argv.indexOf('--' + n); return i >= 0 ? argv[i + 1] : undefined; };
   assert.ok(argv.includes('--window'), 'Explicit immutable window file required');
   const w = JSON.parse(fs.readFileSync(arg('window'), 'utf8')), mode = arg('mode');
-  assert.ok(['enable', 'stop'].includes(mode)); P.windowSpec(w, Date.now(), mode === 'stop');
+  assert.ok(['enable', 'stop'].includes(mode));
+  const unresolvedStop = mode === 'stop' && deps.allowUnresolvedOperation === true && !w.operationId;
+  if (unresolvedStop) {
+    P.windowSpec({ ...w, operationId: 'unresolved-emergency-stop' }, Date.now(), true);
+  } else {
+    P.windowSpec(w, Date.now(), mode === 'stop');
+  }
   assert.ok(!argv.includes('--replace') && !argv.includes('--ttl-hours'), 'No replacement or relative renewal');
   let before, after, inspected, readback;
-  const evidence = { operationId: w.operationId, mode, deployment: w.deployment, runtimeSha: w.runtimeSha, expiresAt: w.expiresAt, steps: [] };
+  const evidence = { operationId: w.operationId || null, mode, deployment: w.deployment, runtimeSha: w.runtimeSha, expiresAt: w.expiresAt, steps: [] };
   const record = (step, facts = {}) => {
     evidence.steps.push({ step, at: new Date().toISOString(), ...facts });
     fs.writeFileSync(arg('window') + '.evidence.json', JSON.stringify(evidence, null, 2) + '\n');
@@ -58,7 +64,15 @@ async function main(argv, deps = {}) {
     const r = await request('GET', C.RELEASE_PATH, token), c = await request('GET', 'coaches/' + w.coachId, token);
     assert.equal(r.status, 200, 'POST_COMMIT_READ_FAILED'); assert.equal(c.status, 200, 'POST_COMMIT_READ_FAILED');
     const release = C.decDoc(r.body), coach = C.decDoc(c.body);
-    readback = { release: r.body.updateTime || null, coach: c.body.updateTime || null, releaseEnabled: release.enabled, coachEnabled: coach.autoApplyCanary && coach.autoApplyCanary.enabled };
+    let revocationVerified = false;
+    if (mode === 'stop' && deps.operationId && w.operationId) {
+      const revRes = await request('GET', 'releaseControl/ayrtonRevocation_' + w.operationId, token);
+      assert.equal(revRes.status, 200, 'POST_COMMIT_REVOCATION_READ_FAILED');
+      const revDoc = C.decDoc(revRes.body);
+      assert.ok(revDoc && revDoc.revoked === true && revDoc.operationId === w.operationId, 'POST_COMMIT_REVOCATION_INVALID');
+      revocationVerified = true;
+    }
+    readback = { release: r.body.updateTime || null, coach: c.body.updateTime || null, releaseEnabled: release.enabled, coachEnabled: coach.autoApplyCanary && coach.autoApplyCanary.enabled, revocationVerified };
     record('FENCES_AFTER', readback); return { release, coach };
   };
   let result;
@@ -78,7 +92,9 @@ async function main(argv, deps = {}) {
     ...deps,
     legacyProtocol: !targetPid,
     authorize: async snapshot => {
-      inspected = snapshot; P.stateGate(w, snapshot, mode);
+      inspected = snapshot;
+      if (unresolvedStop) P.stateGate({ ...w, operationId: 'unresolved-emergency-stop' }, snapshot, mode);
+      else P.stateGate(w, snapshot, mode);
       record('FENCES_BEFORE', { versions: snapshot.barrierVersions, releaseEnabled: snapshot.release && snapshot.release.enabled, coachEnabled: snapshot.coach.autoApplyCanary && snapshot.coach.autoApplyCanary.enabled });
       if (mode === 'enable') await verify(); // Revocation must work even if the runtime probe is broken.
     },
@@ -86,7 +102,8 @@ async function main(argv, deps = {}) {
     onUncertainCommit: async context => { try { await readFences(context); } catch (_) { record('READBACK_UNVERIFIED'); } },
     afterCommit: async context => {
       const { release, coach } = await readFences(context);
-      P.stateGate(w, { ...inspected, release, coach }, mode);
+      if (unresolvedStop) P.stateGate({ ...w, operationId: 'unresolved-emergency-stop' }, { ...inspected, release, coach }, mode);
+      else P.stateGate(w, { ...inspected, release, coach }, mode);
       assert.equal(release.enabled, mode === 'enable'); assert.equal(coach.autoApplyCanary.enabled, mode === 'enable');
       if (mode === 'enable') { assert.equal(release.expiresAt, w.expiresAt); after = await (deps.runtimeEvidence || runtimeEvidence)(w); record('EFFECTIVE_RUNTIME_AFTER', { verified: true }); }
       else assert.ok(Date.parse(release.expiresAt) <= Date.now());
