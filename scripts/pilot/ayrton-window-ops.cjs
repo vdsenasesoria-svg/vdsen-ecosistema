@@ -32,7 +32,10 @@ function invocation(env, action) {
     assert.equal(env.AYRTON_WINDOW_RELEASE_ENABLED, 'true', 'FENCE_ENABLE_DISARMED');
     assert.equal(env.GITHUB_RUN_ATTEMPT, '1', 'NO_JOB_RERUNS');
     assert.match(String(env.INPUT_ARM_RUN_ID || '').trim(), /^[1-9][0-9]+$/, 'ARM_RUN_ID_REQUIRED');
-    assert.ok(typeof env.VDSEN_PILOT_ID_TOKEN === 'string' && env.VDSEN_PILOT_ID_TOKEN.length > 0, 'AUTHENTICATED_PROBE_BLOCKED');
+    const hasGhOidc = typeof env.ACTIONS_ID_TOKEN_REQUEST_URL === 'string' && env.ACTIONS_ID_TOKEN_REQUEST_URL.length > 0
+      && typeof env.ACTIONS_ID_TOKEN_REQUEST_TOKEN === 'string' && env.ACTIONS_ID_TOKEN_REQUEST_TOKEN.length > 0;
+    const hasIdToken = typeof env.VDSEN_PILOT_ID_TOKEN === 'string' && env.VDSEN_PILOT_ID_TOKEN.length > 0;
+    assert.ok(hasGhOidc || hasIdToken, 'AUTHENTICATED_PROBE_BLOCKED');
   } else if (act === 'STOP') {
     // Emergency STOP never requires AYRTON_WINDOW_RELEASE_ENABLED=true and allows re-runs.
     assert.notEqual(env.AYRTON_WINDOW_STOP_ENABLED, 'false', 'FENCE_STOP_REVOKED');
@@ -42,6 +45,25 @@ function invocation(env, action) {
 
 function defaultGh(args) {
   return execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+async function fetchGithubOidcToken(operationId, env = process.env, fetchFn = fetch) {
+  const reqUrl = env.ACTIONS_ID_TOKEN_REQUEST_URL;
+  const reqToken = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+  assert.ok(reqUrl && reqToken, 'AUTHENTICATED_PROBE_BLOCKED');
+  assert.match(String(operationId || ''), /^[a-zA-Z0-9-]{8,80}$/, 'OPERATION_ID_INVALID');
+  const sep = reqUrl.includes('?') ? '&' : '?';
+  const url = reqUrl + sep + 'audience=' + encodeURIComponent('vdsen-ayrton-runtime-a4:' + operationId);
+  const res = await fetchFn(url, {
+    method: 'GET',
+    headers: { authorization: 'bearer ' + reqToken, accept: 'application/json' },
+    redirect: 'error',
+    signal: AbortSignal.timeout(10000),
+  });
+  assert.equal(res.status, 200, 'AUTHENTICATED_PROBE_BLOCKED');
+  const body = await res.json();
+  assert.ok(body && typeof body.value === 'string' && body.value.length >= 40, 'AUTHENTICATED_PROBE_BLOCKED');
+  return body.value;
 }
 
 async function verifyArmArtifact(opts = {}) {
@@ -276,10 +298,13 @@ async function executeWindowAction(action, opts = {}) {
   assert.ok(token, 'GOOGLE_ACCESS_TOKEN_REQUIRED');
 
   let w;
+  let oidcToken = opts.oidcToken || env.VDSEN_A4_OIDC_TOKEN || null;
+  const idToken = opts.idToken || env.VDSEN_PILOT_ID_TOKEN || null;
   if (act === 'ENABLE') {
     assert.equal(env.AYRTON_WINDOW_RELEASE_ENABLED, 'true', 'FENCE_ENABLE_DISARMED');
-    const idToken = opts.idToken || env.VDSEN_PILOT_ID_TOKEN;
-    assert.ok(typeof idToken === 'string' && idToken.length > 0, 'AUTHENTICATED_PROBE_BLOCKED');
+    const hasGhOidc = typeof env.ACTIONS_ID_TOKEN_REQUEST_URL === 'string' && env.ACTIONS_ID_TOKEN_REQUEST_URL.length > 0
+      && typeof env.ACTIONS_ID_TOKEN_REQUEST_TOKEN === 'string' && env.ACTIONS_ID_TOKEN_REQUEST_TOKEN.length > 0;
+    assert.ok(oidcToken || idToken || hasGhOidc, 'AUTHENTICATED_PROBE_BLOCKED');
 
     if (opts.window) {
       assert.notEqual(opts.window.deployment, s.production_deployment, 'ARM_DEPLOYMENT_IS_OFF_BASELINE');
@@ -304,6 +329,9 @@ async function executeWindowAction(action, opts = {}) {
       P.windowSpec(verified.window, opts.now, false);
       w = verified.window;
     }
+    if (!oidcToken && !idToken && hasGhOidc) {
+      oidcToken = await (opts.fetchOidcToken || fetchGithubOidcToken)(w.operationId, env, opts.fetch);
+    }
   } else {
     assert.notEqual(env.AYRTON_WINDOW_STOP_ENABLED, 'false', 'FENCE_STOP_REVOKED');
     w = opts.window || await resolveStopWindow(env, s, opts);
@@ -322,7 +350,8 @@ async function executeWindowAction(action, opts = {}) {
   ];
   const res = await runMain(args, {
     token: typeof token === 'function' ? token : () => token,
-    idToken: opts.idToken || env.VDSEN_PILOT_ID_TOKEN,
+    oidcToken: act === 'ENABLE' ? oidcToken : undefined,
+    idToken: act === 'ENABLE' ? idToken : undefined,
     http: opts.http,
     runtimeEvidence: opts.runtimeEvidence,
     deployment: opts.deployment,
@@ -366,4 +395,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { invocation, verifyArmArtifact, buildWindow, executeStatus, executeWindowAction, resolveStopWindow, AUTHORIZED_PID };
+module.exports = { invocation, verifyArmArtifact, fetchGithubOidcToken, buildWindow, executeStatus, executeWindowAction, resolveStopWindow, AUTHORIZED_PID };

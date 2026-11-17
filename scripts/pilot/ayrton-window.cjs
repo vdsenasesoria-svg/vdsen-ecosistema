@@ -22,12 +22,19 @@ async function runtimeEvidence(w, deps = {}) {
   assert.equal(d.id || d.uid, w.deployment); assert.equal(d.projectId, P.PROJECT);
   assert.equal(d.teamId || d.ownerId, P.TEAM);
   const host = d.url; assert.match(host || '', /^[A-Za-z0-9.-]+\.vercel\.app$/);
-  const token = deps.idToken || process.env.VDSEN_PILOT_ID_TOKEN;
-  assert.ok(token, 'Firebase ID token required in memory; never a dispatch input or artifact');
-  const response = await (deps.fetch || fetch)('https://' + host + '/api/autonomous-progression-trigger?check=runtime', {
+  const oidcToken = deps.oidcToken || process.env.VDSEN_A4_OIDC_TOKEN;
+  const idToken = deps.idToken || process.env.VDSEN_PILOT_ID_TOKEN;
+  const useA4Oidc = typeof oidcToken === 'string' && oidcToken.length > 0;
+  const token = useA4Oidc ? oidcToken : idToken;
+  assert.ok(token, 'AUTHENTICATED_PROBE_BLOCKED');
+  const checkMode = useA4Oidc ? 'runtime-a4' : 'runtime';
+  const response = await (deps.fetch || fetch)('https://' + host + '/api/autonomous-progression-trigger?check=' + checkMode, {
     headers: { authorization: 'Bearer ' + token }, redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(15000) });
   assert.equal(response.status, 200, 'RUNTIME_PROBE_FAILED');
   const probe = await response.json();
+  if (probe.runtimeSha !== undefined && probe.runtimeSha !== null) {
+    assert.equal(probe.runtimeSha, w.runtimeSha, 'RUNTIME_CHANGED');
+  }
   P.effectiveGate(w, { id: d.id || d.uid, projectId: d.projectId, teamId: d.teamId || d.ownerId,
     sha: d.meta && d.meta.githubCommitSha, state: d.readyState, target: d.target }, probe);
   assert.equal(await (deps.currentApp || A.currentApp)(s), w.deployment, 'ALIAS_CHANGED');

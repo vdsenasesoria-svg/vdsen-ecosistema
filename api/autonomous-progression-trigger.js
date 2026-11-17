@@ -4,6 +4,66 @@ var executor = require('./_autonomousProgression');
 var sweepLib = require('./_autonomousProgressionSweep');
 var randomUUID = require('node:crypto').randomUUID;
 var PILOT_UID_HASH = 'fb6c056b17d798c07d06878a857c359aa70828ea44debb1bcab5eb644701fe12';
+var GH_OIDC_ISSUER = 'https://token.actions.githubusercontent.com';
+var GH_A4_AUDIENCE_PREFIX = 'vdsen-ayrton-runtime-a4:';
+var GH_A4_REPO = 'vdsenasesoria-svg/vdsen-ecosistema';
+var GH_A4_OWNER = 'vdsenasesoria-svg';
+var GH_A4_REF = 'refs/heads/codex/client-app-next';
+var GH_A4_WORKFLOW_REF = 'vdsenasesoria-svg/vdsen-ecosistema/.github/workflows/vdsen-ayrton-window.yml@refs/heads/codex/client-app-next';
+var _ghJwksCache = { at: 0, keys: null };
+
+async function fetchGithubJwks() {
+  if (_ghJwksCache.keys && Date.now() - _ghJwksCache.at < 600000) return _ghJwksCache.keys;
+  var res = await fetch(GH_OIDC_ISSUER + '/.well-known/jwks', { redirect: 'error', signal: AbortSignal.timeout(10000) });
+  if (!res.ok) throw new Error('GH_OIDC_JWKS_UNAVAILABLE');
+  _ghJwksCache = { at: Date.now(), keys: (await res.json()).keys || [] };
+  return _ghJwksCache.keys;
+}
+
+function b64urlDecode(s) {
+  return Buffer.from(String(s).replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+}
+
+async function verifyGithubA4OidcToken(token, opts) {
+  opts = opts || {};
+  if (typeof token !== 'string' || token.length < 40 || token.length > 8192) return { ok: false, error: 'AUTH_INVALID' };
+  var parts = token.split('.');
+  if (parts.length !== 3) return { ok: false, error: 'AUTH_INVALID' };
+  var header, payload;
+  try {
+    header = JSON.parse(b64urlDecode(parts[0]).toString('utf8'));
+    payload = JSON.parse(b64urlDecode(parts[1]).toString('utf8'));
+  } catch (_) {
+    return { ok: false, error: 'AUTH_INVALID' };
+  }
+  if (!header || header.alg !== 'RS256' || typeof header.kid !== 'string' || !header.kid) {
+    return { ok: false, error: 'AUTH_INVALID' };
+  }
+  var keys;
+  try { keys = await (opts.jwks || fetchGithubJwks)(); } catch (_) { return { ok: false, error: 'OIDC_JWKS_UNAVAILABLE' }; }
+  var jwk = (keys || []).filter(function(k) { return k && k.kid === header.kid && k.kty === 'RSA'; })[0];
+  if (!jwk) return { ok: false, error: 'AUTH_INVALID' };
+  var crypto = require('node:crypto');
+  var sigOk = false;
+  try {
+    sigOk = crypto.verify('RSA-SHA256', Buffer.from(parts[0] + '.' + parts[1]), crypto.createPublicKey({ key: jwk, format: 'jwk' }), b64urlDecode(parts[2]));
+  } catch (_) { sigOk = false; }
+  if (!sigOk) return { ok: false, error: 'AUTH_INVALID' };
+
+  var now = Math.floor((opts.now === undefined ? Date.now() : opts.now) / 1000);
+  if (typeof payload.exp !== 'number' || payload.exp <= now + 5) return { ok: false, error: 'AUTH_EXPIRED' };
+  if (typeof payload.nbf === 'number' && payload.nbf > now + 5) return { ok: false, error: 'AUTH_INVALID' };
+  if (typeof payload.iat === 'number' && payload.iat > now + 60) return { ok: false, error: 'AUTH_INVALID' };
+  if (payload.iss !== GH_OIDC_ISSUER) return { ok: false, error: 'OIDC_FORBIDDEN' };
+  if (payload.aud !== opts.expectedAudience) return { ok: false, error: 'OIDC_FORBIDDEN' };
+  if (payload.repository !== GH_A4_REPO || payload.repository_owner !== GH_A4_OWNER) return { ok: false, error: 'OIDC_FORBIDDEN' };
+  if (payload.ref !== GH_A4_REF || payload.event_name !== 'workflow_dispatch' || payload.environment !== 'Production') return { ok: false, error: 'OIDC_FORBIDDEN' };
+  if (payload.job_workflow_ref !== GH_A4_WORKFLOW_REF) return { ok: false, error: 'OIDC_FORBIDDEN' };
+  if (String(payload.run_attempt) !== '1' || !/^[1-9][0-9]+$/.test(String(payload.run_id || ''))) return { ok: false, error: 'OIDC_FORBIDDEN' };
+  if (payload.head_ref || payload.base_ref) return { ok: false, error: 'OIDC_FORBIDDEN' };
+
+  return { ok: true, payload: { runId: String(payload.run_id), runAttempt: String(payload.run_attempt) } };
+}
 // Additional restriction only; it never enables the server switches or replaces the transactional fences.
 function inspectPilotWindow(raw, uid, now, planId) {
   if (raw === undefined) return { configured: false, valid: false };
@@ -47,6 +107,31 @@ function makeHandler(deps) {
       return res.status(200).json({ schema: 'vdsen-progression-runtime-v1', processingEnabled: deps.enabled === true,
         numericApplyEnabled: deps.numericApplyEnabled === true, cronConfigured: !!deps.cronSecret,
         pilotWindow: bound.valid ? { uidHash: bound.uidHash, planHash: bound.planHash, expiresAt: bound.expiresAt, operationId: bound.operationId } : null });
+    }
+    if (req.method === 'GET' && req.query && req.query.check === 'runtime-a4') {
+      // Read-only A4 workflow attestation probe. Verifies GitHub Actions OIDC JWT via JWKS; never touches Firestore or opens fences.
+      if (typeof res.setHeader === 'function') res.setHeader('Cache-Control', 'no-store');
+      var a4Token = /^Bearer\s+(\S+)$/.exec(String(req.headers && req.headers.authorization || '').trim());
+      if (!a4Token) return res.status(401).json({ error: 'AUTH_MISSING' });
+      var a4Bound = inspectPilotWindow(deps.pilotWindow, undefined, deps.now);
+      if (!a4Bound.valid) return res.status(403).json({ error: 'PILOT_WINDOW_INVALID' });
+      var a4Verified = await (deps.verifyA4OidcToken || verifyGithubA4OidcToken)(a4Token[1], {
+        expectedAudience: GH_A4_AUDIENCE_PREFIX + a4Bound.operationId,
+        jwks: deps.githubJwks,
+        now: deps.now,
+      });
+      if (!a4Verified.ok) {
+        var errStatus = a4Verified.error === 'OIDC_JWKS_UNAVAILABLE' ? 503 : (a4Verified.error === 'OIDC_FORBIDDEN' ? 403 : 401);
+        return res.status(errStatus).json({ error: a4Verified.error });
+      }
+      return res.status(200).json({
+        schema: 'vdsen-progression-runtime-v1',
+        processingEnabled: deps.enabled === true,
+        numericApplyEnabled: deps.numericApplyEnabled === true,
+        cronConfigured: !!deps.cronSecret,
+        pilotWindow: { uidHash: a4Bound.uidHash, planHash: a4Bound.planHash, expiresAt: a4Bound.expiresAt, operationId: a4Bound.operationId },
+        runtimeSha: deps.runtimeSha || process.env.VERCEL_GIT_COMMIT_SHA || null,
+      });
     }
     if (req.method === 'GET' && (deps.pilotWindow !== undefined || deps.numericPilotWindow !== undefined)) return res.status(403).json({ error: 'PILOT_CRON_DISABLED' });
     if (req.method === 'GET') return sweepLib.makeHandler({ db: deps.db, cronSecret: deps.cronSecret, enabled: deps.enabled === true,
@@ -105,4 +190,6 @@ async function defaultHandler(req, res) {
 module.exports = defaultHandler;
 module.exports.makeHandler = makeHandler;
 module.exports.inspectPilotWindow = inspectPilotWindow;
+module.exports.verifyGithubA4OidcToken = verifyGithubA4OidcToken;
+module.exports.GH_A4_AUDIENCE_PREFIX = GH_A4_AUDIENCE_PREFIX;
 module.exports.PILOT_UID_HASH = PILOT_UID_HASH;

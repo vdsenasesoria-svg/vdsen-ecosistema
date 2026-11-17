@@ -94,7 +94,7 @@ jobs:
         run: node -e "require('./scripts/pilot/ayrton-window-ops.cjs').invocation(process.env, process.env.INPUT_ACTION)"
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Validate pilot window contracts
-        run: node --test tests/t829-ayrton-window-ops.test.js tests/t673-pilot-protocol.test.js tests/t584-ayrton-canary-script.test.js
+        run: node --test tests/t831-a4-oidc-attestation.test.js tests/t829-ayrton-window-ops.test.js tests/t673-pilot-protocol.test.js tests/t584-ayrton-canary-script.test.js
       - id: google
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
