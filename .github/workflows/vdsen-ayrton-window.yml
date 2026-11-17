@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: Fence operation (STATUS read-only | ENABLE requires A4 + auth probe | STOP emergency close)
+        description: Fence operation (STATUS read-only | ENABLE requires A4 + arm_run_id + auth probe | STOP emergency close)
         required: true
         default: 'STATUS'
         type: choice
@@ -11,6 +11,11 @@ on:
           - STATUS
           - ENABLE
           - STOP
+      arm_run_id:
+        description: Official vdsen-ayrton-runtime.yml arm run ID (required for ENABLE; optional for STOP)
+        required: false
+        default: ''
+        type: string
       runtime_sha:
         description: Exact reviewed 40-char runtime SHA (for ENABLE/STOP)
         required: false
@@ -25,7 +30,7 @@ on:
         required: true
         type: string
       plan_id:
-        description: Active plan ID (for ENABLE/STOP)
+        description: Active plan ID (for ENABLE; optional for STOP)
         required: false
         default: ''
         type: string
@@ -35,21 +40,22 @@ on:
         default: 'ab150537-0d02-423b-a7e0-2b2f1a8a9a83'
         type: string
       expires_at:
-        description: Fixed UTC expiry (ISO-8601 without fractional seconds, max 168h; ENABLE/STOP)
+        description: Fixed UTC expiry (ISO-8601 without fractional seconds, max 168h; ENABLE)
         required: false
         default: ''
         type: string
       operation_id:
-        description: Unique approved operation ID (ENABLE/STOP)
+        description: Unique approved operation ID (ENABLE)
         required: false
         default: ''
         type: string
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: vdsen-ayrton-window
+  group: ${{ inputs.action == 'STOP' && 'vdsen-ayrton-emergency-stop' || 'vdsen-production' }}
   cancel-in-progress: false
 
 jobs:
@@ -60,12 +66,15 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      actions: read
       id-token: write
     env:
       AYRTON_WINDOW_RELEASE_ENABLED: ${{ vars.AYRTON_WINDOW_RELEASE_ENABLED }}
       AYRTON_WINDOW_STOP_ENABLED: ${{ vars.AYRTON_WINDOW_STOP_ENABLED }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
       INPUT_ACTION: ${{ inputs.action }}
+      INPUT_ARM_RUN_ID: ${{ inputs.arm_run_id }}
       INPUT_RUNTIME: ${{ inputs.runtime_sha }}
       INPUT_UID: ${{ inputs.pilot_uid }}
       INPUT_COACH: ${{ inputs.coach_id }}
