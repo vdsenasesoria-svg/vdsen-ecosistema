@@ -177,23 +177,25 @@ async function materialize(db, clientId, requestedPlanId, clock, opts) {
     });
     // SRA is attached as a read-only provenance trace, not a second decision
     // engine and never a gate for an otherwise valid progression candidate.
-    // PID-level scope: a record for a PID outside the canary is never created.
-    var createdBefore = out.created.length;
+    // PID-level scope: neither numericMode nor canaryMode may create or alter lifecycle records (including staled) for PIDs outside scope.
     out.created = out.created.filter(function(key) {
       var pid = out.records[key].prescriptionExerciseId;
       var inScope = consumer.inCanaryScope(coachData.autoApplyCanary, clientId, pid) && (!numericMode || pid === numericWindow.pid);
       if (!inScope) delete out.records[key];
       return inScope;
     });
-    if (numericMode) {
-      // A numeric pilot may neither create nor alter lifecycle records for other PIDs.
-      out.staled = out.staled.filter(function(key) {
-        var prior = existingRecords[key];
-        if (prior && prior.prescriptionExerciseId !== numericWindow.pid) { out.records[key] = prior; return false; }
-        return true;
-      });
-      out.changed = out.created.length > 0 || out.staled.length > 0;
-    } else if (createdBefore && !out.created.length) out.changed = false;
+    out.staled = out.staled.filter(function(key) {
+      var prior = existingRecords[key];
+      var priorPid = prior && prior.prescriptionExerciseId;
+      var inScope = prior && consumer.inCanaryScope(coachData.autoApplyCanary, clientId, priorPid) && (!numericMode || priorPid === numericWindow.pid);
+      if (!inScope) {
+        if (prior !== undefined) out.records[key] = prior;
+        else delete out.records[key];
+        return false;
+      }
+      return true;
+    });
+    out.changed = out.created.length > 0 || out.staled.length > 0;
     var sessionMonitoring = out.created.length ? sra.sessionMonitoring({ clientId: clientId, planDoc: plan, entries: cleanEntries }) : null;
     out.created.forEach(function(key) {
       var record = out.records[key];
