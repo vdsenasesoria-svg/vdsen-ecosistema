@@ -21,9 +21,25 @@ on:
         description: 'Optional note for this diagnostic run'
         required: false
         type: string
+      ayrton_preflight_check:
+        description: 'Also run read-only Ayrton ARM_PREFLIGHT & reconciliation diagnostics'
+        required: false
+        default: false
+        type: boolean
+      ayrton_operation_id:
+        description: 'Optional operationId to check in DEPLOYMENTS preflight'
+        required: false
+        default: ''
+        type: string
+      reconcile_check_run_id:
+        description: 'Optional failed run ID to verify read-only reconciliation admissibility'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   diagnose:
@@ -32,6 +48,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      actions: read
     env:
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
       VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
@@ -86,10 +103,20 @@ jobs:
         env:
           APP_RUNTIME_SHA: ${{ inputs.runtime_sha }}
         run: node scripts/release/app-candidate-check.cjs
+      - name: Run Ayrton ARM_PREFLIGHT & reconciliation diagnostics (read-only)
+        if: inputs.ayrton_preflight_check == true
+        env:
+          APP_RUNTIME_SHA: ${{ inputs.runtime_sha }}
+          AYRTON_OPERATION_ID: ${{ inputs.ayrton_operation_id }}
+          RECONCILE_CHECK_RUN_ID: ${{ inputs.reconcile_check_run_id }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/pilot/ayrton-preflight-diagnostics.cjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: app-diagnostics-${{ github.run_id }}
-          path: release-output/app-diagnostics.json
+          path: |
+            release-output/app-diagnostics.json
+            release-output/ayrton-preflight-diagnostics.json
           if-no-files-found: warn
           retention-days: 30
