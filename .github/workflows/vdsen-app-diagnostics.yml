@@ -106,7 +106,7 @@ jobs:
       - name: Run Ayrton ARM_PREFLIGHT & reconciliation diagnostics (read-only)
         if: inputs.ayrton_preflight_check == true
         env:
-          APP_RUNTIME_SHA: ${{ inputs.runtime_sha }}
+          AYRTON_RUNTIME_SHA: ${{ inputs.runtime_sha }}
           AYRTON_OPERATION_ID: ${{ inputs.ayrton_operation_id }}
           RECONCILE_CHECK_RUN_ID: ${{ inputs.reconcile_check_run_id }}
           GH_TOKEN: ${{ github.token }}

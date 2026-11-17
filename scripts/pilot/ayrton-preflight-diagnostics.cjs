@@ -125,7 +125,7 @@ async function runAyrtonPreflightDiagnostics(opts = {}) {
 if (require.main === module) {
   (async () => {
     const report = await runAyrtonPreflightDiagnostics({
-      runtimeSha: process.env.APP_RUNTIME_SHA || undefined,
+      runtimeSha: process.env.AYRTON_RUNTIME_SHA || process.env.APP_RUNTIME_SHA || undefined,
       operationId: process.env.AYRTON_OPERATION_ID || undefined,
       reconcileCheckRunId: process.env.RECONCILE_CHECK_RUN_ID || undefined,
     });
