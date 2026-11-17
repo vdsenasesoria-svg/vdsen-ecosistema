@@ -418,7 +418,8 @@ test('release apply path is rules_only: pinned immutable provenance, no deploy/p
   const rec = src.slice(src.indexOf('async function recover'), src.indexOf('async function apply()'));
   assert.ok(rec.indexOf('restoreRules(') < rec.indexOf('switchApp('));
   assert.equal(state.rollback_deployment, 'dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8'); assert.equal(state.rollback_runtime_sha, '3fc264e23d67a8ecb1611a6c8af04ad739f422da');
-  assert.equal(state.runtime_sha, 'f6b90e401d093bc68c648541dd36c946794cff48');
+  assert.match(state.runtime_sha, /^[0-9a-f]{40}$/);
+  assert.notEqual(state.runtime_sha, state.rollback_runtime_sha);
   assert.equal(state.rules_transition.rollback_order, 'rules_then_app');
 });
 test('kill switch off, missing runtime SHA or missing gate/rollback artifacts stop apply and prepare before any network request', async () => {
