@@ -350,6 +350,7 @@ async function executeWindowAction(action, opts = {}) {
   ];
   const res = await runMain(args, {
     token: typeof token === 'function' ? token : () => token,
+    operationId: w.operationId,
     oidcToken: act === 'ENABLE' ? oidcToken : undefined,
     idToken: act === 'ENABLE' ? idToken : undefined,
     http: opts.http,

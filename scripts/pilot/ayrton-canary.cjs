@@ -163,9 +163,25 @@ async function main(argv, deps) {
   out('Allowlist release: ' + (rel ? 'enabled=' + rel.enabled + ' clientIds=' + (rel.clientIds || []).length + ' incluye_atleta=' + (rel.clientIds || []).includes(uid) + ' expiresAt=' + (rel.expiresAt || '(ausente)') : '(ausente)'));
   out('Canario del Coach: ' + (coach.autoApplyCanary ? 'enabled=' + coach.autoApplyCanary.enabled + ' clientIds=' + (coach.autoApplyCanary.clientIds || []).length + ' incluye_atleta=' + (coach.autoApplyCanary.clientIds || []).includes(uid) + ' pids=' + (coach.autoApplyCanary.prescriptionExerciseIds || []).join(',') : '(ausente)'));
   if (mode === 'status') return { mode, wrote: 0, pids: planPids };
+  const opId = deps.operationId;
+  let revRes = null, opRes = null;
+  if (opId) {
+    if (typeof opId !== 'string' || !/^[a-zA-Z0-9-]{8,80}$/.test(opId)) throw new Error('OPERATION_ID_INVALID');
+    revRes = await request('GET', 'releaseControl/ayrtonRevocation_' + opId, tk);
+    opRes = await request('GET', 'releaseControl/ayrtonOperation_' + opId, tk);
+    if (mode === 'enable') {
+      if (revRes.status === 200) throw new Error('OPERATION_REVOKED');
+      if (revRes.status !== 404) throw new Error('REVOCATION_CHECK_FAILED');
+      if (opRes.status === 200) throw new Error('OPERATION_ALREADY_CONSUMED');
+      if (opRes.status !== 404) throw new Error('OPERATION_CHECK_FAILED');
+    } else if (mode === 'stop') {
+      if (revRes.status !== 200 && revRes.status !== 404) throw new Error('REVOCATION_CHECK_FAILED');
+      if (opRes.status !== 200 && opRes.status !== 404) throw new Error('OPERATION_CHECK_FAILED');
+    }
+  }
   if (deps.authorize) await deps.authorize({ uid, mode, client: cdoc, release: rel, coach, coachId: cdoc.coachId, confirm, pid: targetPid,
     barrierVersions: { release: relRes.body && relRes.body.updateTime || null, coach: coachRes.body && coachRes.body.updateTime || null } });
-  const { writes, refusals, unchanged } = planWrites(mode, uid, { release: rel, coach, coachId: cdoc.coachId }, {
+  const planned = planWrites(mode, uid, { release: rel, coach, coachId: cdoc.coachId }, {
     replace,
     ttlHours: arg('ttl-hours'),
     expiresAt: arg('expires-at'),
@@ -175,13 +191,41 @@ async function main(argv, deps) {
     legacyProtocol: isLegacyProtocol,
     now: deps.now
   });
+  let writes = planned.writes, refusals = planned.refusals, unchanged = planned.unchanged;
   if (refusals.length) { refusals.forEach((r) => out('RECHAZADO: ' + r)); return { mode, wrote: 0, refused: true }; }
+  if (opId && mode === 'stop' && revRes && revRes.status === 404) {
+    // Even if fences are already closed, record durable revocation and bump releaseControl/autonomousProgression updateTime
+    // so any concurrent ENABLE holding a stale pre-STOP updateTime fails its Firestore precondition atomically.
+    if (unchanged) {
+      const nowDate = deps.now instanceof Date ? deps.now : new Date();
+      writes = [
+        { path: RELEASE_PATH, mask: ['schema', 'enabled', 'clientIds', 'expiresAt'], fields: releaseDoc(uid, false, iso(nowDate)) },
+        { path: 'coaches/' + cdoc.coachId, mask: ['autoApplyCanary'], fields: { autoApplyCanary: canaryField(uid, false, []) } },
+      ];
+      unchanged = false;
+    }
+  }
   if (unchanged) { out('Sin cambios: las dos barreras ya coinciden; no se amplía la caducidad.'); return { mode, wrote: 0, unchanged: true }; }
+  const pre = (res) => res.status === 200 && res.body && res.body.updateTime ? { updateTime: res.body.updateTime } : { exists: false };
+  const preconditions = { [RELEASE_PATH]: pre(relRes), ['coaches/' + cdoc.coachId]: pre(coachRes) };
+  if (opId) {
+    const uidHash = require('node:crypto').createHash('sha256').update(uid).digest('hex');
+    if (mode === 'enable') {
+      const opPath = 'releaseControl/ayrtonOperation_' + opId;
+      writes.push({ path: opPath, mask: ['schema', 'operationId', 'status', 'uidHash'], fields: { schema: 'vdsen-ayrton-operation-v1', operationId: opId, status: 'ENABLED', uidHash } });
+      preconditions[opPath] = { exists: false };
+    } else if (mode === 'stop') {
+      const revPath = 'releaseControl/ayrtonRevocation_' + opId;
+      const opPath = 'releaseControl/ayrtonOperation_' + opId;
+      writes.push({ path: revPath, mask: ['schema', 'operationId', 'revoked', 'uidHash'], fields: { schema: 'vdsen-ayrton-revocation-v1', operationId: opId, revoked: true, uidHash } });
+      writes.push({ path: opPath, mask: ['schema', 'operationId', 'status', 'uidHash'], fields: { schema: 'vdsen-ayrton-operation-v1', operationId: opId, status: 'REVOKED', uidHash } });
+      preconditions[revPath] = pre(revRes);
+      preconditions[opPath] = pre(opRes);
+    }
+  }
   writes.forEach((w) => out((confirm ? 'ESCRIBE ' : 'SIMULACIÓN ') + w.path + ' campos=' + w.mask.join(',') + ' -> ' + JSON.stringify(w.fields)));
   if (!confirm) { out('Simulación: no se escribió nada. Repite con --confirm para aplicar.'); return { mode, wrote: 0 }; }
   // Un solo commit atómico con precondición de versión: ninguna activación parcial, y falla cerrado si las barreras cambiaron tras la lectura.
-  const pre = (res) => res.status === 200 && res.body && res.body.updateTime ? { updateTime: res.body.updateTime } : { exists: false };
-  const preconditions = { [RELEASE_PATH]: pre(relRes), ['coaches/' + cdoc.coachId]: pre(coachRes) };
   if (deps.beforeCommit) await deps.beforeCommit();
   const body = { writes: writes.map((w) => ({ update: { name: DB + w.path, fields: Object.fromEntries(Object.entries(w.fields).map(([k, v]) => [k, enc(v)])) },
     updateMask: { fieldPaths: w.mask }, currentDocument: preconditions[w.path] })) };

@@ -58,7 +58,7 @@ async function verifyGithubA4OidcToken(token, opts) {
   if (payload.aud !== opts.expectedAudience) return { ok: false, error: 'OIDC_FORBIDDEN' };
   if (payload.repository !== GH_A4_REPO || payload.repository_owner !== GH_A4_OWNER) return { ok: false, error: 'OIDC_FORBIDDEN' };
   if (payload.ref !== GH_A4_REF || payload.event_name !== 'workflow_dispatch' || payload.environment !== 'Production') return { ok: false, error: 'OIDC_FORBIDDEN' };
-  if (payload.job_workflow_ref !== GH_A4_WORKFLOW_REF) return { ok: false, error: 'OIDC_FORBIDDEN' };
+  if (payload.workflow_ref !== GH_A4_WORKFLOW_REF) return { ok: false, error: 'OIDC_FORBIDDEN' };
   if (String(payload.run_attempt) !== '1' || !/^[1-9][0-9]+$/.test(String(payload.run_id || ''))) return { ok: false, error: 'OIDC_FORBIDDEN' };
   if (payload.head_ref || payload.base_ref) return { ok: false, error: 'OIDC_FORBIDDEN' };
 
