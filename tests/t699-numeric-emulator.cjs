@@ -181,11 +181,12 @@ test('CANARY PID scope: materialize() preserves foreign-PID PENDING records (sta
   delete process.env.VDSEN_NUMERIC_PILOT_WINDOW;
 
   try {
-    const sc = await seedScenario({
-      clientId: C.UID, coachId: C.UID, planId: C.PLAN,
-      coachCanary: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] },
-      releaseDoc: { schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [C.UID], expiresAt: new Date(Date.now() + 3600e3).toISOString() },
-    });
+    const sc = F.scenario({ clientId: C.UID, planId: C.PLAN, pid: C.PID });
+    const coach = 'synthetic-coach-t699-shadow';
+    const expiresAt = new Date(Date.now() + 3600e3).toISOString().replace('.000Z', 'Z');
+    await db.doc('clients/' + C.UID).set({ activePlanId: C.PLAN, coachId: coach });
+    await db.doc('coaches/' + coach).set({ autoApplyCanary: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] } });
+    await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [C.UID], expiresAt });
     const otherPid = 'synthetic-other-pid-shadow';
     const expandedPlan = structuredClone(sc.plan);
     expandedPlan.days.forEach(day => day.exercises.push({ ...day.exercises[0], prescriptionExerciseId: otherPid }));
