@@ -171,3 +171,60 @@ test('real contract in emulator: pending -> applied overlay -> effective prescri
     previous.forEach(([k, v]) => { if (v === undefined) delete process.env[k]; else process.env[k] = v; });
   }
 });
+
+test('CANARY PID scope: materialize() preserves foreign-PID PENDING records (state, review, events) and recalculates out.changed', async () => {
+  const keys = ['AUTONOMOUS_PROGRESSION_ENABLED', 'AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED', 'VDSEN_NUMERIC_PILOT_ENABLED', 'VDSEN_NUMERIC_PILOT_WINDOW'];
+  const previous = keys.map(k => [k, process.env[k]]);
+  process.env.AUTONOMOUS_PROGRESSION_ENABLED = 'true';
+  process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED = 'false';
+  delete process.env.VDSEN_NUMERIC_PILOT_ENABLED;
+  delete process.env.VDSEN_NUMERIC_PILOT_WINDOW;
+
+  try {
+    const sc = F.scenario({ clientId: C.UID, planId: C.PLAN, pid: C.PID });
+    const coach = 'synthetic-coach-t699-shadow';
+    const expiresAt = new Date(Date.now() + 3600e3).toISOString().replace('.000Z', 'Z');
+    await db.doc('clients/' + C.UID).set({ activePlanId: C.PLAN, coachId: coach });
+    await db.doc('coaches/' + coach).set({ autoApplyCanary: { enabled: true, clientIds: [C.UID], prescriptionExerciseIds: [C.PID] } });
+    await db.doc('releaseControl/autonomousProgression').set({ schema: 'vdsen-autonomous-release-v1', enabled: true, clientIds: [C.UID], expiresAt });
+    const otherPid = 'synthetic-other-pid-shadow';
+    const expandedPlan = structuredClone(sc.plan);
+    expandedPlan.days.forEach(day => day.exercises.push({ ...day.exercises[0], prescriptionExerciseId: otherPid }));
+    await db.doc('plans/' + C.PLAN).set(expandedPlan);
+
+    const evidence = structuredClone(sc.entries);
+    Object.entries(sc.entries).forEach(([key, entry]) => {
+      evidence[key.replace(/_0_s(\d+)$/, '_1_s$1')] = { ...entry, prescriptionExerciseId: otherPid };
+    });
+    const foreignRecord = {
+      ...structuredClone(sc.rec),
+      key: 'synthetic-foreign-pending',
+      prescriptionExerciseId: otherPid,
+      state: 'PENDING',
+      review: { status: 'UNREVIEWED', note: 'keep-intact' },
+      events: [{ type: 'MATERIALIZED', at: '2026-09-27T12:00:00.000Z' }],
+    };
+    const meso = db.doc('logs/' + C.UID + '/mesos/' + C.PLAN);
+    await meso.set({ planId: C.PLAN, entries: evidence, progressionApplications: { [foreignRecord.key]: foreignRecord }, nextExposureOverlays: {} });
+    await db.doc('logs/' + C.UID).set({ planId: C.PLAN, entries: evidence });
+
+    // No new in-scope PID evidence, only foreign PENDING -> NO_CHANGE and untouched foreign record
+    const noChange = await executor.materialize(db, C.UID, C.PLAN, () => new Date().toISOString());
+    assert.equal(noChange.status, 'NO_CHANGE');
+    assert.deepEqual((await meso.get()).data().progressionApplications[foreignRecord.key], foreignRecord);
+
+    // Now add progrec_1_2 for both PIDs alongside foreign PENDING -> MATERIALIZED for C.PID only, foreign PENDING still intact
+    evidence.progrec_1_2 = { calculatedAt: '2026-09-27T12:00:00.000Z', recommendations: [C.PID, otherPid].map(pid => ({
+      prescriptionExerciseId: pid, exerciseId: sc.exerciseId, exerciseName: 'X', action: 'increase_load', newLoad: 5, newReps: 10
+    })) };
+    await db.doc('logs/' + C.UID).set({ planId: C.PLAN, entries: evidence });
+    await meso.set({ planId: C.PLAN, entries: evidence, progressionApplications: { [foreignRecord.key]: foreignRecord }, nextExposureOverlays: {} });
+    const mat = await executor.materialize(db, C.UID, C.PLAN, () => new Date().toISOString());
+    assert.equal(mat.status, 'MATERIALIZED');
+    const apps = (await meso.get()).data().progressionApplications;
+    assert.deepEqual(apps[foreignRecord.key], foreignRecord);
+    assert.equal(Object.values(apps).filter(r => r.prescriptionExerciseId === C.PID && r.state === 'PENDING').length, 1);
+  } finally {
+    previous.forEach(([k, v]) => { if (v === undefined) delete process.env[k]; else process.env[k] = v; });
+  }
+});

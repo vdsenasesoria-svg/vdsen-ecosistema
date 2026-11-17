@@ -1,0 +1,119 @@
+name: VDSEN Ayrton fence window (A4 protected)
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Fence operation (STATUS read-only | ENABLE requires A4 + arm_run_id + auth probe | STOP emergency close)
+        required: true
+        default: 'STATUS'
+        type: choice
+        options:
+          - STATUS
+          - ENABLE
+          - STOP
+      arm_run_id:
+        description: Official vdsen-ayrton-runtime.yml arm run ID (required for ENABLE; optional for STOP)
+        required: false
+        default: ''
+        type: string
+      runtime_sha:
+        description: Exact reviewed 40-char runtime SHA (for ENABLE/STOP)
+        required: false
+        default: ''
+        type: string
+      pilot_uid:
+        description: Explicit Ayrton UID (validated against single allowed UID hash)
+        required: true
+        type: string
+      coach_id:
+        description: Coach ID for Ayrton
+        required: true
+        type: string
+      plan_id:
+        description: Active plan ID (for ENABLE; optional for STOP)
+        required: false
+        default: ''
+        type: string
+      prescription_exercise_id:
+        description: Single authorized PID for STAGE1_SHADOW
+        required: false
+        default: 'ab150537-0d02-423b-a7e0-2b2f1a8a9a83'
+        type: string
+      expires_at:
+        description: Fixed UTC expiry (ISO-8601 without fractional seconds, max 168h; ENABLE)
+        required: false
+        default: ''
+        type: string
+      operation_id:
+        description: Unique approved operation ID (ENABLE)
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ inputs.action == 'STOP' && 'vdsen-ayrton-emergency-stop' || 'vdsen-production' }}
+  cancel-in-progress: false
+
+jobs:
+  fence-window:
+    if: github.repository == 'vdsenasesoria-svg/vdsen-ecosistema' && github.ref == 'refs/heads/codex/client-app-next'
+    environment: Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      AYRTON_WINDOW_RELEASE_ENABLED: ${{ vars.AYRTON_WINDOW_RELEASE_ENABLED }}
+      AYRTON_WINDOW_STOP_ENABLED: ${{ vars.AYRTON_WINDOW_STOP_ENABLED }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      INPUT_ACTION: ${{ inputs.action }}
+      INPUT_ARM_RUN_ID: ${{ inputs.arm_run_id }}
+      INPUT_RUNTIME: ${{ inputs.runtime_sha }}
+      INPUT_UID: ${{ inputs.pilot_uid }}
+      INPUT_COACH: ${{ inputs.coach_id }}
+      INPUT_PLAN: ${{ inputs.plan_id }}
+      INPUT_PID: ${{ inputs.prescription_exercise_id }}
+      INPUT_EXPIRY: ${{ inputs.expires_at }}
+      INPUT_OPERATION: ${{ inputs.operation_id }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Enforce A4 invocation and fence action gates
+        run: node -e "require('./scripts/pilot/ayrton-window-ops.cjs').invocation(process.env, process.env.INPUT_ACTION)"
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Validate pilot window contracts
+        run: node --test tests/t831-a4-oidc-attestation.test.js tests/t829-ayrton-window-ops.test.js tests/t673-pilot-protocol.test.js tests/t584-ayrton-canary-script.test.js
+      - id: google
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_RELEASE_SERVICE_ACCOUNT }}
+          project_id: vdsen-ecosistema
+          token_format: access_token
+          create_credentials_file: false
+          access_token_scopes: https://www.googleapis.com/auth/datastore
+      - name: Execute A4 fence operation (STATUS | ENABLE | STOP)
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: node scripts/pilot/ayrton-window-ops.cjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: ayrton-window-${{ github.run_id }}
+          path: |
+            release-output/ayrton-window-evidence.json
+            release-output/ayrton-window-request.json.evidence.json
+          if-no-files-found: warn
+          retention-days: 30
