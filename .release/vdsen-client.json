@@ -1,16 +1,16 @@
 {
-  "runtime_sha": "f6b90e401d093bc68c648541dd36c946794cff48",
-  "production_deployment": "dpl_BpiwPJNVs1CXwX2nkotXLzquZmBv",
+  "runtime_sha": "076c8c70a276cb80d669d7cd187861756405871f",
+  "production_deployment": "dpl_8kLZt5zTgAbyvPR9jyoLeb6MsD6C",
   "rollback_deployment": "dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8",
   "rollback_runtime_sha": "3fc264e23d67a8ecb1611a6c8af04ad739f422da",
-  "target_deployment": "dpl_BpiwPJNVs1CXwX2nkotXLzquZmBv",
+  "target_deployment": "dpl_8kLZt5zTgAbyvPR9jyoLeb6MsD6C",
   "production_project": "prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN",
   "vercel_team": "team_VZc5H7Q1DBIJ3g0mwrSBz1o8",
   "production_origin": "https://vdsen-ecosistema.vercel.app",
   "firebase_project": "vdsen-ecosistema",
   "numeric_apply_enabled": false,
   "rules_transition": {
-    "target_sha256": "fe1517306bebd4bd529adfc51a406c5e97cac6b2dfd7fcae61c87318dd2e21e0",
+    "target_sha256": "486606574a2f10d65212cedb26fe7f73686e5d6610995e9c4bfe4a424972c460",
     "order": "verify_current_app_then_rules",
     "rollback_order": "rules_then_app",
     "rollback_sha256": "fe1517306bebd4bd529adfc51a406c5e97cac6b2dfd7fcae61c87318dd2e21e0",
@@ -41,17 +41,19 @@
     "preview_production_env_verified": true,
     "human_ux_approved": true
   },
-  "observation_source": "T819 transition from rules_only to app_only after T810 rules release run 43620978036 (T788 rules sha256 486606574a2f10d65212cedb26fe7f73686e5d6610995e9c4bfe4a424972c460 active) and T818R canonical integration at 076c8c70a276cb80d669d7cd187861756405871f. Live production currently serves dpl_BpiwPJNVs1CXwX2nkotXLzquZmBv (runtime f6b90e401d093bc68c648541dd36c946794cff48); candidate 076c8c70a276cb80d669d7cd187861756405871f verified via read-only diagnostics run 43873615975 (dpl_HFxrj2ssiAXhJn6uNQLhfvcEjN3j, READY, eligible=true, Numeric Apply DISARMED).",
+  "observation_source": "T825 provenance sync after T822R official APP-ONLY release run 43992221920 (artifact sha256:51a0ffbc20b98806c07c0cc054e62a63a890f176380d3c85025157a31cdd6985). Production serves dpl_8kLZt5zTgAbyvPR9jyoLeb6MsD6C (runtime 076c8c70a276cb80d669d7cd187861756405871f, 46 verified surfaces, Numeric Apply DISARMED, rules_mutated=false, main_unchanged=true). Immediate previous production deployment is dpl_BpiwPJNVs1CXwX2nkotXLzquZmBv (runtime f6b90e401d093bc68c648541dd36c946794cff48). Historical safe OFF baseline remains dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8 (runtime 3fc264e23d67a8ecb1611a6c8af04ad739f422da, run 43132135716). Published Firestore rules T788 (sha256 486606574a2f10d65212cedb26fe7f73686e5d6610995e9c4bfe4a424972c460) from T810 run 43620978036.",
   "release_mode": "app_only",
   "app_release": {
-    "runtime_sha": "f6b90e401d093bc68c648541dd36c946794cff48",
-    "deployment": "dpl_BpiwPJNVs1CXwX2nkotXLzquZmBv",
+    "runtime_sha": "076c8c70a276cb80d669d7cd187861756405871f",
+    "deployment": "dpl_8kLZt5zTgAbyvPR9jyoLeb6MsD6C",
     "promotion_model": "staged_production",
-    "previous_deployment": "dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8",
-    "previous_runtime_sha": "3fc264e23d67a8ecb1611a6c8af04ad739f422da",
+    "previous_deployment": "dpl_BpiwPJNVs1CXwX2nkotXLzquZmBv",
+    "previous_runtime_sha": "f6b90e401d093bc68c648541dd36c946794cff48",
+    "safe_recovery_deployment": "dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8",
+    "safe_recovery_runtime_sha": "3fc264e23d67a8ecb1611a6c8af04ad739f422da",
     "verified_surfaces": 46,
-    "source_release_run": "43554088508",
-    "completed_at": "2026-11-14T04:06:10Z"
+    "source_release_run": "43992221920",
+    "completed_at": "2026-11-17T01:10:43Z"
   },
   "published_rules": {
     "sha256": "486606574a2f10d65212cedb26fe7f73686e5d6610995e9c4bfe4a424972c460",

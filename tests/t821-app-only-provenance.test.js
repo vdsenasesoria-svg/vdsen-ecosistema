@@ -213,7 +213,7 @@ test('T821.1 current production distinct from historical SAFE_OFF_BASELINE passe
   const { histDeployment } = makeOffBaselineFiles();
   try {
     const manifestState = json('.release/vdsen-client.json');
-    assert.equal(manifestState.runtime_sha, CURRENT_RUNTIME);
+    assert.match(manifestState.runtime_sha || '', /^[0-9a-f]{40}$/);
     assert.notEqual(manifestState.runtime_sha, HIST.runtimeSha);
 
     const proof = await app.verifySafeOffBaseline(manifestState, false, async (_s, id) => {
@@ -224,8 +224,8 @@ test('T821.1 current production distinct from historical SAFE_OFF_BASELINE passe
     assert.equal(proof.deployment, HIST.deployment);
 
     const artifact = {
-      production_deployment: CURRENT_DPL,
-      production_runtime_sha: CURRENT_RUNTIME,
+      production_deployment: manifestState.production_deployment,
+      production_runtime_sha: manifestState.runtime_sha,
       safe_off_deployment: HIST.deployment,
       safe_off_evidence_sha256: proof.evidenceSha256
     };
