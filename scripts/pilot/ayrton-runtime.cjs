@@ -678,8 +678,9 @@ async function main(argv) {
       deployment: s.production_deployment,
       officialReleaseRun: String(s.app_release.source_release_run),
     }, readOnlyIo);
-    fs.mkdirSync('release-output', { recursive: true });
-    fs.writeFileSync('release-output/ayrton-preflight-diagnostics.json', JSON.stringify(diag, null, 2) + '\n');
+    const outPath = process.env.AYRTON_PREFLIGHT_OUT || 'release-output/ayrton-preflight-diagnostics.json';
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, JSON.stringify(diag, null, 2) + '\n');
     return diag;
   }
   invocation(process.env);

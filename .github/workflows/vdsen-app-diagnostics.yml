@@ -36,6 +36,31 @@ on:
         required: false
         default: ''
         type: string
+      ayrton_pilot_uid:
+        description: 'Optional Ayrton UID for read-only ARM_PREFLIGHT check'
+        required: false
+        default: ''
+        type: string
+      ayrton_coach_id:
+        description: 'Optional Coach ID for read-only ARM_PREFLIGHT check'
+        required: false
+        default: ''
+        type: string
+      ayrton_plan_id:
+        description: 'Optional active plan ID for read-only ARM_PREFLIGHT check'
+        required: false
+        default: ''
+        type: string
+      ayrton_pid:
+        description: 'Optional single authorized PID for read-only ARM_PREFLIGHT check'
+        required: false
+        default: 'ab150537-0d02-423b-a7e0-2b2f1a8a9a83'
+        type: string
+      ayrton_expires_at:
+        description: 'Optional fixed UTC expiry for read-only ARM_PREFLIGHT check (never writes Firestore)'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -49,6 +74,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      id-token: write
     env:
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
       VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
@@ -103,6 +129,17 @@ jobs:
         env:
           APP_RUNTIME_SHA: ${{ inputs.runtime_sha }}
         run: node scripts/release/app-candidate-check.cjs
+      - id: google
+        if: inputs.ayrton_preflight_check == true && github.repository == 'vdsenasesoria-svg/vdsen-ecosistema' && github.ref == 'refs/heads/codex/client-app-next'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        continue-on-error: true
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_RELEASE_SERVICE_ACCOUNT }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          token_format: access_token
+          create_credentials_file: false
+          access_token_scopes: https://www.googleapis.com/auth/datastore
       - name: Run Ayrton ARM_PREFLIGHT & reconciliation diagnostics (read-only)
         if: inputs.ayrton_preflight_check == true
         env:
@@ -111,6 +148,26 @@ jobs:
           RECONCILE_CHECK_RUN_ID: ${{ inputs.reconcile_check_run_id }}
           GH_TOKEN: ${{ github.token }}
         run: node scripts/pilot/ayrton-preflight-diagnostics.cjs
+      - name: Run Ayrton real ARM_PREFLIGHT read-only check with WIF Firestore read
+        if: inputs.ayrton_preflight_check == true && inputs.ayrton_pilot_uid != '' && inputs.ayrton_coach_id != '' && inputs.ayrton_plan_id != '' && inputs.ayrton_expires_at != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+          WIF_AUTH_OUTCOME: ${{ steps.google.outcome }}
+          PILOT_WINDOW_FILE: release-output/ayrton-window-input.json
+          AYRTON_PREFLIGHT_OUT: release-output/ayrton-runtime-preflight.json
+          INPUT_RUNTIME: ${{ inputs.runtime_sha }}
+          INPUT_UID: ${{ inputs.ayrton_pilot_uid }}
+          INPUT_COACH: ${{ inputs.ayrton_coach_id }}
+          INPUT_PLAN: ${{ inputs.ayrton_plan_id }}
+          INPUT_PID: ${{ inputs.ayrton_pid }}
+          INPUT_EXPIRY: ${{ inputs.ayrton_expires_at }}
+          INPUT_OPERATION: ${{ inputs.ayrton_operation_id }}
+        run: |
+          echo "WIF_AUTH_OUTCOME=$WIF_AUTH_OUTCOME"
+          node scripts/pilot/off-baseline.cjs
+          node -e "const fs=require('fs'),s=require('./.release/vdsen-client.json');fs.mkdirSync('release-output',{recursive:true});const w={schema:'vdsen-ayrton-window-v1',mode:'STAGE1_SHADOW',pid:process.env.INPUT_PID||'ab150537-0d02-423b-a7e0-2b2f1a8a9a83',uid:process.env.INPUT_UID,coachId:process.env.INPUT_COACH,planId:process.env.INPUT_PLAN,runtimeSha:process.env.INPUT_RUNTIME||s.runtime_sha,deployment:s.production_deployment,expiresAt:process.env.INPUT_EXPIRY,operationId:process.env.INPUT_OPERATION||'op-diag-readonly-check'};require('./scripts/pilot/window-protocol.cjs').windowSpec(w);fs.writeFileSync(process.env.PILOT_WINDOW_FILE,JSON.stringify(w));"
+          node scripts/pilot/ayrton-runtime.cjs diagnose-preflight
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
@@ -118,5 +175,6 @@ jobs:
           path: |
             release-output/app-diagnostics.json
             release-output/ayrton-preflight-diagnostics.json
+            release-output/ayrton-runtime-preflight.json
           if-no-files-found: warn
           retention-days: 30
