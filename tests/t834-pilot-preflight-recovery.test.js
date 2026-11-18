@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   arm,
   diagnosePreflight,
+  listAllPilotWorkflowRuns,
   assertAttemptAllowed,
   formatSanitizedFailure,
   classifyDiagnosticCode,
@@ -219,8 +220,13 @@ test('assertAttemptAllowed accepts T834 bounded two-run recovery only with valid
   assert.equal(ok.mode, 'T834_BOUNDED_TWO_RUN_RECOVERY');
   assert.deepEqual(ok.reconciledRunIds, ['44228373358', '44229712230']);
 
-  // Rejects missing evidence
+  // Rejects missing evidence, missing explicit runId, duplicate evidence, or foreign runId
   assert.throws(() => assertAttemptAllowed(runs3, '44230000000', '44228373358,44229712230', [ev1], ctx), /PRIOR_RUN_EVIDENCE_MISSING/);
+  assert.throws(() => assertAttemptAllowed(runs3, '44230000000', '44228373358,44229712230', [ev1, { ...ev2, runId: undefined }], ctx), /PRIOR_RUN_EVIDENCE_MISSING/);
+  assert.throws(() => assertAttemptAllowed(runs3, '44230000000', '44228373358,44229712230', [ev1, { ...ev1 }], ctx), /PRIOR_RUN_EVIDENCE_MISSING/);
+  assert.throws(() => assertAttemptAllowed(runs3, '44230000000', '44228373358,44229712230', [ev1, { ...ev2, runId: '44999999999' }], ctx), /PRIOR_RUN_EVIDENCE_MISSING/);
+  // Rejects truncated workflow_runs count
+  assert.throws(() => assertAttemptAllowed(runs3, '44230000000', '44228373358,44229712230', [ev1, ev2], { ...ctx, totalWorkflowRunsCount: 4 }), /WORKFLOW_RUNS_LIST_INCOMPLETE/);
   // Rejects unverified evidence
   assert.throws(() => assertAttemptAllowed(runs3, '44230000000', '44228373358,44229712230', [ev1, { ...ev2, evidenceVerified: false }], ctx), /PRIOR_RUN_EVIDENCE_UNVERIFIED/);
   // Rejects mutations > 0
@@ -240,4 +246,22 @@ test('assertAttemptAllowed accepts T834 bounded two-run recovery only with valid
   assert.throws(() => assertAttemptAllowed(runs3, '44230000000', '44228373358,44229712230', [ev1, ev2], { ...ctx, operationId: '' }), /PILOT_OPERATION_ID_REQUIRED/);
   // Generic unknown code stays safe
   assert.equal(classifyDiagnosticCode(new Error('raw secret token')), 'UNCLASSIFIED_ERROR');
+});
+
+test('listAllPilotWorkflowRuns paginates completely and rejects truncated responses', () => {
+  const pages = [
+    { total_count: 3, workflow_runs: [{ id: 1 }, { id: 2 }] },
+    { total_count: 3, workflow_runs: [{ id: 3 }] },
+  ];
+  let idx = 0;
+  const full = listAllPilotWorkflowRuns('2026-11-17T21:35:55Z', { ghApi: () => pages[idx++] });
+  assert.equal(full.totalCount, 3);
+  assert.equal(full.workflowRuns.length, 3);
+
+  assert.throws(
+    () => listAllPilotWorkflowRuns('2026-11-17T21:35:55Z', {
+      ghApi: () => ({ total_count: 5, workflow_runs: [] }),
+    }),
+    /WORKFLOW_RUNS_LIST_INCOMPLETE/
+  );
 });

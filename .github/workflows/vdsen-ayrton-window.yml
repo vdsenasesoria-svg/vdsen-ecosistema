@@ -120,7 +120,7 @@ jobs:
           PILOT_WINDOW_FILE: release-output/ayrton-window-input.json
         run: |
           node scripts/pilot/off-baseline.cjs
-          node -e "const fs=require('fs');fs.mkdirSync('release-output',{recursive:true});const w={schema:'vdsen-ayrton-window-v1',mode:'STAGE1_SHADOW',pid:process.env.INPUT_PID||'ab150537-0d02-423b-a7e0-2b2f1a8a9a83',uid:process.env.INPUT_UID,coachId:process.env.INPUT_COACH,planId:process.env.INPUT_PLAN,runtimeSha:process.env.INPUT_RUNTIME,deployment:require('./.release/vdsen-client.json').production_deployment,expiresAt:process.env.INPUT_EXPIRY,operationId:process.env.INPUT_OPERATION||'op-diag-readonly-check'};require('./scripts/pilot/window-protocol.cjs').windowSpec(w);fs.writeFileSync(process.env.PILOT_WINDOW_FILE,JSON.stringify(w));"
+          node -e "const fs=require('fs'),s=require('./.release/vdsen-client.json');fs.mkdirSync('release-output',{recursive:true});const w={schema:'vdsen-ayrton-window-v1',mode:'STAGE1_SHADOW',pid:process.env.INPUT_PID||'ab150537-0d02-423b-a7e0-2b2f1a8a9a83',uid:process.env.INPUT_UID,coachId:process.env.INPUT_COACH,planId:process.env.INPUT_PLAN,runtimeSha:process.env.INPUT_RUNTIME||s.runtime_sha,deployment:s.production_deployment,expiresAt:process.env.INPUT_EXPIRY,operationId:process.env.INPUT_OPERATION||'op-diag-readonly-check'};require('./scripts/pilot/window-protocol.cjs').windowSpec(w);fs.writeFileSync(process.env.PILOT_WINDOW_FILE,JSON.stringify(w));"
           node scripts/pilot/ayrton-runtime.cjs diagnose-preflight
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()

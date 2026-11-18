@@ -37,8 +37,30 @@ const BOUNDED_TWO_RUN_RECOVERY_T834 = Object.freeze({
   runtimeSha: '38ee4cb26691ff54e1e331a2c60f2f453b1c2469',
 });
 
+function listAllPilotWorkflowRuns(createdSince, deps = {}) {
+  assert.ok(typeof createdSince === 'string' && Number.isFinite(Date.parse(createdSince)), 'INVALID_WORKFLOW_RUNS');
+  const repo = deps.repo || process.env.GITHUB_REPOSITORY || 'vdsenasesoria-svg/vdsen-ecosistema';
+  const ghApi = deps.ghApi || (endpoint => JSON.parse(execFileSync('gh', ['api', endpoint], { encoding: 'utf8' })));
+  const allRuns = [];
+  let totalCount = null;
+  for (let page = 1; page <= 20; page++) {
+    const endpoint = 'repos/' + repo + '/actions/workflows/vdsen-ayrton-runtime.yml/runs?per_page=100&event=workflow_dispatch&created=' + encodeURIComponent('>=' + createdSince) + '&page=' + page;
+    const res = ghApi(endpoint);
+    assert.ok(res && Array.isArray(res.workflow_runs) && Number.isInteger(res.total_count) && res.total_count >= 0, 'INVALID_WORKFLOW_RUNS');
+    if (totalCount === null) totalCount = res.total_count;
+    else assert.equal(res.total_count, totalCount, 'WORKFLOW_RUNS_LIST_INCOMPLETE');
+    allRuns.push(...res.workflow_runs);
+    if (allRuns.length >= totalCount || res.workflow_runs.length === 0) break;
+  }
+  assert.equal(allRuns.length, totalCount, 'WORKFLOW_RUNS_LIST_INCOMPLETE');
+  return { workflowRuns: allRuns, totalCount };
+}
+
 function assertAttemptAllowed(workflowRuns, currentRunId, reconcileFailedRun = '', reconciliationEvidence = null, context = {}) {
   assert.ok(Array.isArray(workflowRuns), 'INVALID_WORKFLOW_RUNS');
+  if (context && context.totalWorkflowRunsCount !== undefined && context.totalWorkflowRunsCount !== null) {
+    assert.equal(workflowRuns.length, context.totalWorkflowRunsCount, 'WORKFLOW_RUNS_LIST_INCOMPLETE');
+  }
   assert.match(String(currentRunId || ''), /^[1-9][0-9]+$/, 'INVALID_CURRENT_RUN_ID');
   const current = workflowRuns.find(w => String(w.id) === String(currentRunId));
   assert.ok(current, 'CURRENT_RUN_NOT_FOUND_IN_DISPATCH_LIST');
@@ -92,14 +114,25 @@ function assertAttemptAllowed(workflowRuns, currentRunId, reconcileFailedRun = '
     }
 
     assert.ok(Array.isArray(reconciliationEvidence) && reconciliationEvidence.length === 2, 'PRIOR_RUN_EVIDENCE_MISSING');
+    const seenEvidenceIds = new Set();
+    const expectedSet = new Set(sortedExpected);
+    for (const e of reconciliationEvidence) {
+      assert.ok(e && typeof e === 'object', 'PRIOR_RUN_EVIDENCE_MISSING');
+      assert.ok(typeof e.runId === 'string' && /^[1-9][0-9]+$/.test(e.runId), 'PRIOR_RUN_EVIDENCE_MISSING');
+      assert.ok(expectedSet.has(e.runId), 'PRIOR_RUN_EVIDENCE_MISSING');
+      assert.ok(!seenEvidenceIds.has(e.runId), 'PRIOR_RUN_EVIDENCE_MISSING');
+      seenEvidenceIds.add(e.runId);
+    }
+    assert.equal(seenEvidenceIds.size, 2, 'PRIOR_RUN_EVIDENCE_MISSING');
+
     for (const id of sortedExpected) {
       const prior = workflowRuns.find(w => String(w.id) === id);
       assert.ok(prior, 'RECONCILED_RUN_NOT_FOUND_FOR_CURRENT_BASELINE');
       assert.equal(prior.status, 'completed', 'PRIOR_RUN_NOT_COMPLETED');
       assert.equal(prior.conclusion, 'failure', 'PRIOR_RUN_DID_NOT_FAIL');
 
-      const ev = reconciliationEvidence.find(e => e && String(e.runId || id) === id);
-      assert.ok(ev && typeof ev === 'object', 'PRIOR_RUN_EVIDENCE_MISSING');
+      const ev = reconciliationEvidence.find(e => e.runId === id);
+      assert.ok(ev, 'PRIOR_RUN_EVIDENCE_MISSING');
       assert.equal(ev.baselineDeployment, BOUNDED_TWO_RUN_RECOVERY_T834.baselineDeployment, 'PRIOR_RUN_EVIDENCE_MISSING');
       assert.equal(ev.currentAlias, ev.baselineDeployment, 'PRODUCTION_ALIAS_NOT_ON_BASELINE');
       assert.equal(ev.stagedDeploymentsCount, 0, 'PENDING_OR_STAGED_DEPLOYMENTS_EXIST');
@@ -774,6 +807,7 @@ const ALLOWED_DIAGNOSTIC_CODES = new Set([
   'VERCEL_NETWORK_ERROR',
   'RECONCILIATION_SET_NOT_AUTHORIZED',
   'PILOT_OPERATION_ID_REQUIRED',
+  'WORKFLOW_RUNS_LIST_INCOMPLETE',
   'RUNTIME_NOT_EXPLICIT',
   'UNKNOWN_RUNTIME_SWITCH',
   'CONTRACT_DRIFT',
@@ -897,6 +931,7 @@ module.exports = {
   assertAuthorizedMainSha,
   REVIEWED_MAIN_SHAS,
   adapters,
+  listAllPilotWorkflowRuns,
   assertAttemptAllowed,
   gatherReconciliationEvidence,
   formatSanitizedFailure,
