@@ -210,6 +210,13 @@ function setupApplyWorkspace(dir, opts = {}) {
 }
 
 test('T821.1 current production distinct from historical SAFE_OFF_BASELINE passes when both provenances are valid', async () => {
+  const dir = 'release-output/off-baseline';
+  const backupDir = 'release-output/.t821-off-baseline-backup-' + process.pid;
+  const hadExisting = fs.existsSync(dir);
+  if (hadExisting) {
+    fs.rmSync(backupDir, { recursive: true, force: true });
+    fs.renameSync(dir, backupDir);
+  }
   const { histDeployment } = makeOffBaselineFiles();
   try {
     const manifestState = json('.release/vdsen-client.json');
@@ -232,7 +239,10 @@ test('T821.1 current production distinct from historical SAFE_OFF_BASELINE passe
     const checked = app.assertSafeRollbackProof(artifact, proof);
     assert.equal(checked.evidenceSha256, proof.evidenceSha256);
   } finally {
-    fs.rmSync('release-output/off-baseline', { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true });
+    if (hadExisting && fs.existsSync(backupDir)) {
+      fs.renameSync(backupDir, dir);
+    }
   }
 });
 

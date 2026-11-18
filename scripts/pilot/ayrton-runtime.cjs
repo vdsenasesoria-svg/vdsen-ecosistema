@@ -38,6 +38,50 @@ const BOUNDED_TWO_RUN_RECOVERY_T834 = Object.freeze({
   runtimeSha: '38ee4cb26691ff54e1e331a2c60f2f453b1c2469',
 });
 
+const BOUNDED_THREE_RUN_RECOVERY_T839 = Object.freeze({
+  runIds: ['44228373358', '44229712230', '44290105865'],
+  baselineDeployment: 'dpl_7ByavXXqB8m8SzKtz3W5erWJherU',
+  runtimeSha: '38ee4cb26691ff54e1e331a2c60f2f453b1c2469',
+  disallowedOperationIds: [
+    'op-ayrton-shadow-20261118030503-f5935854',
+    'op-ayrton-shadow-20261118031655-b5d993b2',
+    'op-ayrton-shadow-20261118105624-d9b2c441',
+  ],
+});
+
+function verifyBoundedEvidenceSet(workflowRuns, currentRunId, sortedExpected, baselineDeployment, reconciliationEvidence) {
+  assert.equal(workflowRuns.length, sortedExpected.length + 1, 'ONE_ATTEMPT_PER_BASELINE_EXCEEDED');
+  const allowedRunIds = new Set([String(currentRunId), ...sortedExpected]);
+  for (const w of workflowRuns) {
+    assert.ok(allowedRunIds.has(String(w.id)), 'CONCURRENT_OR_PRIOR_RUN_EXISTS');
+  }
+  assert.ok(Array.isArray(reconciliationEvidence) && reconciliationEvidence.length === sortedExpected.length, 'PRIOR_RUN_EVIDENCE_MISSING');
+  const seenEvidenceIds = new Set();
+  const expectedSet = new Set(sortedExpected);
+  for (const e of reconciliationEvidence) {
+    assert.ok(e && typeof e === 'object', 'PRIOR_RUN_EVIDENCE_MISSING');
+    assert.ok(typeof e.runId === 'string' && /^[1-9][0-9]+$/.test(e.runId), 'PRIOR_RUN_EVIDENCE_MISSING');
+    assert.ok(expectedSet.has(e.runId), 'PRIOR_RUN_EVIDENCE_MISSING');
+    assert.ok(!seenEvidenceIds.has(e.runId), 'PRIOR_RUN_EVIDENCE_MISSING');
+    seenEvidenceIds.add(e.runId);
+  }
+  assert.equal(seenEvidenceIds.size, sortedExpected.length, 'PRIOR_RUN_EVIDENCE_MISSING');
+  for (const id of sortedExpected) {
+    const prior = workflowRuns.find(w => String(w.id) === id);
+    assert.ok(prior, 'RECONCILED_RUN_NOT_FOUND_FOR_CURRENT_BASELINE');
+    assert.equal(prior.status, 'completed', 'PRIOR_RUN_NOT_COMPLETED');
+    assert.equal(prior.conclusion, 'failure', 'PRIOR_RUN_DID_NOT_FAIL');
+
+    const ev = reconciliationEvidence.find(e => e.runId === id);
+    assert.ok(ev, 'PRIOR_RUN_EVIDENCE_MISSING');
+    assert.equal(ev.baselineDeployment, baselineDeployment, 'PRIOR_RUN_EVIDENCE_MISSING');
+    assert.equal(ev.currentAlias, ev.baselineDeployment, 'PRODUCTION_ALIAS_NOT_ON_BASELINE');
+    assert.equal(ev.stagedDeploymentsCount, 0, 'PENDING_OR_STAGED_DEPLOYMENTS_EXIST');
+    assert.equal(ev.priorRunMutations, 0, 'PRIOR_RUN_MUTATIONS_NOT_PROVEN_ZERO');
+    assert.equal(ev.evidenceVerified, true, 'PRIOR_RUN_EVIDENCE_UNVERIFIED');
+  }
+}
+
 function listAllPilotWorkflowRuns(createdSince, deps = {}) {
   assert.ok(typeof createdSince === 'string' && Number.isFinite(Date.parse(createdSince)), 'INVALID_WORKFLOW_RUNS');
   const repo = deps.repo || process.env.GITHUB_REPOSITORY || 'vdsenasesoria-svg/vdsen-ecosistema';
@@ -107,39 +151,7 @@ function assertAttemptAllowed(workflowRuns, currentRunId, reconcileFailedRun = '
     assert.equal(context.baselineDeployment, BOUNDED_TWO_RUN_RECOVERY_T834.baselineDeployment, 'RECONCILIATION_SET_NOT_AUTHORIZED');
     assert.equal(context.runtimeSha, BOUNDED_TWO_RUN_RECOVERY_T834.runtimeSha, 'RECONCILIATION_SET_NOT_AUTHORIZED');
     assert.match(String(context.operationId || ''), /^[a-zA-Z0-9-]{8,80}$/, 'PILOT_OPERATION_ID_REQUIRED');
-    assert.equal(workflowRuns.length, 3, 'ONE_ATTEMPT_PER_BASELINE_EXCEEDED');
-
-    const allowedRunIds = new Set([String(currentRunId), ...sortedExpected]);
-    for (const w of workflowRuns) {
-      assert.ok(allowedRunIds.has(String(w.id)), 'CONCURRENT_OR_PRIOR_RUN_EXISTS');
-    }
-
-    assert.ok(Array.isArray(reconciliationEvidence) && reconciliationEvidence.length === 2, 'PRIOR_RUN_EVIDENCE_MISSING');
-    const seenEvidenceIds = new Set();
-    const expectedSet = new Set(sortedExpected);
-    for (const e of reconciliationEvidence) {
-      assert.ok(e && typeof e === 'object', 'PRIOR_RUN_EVIDENCE_MISSING');
-      assert.ok(typeof e.runId === 'string' && /^[1-9][0-9]+$/.test(e.runId), 'PRIOR_RUN_EVIDENCE_MISSING');
-      assert.ok(expectedSet.has(e.runId), 'PRIOR_RUN_EVIDENCE_MISSING');
-      assert.ok(!seenEvidenceIds.has(e.runId), 'PRIOR_RUN_EVIDENCE_MISSING');
-      seenEvidenceIds.add(e.runId);
-    }
-    assert.equal(seenEvidenceIds.size, 2, 'PRIOR_RUN_EVIDENCE_MISSING');
-
-    for (const id of sortedExpected) {
-      const prior = workflowRuns.find(w => String(w.id) === id);
-      assert.ok(prior, 'RECONCILED_RUN_NOT_FOUND_FOR_CURRENT_BASELINE');
-      assert.equal(prior.status, 'completed', 'PRIOR_RUN_NOT_COMPLETED');
-      assert.equal(prior.conclusion, 'failure', 'PRIOR_RUN_DID_NOT_FAIL');
-
-      const ev = reconciliationEvidence.find(e => e.runId === id);
-      assert.ok(ev, 'PRIOR_RUN_EVIDENCE_MISSING');
-      assert.equal(ev.baselineDeployment, BOUNDED_TWO_RUN_RECOVERY_T834.baselineDeployment, 'PRIOR_RUN_EVIDENCE_MISSING');
-      assert.equal(ev.currentAlias, ev.baselineDeployment, 'PRODUCTION_ALIAS_NOT_ON_BASELINE');
-      assert.equal(ev.stagedDeploymentsCount, 0, 'PENDING_OR_STAGED_DEPLOYMENTS_EXIST');
-      assert.equal(ev.priorRunMutations, 0, 'PRIOR_RUN_MUTATIONS_NOT_PROVEN_ZERO');
-      assert.equal(ev.evidenceVerified, true, 'PRIOR_RUN_EVIDENCE_UNVERIFIED');
-    }
+    verifyBoundedEvidenceSet(workflowRuns, currentRunId, sortedExpected, BOUNDED_TWO_RUN_RECOVERY_T834.baselineDeployment, reconciliationEvidence);
 
     return {
       mode: 'T834_BOUNDED_TWO_RUN_RECOVERY',
@@ -148,6 +160,26 @@ function assertAttemptAllowed(workflowRuns, currentRunId, reconcileFailedRun = '
       operationId: context.operationId,
       evidence: reconciliationEvidence,
     };
+  }
+
+  if (recIds.length === 3) {
+    const sortedRec = [...recIds].sort();
+    const sortedT839 = [...BOUNDED_THREE_RUN_RECOVERY_T839.runIds].sort();
+    if (sortedRec.length === sortedT839.length && sortedRec.every((v, i) => v === sortedT839[i])) {
+      assert.equal(context.baselineDeployment, BOUNDED_THREE_RUN_RECOVERY_T839.baselineDeployment, 'RECONCILIATION_SET_NOT_AUTHORIZED');
+      assert.equal(context.runtimeSha, BOUNDED_THREE_RUN_RECOVERY_T839.runtimeSha, 'RECONCILIATION_SET_NOT_AUTHORIZED');
+      assert.match(String(context.operationId || ''), /^[a-zA-Z0-9-]{8,80}$/, 'PILOT_OPERATION_ID_REQUIRED');
+      assert.ok(!BOUNDED_THREE_RUN_RECOVERY_T839.disallowedOperationIds.includes(context.operationId), 'PILOT_OPERATION_ALREADY_EXISTS');
+      verifyBoundedEvidenceSet(workflowRuns, currentRunId, sortedT839, BOUNDED_THREE_RUN_RECOVERY_T839.baselineDeployment, reconciliationEvidence);
+
+      return {
+        mode: 'T839_BOUNDED_THREE_RUN_RECOVERY',
+        currentRunId: String(currentRunId),
+        reconciledRunIds: sortedT839,
+        operationId: context.operationId,
+        evidence: reconciliationEvidence,
+      };
+    }
   }
 
   // T779 extraordinary single-use recovery strictly bound to the three verified failed runs, baseline, runtime, and operationId
@@ -940,6 +972,7 @@ module.exports = {
   ALLOWED_DIAGNOSTIC_CODES,
   T777_EXTRAORDINARY_RECOVERY,
   BOUNDED_TWO_RUN_RECOVERY_T834,
+  BOUNDED_THREE_RUN_RECOVERY_T839,
 };
 if (require.main === module) main(process.argv.slice(2)).then(r => console.log(JSON.stringify({ status: r.status }))).catch((err) => {
   const checkpoint = (err && err.checkpoint) ? err.checkpoint : null;
