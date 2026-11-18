@@ -31,8 +31,36 @@ const T777_EXTRAORDINARY_RECOVERY = Object.freeze({
   operationId: 'op-ayrton-shadow-20261112-c4f8a2e9',
 });
 
+const BOUNDED_TWO_RUN_RECOVERY_T834 = Object.freeze({
+  runIds: ['44228373358', '44229712230'],
+  baselineDeployment: 'dpl_7ByavXXqB8m8SzKtz3W5erWJherU',
+  runtimeSha: '38ee4cb26691ff54e1e331a2c60f2f453b1c2469',
+});
+
+function listAllPilotWorkflowRuns(createdSince, deps = {}) {
+  assert.ok(typeof createdSince === 'string' && Number.isFinite(Date.parse(createdSince)), 'INVALID_WORKFLOW_RUNS');
+  const repo = deps.repo || process.env.GITHUB_REPOSITORY || 'vdsenasesoria-svg/vdsen-ecosistema';
+  const ghApi = deps.ghApi || (endpoint => JSON.parse(execFileSync('gh', ['api', endpoint], { encoding: 'utf8' })));
+  const allRuns = [];
+  let totalCount = null;
+  for (let page = 1; page <= 20; page++) {
+    const endpoint = 'repos/' + repo + '/actions/workflows/vdsen-ayrton-runtime.yml/runs?per_page=100&event=workflow_dispatch&created=' + encodeURIComponent('>=' + createdSince) + '&page=' + page;
+    const res = ghApi(endpoint);
+    assert.ok(res && Array.isArray(res.workflow_runs) && Number.isInteger(res.total_count) && res.total_count >= 0, 'INVALID_WORKFLOW_RUNS');
+    if (totalCount === null) totalCount = res.total_count;
+    else assert.equal(res.total_count, totalCount, 'WORKFLOW_RUNS_LIST_INCOMPLETE');
+    allRuns.push(...res.workflow_runs);
+    if (allRuns.length >= totalCount || res.workflow_runs.length === 0) break;
+  }
+  assert.equal(allRuns.length, totalCount, 'WORKFLOW_RUNS_LIST_INCOMPLETE');
+  return { workflowRuns: allRuns, totalCount };
+}
+
 function assertAttemptAllowed(workflowRuns, currentRunId, reconcileFailedRun = '', reconciliationEvidence = null, context = {}) {
   assert.ok(Array.isArray(workflowRuns), 'INVALID_WORKFLOW_RUNS');
+  if (context && context.totalWorkflowRunsCount !== undefined && context.totalWorkflowRunsCount !== null) {
+    assert.equal(workflowRuns.length, context.totalWorkflowRunsCount, 'WORKFLOW_RUNS_LIST_INCOMPLETE');
+  }
   assert.match(String(currentRunId || ''), /^[1-9][0-9]+$/, 'INVALID_CURRENT_RUN_ID');
   const current = workflowRuns.find(w => String(w.id) === String(currentRunId));
   assert.ok(current, 'CURRENT_RUN_NOT_FOUND_IN_DISPATCH_LIST');
@@ -69,6 +97,56 @@ function assertAttemptAllowed(workflowRuns, currentRunId, reconcileFailedRun = '
     assert.equal(reconciliationEvidence.evidenceVerified, true, 'PRIOR_RUN_EVIDENCE_UNVERIFIED');
 
     return { mode: 'AUDITED_FAILED_RUN_RECOVERY', currentRunId: String(currentRunId), reconciledRunId: singleId, evidence: reconciliationEvidence };
+  }
+
+  if (recIds.length === 2) {
+    const sortedRec = [...recIds].sort();
+    const sortedExpected = [...BOUNDED_TWO_RUN_RECOVERY_T834.runIds].sort();
+    assert.deepEqual(sortedRec, sortedExpected, 'RECONCILIATION_SET_NOT_AUTHORIZED');
+    assert.equal(context.baselineDeployment, BOUNDED_TWO_RUN_RECOVERY_T834.baselineDeployment, 'RECONCILIATION_SET_NOT_AUTHORIZED');
+    assert.equal(context.runtimeSha, BOUNDED_TWO_RUN_RECOVERY_T834.runtimeSha, 'RECONCILIATION_SET_NOT_AUTHORIZED');
+    assert.match(String(context.operationId || ''), /^[a-zA-Z0-9-]{8,80}$/, 'PILOT_OPERATION_ID_REQUIRED');
+    assert.equal(workflowRuns.length, 3, 'ONE_ATTEMPT_PER_BASELINE_EXCEEDED');
+
+    const allowedRunIds = new Set([String(currentRunId), ...sortedExpected]);
+    for (const w of workflowRuns) {
+      assert.ok(allowedRunIds.has(String(w.id)), 'CONCURRENT_OR_PRIOR_RUN_EXISTS');
+    }
+
+    assert.ok(Array.isArray(reconciliationEvidence) && reconciliationEvidence.length === 2, 'PRIOR_RUN_EVIDENCE_MISSING');
+    const seenEvidenceIds = new Set();
+    const expectedSet = new Set(sortedExpected);
+    for (const e of reconciliationEvidence) {
+      assert.ok(e && typeof e === 'object', 'PRIOR_RUN_EVIDENCE_MISSING');
+      assert.ok(typeof e.runId === 'string' && /^[1-9][0-9]+$/.test(e.runId), 'PRIOR_RUN_EVIDENCE_MISSING');
+      assert.ok(expectedSet.has(e.runId), 'PRIOR_RUN_EVIDENCE_MISSING');
+      assert.ok(!seenEvidenceIds.has(e.runId), 'PRIOR_RUN_EVIDENCE_MISSING');
+      seenEvidenceIds.add(e.runId);
+    }
+    assert.equal(seenEvidenceIds.size, 2, 'PRIOR_RUN_EVIDENCE_MISSING');
+
+    for (const id of sortedExpected) {
+      const prior = workflowRuns.find(w => String(w.id) === id);
+      assert.ok(prior, 'RECONCILED_RUN_NOT_FOUND_FOR_CURRENT_BASELINE');
+      assert.equal(prior.status, 'completed', 'PRIOR_RUN_NOT_COMPLETED');
+      assert.equal(prior.conclusion, 'failure', 'PRIOR_RUN_DID_NOT_FAIL');
+
+      const ev = reconciliationEvidence.find(e => e.runId === id);
+      assert.ok(ev, 'PRIOR_RUN_EVIDENCE_MISSING');
+      assert.equal(ev.baselineDeployment, BOUNDED_TWO_RUN_RECOVERY_T834.baselineDeployment, 'PRIOR_RUN_EVIDENCE_MISSING');
+      assert.equal(ev.currentAlias, ev.baselineDeployment, 'PRODUCTION_ALIAS_NOT_ON_BASELINE');
+      assert.equal(ev.stagedDeploymentsCount, 0, 'PENDING_OR_STAGED_DEPLOYMENTS_EXIST');
+      assert.equal(ev.priorRunMutations, 0, 'PRIOR_RUN_MUTATIONS_NOT_PROVEN_ZERO');
+      assert.equal(ev.evidenceVerified, true, 'PRIOR_RUN_EVIDENCE_UNVERIFIED');
+    }
+
+    return {
+      mode: 'T834_BOUNDED_TWO_RUN_RECOVERY',
+      currentRunId: String(currentRunId),
+      reconciledRunIds: sortedExpected,
+      operationId: context.operationId,
+      evidence: reconciliationEvidence,
+    };
   }
 
   // T779 extraordinary single-use recovery strictly bound to the three verified failed runs, baseline, runtime, and operationId
@@ -270,6 +348,104 @@ function buildDeployArgs(w, productionDeployment, dest) {
     }),
   ];
 }
+async function runPreflightStep(report, stepName, fallbackCode, fn) {
+  report.preflightStep = stepName;
+  try {
+    return await fn();
+  } catch (err) {
+    if (classifyDiagnosticCode(err) !== 'UNCLASSIFIED_ERROR') throw err;
+    const wrapped = new Error(fallbackCode);
+    wrapped.cause = err;
+    throw wrapped;
+  }
+}
+
+async function runArmPreflight(w, baseline, io, report, opts = {}) {
+  const fenceEvidence = snapshot => ({
+    readAt: new Date().toISOString(),
+    releaseEnabled: snapshot.release && snapshot.release.enabled,
+    coachEnabled: snapshot.coach.autoApplyCanary && snapshot.coach.autoApplyCanary.enabled,
+    exclusiveScopeVerified: true,
+  });
+  report.treeSha = await runPreflightStep(report, 'VALIDATE_SOURCE', 'SOURCE_VALIDATION_FAILED', () => io.validateSource(w.runtimeSha));
+  report.baselineProof = await runPreflightStep(report, 'VALIDATE_BASELINE', 'BASELINE_VALIDATION_FAILED', () => io.validateBaseline(baseline));
+  await runPreflightStep(report, 'CURRENT_ALIAS', 'CURRENT_ALIAS_READ_FAILED', async () => {
+    assert.equal(await io.current(), baseline.deployment, 'BASELINE_MOVED');
+  });
+  const fencesBefore = await runPreflightStep(report, 'SNAPSHOT_READ', 'FIRESTORE_NETWORK_ERROR', () => io.snapshot(w));
+  await runPreflightStep(report, 'FENCES_CLOSED', 'FENCE_CHECK_FAILED', () => {
+    closed(w, fencesBefore);
+    report.fencesBefore = fenceEvidence(fencesBefore);
+  });
+  const before = await runPreflightStep(report, 'OFF_PROOF', 'VERCEL_NETWORK_ERROR', () => io.offProof());
+  await runPreflightStep(report, 'OFF_PROOF_DISARMED', 'EVIDENCE_NOT_DISARMED', () => G.assertDisarmedEvidence(before));
+  await runPreflightStep(report, 'OFF_PROOF_FRESH', 'EVIDENCE_STALE', () => G.assertFresh(before));
+  report.projectNumericGuardBefore = before;
+  await runPreflightStep(report, 'ASSERT_NO_PRIOR_OPERATION', 'DEPLOYMENT_LIST_INCOMPLETE', () => io.assertNoPriorOperation(w.operationId));
+  return { before, fenceEvidence };
+}
+
+async function diagnosePreflight(w, baseline, io) {
+  assert.ok(w, 'PILOT_WINDOW_REQUIRED');
+  assert.equal(w.mode, 'STAGE1_SHADOW', 'ONLY_STAGE1_SHADOW_ACCEPTED');
+  P.windowSpec(w);
+  assert.ok(baseline.runtimeSha === T671 || (baseline.runtimeSha && baseline.runtimeSha.length === 40), 'OFF_BASELINE_RELEASE_REQUIRED_FIRST');
+  assert.notEqual(w.runtimeSha, LEGACY_T671_SHA, 'PILOT_PROBE_RUNTIME_REQUIRED');
+  const readOnlyIo = {
+    validateSource: sha => io.validateSource(sha),
+    validateBaseline: b => io.validateBaseline(b),
+    current: () => io.current(),
+    snapshot: win => io.snapshot(win),
+    offProof: () => io.offProof(),
+    assertNoPriorOperation: opId => io.assertNoPriorOperation(opId),
+  };
+  const report = { preflightStep: null };
+  const checks = [];
+  const runOne = async (name, fallbackCode, fn) => {
+    try {
+      await runPreflightStep(report, name, fallbackCode, fn);
+      checks.push({ check: name, status: 'PASS', code: 'PASS' });
+      return true;
+    } catch (err) {
+      checks.push({ check: name, status: 'FAIL', code: classifyDiagnosticCode(err) });
+      return false;
+    }
+  };
+  await runOne('VALIDATE_SOURCE', 'SOURCE_VALIDATION_FAILED', () => readOnlyIo.validateSource(w.runtimeSha));
+  await runOne('VALIDATE_BASELINE', 'BASELINE_VALIDATION_FAILED', () => readOnlyIo.validateBaseline(baseline));
+  await runOne('CURRENT_ALIAS', 'CURRENT_ALIAS_READ_FAILED', async () => {
+    assert.equal(await readOnlyIo.current(), baseline.deployment, 'BASELINE_MOVED');
+  });
+  let snap = null;
+  const snapOk = await runOne('SNAPSHOT_READ', 'FIRESTORE_NETWORK_ERROR', async () => {
+    snap = await readOnlyIo.snapshot(w);
+  });
+  if (snapOk && snap) {
+    await runOne('FENCES_CLOSED', 'FENCE_CHECK_FAILED', () => closed(w, snap));
+  } else {
+    checks.push({ check: 'FENCES_CLOSED', status: 'SKIPPED', code: 'SKIPPED_SNAPSHOT_FAILED' });
+  }
+  await runOne('OFF_PROOF', 'VERCEL_NETWORK_ERROR', async () => {
+    const before = await readOnlyIo.offProof();
+    G.assertDisarmedEvidence(before);
+    G.assertFresh(before);
+  });
+  await runOne('ASSERT_NO_PRIOR_OPERATION', 'DEPLOYMENT_LIST_INCOMPLETE', () => readOnlyIo.assertNoPriorOperation(w.operationId));
+
+  const failed = checks.filter(c => c.status === 'FAIL');
+  return {
+    schema: 'vdsen-ayrton-preflight-status-v1',
+    status: failed.length === 0 ? 'PREFLIGHT_PASS' : 'PREFLIGHT_FAIL',
+    mode: 'READ_ONLY_DIAGNOSTIC',
+    mutationsAttempted: 0,
+    runtimeSha: w.runtimeSha,
+    baselineDeployment: baseline.deployment,
+    checks,
+    failingCheck: failed[0] ? failed[0].check : null,
+    failingCode: failed[0] ? failed[0].code : null,
+  };
+}
+
 // Dependency boundary is used for isolated simulations. Production CLI always constructs its own adapters.
 async function arm(w, baseline, io) {
   assert.ok(w, 'PILOT_WINDOW_REQUIRED');
@@ -279,18 +455,14 @@ async function arm(w, baseline, io) {
   assert.notEqual(w.runtimeSha, LEGACY_T671_SHA, 'PILOT_PROBE_RUNTIME_REQUIRED');
   const report = { schema: 'vdsen-ayrton-runtime-release-v1', operationId: w.operationId, runtimeSha: w.runtimeSha,
     mode: 'STAGE1_SHADOW', pid: w.pid || w.prescriptionExerciseId || null,
-    baseline, staged: null, status: 'PREPARING', promotionAttempted: false, productionMutations: 0, deployIntentReached: false };
+    baseline, staged: null, status: 'PREPARING', preflightStep: null, promotionAttempted: false, productionMutations: 0, deployIntentReached: false };
   const save = () => io.save(report);
-  const fenceEvidence = snapshot => ({ readAt: new Date().toISOString(), releaseEnabled: snapshot.release && snapshot.release.enabled,
-    coachEnabled: snapshot.coach.autoApplyCanary && snapshot.coach.autoApplyCanary.enabled, exclusiveScopeVerified: true });
   let before = null;
+  let fenceEvidence = null;
   try {
-    report.treeSha = await io.validateSource(w.runtimeSha); report.baselineProof = await io.validateBaseline(baseline);
-    assert.equal(await io.current(), baseline.deployment, 'BASELINE_MOVED');
-    const fencesBefore = await io.snapshot(w); closed(w, fencesBefore); report.fencesBefore = fenceEvidence(fencesBefore);
-    before = await io.offProof(); G.assertDisarmedEvidence(before); G.assertFresh(before);
-    report.projectNumericGuardBefore = before;
-    await io.assertNoPriorOperation(w.operationId);
+    const preflight = await runArmPreflight(w, baseline, io, report);
+    before = preflight.before;
+    fenceEvidence = preflight.fenceEvidence;
   } catch (preflightErr) {
     if (preflightErr && typeof preflightErr === 'object') preflightErr.checkpoint = report;
     throw preflightErr;
@@ -364,32 +536,61 @@ function adapters(s) {
     save: async r => { fs.mkdirSync('release-output', { recursive: true }); fs.writeFileSync(FILE, JSON.stringify(r, null, 2) + '\n'); },
     current: () => A.currentApp(s),
     validateSource: async sha => {
-      git('merge-base', '--is-ancestor', sha, 'HEAD');
+      const execWithCode = (code, fn) => {
+        try {
+          return fn();
+        } catch (err) {
+          if (classifyDiagnosticCode(err) !== 'UNCLASSIFIED_ERROR') throw err;
+          const wrapped = new Error(code);
+          wrapped.cause = err;
+          throw wrapped;
+        }
+      };
+      execWithCode('SOURCE_NOT_ANCESTOR', () => git('merge-base', '--is-ancestor', sha, 'HEAD'));
       const dp = require('../release/deployed-product.cjs');
-      dp.verify(sha, dp.MANIFEST);
-      git('diff', '--exit-code', sha, 'HEAD', '--', 'api',
+      execWithCode('DEPLOYED_PRODUCT_VERIFY_FAILED', () => dp.verify(sha, dp.MANIFEST));
+      execWithCode('SOURCE_RUNTIME_DIFF', () => git('diff', '--exit-code', sha, 'HEAD', '--', 'api',
         'assets/progression-application-consumer.js',
         'assets/progression-auto-apply-shadow.js',
         'assets/progression-effective-prescription.js',
         'assets/progression-equipment-resolver.js',
         'assets/progression-magnitude-policy.js',
-        'firestore.rules', 'firestore.indexes.json', 'package.json', 'package-lock.json');
+        'firestore.rules', 'firestore.indexes.json', 'package.json', 'package-lock.json'));
       G.assertContractCoverage(G.discoverRuntimeEnvNames(sha, git));
       assert.ok(git('show', sha + ':api/autonomous-progression-trigger.js').includes('vdsen-progression-runtime-v1'), 'PROBE_NOT_IN_RUNTIME');
-      const main = git('ls-remote', 'origin', 'refs/heads/main').split(/\s/)[0];
+      const main = execWithCode('MAIN_REF_READ_FAILED', () => git('ls-remote', 'origin', 'refs/heads/main').split(/\s/)[0]);
       assertAuthorizedMainSha(main);
       await require('./ayrton-window.cjs').assertLegacyRetired(s);
-      return git('rev-parse', sha + '^{tree}');
+      return execWithCode('SOURCE_TREE_READ_FAILED', () => git('rev-parse', sha + '^{tree}'));
     },
     validateBaseline: async b => {
-      assert.equal(s.runtime_sha, b.runtimeSha, 'BASELINE_RUNTIME_MISMATCH'); assert.equal(s.production_deployment, b.deployment);
-      assert.equal(s.app_release.deployment, b.deployment); assert.match(String(s.app_release.source_release_run), /^[1-9][0-9]+$/);
+      assert.equal(s.runtime_sha, b.runtimeSha, 'BASELINE_RUNTIME_MISMATCH');
+      assert.equal(s.production_deployment, b.deployment, 'BASELINE_DEPLOYMENT_MISMATCH');
+      assert.equal(s.app_release.deployment, b.deployment, 'BASELINE_APP_RELEASE_MISMATCH');
+      assert.match(String(s.app_release.source_release_run), /^[1-9][0-9]+$/, 'OFF_BASELINE_SOURCE_RUN_REQUIRED');
       assert.equal(s.numeric_apply_enabled, false, 'BASELINE_MUST_BE_OFF');
-      const d = await A.deployment(s, b.deployment); assert.equal(d.readyState, 'READY');
-      assert.equal(d.id || d.uid, b.deployment);
-      assert.equal(d.projectId, P.PROJECT); assert.equal(d.teamId || d.ownerId, P.TEAM);
-      assert.equal(d.meta && d.meta.githubCommitSha, b.runtimeSha);
-      return require('./off-baseline.cjs').load(s, b, d);
+      let d;
+      try {
+        d = await A.deployment(s, b.deployment);
+      } catch (err) {
+        if (classifyDiagnosticCode(err) !== 'UNCLASSIFIED_ERROR') throw err;
+        const wrapped = new Error('BASELINE_DEPLOYMENT_READ_FAILED');
+        wrapped.cause = err;
+        throw wrapped;
+      }
+      assert.equal(d.readyState, 'READY', 'BASELINE_NOT_READY');
+      assert.equal(d.id || d.uid, b.deployment, 'BASELINE_DEPLOYMENT_MISMATCH');
+      assert.equal(d.projectId, P.PROJECT, 'PROJECT_IDENTITY_MISMATCH');
+      assert.equal(d.teamId || d.ownerId, P.TEAM, 'TEAM_IDENTITY_MISMATCH');
+      assert.equal(d.meta && d.meta.githubCommitSha, b.runtimeSha, 'BASELINE_COMMIT_MISMATCH');
+      try {
+        return require('./off-baseline.cjs').load(s, b, d);
+      } catch (err) {
+        if (classifyDiagnosticCode(err) !== 'UNCLASSIFIED_ERROR') throw err;
+        const wrapped = new Error('OFF_BASELINE_EVIDENCE_INVALID');
+        wrapped.cause = err;
+        throw wrapped;
+      }
     },
     snapshot: async w => {
       const client = await read('clients/' + w.uid + '?mask.fieldPaths=coachId&mask.fieldPaths=activePlanId');
@@ -455,9 +656,33 @@ function adapters(s) {
   };
 }
 async function main(argv) {
-  invocation(process.env);
   const s = JSON.parse(fs.readFileSync('.release/vdsen-client.json', 'utf8'));
-  assert.equal(s.production_project, P.PROJECT); assert.equal(s.vercel_team, P.TEAM);
+  assert.equal(s.production_project, P.PROJECT, 'PROJECT_IDENTITY_MISMATCH');
+  assert.equal(s.vercel_team, P.TEAM, 'TEAM_IDENTITY_MISMATCH');
+  if (argv[0] === 'diagnose-preflight') {
+    assert.equal(process.env.GITHUB_ACTIONS, 'true', 'GITHUB_ACTIONS_REQUIRED');
+    assert.equal(process.env.GITHUB_REPOSITORY, 'vdsenasesoria-svg/vdsen-ecosistema', 'INVALID_REPOSITORY');
+    assert.equal(process.env.GITHUB_REF, 'refs/heads/codex/client-app-next', 'CANONICAL_BRANCH_REQUIRED');
+    const w = JSON.parse(fs.readFileSync(process.env.PILOT_WINDOW_FILE, 'utf8'));
+    const fullIo = adapters(s);
+    const readOnlyIo = {
+      validateSource: fullIo.validateSource,
+      validateBaseline: fullIo.validateBaseline,
+      current: fullIo.current,
+      snapshot: fullIo.snapshot,
+      offProof: fullIo.offProof,
+      assertNoPriorOperation: fullIo.assertNoPriorOperation,
+    };
+    const diag = await diagnosePreflight(w, {
+      runtimeSha: s.runtime_sha,
+      deployment: s.production_deployment,
+      officialReleaseRun: String(s.app_release.source_release_run),
+    }, readOnlyIo);
+    fs.mkdirSync('release-output', { recursive: true });
+    fs.writeFileSync('release-output/ayrton-preflight-diagnostics.json', JSON.stringify(diag, null, 2) + '\n');
+    return diag;
+  }
+  invocation(process.env);
   const io = adapters(s);
   if (argv[0] === 'restore') return restore(JSON.parse(fs.readFileSync(FILE, 'utf8')), io);
   assert.equal(argv[0], 'arm');
@@ -552,6 +777,37 @@ const ALLOWED_DIAGNOSTIC_CODES = new Set([
   'OFF_BASELINE_ALIAS_MOVED_DURING_STAGING',
   'OFF_BASELINE_STAGED_IS_PREVIOUS',
   'OFF_BUILD_CHRONOLOGY_INVALID',
+  'OFF_BASELINE_SOURCE_RUN_REQUIRED',
+  'OFF_BASELINE_ARTIFACT_LIST_INVALID',
+  'OFF_BASELINE_ARTIFACT_LIST_TRUNCATED',
+  'OFF_BASELINE_ARTIFACT_MISSING_OR_AMBIGUOUS',
+  'OFF_BASELINE_ARTIFACT_NAME',
+  'OFF_BASELINE_ARTIFACT_EXPIRED',
+  'OFF_BASELINE_ARTIFACT_RUN_MISMATCH',
+  'OFF_BASELINE_ARTIFACT_COMMIT_MISMATCH',
+  'OFF_BASELINE_ARTIFACT_BRANCH_MISMATCH',
+  'OFF_BASELINE_ARTIFACT_DIGEST_MISSING',
+  'OFF_BASELINE_ARTIFACT_DIGEST_MISMATCH',
+  'OFF_BASELINE_EVIDENCE_INVALID',
+  'SOURCE_NOT_ANCESTOR',
+  'DEPLOYED_PRODUCT_VERIFY_FAILED',
+  'SOURCE_RUNTIME_DIFF',
+  'MAIN_REF_READ_FAILED',
+  'SOURCE_TREE_READ_FAILED',
+  'SOURCE_VALIDATION_FAILED',
+  'BASELINE_VALIDATION_FAILED',
+  'BASELINE_DEPLOYMENT_MISMATCH',
+  'BASELINE_APP_RELEASE_MISMATCH',
+  'BASELINE_DEPLOYMENT_READ_FAILED',
+  'BASELINE_NOT_READY',
+  'BASELINE_COMMIT_MISMATCH',
+  'CURRENT_ALIAS_READ_FAILED',
+  'FIRESTORE_NETWORK_ERROR',
+  'FENCE_CHECK_FAILED',
+  'VERCEL_NETWORK_ERROR',
+  'RECONCILIATION_SET_NOT_AUTHORIZED',
+  'PILOT_OPERATION_ID_REQUIRED',
+  'WORKFLOW_RUNS_LIST_INCOMPLETE',
   'RUNTIME_NOT_EXPLICIT',
   'UNKNOWN_RUNTIME_SWITCH',
   'CONTRACT_DRIFT',
@@ -656,6 +912,7 @@ function formatSanitizedFailure(err, checkpoint = null) {
     status: 'PILOT_RUNTIME_STOPPED',
     error_code: code,
     phase,
+    preflight_step: checkpoint && checkpoint.preflightStep ? checkpoint.preflightStep : null,
     state,
     action_required: action,
   };
@@ -664,6 +921,8 @@ module.exports = {
   arm,
   restore,
   closed,
+  diagnosePreflight,
+  runArmPreflight,
   invocation,
   buildDeployArgs,
   T671,
@@ -672,12 +931,14 @@ module.exports = {
   assertAuthorizedMainSha,
   REVIEWED_MAIN_SHAS,
   adapters,
+  listAllPilotWorkflowRuns,
   assertAttemptAllowed,
   gatherReconciliationEvidence,
   formatSanitizedFailure,
   classifyDiagnosticCode,
   ALLOWED_DIAGNOSTIC_CODES,
   T777_EXTRAORDINARY_RECOVERY,
+  BOUNDED_TWO_RUN_RECOVERY_T834,
 };
 if (require.main === module) main(process.argv.slice(2)).then(r => console.log(JSON.stringify({ status: r.status }))).catch((err) => {
   const checkpoint = (err && err.checkpoint) ? err.checkpoint : null;
