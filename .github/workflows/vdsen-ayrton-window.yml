@@ -49,6 +49,11 @@ on:
         required: false
         default: ''
         type: string
+      preflight_check:
+        description: Optional read-only ARM_PREFLIGHT diagnostic (STATUS only; never stages or promotes)
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -108,6 +113,15 @@ jobs:
         env:
           GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
         run: node scripts/pilot/ayrton-window-ops.cjs
+      - name: Run read-only ARM_PREFLIGHT diagnostic (STATUS only; zero mutations)
+        if: inputs.action == 'STATUS' && inputs.preflight_check == true
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+          PILOT_WINDOW_FILE: release-output/ayrton-window-input.json
+        run: |
+          node scripts/pilot/off-baseline.cjs
+          node -e "const fs=require('fs');fs.mkdirSync('release-output',{recursive:true});const w={schema:'vdsen-ayrton-window-v1',mode:'STAGE1_SHADOW',pid:process.env.INPUT_PID||'ab150537-0d02-423b-a7e0-2b2f1a8a9a83',uid:process.env.INPUT_UID,coachId:process.env.INPUT_COACH,planId:process.env.INPUT_PLAN,runtimeSha:process.env.INPUT_RUNTIME,deployment:require('./.release/vdsen-client.json').production_deployment,expiresAt:process.env.INPUT_EXPIRY,operationId:process.env.INPUT_OPERATION||'op-diag-readonly-check'};require('./scripts/pilot/window-protocol.cjs').windowSpec(w);fs.writeFileSync(process.env.PILOT_WINDOW_FILE,JSON.stringify(w));"
+          node scripts/pilot/ayrton-runtime.cjs diagnose-preflight
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
@@ -115,5 +129,6 @@ jobs:
           path: |
             release-output/ayrton-window-evidence.json
             release-output/ayrton-window-request.json.evidence.json
+            release-output/ayrton-preflight-diagnostics.json
           if-no-files-found: warn
           retention-days: 30
