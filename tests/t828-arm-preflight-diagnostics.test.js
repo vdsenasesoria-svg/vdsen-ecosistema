@@ -1,4 +1,6 @@
 'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { classifyDiagnosticCode } = require('../scripts/pilot/ayrton-runtime.cjs');
@@ -16,8 +18,11 @@ test('classifyDiagnosticCode classifies previously hidden ARM_PREFLIGHT errors d
 });
 
 test('runAyrtonPreflightDiagnostics runs all checks separately and verifies reconciliation without leaking secrets', async () => {
+  const deployedProduct = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '..', '.release', 'deployed-product.json'), 'utf8')
+  );
   const s = {
-    runtime_sha: '076c8c70a276cb80d669d7cd187861756405871f',
+    runtime_sha: deployedProduct.runtime_sha,
     production_deployment: 'dpl_8kLZt5zTgAbyvPR9jyoLeb6MsD6C',
     production_project: 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN',
     vercel_team: 'team_VZc5H7Q1DBIJ3g0mwrSBz1o8',
