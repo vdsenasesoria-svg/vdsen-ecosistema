@@ -40,12 +40,16 @@ test('runAyrtonPreflightDiagnostics runs all checks separately and verifies reco
     captured_at: new Date().toISOString(),
   };
 
+  const expectedMainSha =
+    process.env.APP_EXPECTED_MAIN_SHA ||
+    'bf1b59f33d62e2127b5d5fd969688bff1f7feccf';
+
   const report = await runAyrtonPreflightDiagnostics({
     state: s,
     ensureBaselineArtifacts: false,
     git: (...args) => {
       if (args[0] === 'show') return 'vdsen-progression-runtime-v1';
-      if (args[0] === 'ls-remote') return '5f25b5b9a3c45b425bad4d8eadd145cf7423aec7\trefs/heads/main';
+      if (args[0] === 'ls-remote') return expectedMainSha + '\trefs/heads/main';
       if (args[0] === 'grep') return 'process.env.AUTONOMOUS_PROGRESSION_ENABLED\nprocess.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED';
       return '';
     },
@@ -92,12 +96,16 @@ test('runAyrtonPreflightDiagnostics isolates failing check and maps to safe code
     production_deployment: 'dpl_8kLZt5zTgAbyvPR9jyoLeb6MsD6C',
     app_release: { source_release_run: '43992221920', deployment: 'dpl_8kLZt5zTgAbyvPR9jyoLeb6MsD6C' },
   };
+  const expectedMainSha =
+    process.env.APP_EXPECTED_MAIN_SHA ||
+    'bf1b59f33d62e2127b5d5fd969688bff1f7feccf';
+
   const report = await runAyrtonPreflightDiagnostics({
     state: s,
     ensureBaselineArtifacts: false,
     git: (...args) => {
       if (args[0] === 'show') return 'vdsen-progression-runtime-v1';
-      if (args[0] === 'ls-remote') return '5f25b5b9a3c45b425bad4d8eadd145cf7423aec7\trefs/heads/main';
+      if (args[0] === 'ls-remote') return expectedMainSha + '\trefs/heads/main';
       if (args[0] === 'grep') return 'process.env.AUTONOMOUS_PROGRESSION_ENABLED\nprocess.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED';
       return '';
     },
@@ -116,4 +124,52 @@ test('runAyrtonPreflightDiagnostics isolates failing check and maps to safe code
   assert.equal(byName.NUMERIC_GUARD, 'VALUE_NOT_READABLE');
   assert.equal(byName.DEPLOYMENTS, 'MALFORMED_VERCEL_DEPLOYMENTS_RESPONSE');
   assert.ok(!JSON.stringify(report).includes('secret-token-value'));
+});
+
+test('runAyrtonPreflightDiagnostics rejects main SHA mismatch against APP_EXPECTED_MAIN_SHA', async () => {
+  const prevExpected = process.env.APP_EXPECTED_MAIN_SHA;
+  process.env.APP_EXPECTED_MAIN_SHA = 'bf1b59f33d62e2127b5d5fd969688bff1f7feccf';
+  try {
+    const deployedProduct = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '..', '.release', 'deployed-product.json'), 'utf8')
+    );
+    const s = {
+      runtime_sha: deployedProduct.runtime_sha,
+      production_deployment: 'dpl_7ByavXXqB8m8SzKtz3W5erWJherU',
+      app_release: { source_release_run: '44179647316', deployment: 'dpl_7ByavXXqB8m8SzKtz3W5erWJherU' },
+    };
+    const report = await runAyrtonPreflightDiagnostics({
+      state: s,
+      ensureBaselineArtifacts: false,
+      git: (...args) => {
+        if (args[0] === 'show') return 'vdsen-progression-runtime-v1';
+        if (args[0] === 'ls-remote') return '5f25b5b9a3c45b425bad4d8eadd145cf7423aec7\trefs/heads/main';
+        if (args[0] === 'grep') return 'process.env.AUTONOMOUS_PROGRESSION_ENABLED\nprocess.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED';
+        return '';
+      },
+      assertLegacyRetired: async () => true,
+      io: {
+        validateBaseline: async () => ({ status: 'OFF_AT_IMMUTABLE_BUILD' }),
+        current: async () => s.production_deployment,
+        offProof: async () => ({
+          schema: 'vdsen-numeric-guard-v1',
+          status: 'DISARMED',
+          flags: {
+            AUTONOMOUS_PROGRESSION_ENABLED: 'PLAIN_FALSE',
+            AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED: 'PLAIN_FALSE',
+          },
+          env_fingerprint: 'a'.repeat(64),
+          captured_at: new Date().toISOString(),
+        }),
+        assertNoPriorOperation: async () => true,
+      },
+    });
+    assert.equal(report.overall, 'FAIL');
+    const sourceCheck = report.checks.find(c => c.check === 'SOURCE');
+    assert.equal(sourceCheck.status, 'FAIL');
+    assert.equal(sourceCheck.code, 'MAIN_SHA_MISMATCH');
+  } finally {
+    if (prevExpected === undefined) delete process.env.APP_EXPECTED_MAIN_SHA;
+    else process.env.APP_EXPECTED_MAIN_SHA = prevExpected;
+  }
 });
