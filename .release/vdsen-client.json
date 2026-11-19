@@ -1,9 +1,9 @@
 {
-  "runtime_sha": "38ee4cb26691ff54e1e331a2c60f2f453b1c2469",
-  "production_deployment": "dpl_7ByavXXqB8m8SzKtz3W5erWJherU",
+  "runtime_sha": "d424482f6170a264f90a1c421442e9fa56df975d",
+  "production_deployment": "dpl_8CQkSnR5hn6WsWPhnscdLQbq3DHS",
   "rollback_deployment": "dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8",
   "rollback_runtime_sha": "3fc264e23d67a8ecb1611a6c8af04ad739f422da",
-  "target_deployment": "dpl_7ByavXXqB8m8SzKtz3W5erWJherU",
+  "target_deployment": "dpl_8CQkSnR5hn6WsWPhnscdLQbq3DHS",
   "production_project": "prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN",
   "vercel_team": "team_VZc5H7Q1DBIJ3g0mwrSBz1o8",
   "production_origin": "https://vdsen-ecosistema.vercel.app",
@@ -41,19 +41,19 @@
     "preview_production_env_verified": true,
     "human_ux_approved": true
   },
-  "observation_source": "Provenance sync after official APP-ONLY release run 44179647316 (artifact sha256:2c56f0da03eb10e37957930029abcf649f97dfde34860fcb37180d4b5eb94030). Production serves dpl_7ByavXXqB8m8SzKtz3W5erWJherU (runtime 38ee4cb26691ff54e1e331a2c60f2f453b1c2469, 46 verified surfaces, state=VERIFIED, Numeric Apply DISARMED, rules_mutated=false, main_unchanged=true). Immediate previous production deployment is dpl_8kLZt5zTgAbyvPR9jyoLeb6MsD6C (runtime 076c8c70a276cb80d669d7cd187861756405871f). Historical safe OFF baseline remains dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8 (runtime 3fc264e23d67a8ecb1611a6c8af04ad739f422da, run 43132135716). Published Firestore rules T788 (sha256 486606574a2f10d65212cedb26fe7f73686e5d6610995e9c4bfe4a424972c460) from T810 run 43620978036.",
+  "observation_source": "T841 provenance sync after official APP-ONLY release run 44451982659 (artifact sha256:29643f791b4d8a569d53055120d38383dcc8d2fc88d6b1a8b6925e17778d9fb8). Production serves dpl_8CQkSnR5hn6WsWPhnscdLQbq3DHS (runtime d424482f6170a264f90a1c421442e9fa56df975d, 46 verified surfaces, state=VERIFIED, Numeric Apply DISARMED, rules_mutated=false, main_unchanged=true). Immediate previous production deployment is dpl_7ByavXXqB8m8SzKtz3W5erWJherU (runtime 38ee4cb26691ff54e1e331a2c60f2f453b1c2469). Historical safe OFF baseline remains dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8 (runtime 3fc264e23d67a8ecb1611a6c8af04ad739f422da, run 43132135716). Published Firestore rules T788 (sha256 486606574a2f10d65212cedb26fe7f73686e5d6610995e9c4bfe4a424972c460) from T810 run 43620978036.",
   "release_mode": "app_only",
   "app_release": {
-    "runtime_sha": "38ee4cb26691ff54e1e331a2c60f2f453b1c2469",
-    "deployment": "dpl_7ByavXXqB8m8SzKtz3W5erWJherU",
+    "runtime_sha": "d424482f6170a264f90a1c421442e9fa56df975d",
+    "deployment": "dpl_8CQkSnR5hn6WsWPhnscdLQbq3DHS",
     "promotion_model": "staged_production",
-    "previous_deployment": "dpl_8kLZt5zTgAbyvPR9jyoLeb6MsD6C",
-    "previous_runtime_sha": "076c8c70a276cb80d669d7cd187861756405871f",
+    "previous_deployment": "dpl_7ByavXXqB8m8SzKtz3W5erWJherU",
+    "previous_runtime_sha": "38ee4cb26691ff54e1e331a2c60f2f453b1c2469",
     "safe_recovery_deployment": "dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8",
     "safe_recovery_runtime_sha": "3fc264e23d67a8ecb1611a6c8af04ad739f422da",
     "verified_surfaces": 46,
-    "source_release_run": "44179647316",
-    "completed_at": "2026-11-17T21:35:55Z"
+    "source_release_run": "44451982659",
+    "completed_at": "2026-11-19T03:41:40Z"
   },
   "published_rules": {
     "sha256": "486606574a2f10d65212cedb26fe7f73686e5d6610995e9c4bfe4a424972c460",
