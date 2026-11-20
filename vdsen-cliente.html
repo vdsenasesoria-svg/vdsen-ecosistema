@@ -2618,6 +2618,7 @@ waitFB(() => {
         showPlanLoadError(user);
       }
     } else {
+      USER = null;
       localStorage.removeItem('vdsen_uid');
       showScreen('scrLogin');
     }
@@ -5876,6 +5877,11 @@ var _lastHiddenAt = 0;
 // dispositivos / pestañas del mismo usuario.
 async function _refreshLogsFromFirestore(reason) {
   if (!USER || !FB || _logsWriteInFlight > 0) return;
+  if (FB.auth && (!FB.auth.currentUser || FB.auth.currentUser.uid !== USER.uid)) {
+    console.warn('refreshLogs aborted: auth identity mismatch or signed out');
+    showToast('⚠️ Tu sesión cambió o expiró. Vuelve a iniciar sesión para sincronizar.', true);
+    return;
+  }
   var _sraRefreshUid = USER.uid, _sraRefreshPlan = ACTIVE_PLAN_ID;
   try {
     const ref = FB.doc(FB.db, 'logs', USER.uid);
@@ -5920,7 +5926,10 @@ async function _refreshLogsFromFirestore(reason) {
     try { renderResumen(); } catch(e){}
   } catch(e) {
     console.warn('refreshLogs error:', e.message);
-    showToast('⚠️ Error al sincronizar datos. Recarga si ves info desactualizada.', true);
+    var _isPermErr = e && String(e.code || '').toLowerCase() === 'permission-denied';
+    showToast(_isPermErr
+      ? '⚠️ Sin permisos para sincronizar: tu sesión cambió o expiró. Vuelve a iniciar sesión.'
+      : '⚠️ Error al sincronizar datos. Recarga si ves info desactualizada.', true);
   }
 }
 
