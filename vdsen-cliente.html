@@ -5927,8 +5927,11 @@ async function _refreshLogsFromFirestore(reason) {
   } catch(e) {
     console.warn('refreshLogs error:', e.message);
     var _isPermErr = e && String(e.code || '').toLowerCase() === 'permission-denied';
+    var _authMismatch = !!(FB && FB.auth && (!FB.auth.currentUser || FB.auth.currentUser.uid !== USER.uid));
     showToast(_isPermErr
-      ? '⚠️ Sin permisos para sincronizar: tu sesión cambió o expiró. Vuelve a iniciar sesión.'
+      ? (_authMismatch
+        ? '⚠️ Tu sesión cambió o expiró. Vuelve a iniciar sesión para sincronizar.'
+        : '⚠️ Sincronización denegada por falta de permisos (pendiente de diagnóstico).')
       : '⚠️ Error al sincronizar datos. Recarga si ves info desactualizada.', true);
   }
 }
