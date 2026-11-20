@@ -414,9 +414,14 @@ if (require.main === module) {
     fs.writeFileSync(path.join('release-output', 'ayrton-window-evidence.json'), JSON.stringify(out, null, 2) + '\n');
     console.log(JSON.stringify(out, null, 2));
   })().catch(err => {
-    const msg = String((err && err.message) || err || 'WINDOW_OP_FAILED');
-    const code = /^[A-Z0-9_]+/.test(msg) ? msg.split(/[:\s]/)[0] : 'WINDOW_OP_FAILED';
-    console.error(JSON.stringify({ status: 'WINDOW_OP_STOPPED', code }));
+    const diag = err && err.windowError;
+    if (diag) {
+      console.error(JSON.stringify({ status: 'WINDOW_OP_STOPPED', ...diag }));
+    } else {
+      const msg = String((err && err.message) || err || 'WINDOW_OP_FAILED');
+      const code = /^[A-Z0-9_]+/.test(msg) ? msg.split(/[:\s]/)[0] : 'WINDOW_OP_FAILED';
+      console.error(JSON.stringify({ status: 'WINDOW_OP_STOPPED', code }));
+    }
     process.exitCode = 1;
   });
 }
