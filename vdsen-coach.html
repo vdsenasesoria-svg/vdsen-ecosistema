@@ -3335,7 +3335,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
 
         // ── FASE 7: build per-client data objects, then sort by attention state ──
         const rowData = _clientDocs.map((c, i) => {
-          const logData = (_logSnaps[i] && _logSnaps[i].exists()) ? _logSnaps[i].data() : {};
+          const _rawLogData = (_logSnaps[i] && _logSnaps[i].exists()) ? _logSnaps[i].data() : null;
+          const logData = _selectCoachLogForActivePlan(_rawLogData, c.activePlanId, null);
           const planData = (_planSnaps[i] && _planSnaps[i].exists()) ? _planSnaps[i].data() : null;
           window._clientCache[c.id] = { client: c, logs: logData, plan: planData };
           const entries = logData.entries || {};
@@ -4786,6 +4787,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         if (newActivePlanId === _monitorActivePlanId) return;
         _monitorActivePlanId = newActivePlanId;
         _monitorSubscribeToPlan(newActivePlanId);
+        _monitorSelectedWeek = 1;
         _renderMonitorForWeek();
       }, () => {});
 
@@ -5409,9 +5411,12 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           container.innerHTML = `<p class="text-[#888] text-sm">Sin datos de entrenamiento registrados aún.</p>`;
           return;
         }
-        _monitorLastLogs = logsSnap.data().entries || {};
-        _monitorActualWeek = logsSnap.data().currentWeek || 1;
-        const updatedAt = logsSnap.data().updatedAt;
+        const _monScoped = (typeof window._selectCoachLogForActivePlan === 'function')
+          ? window._selectCoachLogForActivePlan(logsSnap.data(), _monitorActivePlanId, null)
+          : logsSnap.data();
+        _monitorLastLogs = _monScoped.entries || {};
+        _monitorActualWeek = _monScoped.currentWeek || 1;
+        const updatedAt = _monScoped.updatedAt;
         _monitorLastUpdate = updatedAt ? new Date(updatedAt).toLocaleString('es-MX') : '—';
         _renderMonitorForWeek();
       }, (err) => {
@@ -7235,7 +7240,63 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       throw e;
     }
     _assignJournalClear(opKey);
+    if (outcome === 'COMMITTED' && typeof _initNewPlanWeekOne === 'function') await _initNewPlanWeekOne(o.clientId, planId, prevId);
     return { planId, outcome, prevPlanId: prevId };
+  }
+  // T858: strict cross-plan log isolation for Coach Dashboard & Monitor.
+  // Never attribute a previous plan's root log (or legacy-unbound root log) to a new activePlanId.
+  function _selectCoachLogForActivePlan(rootData, activePlanId, mesoData) {
+    var sh = (typeof window !== 'undefined' && window.VDSEN_AUTO_APPLY_SHADOW) || null;
+    var rootRaw = (rootData && typeof rootData === 'object') ? rootData : null;
+    var mesoRaw = (mesoData && typeof mesoData === 'object') ? mesoData : null;
+    var auth = null;
+    if (activePlanId) {
+      if (sh && typeof sh.selectLogAuthority === 'function') {
+        auth = sh.selectLogAuthority(mesoRaw, rootRaw, activePlanId);
+      } else {
+        var _isUnbound = !!rootRaw && !(typeof rootRaw.planId === 'string' && rootRaw.planId !== '') &&
+          Object.keys(rootRaw.entries || {}).some(function(k) { return k.indexOf('log_') === 0 || k.indexOf('done_') === 0; });
+        var _r = (_isUnbound || (rootRaw && rootRaw.planId && rootRaw.planId !== activePlanId)) ? null : rootRaw;
+        var _m = (mesoRaw && mesoRaw.planId && mesoRaw.planId !== activePlanId) ? null : mesoRaw;
+        auth = _m || _r || null;
+      }
+    } else {
+      auth = mesoRaw || rootRaw || null;
+    }
+    if (auth) return auth;
+    var empty = { planId: activePlanId || null, currentWeek: 1, entries: {} };
+    if (rootRaw && rootRaw.seguimientoSummary) empty.seguimientoSummary = rootRaw.seguimientoSummary;
+    return empty;
+  }
+  if (typeof window !== 'undefined') window._selectCoachLogForActivePlan = _selectCoachLogForActivePlan;
+
+  // T858: atomically initialize a newly activated plan at Week 1 with empty entries,
+  // preserving exerciseHistory and NEVER touching logs/{clientId}/mesos/{prevPlanId}.
+  // Uses runTransaction so concurrent activations or a concurrent athlete first-save
+  // can never overwrite logged entries.
+  async function _initNewPlanWeekOne(clientId, newPlanId, prevPlanId) {
+    if (!clientId || !newPlanId || newPlanId === prevPlanId) return;
+    try {
+      const logsRef = doc(db, 'logs', clientId);
+      const mesoRef = doc(db, 'logs', clientId, 'mesos', newPlanId);
+      const _hasLoggedSets = (d) => !!(d && d.planId === newPlanId &&
+        Object.keys(d.entries || {}).some(k => k.indexOf('log_') === 0 || k.indexOf('done_') === 0));
+      await runTransaction(db, async function(tx) {
+        const logsSnap = await tx.get(logsRef);
+        const mesoSnap = await tx.get(mesoRef);
+        const existingRoot = logsSnap.exists() ? logsSnap.data() : null;
+        const existingMeso = mesoSnap.exists() ? mesoSnap.data() : null;
+        if (_hasLoggedSets(existingMeso) || _hasLoggedSets(existingRoot)) return;
+        if (existingMeso && existingMeso.planId === newPlanId && existingRoot && existingRoot.planId === newPlanId) return;
+        const prevHist = (existingRoot && existingRoot.exerciseHistory) || {};
+        const payload = { entries: {}, currentWeek: 1, planId: newPlanId, exerciseHistory: prevHist, exerciseUnits: {}, updatedAt: Date.now() };
+        const fields = Object.keys(payload);
+        tx.set(mesoRef, payload, { mergeFields: fields });
+        tx.set(logsRef, payload, { mergeFields: fields });
+      });
+    } catch (e) {
+      console.warn('[T858] initNewPlanWeekOne non-fatal:', e && e.message);
+    }
   }
   async function saveImportedPlan(clientIdArg) {
     if (_savingImportedPlan) return false;
@@ -11240,6 +11301,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const coachId = auth.currentUser && auth.currentUser.uid;
     if (!coachId) throw new Error('Sin sesión activa de coach');
 
+    let _prevActivePlanId = planId;
     await runTransaction(db, async function(t) {
       const planRef   = doc(db, 'plans',   planId);
       const clientRef = doc(db, 'clients', clientId);
@@ -11316,8 +11378,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         clientUpdate.activeActivationId = typeof deleteField === 'function' ? deleteField() : null;
       }
 
+      _prevActivePlanId = (clientData && clientData.activePlanId) || null;
       t.update(clientRef, clientUpdate);
     });
+    if (typeof _initNewPlanWeekOne === 'function') {
+      await _initNewPlanWeekOne(clientId, planId, _prevActivePlanId);
+    }
   }
 
   // ── D.2 UI helpers ──────────────────────────────────────────────────────────
@@ -19089,7 +19155,12 @@ El esfuerzo no es negociable.
         ? _renderShadowAutoFeed(window.VDSEN_AUTO_APPLY_SHADOW.summarize({}, c.activePlanId)) : '')
         + `<p class="text-[#888] text-sm mt-2">Sin datos de entrenamiento registrados aún.</p>`; return;
     }
-    const logsData  = logsSnap.data();
+    const _rawLogsData = logsSnap.data();
+    const logsData  = (typeof window._selectCoachLogForActivePlan === 'function')
+      ? window._selectCoachLogForActivePlan(_rawLogsData, c && c.activePlanId, null)
+      : ((c && c.activePlanId && _rawLogsData.planId && _rawLogsData.planId !== c.activePlanId)
+          ? { planId: c.activePlanId, currentWeek: 1, entries: {} }
+          : _rawLogsData);
     const entries   = logsData.entries || {};
     const currentWeek = logsData.currentWeek || 1;
     const ci = entries['ci_sem_' + currentWeek] || {};

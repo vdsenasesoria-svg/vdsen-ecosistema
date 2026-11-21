@@ -3450,9 +3450,10 @@ async function loadPlan(user) {
       const logRef = FB.doc(FB.db, 'logs', user.uid);
       const rootSnap = _rootSnapPF || ((!_mesoSnap || !_mesoSnap.exists()) ? await FB.getDoc(logRef) : null);
       if (_mySeq !== _loadPlanSeq || !USER || USER.uid !== user.uid) return;
+      var _rootDataRaw = rootSnap && rootSnap.exists() ? rootSnap.data() : null;
       var logData = _selectLogAuthority(_mesoSnap && _mesoSnap.exists() ? _mesoSnap.data() : null,
-        rootSnap && rootSnap.exists() ? rootSnap.data() : null, activePlanId);
-      _rootLogUnbound = _isLegacyUnboundLog(rootSnap && rootSnap.exists() ? rootSnap.data() : null);
+        _rootDataRaw, activePlanId);
+      _rootLogUnbound = _isLegacyUnboundLog(_rootDataRaw);
       if (_rootLogUnbound) console.info('LEGACY_LOG_UNBOUND', 'root log has execution evidence but no planId: not attributed to plan', activePlanId);   // internal diagnostic only
       if (logData) {
         _logsAuthorityUpdatedAt = Number(logData.updatedAt) || 0;
@@ -3503,6 +3504,24 @@ async function loadPlan(user) {
           REAL_WEEK    = CURRENT_WEEK;
           _rebuildLogsByWeek();
           _rebuildLoadedHistoryReferences();
+        }
+      } else {
+        // T858: virgin plan or cross-plan root rejected by _selectLogAuthority — preserve exerciseHistory (name-keyed)
+        // while strictly isolating active week and entries to Week 1 / empty LOGS.
+        if (_rootDataRaw && _rootDataRaw.exerciseHistory) EXERCISE_HISTORY = _rootDataRaw.exerciseHistory;
+        try { localStorage.setItem('vdsen_active_plan_id', activePlanId); } catch(e2) {}
+        try { sessionStorage.removeItem('vdsen_plan_changed'); } catch(e2) {}
+        LOGS           = {};
+        EXERCISE_UNITS = {};
+        CURRENT_WEEK   = 1;
+        REAL_WEEK      = 1;
+        _setBaselines({}, {}, EXERCISE_HISTORY);
+        _remoteWeekSeen = 1;
+        _rebuildLogsByWeek();
+        if (_rootDataRaw && _rootDataRaw.planId && _rootDataRaw.planId !== activePlanId) {
+          try { localStorage.removeItem('vdsen_restEnd'); localStorage.removeItem('vdsen_restTotal'); } catch(e2) {}
+          showToast('✅ Nuevo plan cargado — comenzando desde semana 1');
+          _showBitacoraInfo = true;
         }
       }
     } catch(logErr) {
@@ -11951,9 +11970,10 @@ function _isLegacyUnboundLog(d) {
 }
 function _selectLogAuthority(mesoData, rootData, planId) {
   if (_isLegacyUnboundLog(rootData)) rootData = null;   // T553: LEGACY_UNBOUND never becomes the log of the active plan
+  if (rootData && rootData.planId && planId && rootData.planId !== planId) rootData = null;   // T858: reject cross-plan root log when new meso doc does not exist yet
+  if (mesoData && mesoData.planId && planId && mesoData.planId !== planId) mesoData = null;
   if (!mesoData) return rootData || null;
-  if (!rootData || (rootData.planId && rootData.planId !== planId)) return mesoData;
-  if (mesoData.planId && mesoData.planId !== planId) return rootData;
+  if (!rootData) return mesoData;
   function clock(d) { var n = Number(d.updatedAt); return Number.isFinite(n) && n > 0 ? n : 0; }
   function evidence(d) {
     return Object.keys(d.entries || {}).filter(function(k) { return k.indexOf('done_') === 0 || k.indexOf('log_') === 0; });
