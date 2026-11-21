@@ -3455,25 +3455,7 @@ async function loadPlan(user) {
         _rootDataRaw, activePlanId);
       _rootLogUnbound = _isLegacyUnboundLog(_rootDataRaw);
       if (_rootLogUnbound) console.info('LEGACY_LOG_UNBOUND', 'root log has execution evidence but no planId: not attributed to plan', activePlanId);   // internal diagnostic only
-      if (!logData) {
-        // T858: virgin plan or cross-plan root rejected by _selectLogAuthority — preserve exerciseHistory (name-keyed)
-        // while strictly isolating active week and entries to Week 1 / empty LOGS.
-        if (_rootDataRaw && _rootDataRaw.exerciseHistory) EXERCISE_HISTORY = _rootDataRaw.exerciseHistory;
-        try { localStorage.setItem('vdsen_active_plan_id', activePlanId); } catch(e2) {}
-        try { sessionStorage.removeItem('vdsen_plan_changed'); } catch(e2) {}
-        LOGS           = {};
-        EXERCISE_UNITS = {};
-        CURRENT_WEEK   = 1;
-        REAL_WEEK      = 1;
-        _setBaselines({}, {}, EXERCISE_HISTORY);
-        _remoteWeekSeen = 1;
-        _rebuildLogsByWeek();
-        if (_rootDataRaw && _rootDataRaw.planId && _rootDataRaw.planId !== activePlanId) {
-          try { localStorage.removeItem('vdsen_restEnd'); localStorage.removeItem('vdsen_restTotal'); } catch(e2) {}
-          showToast('✅ Nuevo plan cargado — comenzando desde semana 1');
-          _showBitacoraInfo = true;
-        }
-      } else {
+      if (logData) {
         _logsAuthorityUpdatedAt = Number(logData.updatedAt) || 0;
         // Preservar siempre el historial de pesos (sobrevive a cambio de plan)
         if (logData.exerciseHistory) EXERCISE_HISTORY = logData.exerciseHistory;
@@ -3522,6 +3504,24 @@ async function loadPlan(user) {
           REAL_WEEK    = CURRENT_WEEK;
           _rebuildLogsByWeek();
           _rebuildLoadedHistoryReferences();
+        }
+      } else {
+        // T858: virgin plan or cross-plan root rejected by _selectLogAuthority — preserve exerciseHistory (name-keyed)
+        // while strictly isolating active week and entries to Week 1 / empty LOGS.
+        if (_rootDataRaw && _rootDataRaw.exerciseHistory) EXERCISE_HISTORY = _rootDataRaw.exerciseHistory;
+        try { localStorage.setItem('vdsen_active_plan_id', activePlanId); } catch(e2) {}
+        try { sessionStorage.removeItem('vdsen_plan_changed'); } catch(e2) {}
+        LOGS           = {};
+        EXERCISE_UNITS = {};
+        CURRENT_WEEK   = 1;
+        REAL_WEEK      = 1;
+        _setBaselines({}, {}, EXERCISE_HISTORY);
+        _remoteWeekSeen = 1;
+        _rebuildLogsByWeek();
+        if (_rootDataRaw && _rootDataRaw.planId && _rootDataRaw.planId !== activePlanId) {
+          try { localStorage.removeItem('vdsen_restEnd'); localStorage.removeItem('vdsen_restTotal'); } catch(e2) {}
+          showToast('✅ Nuevo plan cargado — comenzando desde semana 1');
+          _showBitacoraInfo = true;
         }
       }
     } catch(logErr) {

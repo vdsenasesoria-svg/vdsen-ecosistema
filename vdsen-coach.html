@@ -3333,33 +3333,6 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         window._clientCache = window._clientCache || {};
         const alerts = []; // resumen para banner top (legacy: inactivos, mesoEnd)
 
-        // T858: strict cross-plan log isolation for Coach Dashboard & Monitor.
-        // Never attribute a previous plan's root log (or legacy-unbound root log) to a new activePlanId.
-        function _selectCoachLogForActivePlan(rootData, activePlanId, mesoData) {
-          var sh = (typeof window !== 'undefined' && window.VDSEN_AUTO_APPLY_SHADOW) || null;
-          var rootRaw = (rootData && typeof rootData === 'object') ? rootData : null;
-          var mesoRaw = (mesoData && typeof mesoData === 'object') ? mesoData : null;
-          var auth = null;
-          if (activePlanId) {
-            if (sh && typeof sh.selectLogAuthority === 'function') {
-              auth = sh.selectLogAuthority(mesoRaw, rootRaw, activePlanId);
-            } else {
-              var _isUnbound = !!rootRaw && !(typeof rootRaw.planId === 'string' && rootRaw.planId !== '') &&
-                Object.keys(rootRaw.entries || {}).some(function(k) { return k.indexOf('log_') === 0 || k.indexOf('done_') === 0; });
-              var _r = (_isUnbound || (rootRaw && rootRaw.planId && rootRaw.planId !== activePlanId)) ? null : rootRaw;
-              var _m = (mesoRaw && mesoRaw.planId && mesoRaw.planId !== activePlanId) ? null : mesoRaw;
-              auth = _m || _r || null;
-            }
-          } else {
-            auth = mesoRaw || rootRaw || null;
-          }
-          if (auth) return auth;
-          var empty = { planId: activePlanId || null, currentWeek: 1, entries: {} };
-          if (rootRaw && rootRaw.seguimientoSummary) empty.seguimientoSummary = rootRaw.seguimientoSummary;
-          return empty;
-        }
-        if (typeof window !== 'undefined') window._selectCoachLogForActivePlan = _selectCoachLogForActivePlan;
-
         // ── FASE 7: build per-client data objects, then sort by attention state ──
         const rowData = _clientDocs.map((c, i) => {
           const _rawLogData = (_logSnaps[i] && _logSnaps[i].exists()) ? _logSnaps[i].data() : null;
@@ -4813,8 +4786,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         const newActivePlanId = clientSnap.data().activePlanId || null;
         if (newActivePlanId === _monitorActivePlanId) return;
         _monitorActivePlanId = newActivePlanId;
-        _monitorSelectedWeek = 1;
         _monitorSubscribeToPlan(newActivePlanId);
+        _monitorSelectedWeek = 1;
         _renderMonitorForWeek();
       }, () => {});
 
@@ -7267,9 +7240,36 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       throw e;
     }
     _assignJournalClear(opKey);
-    if (outcome === 'COMMITTED') await _initNewPlanWeekOne(o.clientId, planId, prevId);
+    if (outcome === 'COMMITTED' && typeof _initNewPlanWeekOne === 'function') await _initNewPlanWeekOne(o.clientId, planId, prevId);
     return { planId, outcome, prevPlanId: prevId };
   }
+  // T858: strict cross-plan log isolation for Coach Dashboard & Monitor.
+  // Never attribute a previous plan's root log (or legacy-unbound root log) to a new activePlanId.
+  function _selectCoachLogForActivePlan(rootData, activePlanId, mesoData) {
+    var sh = (typeof window !== 'undefined' && window.VDSEN_AUTO_APPLY_SHADOW) || null;
+    var rootRaw = (rootData && typeof rootData === 'object') ? rootData : null;
+    var mesoRaw = (mesoData && typeof mesoData === 'object') ? mesoData : null;
+    var auth = null;
+    if (activePlanId) {
+      if (sh && typeof sh.selectLogAuthority === 'function') {
+        auth = sh.selectLogAuthority(mesoRaw, rootRaw, activePlanId);
+      } else {
+        var _isUnbound = !!rootRaw && !(typeof rootRaw.planId === 'string' && rootRaw.planId !== '') &&
+          Object.keys(rootRaw.entries || {}).some(function(k) { return k.indexOf('log_') === 0 || k.indexOf('done_') === 0; });
+        var _r = (_isUnbound || (rootRaw && rootRaw.planId && rootRaw.planId !== activePlanId)) ? null : rootRaw;
+        var _m = (mesoRaw && mesoRaw.planId && mesoRaw.planId !== activePlanId) ? null : mesoRaw;
+        auth = _m || _r || null;
+      }
+    } else {
+      auth = mesoRaw || rootRaw || null;
+    }
+    if (auth) return auth;
+    var empty = { planId: activePlanId || null, currentWeek: 1, entries: {} };
+    if (rootRaw && rootRaw.seguimientoSummary) empty.seguimientoSummary = rootRaw.seguimientoSummary;
+    return empty;
+  }
+  if (typeof window !== 'undefined') window._selectCoachLogForActivePlan = _selectCoachLogForActivePlan;
+
   // T858: automatically initialize a newly activated plan at Week 1 with empty entries,
   // preserving exerciseHistory and NEVER touching logs/{clientId}/mesos/{prevPlanId}.
   async function _initNewPlanWeekOne(clientId, newPlanId, prevPlanId) {
@@ -11294,7 +11294,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const coachId = auth.currentUser && auth.currentUser.uid;
     if (!coachId) throw new Error('Sin sesión activa de coach');
 
-    const _prevActivePlanId = await runTransaction(db, async function(t) {
+    let _prevActivePlanId = planId;
+    await runTransaction(db, async function(t) {
       const planRef   = doc(db, 'plans',   planId);
       const clientRef = doc(db, 'clients', clientId);
 
@@ -11312,7 +11313,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if (clientData.coachId !== coachId) throw new Error('FOREIGN_OWNER en cliente: no tenés permiso sobre este cliente.');
 
       // Idempotent: plan ya activo para este cliente → sin writes
-      if (clientData.activePlanId === planId) return planId;
+      if (clientData.activePlanId === planId) return;
 
       // Activation: escribe SOLO en clients/{clientId}.
       // plans/{planId} NO se modifica — permanece draft_approved (fuente de verdad inmutable).
@@ -11370,8 +11371,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         clientUpdate.activeActivationId = typeof deleteField === 'function' ? deleteField() : null;
       }
 
+      _prevActivePlanId = (clientData && clientData.activePlanId) || null;
       t.update(clientRef, clientUpdate);
-      return clientData && clientData.activePlanId || null;
     });
     if (typeof _initNewPlanWeekOne === 'function') {
       await _initNewPlanWeekOne(clientId, planId, _prevActivePlanId);
