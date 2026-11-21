@@ -219,7 +219,10 @@ test('T821.1 current production distinct from historical SAFE_OFF_BASELINE passe
   }
   const { histDeployment } = makeOffBaselineFiles();
   try {
-    const manifestState = json('.release/vdsen-client.json');
+    const manifestState = Object.assign({}, json('.release/vdsen-client.json'), {
+      runtime_sha: 'b'.repeat(40),
+      production_deployment: 'dpl_t821_distinct_prod',
+    });
     assert.match(manifestState.runtime_sha || '', /^[0-9a-f]{40}$/);
     assert.notEqual(manifestState.runtime_sha, HIST.runtimeSha);
 

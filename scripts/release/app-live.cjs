@@ -31,12 +31,12 @@ const deployedProduct = require('./deployed-product.cjs');
 const numericGuard = require('./numeric-guard.cjs');
 
 const STATE = '.release/vdsen-client.json';
-// Reviewed immutable OFF build; updated in T721 to the accredited canonical OFF release (run 42693446755).
-// `evidenceArtifactDigest` pins the GitHub-reported digest of artifact `app-release-result-<run>` of the official run
-// (read from the authenticated Actions API during review). It is a provenance anchor reviewed
-// in the repository; the locally computed `evidenceSha256` is only tamper evidence of what was downloaded.
-const SAFE_OFF_BASELINE = Object.freeze({ runtimeSha: '3fc264e23d67a8ecb1611a6c8af04ad739f422da', deployment: 'dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8', officialReleaseRun: '43132135716',
-  evidenceArtifactDigest: 'sha256:c2a20d42b7b4ea439375641345e3eea9fefb61a42b6cc32b89eea0758a53ec1a' });
+// Reviewed immutable OFF build; rotated in T854 to the current live accredited OFF release (run 44662166798)
+// after historical anchor dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8 (run 43132135716) aged out of Vercel retention (HTTP 404).
+// `evidenceArtifactDigest` pins the GitHub-reported digest of artifact `app-release-result-44662166798` of the official run
+// (verified via GitHub Actions API and independent SHA-256 of the downloaded ZIP).
+const SAFE_OFF_BASELINE = Object.freeze({ runtimeSha: 'af2629a8e6f9f4473bd583005d5ed2a5f2be9d5f', deployment: 'dpl_4H91D85NYxvq4FSaJRvtdzRH3bcT', officialReleaseRun: '44662166798',
+  evidenceArtifactDigest: 'sha256:05e67f626c98e128963d55485dff86d11279072a8215ca2cdb3702b87c404b82' });
 // Configurable so tests can exercise the full flow against a temp directory.
 let OUT = 'release-output';
 const VERCEL_API = 'https://api.vercel.com';

@@ -1,8 +1,8 @@
 {
   "runtime_sha": "af2629a8e6f9f4473bd583005d5ed2a5f2be9d5f",
   "production_deployment": "dpl_4H91D85NYxvq4FSaJRvtdzRH3bcT",
-  "rollback_deployment": "dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8",
-  "rollback_runtime_sha": "3fc264e23d67a8ecb1611a6c8af04ad739f422da",
+  "rollback_deployment": "dpl_4H91D85NYxvq4FSaJRvtdzRH3bcT",
+  "rollback_runtime_sha": "af2629a8e6f9f4473bd583005d5ed2a5f2be9d5f",
   "target_deployment": "dpl_4H91D85NYxvq4FSaJRvtdzRH3bcT",
   "production_project": "prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN",
   "vercel_team": "team_VZc5H7Q1DBIJ3g0mwrSBz1o8",
@@ -41,7 +41,7 @@
     "preview_production_env_verified": true,
     "human_ux_approved": true
   },
-  "observation_source": "T846 provenance sync after official APP-ONLY release run 44662166798 (artifact sha256:83606e4bec06a849f2ba8163ec1f333b06251e94e6c8bf8ce00c76d762b04917). Production serves dpl_4H91D85NYxvq4FSaJRvtdzRH3bcT (runtime af2629a8e6f9f4473bd583005d5ed2a5f2be9d5f, 46 verified surfaces, state=VERIFIED, Numeric Apply DISARMED, rules_mutated=false, main_unchanged=true). Immediate previous production deployment is dpl_8CQkSnR5hn6WsWPhnscdLQbq3DHS (runtime d424482f6170a264f90a1c421442e9fa56df975d). Historical safe OFF baseline remains dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8 (runtime 3fc264e23d67a8ecb1611a6c8af04ad739f422da, run 43132135716). Published Firestore rules T788 (sha256 486606574a2f10d65212cedb26fe7f73686e5d6610995e9c4bfe4a424972c460) from T810 run 43620978036.",
+  "observation_source": "T854 safe OFF anchor rotation to live accredited APP-ONLY release run 44662166798 (official ZIP artifact app-release-result-44662166798 digest sha256:05e67f626c98e128963d55485dff86d11279072a8215ca2cdb3702b87c404b82; supersedes prior provenance note). Production serves dpl_4H91D85NYxvq4FSaJRvtdzRH3bcT (runtime af2629a8e6f9f4473bd583005d5ed2a5f2be9d5f, 46 verified surfaces, state=VERIFIED, Numeric Apply DISARMED, rules_mutated=false, main_unchanged=true), now also pinned as safe_recovery_deployment after prior historical anchor dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8 (runtime 3fc264e23d67a8ecb1611a6c8af04ad739f422da, run 43132135716) aged out of Vercel retention (HTTP 404 in run 44859703024). Immediate previous production deployment remains dpl_8CQkSnR5hn6WsWPhnscdLQbq3DHS (runtime d424482f6170a264f90a1c421442e9fa56df975d). Published Firestore rules T788 (sha256 486606574a2f10d65212cedb26fe7f73686e5d6610995e9c4bfe4a424972c460) from T810 run 43620978036.",
   "release_mode": "app_only",
   "app_release": {
     "runtime_sha": "af2629a8e6f9f4473bd583005d5ed2a5f2be9d5f",
@@ -49,8 +49,8 @@
     "promotion_model": "staged_production",
     "previous_deployment": "dpl_8CQkSnR5hn6WsWPhnscdLQbq3DHS",
     "previous_runtime_sha": "d424482f6170a264f90a1c421442e9fa56df975d",
-    "safe_recovery_deployment": "dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8",
-    "safe_recovery_runtime_sha": "3fc264e23d67a8ecb1611a6c8af04ad739f422da",
+    "safe_recovery_deployment": "dpl_4H91D85NYxvq4FSaJRvtdzRH3bcT",
+    "safe_recovery_runtime_sha": "af2629a8e6f9f4473bd583005d5ed2a5f2be9d5f",
     "verified_surfaces": 46,
     "source_release_run": "44662166798",
     "completed_at": "2026-11-20T02:48:05Z"
