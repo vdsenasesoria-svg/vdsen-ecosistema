@@ -135,11 +135,12 @@ function makeExposureLogs(week, load, reps, rir, tsIso) {
   return out;
 }
 
-test('T849B.1 vdsen-ayrton-window.yml uses dedicated GCP_PILOT_WINDOW_SERVICE_ACCOUNT without altering contracts or adding keys', () => {
+test('T849B.1 vdsen-ayrton-window.yml uses dedicated GCP_PILOT_WINDOW_WIF_PROVIDER and GCP_PILOT_WINDOW_SERVICE_ACCOUNT without altering contracts or adding keys', () => {
   const yml = fs.readFileSync(WORKFLOW_PATH, 'utf8');
+  assert.match(yml, /workload_identity_provider:\s*\$\{\{\s*vars\.GCP_PILOT_WINDOW_WIF_PROVIDER\s*\}\}/);
   assert.match(yml, /service_account:\s*\$\{\{\s*vars\.GCP_PILOT_WINDOW_SERVICE_ACCOUNT\s*\}\}/);
   assert.ok(!yml.includes('GCP_RELEASE_SERVICE_ACCOUNT'), 'window workflow must not authenticate as vdsen-release-bot');
-  assert.match(yml, /workload_identity_provider:\s*\$\{\{\s*vars\.GCP_WORKLOAD_IDENTITY_PROVIDER\s*\}\}/);
+  assert.ok(!yml.includes('GCP_WORKLOAD_IDENTITY_PROVIDER'), 'window workflow must use dedicated WIF provider isolated from shared release pool');
   assert.match(yml, /token_format:\s*access_token/);
   assert.match(yml, /create_credentials_file:\s*false/);
   assert.match(yml, /access_token_scopes:\s*https:\/\/www\.googleapis\.com\/auth\/datastore/);
