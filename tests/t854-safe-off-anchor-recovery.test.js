@@ -207,15 +207,16 @@ test('T854.9 Historial, completed_at y deployment anterior preservados en .relea
 
   assert.equal(STATE.production_deployment, NEW_DEPLOYMENT);
   assert.equal(STATE.runtime_sha, NEW_SHA);
-  assert.equal(STATE.rollback_deployment, NEW_DEPLOYMENT);
-  assert.equal(STATE.rollback_runtime_sha, NEW_SHA);
-  assert.equal(STATE.app_release.safe_recovery_deployment, NEW_DEPLOYMENT);
-  assert.equal(STATE.app_release.safe_recovery_runtime_sha, NEW_SHA);
+  assert.equal(STATE.rollback_deployment, 'dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8');
+  assert.equal(STATE.rollback_runtime_sha, '3fc264e23d67a8ecb1611a6c8af04ad739f422da');
+  assert.equal(STATE.app_release.safe_recovery_deployment, 'dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8');
+  assert.equal(STATE.app_release.safe_recovery_runtime_sha, '3fc264e23d67a8ecb1611a6c8af04ad739f422da');
   assert.equal(STATE.app_release.previous_deployment, PREV_DEPLOYMENT);
   assert.equal(STATE.app_release.previous_runtime_sha, PREV_SHA);
   assert.equal(STATE.app_release.completed_at, '2026-11-20T02:48:05Z');
   assert.equal(STATE.app_release.source_release_run, NEW_RUN);
   assert.equal(STATE.numeric_apply_enabled, false);
+  assert.ok(STATE.observation_source.includes(OFFICIAL_ZIP_DIGEST));
 });
 
 test('T854.10 El release APP-ONLY continúa sin permisos de modificación Firestore ni Rules', () => {
