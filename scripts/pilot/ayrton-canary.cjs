@@ -241,12 +241,29 @@ async function main(argv, deps) {
   try { r = await request('COMMIT', ':commit', tk, body); }
   catch (_) {
     if (deps.onUncertainCommit) await deps.onUncertainCommit({ request, token: tk });
-    throw new Error('Resultado del commit DESCONOCIDO: verificar ambas barreras; no repetir ni renovar.');
+    const err = new Error('Resultado del commit DESCONOCIDO: verificar ambas barreras; no repetir ni renovar.');
+    err.windowCode = 'FIRESTORE_COMMIT_UNCERTAIN_NETWORK';
+    err.httpStatus = null;
+    err.commitOutcome = 'UNCERTAIN';
+    throw err;
   }
   if (r.status !== 200) {
-    if ([400, 403, 404, 409, 412].includes(r.status)) throw new Error('El commit atómico falló (HTTP ' + r.status + '): no se aplicó NINGUNA de las dos barreras.');
+    if ([400, 403, 404, 409, 412].includes(r.status)) {
+      const err = new Error('El commit atómico falló (HTTP ' + r.status + '): no se aplicó NINGUNA de las dos barreras.');
+      err.windowCode = r.status === 403 ? 'FIRESTORE_COMMIT_PERMISSION_DENIED'
+        : r.status === 400 ? 'FIRESTORE_COMMIT_INVALID_REQUEST'
+        : r.status === 404 ? 'FIRESTORE_COMMIT_NOT_FOUND'
+        : 'FIRESTORE_COMMIT_PRECONDITION_FAILED';
+      err.httpStatus = r.status;
+      err.commitOutcome = 'NOT_APPLIED';
+      throw err;
+    }
     if (deps.onUncertainCommit) await deps.onUncertainCommit({ request, token: tk });
-    throw new Error('Resultado del commit DESCONOCIDO (HTTP ' + r.status + '): verificar ambas barreras; no repetir ni renovar.');
+    const err = new Error('Resultado del commit DESCONOCIDO (HTTP ' + r.status + '): verificar ambas barreras; no repetir ni renovar.');
+    err.windowCode = 'FIRESTORE_COMMIT_UNCERTAIN_HTTP_' + r.status;
+    err.httpStatus = r.status;
+    err.commitOutcome = 'UNCERTAIN';
+    throw err;
   }
   if (deps.afterCommit) await deps.afterCommit({ request, token: tk, writes });
   out('Listo: ' + writes.length + ' documentos actualizados (' + mode + ').'); return { mode, wrote: writes.length };
