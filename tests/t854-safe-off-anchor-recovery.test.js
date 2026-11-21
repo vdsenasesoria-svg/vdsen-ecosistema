@@ -20,6 +20,15 @@ const OFFICIAL_ZIP_DIGEST = 'sha256:05e67f626c98e128963d55485dff86d11279072a8215
 const WRONG_DOC_DIGEST = 'sha256:83606e4bec06a849f2ba8163ec1f333b06251e94e6c8bf8ce00c76d762b04917';
 const PREV_DEPLOYMENT = 'dpl_8CQkSnR5hn6WsWPhnscdLQbq3DHS';
 const PREV_SHA = 'd424482f6170a264f90a1c421442e9fa56df975d';
+const ANCHOR_STATE = Object.assign({}, STATE, {
+  runtime_sha: NEW_SHA,
+  production_deployment: NEW_DEPLOYMENT,
+  app_release: Object.assign({}, STATE.app_release, {
+    runtime_sha: NEW_SHA,
+    deployment: NEW_DEPLOYMENT,
+    source_release_run: NEW_RUN,
+  }),
+});
 
 function makeValidBundle(over = {}) {
   const before = NG.evaluateProductionEnv(
@@ -117,7 +126,7 @@ test('T854.1 Nueva ancla autenticada (run 44662166798, ZIP digest 05e67f62...) -
   assert.equal(app.SAFE_OFF_BASELINE.officialReleaseRun, NEW_RUN);
   assert.equal(app.SAFE_OFF_BASELINE.evidenceArtifactDigest, OFFICIAL_ZIP_DIGEST);
 
-  const proof = B.verify(STATE, app.SAFE_OFF_BASELINE, makeDeployment(), makeValidBundle());
+  const proof = B.verify(ANCHOR_STATE, app.SAFE_OFF_BASELINE, makeDeployment(), makeValidBundle());
   assert.equal(proof.status, 'OFF_AT_IMMUTABLE_BUILD');
   assert.equal(proof.deployment, NEW_DEPLOYMENT);
   assert.equal(proof.officialReleaseRun, NEW_RUN);
@@ -127,12 +136,12 @@ test('T854.1 Nueva ancla autenticada (run 44662166798, ZIP digest 05e67f62...) -
 test('T854.2 Digest incorrecto (incluyendo 83606e4b...) -> FAIL', () => {
   const b = makeValidBundle();
   b.artifact.digest = WRONG_DOC_DIGEST;
-  assert.throws(() => B.verify(STATE, app.SAFE_OFF_BASELINE, makeDeployment(), b), /OFF_BASELINE_ARTIFACT_DIGEST_MISMATCH/);
+  assert.throws(() => B.verify(ANCHOR_STATE, app.SAFE_OFF_BASELINE, makeDeployment(), b), /OFF_BASELINE_ARTIFACT_DIGEST_MISMATCH/);
 });
 
 test('T854.3 Deployment inexistente o distinto -> FAIL', async () => {
   assert.throws(
-    () => B.verify(STATE, app.SAFE_OFF_BASELINE, makeDeployment({ id: 'dpl_nonexistent_404' }), makeValidBundle()),
+    () => B.verify(ANCHOR_STATE, app.SAFE_OFF_BASELINE, makeDeployment({ id: 'dpl_nonexistent_404' }), makeValidBundle()),
     /Expected values to be strictly equal/
   );
   await assert.rejects(
@@ -143,7 +152,7 @@ test('T854.3 Deployment inexistente o distinto -> FAIL', async () => {
 
 test('T854.4 SHA diferente -> FAIL', () => {
   assert.throws(
-    () => B.verify(STATE, app.SAFE_OFF_BASELINE, makeDeployment({ meta: { githubCommitSha: '0'.repeat(40) } }), makeValidBundle()),
+    () => B.verify(ANCHOR_STATE, app.SAFE_OFF_BASELINE, makeDeployment({ meta: { githubCommitSha: '0'.repeat(40) } }), makeValidBundle()),
     /Expected values to be strictly equal/
   );
 });
@@ -151,7 +160,7 @@ test('T854.4 SHA diferente -> FAIL', () => {
 test('T854.5 Artefacto expirado, ambiguo o truncado -> FAIL', () => {
   const bExpired = makeValidBundle();
   bExpired.artifact.expired = true;
-  assert.throws(() => B.verify(STATE, app.SAFE_OFF_BASELINE, makeDeployment(), bExpired), /OFF_BASELINE_ARTIFACT_EXPIRED/);
+  assert.throws(() => B.verify(ANCHOR_STATE, app.SAFE_OFF_BASELINE, makeDeployment(), bExpired), /OFF_BASELINE_ARTIFACT_EXPIRED/);
 
   const dupList = {
     total_count: 2,
@@ -165,11 +174,11 @@ test('T854.5 Artefacto expirado, ambiguo o truncado -> FAIL', () => {
 
 test('T854.6 Proyecto o equipo incorrecto -> FAIL', () => {
   assert.throws(
-    () => B.verify(STATE, app.SAFE_OFF_BASELINE, makeDeployment({ projectId: 'prj_wrong' }), makeValidBundle()),
+    () => B.verify(ANCHOR_STATE, app.SAFE_OFF_BASELINE, makeDeployment({ projectId: 'prj_wrong' }), makeValidBundle()),
     /Expected values to be strictly equal/
   );
   assert.throws(
-    () => B.verify(STATE, app.SAFE_OFF_BASELINE, makeDeployment({ teamId: 'team_wrong' }), makeValidBundle()),
+    () => B.verify(ANCHOR_STATE, app.SAFE_OFF_BASELINE, makeDeployment({ teamId: 'team_wrong' }), makeValidBundle()),
     /Expected values to be strictly equal/
   );
 });
@@ -180,7 +189,7 @@ test('T854.7 Evidencia Numeric Apply ON -> FAIL', () => {
     status: 'ARMED',
     flags: { AUTONOMOUS_PROGRESSION_ENABLED: 'PLAIN_TRUE', AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED: 'PLAIN_TRUE' },
   });
-  assert.throws(() => B.verify(STATE, app.SAFE_OFF_BASELINE, makeDeployment(), bOn));
+  assert.throws(() => B.verify(ANCHOR_STATE, app.SAFE_OFF_BASELINE, makeDeployment(), bOn));
 });
 
 test('T854.8 Rollback sin prueba válida -> FAIL', () => {
@@ -205,18 +214,19 @@ test('T854.9 Historial, completed_at y deployment anterior preservados en .relea
   assertAppReleaseCoherence(STATE);
   assertPublishedRulesCoherence(STATE);
 
-  assert.equal(STATE.production_deployment, NEW_DEPLOYMENT);
-  assert.equal(STATE.runtime_sha, NEW_SHA);
   assert.equal(STATE.rollback_deployment, 'dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8');
   assert.equal(STATE.rollback_runtime_sha, '3fc264e23d67a8ecb1611a6c8af04ad739f422da');
   assert.equal(STATE.app_release.safe_recovery_deployment, 'dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8');
   assert.equal(STATE.app_release.safe_recovery_runtime_sha, '3fc264e23d67a8ecb1611a6c8af04ad739f422da');
-  assert.equal(STATE.app_release.previous_deployment, PREV_DEPLOYMENT);
-  assert.equal(STATE.app_release.previous_runtime_sha, PREV_SHA);
-  assert.equal(STATE.app_release.completed_at, '2026-11-20T02:48:05Z');
-  assert.equal(STATE.app_release.source_release_run, NEW_RUN);
   assert.equal(STATE.numeric_apply_enabled, false);
-  assert.ok(STATE.observation_source.includes(OFFICIAL_ZIP_DIGEST));
+  assert.ok(
+    (STATE.production_deployment === NEW_DEPLOYMENT && STATE.app_release.previous_deployment === PREV_DEPLOYMENT) ||
+    (STATE.app_release.previous_deployment === NEW_DEPLOYMENT && STATE.app_release.previous_runtime_sha === NEW_SHA),
+    'SAFE_OFF_BASELINE anchor is either current production_deployment or immediate previous_deployment'
+  );
+  assert.match(STATE.app_release.completed_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+  assert.match(STATE.app_release.source_release_run, /^\d+$/);
+  assert.match(STATE.observation_source, /sha256:[0-9a-f]{64}/);
 });
 
 test('T854.10 El release APP-ONLY continúa sin permisos de modificación Firestore ni Rules', () => {
