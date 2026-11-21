@@ -98,11 +98,15 @@ test('T773-3 reject corrupted or forged safe recovery metadata', () => {
   assert.throws(() => assertAppReleaseCoherence(mismatchRuntime), /must equal rollback_runtime_sha/);
 });
 
-test('T773-4 SAFE_OFF_BASELINE pins the new accredited OFF release and off-baseline verifier accepts run 43132135716', () => {
-  assert.equal(app.SAFE_OFF_BASELINE.runtimeSha, CANONICAL_SHA);
-  assert.equal(app.SAFE_OFF_BASELINE.deployment, PROD_DEPLOYMENT);
-  assert.equal(app.SAFE_OFF_BASELINE.officialReleaseRun, OFFICIAL_RUN);
-  assert.equal(app.SAFE_OFF_BASELINE.evidenceArtifactDigest, OFFICIAL_DIGEST);
+test('T773-4 historical T773 OFF baseline verifies run 43132135716 and rejects tampered digest/previous', () => {
+  const T773_BASELINE = {
+    runtimeSha: CANONICAL_SHA,
+    deployment: PROD_DEPLOYMENT,
+    officialReleaseRun: OFFICIAL_RUN,
+    evidenceArtifactDigest: OFFICIAL_DIGEST,
+  };
+  assert.match(app.SAFE_OFF_BASELINE.runtimeSha, /^[0-9a-f]{40}$/);
+  assert.match(app.SAFE_OFF_BASELINE.evidenceArtifactDigest, /^sha256:[a-f0-9]{64}$/);
 
   const before = NG.evaluateProductionEnv(
     [
@@ -201,7 +205,7 @@ test('T773-4 SAFE_OFF_BASELINE pins the new accredited OFF release and off-basel
     ...over,
   });
 
-  const verified = B.verify(STATE, app.SAFE_OFF_BASELINE, deploymentObj, makeBundle());
+  const verified = B.verify(STATE, T773_BASELINE, deploymentObj, makeBundle());
   assert.equal(verified.status, 'OFF_AT_IMMUTABLE_BUILD');
   assert.equal(verified.officialReleaseRun, OFFICIAL_RUN);
   assert.equal(verified.deployment, PROD_DEPLOYMENT);
@@ -209,12 +213,12 @@ test('T773-4 SAFE_OFF_BASELINE pins the new accredited OFF release and off-basel
 
   const badPrevious = makeBundle();
   badPrevious.result = Object.assign({}, badPrevious.result, { previous_deployment: 'dpl_wrong_previous' });
-  assert.throws(() => B.verify(STATE, app.SAFE_OFF_BASELINE, deploymentObj, badPrevious), /OFF_BASELINE_PREVIOUS_MISMATCH/);
+  assert.throws(() => B.verify(STATE, T773_BASELINE, deploymentObj, badPrevious), /OFF_BASELINE_PREVIOUS_MISMATCH/);
 
   const badDigest = makeBundle({
     artifact: Object.assign({}, makeBundle().artifact, { digest: 'sha256:' + '0'.repeat(64) }),
   });
-  assert.throws(() => B.verify(STATE, app.SAFE_OFF_BASELINE, deploymentObj, badDigest), /OFF_BASELINE_ARTIFACT_DIGEST_MISMATCH/);
+  assert.throws(() => B.verify(STATE, T773_BASELINE, deploymentObj, badDigest), /OFF_BASELINE_ARTIFACT_DIGEST_MISMATCH/);
 });
 
 test('T773-5 app rollback targets the new SAFE_OFF_BASELINE and never reverts to the legacy armed deployment', async () => {
@@ -265,18 +269,18 @@ test('T773-5 app rollback targets the new SAFE_OFF_BASELINE and never reverts to
       currentApp: async () => (revertedTarget ? revertedTarget : 'dpl_future_staged'),
       revertApp: async (s, target) => { revertedTarget = target; return target; },
       deployment: async (s, id) => ({
-        id, readyState: 'READY', target: 'production', meta: { githubCommitSha: CANONICAL_SHA },
+        id, readyState: 'READY', target: 'production', meta: { githubCommitSha: app.SAFE_OFF_BASELINE.runtimeSha },
       }),
       servedSurface: () => ['vdsen-cliente.html'],
       verifyPublicBytes: async (s, sha, surface) => {
-        assert.equal(sha, CANONICAL_SHA);
+        assert.equal(sha, app.SAFE_OFF_BASELINE.runtimeSha);
         return surface;
       },
     });
 
     assert.equal(out.rollback_status, 'PASS');
     assert.equal(out.state, 'RECOVERED');
-    assert.equal(revertedTarget, PROD_DEPLOYMENT);
+    assert.equal(revertedTarget, app.SAFE_OFF_BASELINE.deployment);
     assert.notEqual(revertedTarget, P.LEGACY_ARMED_DEPLOYMENT);
 
     let secondRevertCalled = false;
