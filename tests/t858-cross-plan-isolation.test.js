@@ -129,8 +129,15 @@ test('T858.4 _initNewPlanWeekOne initializes Week 1 on new plan while preserving
     Date, Object, Promise, console,
     doc: (_db, ...segs) => segs.join('/'),
     db: {},
-    getDoc: async (ref) => ({ exists: () => store.has(ref), data: () => structuredClone(store.get(ref)) }),
-    setDoc: async (ref, payload) => { store.set(ref, structuredClone(payload)); },
+    runTransaction: async (_db, fn) => {
+      const writes = [];
+      const tx = {
+        get: async (ref) => ({ exists: () => store.has(ref), data: () => structuredClone(store.get(ref)) }),
+        set: (ref, payload) => { writes.push([ref, structuredClone(payload)]); },
+      };
+      await fn(tx);
+      for (const [ref, payload] of writes) store.set(ref, payload);
+    },
   };
   vm.createContext(ctx);
   vm.runInContext(extractFn(COACH_HTML, '_initNewPlanWeekOne'), ctx);
