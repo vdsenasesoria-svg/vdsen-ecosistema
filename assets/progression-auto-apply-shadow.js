@@ -264,9 +264,10 @@
   }
   function selectLogAuthority(mesoData, rootData, planId) {
     if (isLegacyUnboundLog(rootData)) rootData = null;
+    if (rootData && rootData.planId && planId && rootData.planId !== planId) rootData = null;
+    if (mesoData && mesoData.planId && planId && mesoData.planId !== planId) mesoData = null;
     if (!mesoData) return rootData || null;
-    if (!rootData || (rootData.planId && rootData.planId !== planId)) return mesoData;
-    if (mesoData.planId && mesoData.planId !== planId) return rootData;
+    if (!rootData) return mesoData;
     function clock(d) { var n = Number(d.updatedAt); return Number.isFinite(n) && n > 0 ? n : 0; }
     function evidence(d) { return Object.keys(d.entries || {}).filter(function(k) { return k.indexOf('done_') === 0 || k.indexOf('log_') === 0; }); }
     function dominates(a, b) {
