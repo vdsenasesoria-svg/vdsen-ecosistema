@@ -240,24 +240,44 @@ async function restoreOffRuntime(params, io) {
   const verifiedPublicPaths = await io.verifyBytes(baseline.runtimeSha);
 
   let fencesClosed = null;
+  let fencesStatus = 'UNVERIFIED_NO_ADAPTER';
+  let fenceCheckError = null;
   if (typeof io.readFences === 'function') {
+    let snapshot;
     try {
-      assertAllFencesClosed(await io.readFences());
-      fencesClosed = true;
-    } catch (_) {
-      fencesClosed = false;
+      snapshot = await io.readFences();
+    } catch (readErr) {
+      fencesClosed = null;
+      fencesStatus = 'UNVERIFIED_READ_ERROR';
+      fenceCheckError = readErr && readErr.message ? readErr.message : String(readErr);
+    }
+    if (fencesStatus !== 'UNVERIFIED_READ_ERROR') {
+      try {
+        assertAllFencesClosed(snapshot);
+        fencesClosed = true;
+        fencesStatus = 'VERIFIED_CLOSED';
+      } catch (fenceErr) {
+        fencesClosed = false;
+        fencesStatus = 'ACTIVE_OR_OPEN';
+        fenceCheckError = fenceErr && fenceErr.message ? fenceErr.message : String(fenceErr);
+      }
     }
   }
 
+  const completeRecovery = fencesStatus === 'VERIFIED_CLOSED';
   return {
     schema: 'vdsen-numeric-runtime-restore-v1',
-    status: 'OFF_BASELINE_RESTORED_VERIFIED',
+    status: completeRecovery ? 'OFF_BASELINE_RESTORED_VERIFIED' : 'OFF_RUNTIME_RESTORED_FENCES_UNVERIFIED_OR_ACTIVE',
+    runtimeRestored: true,
+    completeRecovery,
     previousDeployment: current,
     restoredDeployment: baseline.deployment,
     baselineSha: baseline.runtimeSha,
     wrote,
     verifiedPublicPaths,
     fencesClosed,
+    fencesStatus,
+    fenceCheckError,
     restoredAt: new Date().toISOString(),
   };
 }

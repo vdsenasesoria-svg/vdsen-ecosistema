@@ -62,8 +62,11 @@ permissions:
   contents: read
   actions: read
 
+# Coordinate alias-mutating runtime actions (prepare-runtime, restore-off-runtime) with vdsen-production
+# (shared with APP-ONLY release) so concurrent alias promotions/restorations are impossible.
+# Keep STOP in its own independent priority group so emergency fence disarming is never queued behind runtime/release jobs.
 concurrency:
-  group: vdsen-production-numeric-pilot
+  group: ${{ (inputs.action == 'prepare-runtime' || inputs.action == 'restore-off-runtime') && 'vdsen-production' || (inputs.action == 'stop' && 'vdsen-numeric-pilot-stop' || 'vdsen-production-numeric-pilot') }}
   cancel-in-progress: false
 
 jobs:

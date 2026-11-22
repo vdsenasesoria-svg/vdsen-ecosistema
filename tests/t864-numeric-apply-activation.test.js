@@ -472,3 +472,92 @@ test('T864C.3 Protected prepare-runtime & restore-off-runtime preserve OFF Numer
   assert.ok(wf.includes('node scripts/pilot/numeric-pilot-ops.cjs prepare-runtime'));
   assert.ok(wf.includes('node scripts/pilot/numeric-pilot-ops.cjs restore-off-runtime'));
 });
+
+test('T864D.1 Concurrency coordinates prepare-runtime/restore-off-runtime with vdsen-production and keeps STOP independent', () => {
+  const pilotWf = fs.readFileSync(path.join(ROOT, '.github/workflows/vdsen-numeric-pilot.yml'), 'utf8');
+  const appWf = fs.readFileSync(path.join(ROOT, '.github/workflows/vdsen-app-release-prod.yml'), 'utf8');
+  assert.ok(appWf.includes('group: vdsen-production'), 'APP-ONLY release must use vdsen-production');
+  assert.ok(
+    pilotWf.includes("(inputs.action == 'prepare-runtime' || inputs.action == 'restore-off-runtime') && 'vdsen-production'"),
+    'prepare-runtime and restore-off-runtime must share vdsen-production concurrency group with APP-ONLY'
+  );
+  assert.ok(
+    pilotWf.includes("inputs.action == 'stop' && 'vdsen-numeric-pilot-stop'"),
+    'STOP must run in its own independent priority concurrency group'
+  );
+  assert.ok(pilotWf.includes('cancel-in-progress: false'));
+});
+
+test('T864D.2 restoreOffRuntime executes emergency alias restore but refuses complete-recovery verdict when fences are active, unreadable, or unverified', async () => {
+  const prep = require(path.join(ROOT, 'scripts/pilot/numeric-runtime-prep.cjs'));
+  const BASELINE_DPL = 'dpl_26Q4iTpsCbQvPNFR8vKwa74PrPpS';
+  const STAGED_DPL = 'dpl_NumericPilotStaged0002';
+  const baseline = { deployment: BASELINE_DPL, runtimeSha: SHA };
+
+  // Case A: Active fence -> alias restored, completeRecovery=false, fencesStatus=ACTIVE_OR_OPEN
+  let aliasA = STAGED_DPL;
+  const repActive = await prep.restoreOffRuntime({ baseline, pilotDeploymentId: STAGED_DPL }, {
+    current: async () => aliasA,
+    rollback: async (id) => { aliasA = id; },
+    verifyBytes: async () => 46,
+    readFences: async () => ({
+      releaseControl: { enabled: true },
+      numericPilot: { enabled: false },
+      coach: { autoApplyCanary: { enabled: false } },
+    }),
+  });
+  assert.equal(aliasA, BASELINE_DPL, 'emergency alias rollback must still execute');
+  assert.equal(repActive.runtimeRestored, true);
+  assert.equal(repActive.completeRecovery, false);
+  assert.equal(repActive.status, 'OFF_RUNTIME_RESTORED_FENCES_UNVERIFIED_OR_ACTIVE');
+  assert.equal(repActive.fencesStatus, 'ACTIVE_OR_OPEN');
+  assert.equal(repActive.fencesClosed, false);
+
+  // Case B: Unreadable fences -> alias restored, completeRecovery=false, fencesStatus=UNVERIFIED_READ_ERROR
+  let aliasB = STAGED_DPL;
+  const repReadErr = await prep.restoreOffRuntime({ baseline, pilotDeploymentId: STAGED_DPL }, {
+    current: async () => aliasB,
+    rollback: async (id) => { aliasB = id; },
+    verifyBytes: async () => 46,
+    readFences: async () => { throw new Error('FIRESTORE_READ_TIMEOUT'); },
+  });
+  assert.equal(aliasB, BASELINE_DPL);
+  assert.equal(repReadErr.runtimeRestored, true);
+  assert.equal(repReadErr.completeRecovery, false);
+  assert.equal(repReadErr.status, 'OFF_RUNTIME_RESTORED_FENCES_UNVERIFIED_OR_ACTIVE');
+  assert.equal(repReadErr.fencesStatus, 'UNVERIFIED_READ_ERROR');
+  assert.equal(repReadErr.fencesClosed, null);
+
+  // Case C: Missing readFences adapter -> alias restored, completeRecovery=false, fencesStatus=UNVERIFIED_NO_ADAPTER
+  let aliasC = STAGED_DPL;
+  const repNoAdapter = await prep.restoreOffRuntime({ baseline, pilotDeploymentId: STAGED_DPL }, {
+    current: async () => aliasC,
+    rollback: async (id) => { aliasC = id; },
+    verifyBytes: async () => 46,
+  });
+  assert.equal(aliasC, BASELINE_DPL);
+  assert.equal(repNoAdapter.runtimeRestored, true);
+  assert.equal(repNoAdapter.completeRecovery, false);
+  assert.equal(repNoAdapter.status, 'OFF_RUNTIME_RESTORED_FENCES_UNVERIFIED_OR_ACTIVE');
+  assert.equal(repNoAdapter.fencesStatus, 'UNVERIFIED_NO_ADAPTER');
+  assert.equal(repNoAdapter.fencesClosed, null);
+
+  // Case D: All fences verified closed -> OFF_BASELINE_RESTORED_VERIFIED & completeRecovery=true
+  let aliasD = STAGED_DPL;
+  const repComplete = await prep.restoreOffRuntime({ baseline, pilotDeploymentId: STAGED_DPL }, {
+    current: async () => aliasD,
+    rollback: async (id) => { aliasD = id; },
+    verifyBytes: async () => 46,
+    readFences: async () => ({
+      releaseControl: { enabled: false },
+      numericPilot: { enabled: false },
+      coach: { autoApplyCanary: { enabled: false } },
+    }),
+  });
+  assert.equal(aliasD, BASELINE_DPL);
+  assert.equal(repComplete.runtimeRestored, true);
+  assert.equal(repComplete.completeRecovery, true);
+  assert.equal(repComplete.status, 'OFF_BASELINE_RESTORED_VERIFIED');
+  assert.equal(repComplete.fencesStatus, 'VERIFIED_CLOSED');
+  assert.equal(repComplete.fencesClosed, true);
+});
