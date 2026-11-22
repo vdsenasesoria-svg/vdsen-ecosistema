@@ -3,12 +3,15 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: Operational action to perform (preflight-check | stop | audit-status)
+        description: Operational action to perform (preflight-check | prepare-runtime | arm-fences | stop | restore-off-runtime | audit-status)
         default: 'preflight-check'
         type: choice
         options:
           - preflight-check
+          - prepare-runtime
+          - arm-fences
           - stop
+          - restore-off-runtime
           - audit-status
       operation_id:
         description: Unique approved numeric operation ID (8-80 chars)
@@ -29,16 +32,16 @@ on:
         default: 'z82EDPvsCaabfMN3eGAP3rpxeMt1'
         type: string
       plan_id:
-        description: Explicit authorized planId (2wywK0y0pKtXRzGS8dNx)
-        default: '2wywK0y0pKtXRzGS8dNx'
+        description: Explicit authorized planId (ucwGfeXn2NGPhnY6CZjb)
+        default: 'ucwGfeXn2NGPhnY6CZjb'
         type: string
       coach_id:
         description: Coach UID
         required: true
         type: string
       prescription_exercise_id:
-        description: Explicit single PID (831ccbbe-ab09-4669-a0ef-4c652ca84b7a)
-        default: '831ccbbe-ab09-4669-a0ef-4c652ca84b7a'
+        description: Explicit single PID (8821a34a-3474-4c13-a6c9-6246f92ed438)
+        default: '8821a34a-3474-4c13-a6c9-6246f92ed438'
         type: string
       starts_at:
         description: Window start UTC ISO string (e.g. 2026-11-06T12:00:00Z)
@@ -59,8 +62,11 @@ permissions:
   contents: read
   actions: read
 
+# Coordinate alias-mutating runtime actions (prepare-runtime, restore-off-runtime) with vdsen-production
+# (shared with APP-ONLY release) so concurrent alias promotions/restorations are impossible.
+# Keep STOP in its own independent priority group so emergency fence disarming is never queued behind runtime/release jobs.
 concurrency:
-  group: vdsen-production-numeric-pilot
+  group: ${{ (inputs.action == 'prepare-runtime' || inputs.action == 'restore-off-runtime') && 'vdsen-production' || (inputs.action == 'stop' && 'vdsen-numeric-pilot-stop' || 'vdsen-production-numeric-pilot') }}
   cancel-in-progress: false
 
 jobs:
@@ -113,7 +119,7 @@ jobs:
       - name: Validate contracts and operational unit tests
         run: |
           node scripts/release/check.cjs
-          node --test tests/t699-numeric-contract.test.js tests/t699-numeric-ops.test.js
+          node --test tests/t699-numeric-contract.test.js tests/t699-numeric-ops.test.js tests/t864-numeric-apply-activation.test.js
 
       - id: google
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
@@ -126,7 +132,7 @@ jobs:
           access_token_scopes: https://www.googleapis.com/auth/datastore
 
       - name: Assemble numeric window specification
-        if: inputs.action == 'preflight-check'
+        if: inputs.action == 'preflight-check' || inputs.action == 'prepare-runtime' || inputs.action == 'arm-fences'
         run: |
           node -e "
             const fs = require('fs');
@@ -148,6 +154,29 @@ jobs:
             }
             fs.writeFileSync('$REPORT_DIR/window.json', JSON.stringify(w, null, 2));
           "
+
+      # --- ROUTE: PREPARE DEPLOYMENT-SCOPED NUMERIC RUNTIME (PROTECTED, FENCES CLOSED) ---
+      - name: Prepare deployment-scoped numeric pilot runtime (fences closed, project Numeric Guard OFF)
+        if: inputs.action == 'prepare-runtime'
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: |
+          node scripts/pilot/numeric-pilot-ops.cjs prepare-runtime \
+            --window-file "$REPORT_DIR/window.json" \
+            --coach-id "$INPUT_COACH" \
+            --expected-alias "vdsen-ecosistema.vercel.app" \
+            --out "$REPORT_DIR/runtime-prep-result.json"
+
+      # --- ROUTE: RESTORE CAPTURED OFF BASELINE RUNTIME (SAFETY ROLLBACK) ---
+      - name: Restore captured OFF baseline runtime
+        if: inputs.action == 'restore-off-runtime'
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: |
+          node scripts/pilot/numeric-pilot-ops.cjs restore-off-runtime \
+            --pilot-deployment "$INPUT_DEPLOYMENT" \
+            --coach-id "$INPUT_COACH" \
+            --out "$REPORT_DIR/runtime-restore-result.json"
 
       # --- ROUTE: STOP OPERATIVO ---
       - name: Execute STOP (Safety Disarm)
@@ -175,17 +204,18 @@ jobs:
 
       # --- ROUTE: PREFLIGHT & RUNTIME ATTESTATION ---
       - name: Provider runtime attestation
-        if: inputs.action == 'preflight-check'
+        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
         run: |
           node scripts/pilot/numeric-pilot-ops.cjs attest \
             --deployment "$INPUT_DEPLOYMENT" \
             --sha "$INPUT_RUNTIME" \
             --operation-id "$INPUT_OPERATION" \
+            --window-file "$REPORT_DIR/window.json" \
             --expected-alias "vdsen-ecosistema.vercel.app" \
             --out "$REPORT_DIR/attestation.json"
 
       - name: Collect live fences evidence
-        if: inputs.action == 'preflight-check'
+        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
         env:
           GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
         run: |
@@ -194,13 +224,13 @@ jobs:
             --out "$REPORT_DIR/fences.json"
 
       - name: Collect concurrency and operation history evidence
-        if: inputs.action == 'preflight-check'
+        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
         run: |
           gh api "repos/$GITHUB_REPOSITORY/actions/workflows/vdsen-numeric-pilot.yml/runs?status=in_progress" > "$REPORT_DIR/active-runs.json"
           gh api "repos/$GITHUB_REPOSITORY/actions/workflows/vdsen-numeric-pilot.yml/runs?status=completed&per_page=100" > "$REPORT_DIR/prior-runs.json"
 
       - name: Execute preflight verification with real evidence
-        if: inputs.action == 'preflight-check'
+        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
         env:
           GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
         run: |
@@ -212,6 +242,20 @@ jobs:
             --fences-file "$REPORT_DIR/fences.json" \
             --runs-file "$REPORT_DIR/active-runs.json" \
             --out "$REPORT_DIR/preflight-result.json"
+
+      # --- ROUTE: ARM NUMERIC PILOT FENCES (PROTECTED) ---
+      - name: Arm numeric pilot fences (atomic ledger reservation + 3-fence activation)
+        if: inputs.action == 'arm-fences'
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: |
+          node scripts/pilot/numeric-pilot-ops.cjs arm-fences \
+            --window-file "$REPORT_DIR/window.json" \
+            --attestation-file "$REPORT_DIR/attestation.json" \
+            --preflight-file "$REPORT_DIR/preflight-result.json" \
+            --coach-id "$INPUT_COACH" \
+            --run-id "${{ github.run_id }}" \
+            --out "$REPORT_DIR/arm-fences-result.json"
 
       - name: Upload evidence artifact
         if: always()

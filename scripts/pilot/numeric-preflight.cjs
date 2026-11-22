@@ -7,7 +7,7 @@
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const C = require('../../api/_numericPilotContract');
-const { attestRuntime } = require('./numeric-attestation.cjs');
+const { attestRuntime, isAccreditedDemoEnvironment } = require('./numeric-attestation.cjs');
 const canary = require('./ayrton-canary.cjs');
 
 const MAX_WINDOW_HOURS = 24;
@@ -160,6 +160,9 @@ function validateFences(fences, window, mode = 'preflight') {
  */
 async function runPreflight(opts) {
   opts = opts || {};
+  if (opts.now !== undefined && !isAccreditedDemoEnvironment()) {
+    throw new Error('CLOCK_TAMPERING_REJECTED: External clock injection in runPreflight is strictly forbidden outside an accredited demo emulator environment');
+  }
   const window = opts.window;
   if (opts.token && opts.priorOperations === undefined && window && window.operationId) {
     const targetOpId = window.operationId;
@@ -400,7 +403,7 @@ async function runPreflight(opts) {
 
   let attestationResult = null;
   if (window && window.runtimeSha) {
-    attestationResult = await attestRuntime({
+    const attestOpts = {
       deploymentId: opts.deploymentId,
       expectedSha: window.runtimeSha,
       expectedOperationId: window.operationId,
@@ -410,10 +413,13 @@ async function runPreflight(opts) {
       expectedExpiresAt: window.expiresAt,
       expectedStartsAt: window.startsAt,
       expectedAlias: opts.expectedAlias,
-      now: now,
       fetcher: opts.io && opts.io.fetcher,
       vercelToken: opts.vercelToken
-    });
+    };
+    if (opts.now !== undefined) {
+      attestOpts.now = opts.now;
+    }
+    attestationResult = await attestRuntime(attestOpts);
 
     checks.push({
       check: 'RUNTIME_ATTESTATION',

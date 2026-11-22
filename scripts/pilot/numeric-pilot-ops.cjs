@@ -9,7 +9,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const C = require('../../api/_numericPilotContract');
 const canary = require('./ayrton-canary.cjs');
-const { runPreflight } = require('./numeric-preflight.cjs');
+const { runPreflight, validateNumericWindow, validateFences } = require('./numeric-preflight.cjs');
 const { attestRuntime } = require('./numeric-attestation.cjs');
 const { executeStop, auditMesoConsistency, assertFreshAuthorizationRequired } = require('./numeric-stop-recovery.cjs');
 
@@ -28,19 +28,22 @@ function invocation(env, action) {
   assert.equal(env.GITHUB_REPOSITORY, 'vdsenasesoria-svg/vdsen-ecosistema', 'Invalid repository.');
   assert.equal(env.GITHUB_REF, 'refs/heads/codex/client-app-next', 'Must target canonical branch codex/client-app-next.');
 
-  if (action === 'stop') {
-    // STOP is an emergency safety disarm action. It does NOT require the activation release switch,
-    // and is never blocked by job re-run attempts (retry after network/transient failure is permitted).
+  if (action === 'stop' || action === 'restore-off-runtime') {
+    // STOP and restore-off-runtime are emergency safety disarm/rollback actions.
+    // They do NOT require the activation release switch and are never blocked by job re-runs.
     if (env.VDSEN_NUMERIC_PILOT_STOP_ENABLED === 'false') {
-      throw new Error('NUMERIC_PILOT_STOP_BLOCKED: STOP authorization explicitly revoked.');
+      throw new Error('NUMERIC_PILOT_STOP_BLOCKED: STOP/restore authorization explicitly revoked.');
     }
-    return { authorized: true, action: 'stop' };
+    return { authorized: true, action };
   }
 
   assert.equal(env.GITHUB_RUN_ATTEMPT, '1', 'NO_JOB_RERUNS: Reruns are forbidden for numeric operations.');
 
-  if (action === 'arm-fences') {
-    throw new Error('ARM_NOT_IMPLEMENTED: Production arming is disabled. Formal owner authorization required.');
+  if (action === 'arm-fences' || action === 'prepare-runtime') {
+    if (env.VDSEN_NUMERIC_PILOT_RELEASE_ENABLED !== 'true') {
+      throw new Error('NUMERIC_PILOT_ARM_DISABLED: VDSEN_NUMERIC_PILOT_RELEASE_ENABLED must be explicitly true for ' + action + '.');
+    }
+    return { authorized: true, action };
   }
 
   // Read-only actions (preflight-check, audit-status)
@@ -729,13 +732,20 @@ async function main() {
     const deploymentId = getArg(args, '--deployment');
     const sha = getArg(args, '--sha');
     const opId = getArg(args, '--operation-id');
+    const windowFile = getArg(args, '--window-file');
     const expectedAlias = getArg(args, '--expected-alias', 'vdsen-ecosistema.vercel.app');
     const outFile = getArg(args, '--out');
 
+    const w = (windowFile && fs.existsSync(windowFile)) ? JSON.parse(fs.readFileSync(windowFile, 'utf8')) : null;
     const result = await attestRuntime({
       deploymentId,
-      expectedSha: sha,
-      expectedOperationId: opId,
+      expectedSha: sha || (w && w.runtimeSha),
+      expectedOperationId: opId || (w && w.operationId),
+      expectedUid: w && w.uid,
+      expectedPlanId: w && w.planId,
+      expectedPid: w && w.pid,
+      expectedStartsAt: w && w.startsAt,
+      expectedExpiresAt: w && w.expiresAt,
       expectedAlias: expectedAlias
     });
 
@@ -748,6 +758,51 @@ async function main() {
     if (!result.attested) {
       process.exitCode = 1;
     }
+    return;
+  }
+
+  if (command === 'prepare-runtime') {
+    const windowFile = getArg(args, '--window-file');
+    const coachId = getArg(args, '--coach-id');
+    const expectedAlias = getArg(args, '--expected-alias', 'vdsen-ecosistema.vercel.app');
+    const outFile = getArg(args, '--out', 'release-output/numeric-pilot/runtime-prep-result.json');
+
+    assert.ok(windowFile && fs.existsSync(windowFile), 'PREPARE_WINDOW_FILE_REQUIRED');
+    assert.ok(coachId, 'PREPARE_COACH_ID_REQUIRED');
+
+    const prep = require('./numeric-runtime-prep.cjs');
+    const s = JSON.parse(fs.readFileSync('.release/vdsen-client.json', 'utf8'));
+    const windowSpec = JSON.parse(fs.readFileSync(windowFile, 'utf8'));
+    const baseline = {
+      deployment: s.production_deployment,
+      runtimeSha: s.runtime_sha,
+      numericApplyEnabled: s.numeric_apply_enabled,
+    };
+    const io = prep.createProductionAdapters(s, { coachId, outFile });
+    const rep = await prep.prepareNumericRuntime(windowSpec, baseline, io, { expectedAlias });
+    console.log(JSON.stringify(rep, null, 2));
+    if (rep.status !== 'NUMERIC_RUNTIME_READY_FENCES_CLOSED') process.exitCode = 1;
+    return;
+  }
+
+  if (command === 'restore-off-runtime') {
+    const pilotDeploymentId = getArg(args, '--pilot-deployment', '');
+    const coachId = getArg(args, '--coach-id', '');
+    const outFile = getArg(args, '--out', 'release-output/numeric-pilot/runtime-restore-result.json');
+
+    const prep = require('./numeric-runtime-prep.cjs');
+    const s = JSON.parse(fs.readFileSync('.release/vdsen-client.json', 'utf8'));
+    const baseline = {
+      deployment: s.production_deployment,
+      runtimeSha: s.runtime_sha,
+    };
+    const io = prep.createProductionAdapters(s, { coachId: coachId || undefined, outFile });
+    if (!coachId) delete io.readFences;
+    const rep = await prep.restoreOffRuntime({ baseline, pilotDeploymentId: pilotDeploymentId || undefined }, io);
+    fs.mkdirSync(path.dirname(outFile), { recursive: true });
+    fs.writeFileSync(outFile, JSON.stringify(rep, null, 2));
+    console.log(JSON.stringify(rep, null, 2));
+    if (rep.status !== 'OFF_BASELINE_RESTORED_VERIFIED') process.exitCode = 1;
     return;
   }
 
@@ -787,6 +842,46 @@ async function main() {
     process.exit(1);
   }
 
+  if (command === 'arm-fences') {
+    const windowFile = getArg(args, '--window-file');
+    const attestationFile = getArg(args, '--attestation-file');
+    const preflightFile = getArg(args, '--preflight-file');
+    const coachId = getArg(args, '--coach-id');
+    const runId = getArg(args, '--run-id', process.env.GITHUB_RUN_ID || '');
+    const outFile = getArg(args, '--out', 'release-output/numeric-pilot/arm-fences-result.json');
+
+    assert.ok(windowFile && fs.existsSync(windowFile), 'ARM_WINDOW_FILE_REQUIRED');
+    assert.ok(attestationFile && fs.existsSync(attestationFile), 'ARM_ATTESTATION_FILE_REQUIRED');
+    assert.ok(preflightFile && fs.existsSync(preflightFile), 'ARM_PREFLIGHT_FILE_REQUIRED');
+    assert.ok(coachId, 'ARM_COACH_ID_REQUIRED');
+
+    const windowSpec = JSON.parse(fs.readFileSync(windowFile, 'utf8'));
+    const attestation = JSON.parse(fs.readFileSync(attestationFile, 'utf8'));
+    const preflight = JSON.parse(fs.readFileSync(preflightFile, 'utf8'));
+    const params = { window: windowSpec, attestation, preflight, coachId, runId };
+
+    const token = process.env.GOOGLE_ACCESS_TOKEN;
+    const projectId = process.env.GCP_PROJECT_ID || 'vdsen-ecosistema';
+    let rep;
+    if (token) {
+      rep = await executeArmFencesRest(projectId, token, params);
+    } else if (process.env.FIRESTORE_EMULATOR_HOST) {
+      const admin = require('firebase-admin');
+      const app = admin.apps && admin.apps.length ? admin.apps[0] : admin.initializeApp({ projectId: process.env.GCLOUD_PROJECT || 'demo-vdsen-shadow' });
+      const db = app.firestore ? app.firestore() : admin.firestore(app);
+      rep = await executeArmFences(params, createEmulatorIo(db));
+    } else {
+      console.error(JSON.stringify({ status: 'BLOCKED', reason: 'NO_AUTHENTICATED_ADAPTER' }));
+      process.exit(1);
+    }
+
+    fs.mkdirSync(path.dirname(outFile), { recursive: true });
+    fs.writeFileSync(outFile, JSON.stringify(rep, null, 2));
+    console.log(JSON.stringify(rep, null, 2));
+    if (!rep.armed) process.exitCode = 1;
+    return;
+  }
+
   if (command === 'audit') {
     const file = getArg(args, '--file');
     const pilotUid = getArg(args, '--pilot-uid', C.UID);
@@ -821,9 +916,238 @@ if (require.main === module) {
   });
 }
 
+/**
+ * Executes protected arm-fences operation with strict official preflight contract
+ * and true all-or-nothing atomic commit:
+ * 1. Validates window, runtime attestation, and REAL runPreflight() output (schema=vdsen-numeric-preflight-v1, decision==='GO').
+ * 2. Executes ONE single atomic transaction / :commit containing:
+ *    - releaseControl/numericPilot/operations/{operationId} (precondition: exists === false)
+ *    - releaseControl/autonomousProgression
+ *    - releaseControl/numericPilot
+ *    - coaches/{coachId}.autoApplyCanary
+ *    If any precondition or write fails, ZERO fences are modified.
+ * 3. Reads back and verifies all 3 fences + ledger doc before reporting armed=true.
+ */
+async function executeArmFences(params, io) {
+  const { window: w, attestation, preflight, coachId, runId } = params || {};
+  const nowMs = typeof (params && params.now) === 'number' ? params.now : Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+
+  const wCheck = validateNumericWindow(w, nowMs);
+  if (!wCheck.valid) {
+    throw new Error('ARM_WINDOW_INVALID: ' + wCheck.errors.join('; '));
+  }
+  if (!coachId || typeof coachId !== 'string') {
+    throw new Error('ARM_COACH_ID_REQUIRED: coachId is mandatory');
+  }
+  if (!attestation || attestation.attested !== true) {
+    throw new Error('ARM_ATTESTATION_INVALID: Verified provider runtime attestation is mandatory');
+  }
+  if (attestation.operationId !== w.operationId || (attestation.runtimeSha || attestation.sha) !== w.runtimeSha) {
+    throw new Error('ARM_ATTESTATION_MISMATCH: Attestation does not match window operationId/runtimeSha');
+  }
+
+  // Strict official runPreflight() contract: decision MUST be exactly 'GO' (never accept verdict/ready aliases)
+  if (!preflight || typeof preflight !== 'object' || preflight.schema !== 'vdsen-numeric-preflight-v1') {
+    throw new Error('ARM_PREFLIGHT_SCHEMA_INVALID: Official runPreflight() output (vdsen-numeric-preflight-v1) is mandatory');
+  }
+  if (preflight.decision !== 'GO') {
+    throw new Error('ARM_PREFLIGHT_NOT_GO: Official preflight decision is ' + String(preflight.decision || 'MISSING') + ' (expected GO)');
+  }
+  if (!Array.isArray(preflight.blockers) || preflight.blockers.length > 0) {
+    throw new Error('ARM_PREFLIGHT_BLOCKERS_PRESENT: Preflight contains unresolved blockers');
+  }
+  if (!Array.isArray(preflight.checks) || preflight.checks.length === 0 || preflight.checks.some(c => !c || c.pass !== true)) {
+    throw new Error('ARM_PREFLIGHT_CHECKS_INCOMPLETE: All official preflight checks must be present and pass=true');
+  }
+  const pfWin = preflight.window;
+  const WINDOW_KEYS = ['schema', 'mode', 'uid', 'planId', 'pid', 'runtimeSha', 'operationId', 'startsAt', 'expiresAt'];
+  if (!pfWin || WINDOW_KEYS.some(k => pfWin[k] !== w[k])) {
+    throw new Error('ARM_PREFLIGHT_WINDOW_MISMATCH: Preflight window does not match target window');
+  }
+  const pfAtt = preflight.attestation;
+  if (!pfAtt || pfAtt.attested !== true || pfAtt.operationId !== w.operationId ||
+      (pfAtt.runtimeSha || pfAtt.sha) !== w.runtimeSha ||
+      (attestation.deploymentId && pfAtt.deploymentId && pfAtt.deploymentId !== attestation.deploymentId)) {
+    throw new Error('ARM_PREFLIGHT_ATTESTATION_MISMATCH: Preflight attestation does not match verified runtime attestation');
+  }
+
+  const scope = {
+    enabled: true,
+    clientIds: [w.uid],
+    prescriptionExerciseIds: [w.pid]
+  };
+  const ledgerPath = 'releaseControl/numericPilot/operations/' + w.operationId;
+  const ledgerPayload = {
+    schema: 'vdsen-numeric-operations-ledger-v1',
+    status: 'RESERVED',
+    operationId: w.operationId,
+    uid: w.uid,
+    planId: w.planId,
+    pid: w.pid,
+    runtimeSha: w.runtimeSha,
+    deploymentId: attestation.deploymentId || pfAtt.deploymentId || '',
+    runId: String(runId || 'local'),
+    window: w,
+    scope: scope,
+    appliedRecordKeys: [],
+    reservedAt: nowIso,
+    updatedAt: nowIso
+  };
+  const releasePayload = {
+    schema: 'vdsen-autonomous-release-v1',
+    enabled: true,
+    clientIds: [w.uid],
+    expiresAt: w.expiresAt,
+    operationId: w.operationId,
+    updatedAt: nowIso
+  };
+  const numericFencePayload = {
+    schema: w.schema,
+    mode: w.mode,
+    enabled: true,
+    uid: w.uid,
+    planId: w.planId,
+    pid: w.pid,
+    runtimeSha: w.runtimeSha,
+    operationId: w.operationId,
+    startsAt: w.startsAt,
+    expiresAt: w.expiresAt,
+    updatedAt: nowIso
+  };
+
+  // Single all-or-nothing atomic commit (ledger reservation + 3 fences)
+  if (typeof io.commitAtomicArm === 'function') {
+    await io.commitAtomicArm({
+      ledgerPath,
+      ledgerPayload,
+      releasePath: 'releaseControl/autonomousProgression',
+      releasePayload,
+      numericFencePath: 'releaseControl/numericPilot',
+      numericFencePayload,
+      coachPath: 'coaches/' + coachId,
+      coachPayload: { autoApplyCanary: scope },
+      coachMask: ['autoApplyCanary']
+    });
+  } else if (io.db && typeof io.db.runTransaction === 'function') {
+    await io.db.runTransaction(async (tx) => {
+      const ledgerRef = io.db.doc(ledgerPath);
+      const snap = await tx.get(ledgerRef);
+      if (snap.exists) {
+        throw new Error('OPERATION_ALREADY_EXISTS: Operation ' + w.operationId + ' is already recorded in ledger');
+      }
+      tx.set(ledgerRef, ledgerPayload);
+      tx.set(io.db.doc('releaseControl/autonomousProgression'), releasePayload, { mergeFields: Object.keys(releasePayload) });
+      tx.set(io.db.doc('releaseControl/numericPilot'), numericFencePayload, { mergeFields: Object.keys(numericFencePayload) });
+      tx.set(io.db.doc('coaches/' + coachId), { autoApplyCanary: scope }, { mergeFields: ['autoApplyCanary'] });
+    });
+  } else {
+    throw new Error('ATOMIC_ARM_ADAPTER_REQUIRED: An atomic transaction or commit adapter is mandatory');
+  }
+
+  // Post-arm readback verification (fail closed on any mismatch)
+  const [relAfter, numAfter, coachAfter, ledgerAfter] = await Promise.all([
+    io.readFence('releaseControl/autonomousProgression'),
+    io.readFence('releaseControl/numericPilot'),
+    io.readFence('coaches/' + coachId),
+    io.readFence(ledgerPath)
+  ]);
+
+  const fCheck = validateFences({ releaseControl: relAfter, numericPilot: numAfter, coach: coachAfter }, w, 'active');
+  if (!fCheck.valid) {
+    throw new Error('ARM_READBACK_FENCES_INVALID: ' + fCheck.errors.join('; '));
+  }
+  if (!C.ledgerValid(ledgerAfter, w)) {
+    throw new Error('ARM_READBACK_LEDGER_INVALID: Durable ledger document failed contract verification');
+  }
+
+  return {
+    status: 'ARMED',
+    armed: true,
+    atomicCommit: true,
+    operationId: w.operationId,
+    uid: w.uid,
+    planId: w.planId,
+    pid: w.pid,
+    runtimeSha: w.runtimeSha,
+    deploymentId: attestation.deploymentId || pfAtt.deploymentId || null,
+    startsAt: w.startsAt,
+    expiresAt: w.expiresAt,
+    armedAt: nowIso,
+    fencesVerified: true,
+    ledgerStatus: ledgerAfter.status
+  };
+}
+
+/**
+ * Executes protected arm-fences via ONE atomic Firestore REST :commit RPC.
+ * Write 0 creates the ledger document with currentDocument.exists=false; Writes 1-3 arm the 3 fences.
+ * If the operation already exists or any write fails, Firestore aborts the entire batch atomically.
+ */
+async function executeArmFencesRest(projectId, token, params, customFetcher) {
+  const fetcher = customFetcher || globalThis.fetch;
+  const baseUrl = getFirestoreRestBaseUrl(projectId);
+  const docPrefix = 'projects/' + projectId + '/databases/(default)/documents/';
+  const commitUrl = baseUrl.replace(/\/documents\/$/, '/documents:commit');
+  const encVal = (v) => v === null || v === undefined ? { nullValue: null } : typeof v === 'boolean' ? { booleanValue: v } : typeof v === 'number' ? { integerValue: String(v) } : typeof v === 'string' ? { stringValue: v }
+    : Array.isArray(v) ? { arrayValue: { values: v.map(encVal) } } : { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, encVal(x)])) } };
+  const encFields = (obj) => Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, encVal(v)]));
+
+  const io = {
+    commitAtomicArm: async (batch) => {
+      const writes = [
+        {
+          update: { name: docPrefix + batch.ledgerPath, fields: encFields(batch.ledgerPayload) },
+          currentDocument: { exists: false }
+        },
+        {
+          update: { name: docPrefix + batch.releasePath, fields: encFields(batch.releasePayload) },
+          updateMask: { fieldPaths: Object.keys(batch.releasePayload) }
+        },
+        {
+          update: { name: docPrefix + batch.numericFencePath, fields: encFields(batch.numericFencePayload) },
+          updateMask: { fieldPaths: Object.keys(batch.numericFencePayload) }
+        },
+        {
+          update: { name: docPrefix + batch.coachPath, fields: encFields(batch.coachPayload) },
+          updateMask: { fieldPaths: batch.coachMask }
+        }
+      ];
+      const headers = { 'content-type': 'application/json' };
+      if (token) headers.authorization = 'Bearer ' + token;
+      const res = await fetcher(commitUrl, { method: 'POST', headers, body: JSON.stringify({ writes }) });
+      if (res.status === 409 || res.status === 412) {
+        throw new Error('OPERATION_ALREADY_EXISTS: Atomic commit rejected because operation already exists in ledger');
+      }
+      if (res.status !== 200) {
+        const errText = await res.text();
+        if (/ALREADY_EXISTS|FAILED_PRECONDITION/i.test(errText)) {
+          throw new Error('OPERATION_ALREADY_EXISTS: Atomic commit rejected because operation already exists in ledger');
+        }
+        throw new Error('ATOMIC_ARM_COMMIT_FAILED_' + res.status + ': ' + errText);
+      }
+      return JSON.parse(await res.text());
+    },
+    readFence: async (docPath) => {
+      const headers = {};
+      if (token) headers.authorization = 'Bearer ' + token;
+      const res = await fetcher(baseUrl + docPath, { method: 'GET', headers });
+      if (res.status === 404) return null;
+      if (res.status !== 200) {
+        throw new Error('READ_FENCE_FAILED_' + res.status + '_ON_' + docPath + ': ' + (await res.text()));
+      }
+      return canary.decDoc(JSON.parse(await res.text()));
+    }
+  };
+
+  return executeArmFences(params, io);
+}
+
 module.exports = {
   invocation,
   fetchFencesFromRest,
+  executeArmFences,
+  executeArmFencesRest,
   executeStopRest,
   executeAuditStatus,
   createEmulatorIo,
