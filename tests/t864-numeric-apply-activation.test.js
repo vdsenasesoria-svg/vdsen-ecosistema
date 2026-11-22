@@ -275,7 +275,9 @@ test('T864C.1 Non-emulator runPreflight() never triggers CLOCK_TAMPERING_REJECTE
   const prevEmu = process.env.FIRESTORE_EMULATOR_HOST;
   const prevProj = process.env.GCLOUD_PROJECT;
   const prevGcp = process.env.GCP_PROJECT_ID;
+  const prevVercelToken = process.env.VERCEL_TOKEN;
   delete process.env.FIRESTORE_EMULATOR_HOST;
+  delete process.env.VERCEL_TOKEN;
   process.env.GCLOUD_PROJECT = 'vdsen-ecosistema';
   process.env.GCP_PROJECT_ID = 'vdsen-ecosistema';
 
@@ -313,6 +315,7 @@ test('T864C.1 Non-emulator runPreflight() never triggers CLOCK_TAMPERING_REJECTE
     if (prevEmu === undefined) delete process.env.FIRESTORE_EMULATOR_HOST; else process.env.FIRESTORE_EMULATOR_HOST = prevEmu;
     if (prevProj === undefined) delete process.env.GCLOUD_PROJECT; else process.env.GCLOUD_PROJECT = prevProj;
     if (prevGcp === undefined) delete process.env.GCP_PROJECT_ID; else process.env.GCP_PROJECT_ID = prevGcp;
+    if (prevVercelToken === undefined) delete process.env.VERCEL_TOKEN; else process.env.VERCEL_TOKEN = prevVercelToken;
   }
 });
 
