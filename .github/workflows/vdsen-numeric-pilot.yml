@@ -3,13 +3,15 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: Operational action to perform (preflight-check | arm-fences | stop | audit-status)
+        description: Operational action to perform (preflight-check | prepare-runtime | arm-fences | stop | restore-off-runtime | audit-status)
         default: 'preflight-check'
         type: choice
         options:
           - preflight-check
+          - prepare-runtime
           - arm-fences
           - stop
+          - restore-off-runtime
           - audit-status
       operation_id:
         description: Unique approved numeric operation ID (8-80 chars)
@@ -127,7 +129,7 @@ jobs:
           access_token_scopes: https://www.googleapis.com/auth/datastore
 
       - name: Assemble numeric window specification
-        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
+        if: inputs.action == 'preflight-check' || inputs.action == 'prepare-runtime' || inputs.action == 'arm-fences'
         run: |
           node -e "
             const fs = require('fs');
@@ -149,6 +151,29 @@ jobs:
             }
             fs.writeFileSync('$REPORT_DIR/window.json', JSON.stringify(w, null, 2));
           "
+
+      # --- ROUTE: PREPARE DEPLOYMENT-SCOPED NUMERIC RUNTIME (PROTECTED, FENCES CLOSED) ---
+      - name: Prepare deployment-scoped numeric pilot runtime (fences closed, project Numeric Guard OFF)
+        if: inputs.action == 'prepare-runtime'
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: |
+          node scripts/pilot/numeric-pilot-ops.cjs prepare-runtime \
+            --window-file "$REPORT_DIR/window.json" \
+            --coach-id "$INPUT_COACH" \
+            --expected-alias "vdsen-ecosistema.vercel.app" \
+            --out "$REPORT_DIR/runtime-prep-result.json"
+
+      # --- ROUTE: RESTORE CAPTURED OFF BASELINE RUNTIME (SAFETY ROLLBACK) ---
+      - name: Restore captured OFF baseline runtime
+        if: inputs.action == 'restore-off-runtime'
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: |
+          node scripts/pilot/numeric-pilot-ops.cjs restore-off-runtime \
+            --pilot-deployment "$INPUT_DEPLOYMENT" \
+            --coach-id "$INPUT_COACH" \
+            --out "$REPORT_DIR/runtime-restore-result.json"
 
       # --- ROUTE: STOP OPERATIVO ---
       - name: Execute STOP (Safety Disarm)
@@ -182,6 +207,7 @@ jobs:
             --deployment "$INPUT_DEPLOYMENT" \
             --sha "$INPUT_RUNTIME" \
             --operation-id "$INPUT_OPERATION" \
+            --window-file "$REPORT_DIR/window.json" \
             --expected-alias "vdsen-ecosistema.vercel.app" \
             --out "$REPORT_DIR/attestation.json"
 

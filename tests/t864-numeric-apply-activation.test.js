@@ -270,3 +270,205 @@ test('T864.6 Workflow & static invariants: vdsen-numeric-pilot.yml exposes arm-f
   assert.equal(typeof effective.resolveEffective, 'function');
   assert.equal(typeof executor.applyPending, 'function');
 });
+
+test('T864C.1 Non-emulator runPreflight() never triggers CLOCK_TAMPERING_REJECTED without opts.now, while still rejecting external clock injection', async () => {
+  const prevEmu = process.env.FIRESTORE_EMULATOR_HOST;
+  const prevProj = process.env.GCLOUD_PROJECT;
+  const prevGcp = process.env.GCP_PROJECT_ID;
+  delete process.env.FIRESTORE_EMULATOR_HOST;
+  process.env.GCLOUD_PROJECT = 'vdsen-ecosistema';
+  process.env.GCP_PROJECT_ID = 'vdsen-ecosistema';
+
+  try {
+    const liveNow = Date.now();
+    const liveWin = makeWindow({
+      startsAt: new Date(liveNow - 3600 * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      expiresAt: new Date(liveNow + 6 * 3600 * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    });
+    const baseOpts = {
+      window: liveWin,
+      deploymentId: DEPLOYMENT_ID,
+      expectedAlias: ALIAS,
+      currentRunId: '999010',
+      activeRuns: [{ id: '999010', status: 'in_progress' }],
+      priorOperations: [],
+      priorOperationsSourceVerified: true,
+      priorOperationsCoverageComplete: true,
+      fences: {
+        releaseControl: { enabled: false, clientIds: [ACTIVE_UID], expiresAt: liveWin.expiresAt },
+        numericPilot: { enabled: false, uid: ACTIVE_UID, planId: ACTIVE_PLAN, pid: ACTIVE_PID, runtimeSha: liveWin.runtimeSha, operationId: liveWin.operationId, expiresAt: liveWin.expiresAt },
+        coach: { autoApplyCanary: { enabled: false, clientIds: [ACTIVE_UID], prescriptionExerciseIds: [ACTIVE_PID] } },
+      },
+    };
+
+    // Without opts.now: must reach attestRuntime() cleanly (returning BLOCKED for missing VERCEL_TOKEN, NEVER CLOCK_TAMPERING_REJECTED)
+    const res = await ops.runPreflight({ ...baseOpts, vercelToken: '' });
+    assert.equal(res.schema, 'vdsen-numeric-preflight-v1');
+    assert.equal(res.decision, 'BLOCKED');
+    assert.equal(res.reason, 'VERCEL_TOKEN_UNAVAILABLE');
+
+    // With explicit opts.now outside accredited demo emulator: strictly rejected
+    await assert.rejects(() => ops.runPreflight({ ...baseOpts, now: liveNow, vercelToken: '' }), /CLOCK_TAMPERING_REJECTED/);
+  } finally {
+    if (prevEmu === undefined) delete process.env.FIRESTORE_EMULATOR_HOST; else process.env.FIRESTORE_EMULATOR_HOST = prevEmu;
+    if (prevProj === undefined) delete process.env.GCLOUD_PROJECT; else process.env.GCLOUD_PROJECT = prevProj;
+    if (prevGcp === undefined) delete process.env.GCP_PROJECT_ID; else process.env.GCP_PROJECT_ID = prevGcp;
+  }
+});
+
+test('T864C.2 attestRuntime detects CRON_SECRET in Vercel string[] env format and validates vdsenPilotWindow pidHash/expiresAt', async () => {
+  const prep = require(path.join(ROOT, 'scripts/pilot/numeric-runtime-prep.cjs'));
+  const w = makeWindow();
+  const makeAttestFetcher = (over = {}) => async (url) => {
+    if (url.includes('/aliases/')) {
+      return { status: 200, json: async () => ({ alias: ALIAS, deploymentId: DEPLOYMENT_ID, projectId: DEFAULT_PROJECT_ID }) };
+    }
+    return {
+      status: 200,
+      json: async () => ({
+        id: DEPLOYMENT_ID,
+        projectId: DEFAULT_PROJECT_ID,
+        teamId: DEFAULT_TEAM_ID,
+        target: 'production',
+        readyState: 'READY',
+        alias: [ALIAS],
+        env: [...prep.REQUIRED_NUMERIC_RUNTIME_ENVS],
+        meta: {
+          githubCommitSha: w.runtimeSha,
+          vdsenPilotOperation: w.operationId,
+          vdsenPilotWindow: prep.buildPilotWindowMeta(w),
+        },
+        ...over,
+      }),
+    };
+  };
+
+  // String[] env with CRON_SECRET must be rejected (real Vercel /v13/deployments/:id format)
+  const cronRes = await ops.attestRuntime({
+    deploymentId: DEPLOYMENT_ID, expectedSha: w.runtimeSha, expectedOperationId: w.operationId,
+    expectedUid: w.uid, expectedPlanId: w.planId, expectedPid: w.pid,
+    expectedStartsAt: w.startsAt, expectedExpiresAt: w.expiresAt, expectedAlias: ALIAS,
+    now: NOW_MS, vercelToken: 'tok',
+    fetcher: makeAttestFetcher({ env: [...prep.REQUIRED_NUMERIC_RUNTIME_ENVS, 'CRON_SECRET'] }),
+  });
+  assert.equal(cronRes.attested, false);
+  assert.equal(cronRes.reason, 'CRON_SECRET_DETECTED');
+
+  // Mismatched pidHash in meta.vdsenPilotWindow rejected
+  const badMeta = JSON.parse(prep.buildPilotWindowMeta(w));
+  badMeta.pidHash = '0'.repeat(64);
+  const badPidRes = await ops.attestRuntime({
+    deploymentId: DEPLOYMENT_ID, expectedSha: w.runtimeSha, expectedOperationId: w.operationId,
+    expectedUid: w.uid, expectedPlanId: w.planId, expectedPid: w.pid,
+    expectedStartsAt: w.startsAt, expectedExpiresAt: w.expiresAt, expectedAlias: ALIAS,
+    now: NOW_MS, vercelToken: 'tok',
+    fetcher: makeAttestFetcher({ meta: { githubCommitSha: w.runtimeSha, vdsenPilotOperation: w.operationId, vdsenPilotWindow: JSON.stringify(badMeta) } }),
+  });
+  assert.equal(badPidRes.attested, false);
+  assert.equal(badPidRes.reason, 'WINDOW_PID_HASH_MISMATCH');
+
+  // Valid deployment-scoped numeric pilot deployment passes ATTESTED
+  const okRes = await ops.attestRuntime({
+    deploymentId: DEPLOYMENT_ID, expectedSha: w.runtimeSha, expectedOperationId: w.operationId,
+    expectedUid: w.uid, expectedPlanId: w.planId, expectedPid: w.pid,
+    expectedStartsAt: w.startsAt, expectedExpiresAt: w.expiresAt, expectedAlias: ALIAS,
+    now: NOW_MS, vercelToken: 'tok', fetcher: makeAttestFetcher(),
+  });
+  assert.equal(okRes.attested, true);
+  assert.equal(okRes.status, 'ATTESTED');
+});
+
+test('T864C.3 Protected prepare-runtime & restore-off-runtime preserve OFF Numeric Guard, keep fences closed, auto-rollback on failure, and expose workflow actions', async () => {
+  const prep = require(path.join(ROOT, 'scripts/pilot/numeric-runtime-prep.cjs'));
+  const G = require(path.join(ROOT, 'scripts/release/numeric-guard.cjs'));
+  const w = makeWindow();
+  const BASELINE_DPL = 'dpl_26Q4iTpsCbQvPNFR8vKwa74PrPpS';
+  const STAGED_DPL = 'dpl_NumericPilotStaged0001';
+
+  // 1) buildNumericDeployArgs binds metadata + 5 per-deployment envs without CRON_SECRET
+  const args = prep.buildNumericDeployArgs(w, BASELINE_DPL, '/tmp/export-t864c', NOW_MS);
+  assert.ok(args.includes('githubCommitSha=' + w.runtimeSha));
+  assert.ok(args.includes('vdsenPilotOperation=' + w.operationId));
+  assert.ok(args.includes('vdsenPilotBaseline=' + BASELINE_DPL));
+  assert.ok(args.some(a => a.startsWith('vdsenPilotWindow=')));
+  for (const envKey of prep.REQUIRED_NUMERIC_RUNTIME_ENVS) {
+    assert.ok(args.some(a => a.startsWith(envKey + '=')), 'missing --env ' + envKey);
+  }
+  assert.ok(!args.some(a => a.includes('CRON_SECRET')));
+
+  // 2) invocation authorization for prepare-runtime vs restore-off-runtime
+  const baseEnv = {
+    GITHUB_ACTIONS: 'true',
+    GITHUB_REPOSITORY: 'vdsenasesoria-svg/vdsen-ecosistema',
+    GITHUB_REF: 'refs/heads/codex/client-app-next',
+    GITHUB_RUN_ATTEMPT: '1',
+    VDSEN_NUMERIC_PILOT_RELEASE_ENABLED: 'false',
+  };
+  assert.throws(() => ops.invocation(baseEnv, 'prepare-runtime'), /NUMERIC_PILOT_ARM_DISABLED/);
+  assert.equal(ops.invocation({ ...baseEnv, VDSEN_NUMERIC_PILOT_RELEASE_ENABLED: 'true' }, 'prepare-runtime').authorized, true);
+  assert.equal(ops.invocation({ ...baseEnv, GITHUB_RUN_ATTEMPT: '2' }, 'restore-off-runtime').authorized, true);
+
+  // 3) prepareNumericRuntime succeeds with project Numeric Guard OFF & fences closed
+  let liveAlias = BASELINE_DPL;
+  const closedFences = {
+    releaseControl: { enabled: false },
+    numericPilot: { enabled: false },
+    coach: { autoApplyCanary: { enabled: false } },
+  };
+  const offEvidence = () => G.evaluateProductionEnv([], { project: DEFAULT_PROJECT_ID, team: DEFAULT_TEAM_ID });
+  const baseline = { deployment: BASELINE_DPL, runtimeSha: SHA, numericApplyEnabled: false };
+
+  // Open fence blocks prepare-runtime before any mutation
+  await assert.rejects(() => prep.prepareNumericRuntime(w, baseline, {
+    current: async () => liveAlias,
+    readFences: async () => ({ ...closedFences, releaseControl: { enabled: true } }),
+    offProof: async () => offEvidence(),
+    assertNoPriorOperation: async () => {},
+  }, { now: NOW_MS }), /RELEASE_FENCE_MUST_BE_CLOSED/);
+
+  const rep = await prep.prepareNumericRuntime(w, baseline, {
+    current: async () => liveAlias,
+    readFences: async () => closedFences,
+    offProof: async () => offEvidence(),
+    assertNoPriorOperation: async () => {},
+    stage: async () => ({
+      id: STAGED_DPL, url: 'vdsen-numeric-pilot.vercel.app',
+      projectId: DEFAULT_PROJECT_ID, teamId: DEFAULT_TEAM_ID,
+      sha: w.runtimeSha, operationId: w.operationId,
+      target: 'production', state: 'READY',
+      envNames: [...prep.REQUIRED_NUMERIC_RUNTIME_ENVS],
+    }),
+    promote: async (id) => { liveAlias = id; },
+    rollback: async (id) => { liveAlias = id; },
+    verifyBytes: async () => 46,
+    attest: async (id) => ({ schema: 'vdsen-numeric-runtime-attestation-v1', attested: true, status: 'ATTESTED', deploymentId: id, operationId: w.operationId }),
+  }, { now: NOW_MS });
+  assert.equal(rep.status, 'NUMERIC_RUNTIME_READY_FENCES_CLOSED');
+  assert.equal(rep.staged.id, STAGED_DPL);
+  assert.equal(liveAlias, STAGED_DPL);
+
+  // 4) restoreOffRuntime returns live alias cleanly to baseline and rejects foreign deployments
+  const restoreRep = await prep.restoreOffRuntime({ baseline, pilotDeploymentId: STAGED_DPL }, {
+    current: async () => liveAlias,
+    rollback: async (id) => { liveAlias = id; },
+    verifyBytes: async () => 46,
+    readFences: async () => closedFences,
+  });
+  assert.equal(restoreRep.status, 'OFF_BASELINE_RESTORED_VERIFIED');
+  assert.equal(restoreRep.wrote, 1);
+  assert.equal(liveAlias, BASELINE_DPL);
+  assert.equal(restoreRep.fencesClosed, true);
+
+  await assert.rejects(() => prep.restoreOffRuntime({ baseline, pilotDeploymentId: STAGED_DPL }, {
+    current: async () => 'dpl_ForeignDeployment999',
+    rollback: async () => {},
+    verifyBytes: async () => 46,
+  }), /FOREIGN_ALIAS_NO_OVERWRITE/);
+
+  // 5) Workflow exposes prepare-runtime & restore-off-runtime
+  const wf = fs.readFileSync(path.join(ROOT, '.github/workflows/vdsen-numeric-pilot.yml'), 'utf8');
+  assert.ok(wf.includes('- prepare-runtime'));
+  assert.ok(wf.includes('- restore-off-runtime'));
+  assert.ok(wf.includes('node scripts/pilot/numeric-pilot-ops.cjs prepare-runtime'));
+  assert.ok(wf.includes('node scripts/pilot/numeric-pilot-ops.cjs restore-off-runtime'));
+});

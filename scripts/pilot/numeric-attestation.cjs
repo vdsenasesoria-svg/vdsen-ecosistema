@@ -533,7 +533,9 @@ async function attestRuntime(opts) {
     };
   }
 
-  const envKeys = hasEnvNames ? deploymentData.envNames : deploymentData.env.map(e => e && e.key);
+  const envKeys = hasEnvNames
+    ? deploymentData.envNames
+    : deploymentData.env.map(e => (typeof e === 'string' ? e : (e && e.key))).filter(Boolean);
   const hasCron = envKeys.includes('CRON_SECRET');
   if (hasCron) {
     return {
@@ -698,7 +700,7 @@ async function attestRuntime(opts) {
     pass: true
   });
 
-  // Window Hashes Validation in Metadata (if present)
+  // Window Hashes & Expiry Validation in Metadata (if present)
   if (meta.vdsenPilotWindow) {
     try {
       const parsedWindow = JSON.parse(meta.vdsenPilotWindow);
@@ -707,6 +709,18 @@ async function attestRuntime(opts) {
       }
       if (parsedWindow.planHash && parsedWindow.planHash !== hash(planId)) {
         return { schema: 'vdsen-numeric-runtime-attestation-v1', attested: false, status: 'REJECTED', reason: 'WINDOW_PLAN_HASH_MISMATCH' };
+      }
+      if (parsedWindow.pidHash && parsedWindow.pidHash !== hash(pid)) {
+        return { schema: 'vdsen-numeric-runtime-attestation-v1', attested: false, status: 'REJECTED', reason: 'WINDOW_PID_HASH_MISMATCH' };
+      }
+      if (parsedWindow.operationId && parsedWindow.operationId !== opts.expectedOperationId) {
+        return { schema: 'vdsen-numeric-runtime-attestation-v1', attested: false, status: 'REJECTED', reason: 'WINDOW_OPERATION_ID_MISMATCH' };
+      }
+      if (parsedWindow.expiresAt && opts.expectedExpiresAt && parsedWindow.expiresAt !== opts.expectedExpiresAt) {
+        return { schema: 'vdsen-numeric-runtime-attestation-v1', attested: false, status: 'REJECTED', reason: 'WINDOW_EXPIRES_AT_MISMATCH' };
+      }
+      if (parsedWindow.startsAt && opts.expectedStartsAt && parsedWindow.startsAt !== opts.expectedStartsAt) {
+        return { schema: 'vdsen-numeric-runtime-attestation-v1', attested: false, status: 'REJECTED', reason: 'WINDOW_STARTS_AT_MISMATCH' };
       }
     } catch (_) {
       return { schema: 'vdsen-numeric-runtime-attestation-v1', attested: false, status: 'REJECTED', reason: 'WINDOW_METADATA_CORRUPT' };

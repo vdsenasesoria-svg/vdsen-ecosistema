@@ -28,22 +28,22 @@ function invocation(env, action) {
   assert.equal(env.GITHUB_REPOSITORY, 'vdsenasesoria-svg/vdsen-ecosistema', 'Invalid repository.');
   assert.equal(env.GITHUB_REF, 'refs/heads/codex/client-app-next', 'Must target canonical branch codex/client-app-next.');
 
-  if (action === 'stop') {
-    // STOP is an emergency safety disarm action. It does NOT require the activation release switch,
-    // and is never blocked by job re-run attempts (retry after network/transient failure is permitted).
+  if (action === 'stop' || action === 'restore-off-runtime') {
+    // STOP and restore-off-runtime are emergency safety disarm/rollback actions.
+    // They do NOT require the activation release switch and are never blocked by job re-runs.
     if (env.VDSEN_NUMERIC_PILOT_STOP_ENABLED === 'false') {
-      throw new Error('NUMERIC_PILOT_STOP_BLOCKED: STOP authorization explicitly revoked.');
+      throw new Error('NUMERIC_PILOT_STOP_BLOCKED: STOP/restore authorization explicitly revoked.');
     }
-    return { authorized: true, action: 'stop' };
+    return { authorized: true, action };
   }
 
   assert.equal(env.GITHUB_RUN_ATTEMPT, '1', 'NO_JOB_RERUNS: Reruns are forbidden for numeric operations.');
 
-  if (action === 'arm-fences') {
+  if (action === 'arm-fences' || action === 'prepare-runtime') {
     if (env.VDSEN_NUMERIC_PILOT_RELEASE_ENABLED !== 'true') {
-      throw new Error('NUMERIC_PILOT_ARM_DISABLED: VDSEN_NUMERIC_PILOT_RELEASE_ENABLED must be explicitly true to arm numeric pilot fences.');
+      throw new Error('NUMERIC_PILOT_ARM_DISABLED: VDSEN_NUMERIC_PILOT_RELEASE_ENABLED must be explicitly true for ' + action + '.');
     }
-    return { authorized: true, action: 'arm-fences' };
+    return { authorized: true, action };
   }
 
   // Read-only actions (preflight-check, audit-status)
@@ -732,13 +732,20 @@ async function main() {
     const deploymentId = getArg(args, '--deployment');
     const sha = getArg(args, '--sha');
     const opId = getArg(args, '--operation-id');
+    const windowFile = getArg(args, '--window-file');
     const expectedAlias = getArg(args, '--expected-alias', 'vdsen-ecosistema.vercel.app');
     const outFile = getArg(args, '--out');
 
+    const w = (windowFile && fs.existsSync(windowFile)) ? JSON.parse(fs.readFileSync(windowFile, 'utf8')) : null;
     const result = await attestRuntime({
       deploymentId,
-      expectedSha: sha,
-      expectedOperationId: opId,
+      expectedSha: sha || (w && w.runtimeSha),
+      expectedOperationId: opId || (w && w.operationId),
+      expectedUid: w && w.uid,
+      expectedPlanId: w && w.planId,
+      expectedPid: w && w.pid,
+      expectedStartsAt: w && w.startsAt,
+      expectedExpiresAt: w && w.expiresAt,
       expectedAlias: expectedAlias
     });
 
@@ -751,6 +758,51 @@ async function main() {
     if (!result.attested) {
       process.exitCode = 1;
     }
+    return;
+  }
+
+  if (command === 'prepare-runtime') {
+    const windowFile = getArg(args, '--window-file');
+    const coachId = getArg(args, '--coach-id');
+    const expectedAlias = getArg(args, '--expected-alias', 'vdsen-ecosistema.vercel.app');
+    const outFile = getArg(args, '--out', 'release-output/numeric-pilot/runtime-prep-result.json');
+
+    assert.ok(windowFile && fs.existsSync(windowFile), 'PREPARE_WINDOW_FILE_REQUIRED');
+    assert.ok(coachId, 'PREPARE_COACH_ID_REQUIRED');
+
+    const prep = require('./numeric-runtime-prep.cjs');
+    const s = JSON.parse(fs.readFileSync('.release/vdsen-client.json', 'utf8'));
+    const windowSpec = JSON.parse(fs.readFileSync(windowFile, 'utf8'));
+    const baseline = {
+      deployment: s.production_deployment,
+      runtimeSha: s.runtime_sha,
+      numericApplyEnabled: s.numeric_apply_enabled,
+    };
+    const io = prep.createProductionAdapters(s, { coachId, outFile });
+    const rep = await prep.prepareNumericRuntime(windowSpec, baseline, io, { expectedAlias });
+    console.log(JSON.stringify(rep, null, 2));
+    if (rep.status !== 'NUMERIC_RUNTIME_READY_FENCES_CLOSED') process.exitCode = 1;
+    return;
+  }
+
+  if (command === 'restore-off-runtime') {
+    const pilotDeploymentId = getArg(args, '--pilot-deployment', '');
+    const coachId = getArg(args, '--coach-id', '');
+    const outFile = getArg(args, '--out', 'release-output/numeric-pilot/runtime-restore-result.json');
+
+    const prep = require('./numeric-runtime-prep.cjs');
+    const s = JSON.parse(fs.readFileSync('.release/vdsen-client.json', 'utf8'));
+    const baseline = {
+      deployment: s.production_deployment,
+      runtimeSha: s.runtime_sha,
+    };
+    const io = prep.createProductionAdapters(s, { coachId: coachId || undefined, outFile });
+    if (!coachId) delete io.readFences;
+    const rep = await prep.restoreOffRuntime({ baseline, pilotDeploymentId: pilotDeploymentId || undefined }, io);
+    fs.mkdirSync(path.dirname(outFile), { recursive: true });
+    fs.writeFileSync(outFile, JSON.stringify(rep, null, 2));
+    console.log(JSON.stringify(rep, null, 2));
+    if (rep.status !== 'OFF_BASELINE_RESTORED_VERIFIED') process.exitCode = 1;
     return;
   }
 
