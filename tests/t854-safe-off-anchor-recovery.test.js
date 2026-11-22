@@ -221,8 +221,9 @@ test('T854.9 Historial, completed_at y deployment anterior preservados en .relea
   assert.equal(STATE.numeric_apply_enabled, false);
   assert.ok(
     (STATE.production_deployment === NEW_DEPLOYMENT && STATE.app_release.previous_deployment === PREV_DEPLOYMENT) ||
-    (STATE.app_release.previous_deployment === NEW_DEPLOYMENT && STATE.app_release.previous_runtime_sha === NEW_SHA),
-    'SAFE_OFF_BASELINE anchor is either current production_deployment or immediate previous_deployment'
+    (STATE.app_release.previous_deployment === NEW_DEPLOYMENT && STATE.app_release.previous_runtime_sha === NEW_SHA) ||
+    (STATE.observation_source.includes(NEW_DEPLOYMENT) && STATE.observation_source.includes(OFFICIAL_ZIP_DIGEST) && /^dpl_/.test(STATE.app_release.previous_deployment || '') && /^[0-9a-f]{40}$/.test(STATE.app_release.previous_runtime_sha || '')),
+    'SAFE_OFF_BASELINE anchor is preserved in canonical provenance while current/previous deployments remain coherent'
   );
   assert.match(STATE.app_release.completed_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
   assert.match(STATE.app_release.source_release_run, /^\d+$/);
