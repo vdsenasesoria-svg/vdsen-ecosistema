@@ -865,11 +865,16 @@ if (require.main === module) {
 }
 
 /**
- * Executes protected arm-fences operation:
- * 1. Validates window, runtime attestation, and GO preflight.
- * 2. Atomically reserves releaseControl/numericPilot/operations/{operationId} (non-existence precondition).
- * 3. Arms the 3 exact Firestore fences (releaseControl/autonomousProgression, releaseControl/numericPilot, coaches/{coachId}.autoApplyCanary).
- * 4. Reads back and verifies all 3 fences + ledger doc before reporting armed=true.
+ * Executes protected arm-fences operation with strict official preflight contract
+ * and true all-or-nothing atomic commit:
+ * 1. Validates window, runtime attestation, and REAL runPreflight() output (schema=vdsen-numeric-preflight-v1, decision==='GO').
+ * 2. Executes ONE single atomic transaction / :commit containing:
+ *    - releaseControl/numericPilot/operations/{operationId} (precondition: exists === false)
+ *    - releaseControl/autonomousProgression
+ *    - releaseControl/numericPilot
+ *    - coaches/{coachId}.autoApplyCanary
+ *    If any precondition or write fails, ZERO fences are modified.
+ * 3. Reads back and verifies all 3 fences + ledger doc before reporting armed=true.
  */
 async function executeArmFences(params, io) {
   const { window: w, attestation, preflight, coachId, runId } = params || {};
@@ -889,8 +894,30 @@ async function executeArmFences(params, io) {
   if (attestation.operationId !== w.operationId || (attestation.runtimeSha || attestation.sha) !== w.runtimeSha) {
     throw new Error('ARM_ATTESTATION_MISMATCH: Attestation does not match window operationId/runtimeSha');
   }
-  if (!preflight || (preflight.verdict !== 'GO' && preflight.ready !== true)) {
-    throw new Error('ARM_PREFLIGHT_NOT_GO: Preflight verdict must be GO before arming fences');
+
+  // Strict official runPreflight() contract: decision MUST be exactly 'GO' (never accept verdict/ready aliases)
+  if (!preflight || typeof preflight !== 'object' || preflight.schema !== 'vdsen-numeric-preflight-v1') {
+    throw new Error('ARM_PREFLIGHT_SCHEMA_INVALID: Official runPreflight() output (vdsen-numeric-preflight-v1) is mandatory');
+  }
+  if (preflight.decision !== 'GO') {
+    throw new Error('ARM_PREFLIGHT_NOT_GO: Official preflight decision is ' + String(preflight.decision || 'MISSING') + ' (expected GO)');
+  }
+  if (!Array.isArray(preflight.blockers) || preflight.blockers.length > 0) {
+    throw new Error('ARM_PREFLIGHT_BLOCKERS_PRESENT: Preflight contains unresolved blockers');
+  }
+  if (!Array.isArray(preflight.checks) || preflight.checks.length === 0 || preflight.checks.some(c => !c || c.pass !== true)) {
+    throw new Error('ARM_PREFLIGHT_CHECKS_INCOMPLETE: All official preflight checks must be present and pass=true');
+  }
+  const pfWin = preflight.window;
+  const WINDOW_KEYS = ['schema', 'mode', 'uid', 'planId', 'pid', 'runtimeSha', 'operationId', 'startsAt', 'expiresAt'];
+  if (!pfWin || WINDOW_KEYS.some(k => pfWin[k] !== w[k])) {
+    throw new Error('ARM_PREFLIGHT_WINDOW_MISMATCH: Preflight window does not match target window');
+  }
+  const pfAtt = preflight.attestation;
+  if (!pfAtt || pfAtt.attested !== true || pfAtt.operationId !== w.operationId ||
+      (pfAtt.runtimeSha || pfAtt.sha) !== w.runtimeSha ||
+      (attestation.deploymentId && pfAtt.deploymentId && pfAtt.deploymentId !== attestation.deploymentId)) {
+    throw new Error('ARM_PREFLIGHT_ATTESTATION_MISMATCH: Preflight attestation does not match verified runtime attestation');
   }
 
   const scope = {
@@ -907,7 +934,7 @@ async function executeArmFences(params, io) {
     planId: w.planId,
     pid: w.pid,
     runtimeSha: w.runtimeSha,
-    deploymentId: attestation.deploymentId || '',
+    deploymentId: attestation.deploymentId || pfAtt.deploymentId || '',
     runId: String(runId || 'local'),
     window: w,
     scope: scope,
@@ -915,26 +942,6 @@ async function executeArmFences(params, io) {
     reservedAt: nowIso,
     updatedAt: nowIso
   };
-
-  if (typeof io.createLedgerExclusive === 'function') {
-    await io.createLedgerExclusive(ledgerPath, ledgerPayload);
-  } else if (io.db && typeof io.db.runTransaction === 'function') {
-    await io.db.runTransaction(async (tx) => {
-      const ref = io.db.doc(ledgerPath);
-      const snap = await tx.get(ref);
-      if (snap.exists) {
-        throw new Error('OPERATION_ALREADY_EXISTS: Operation ' + w.operationId + ' is already recorded in ledger');
-      }
-      tx.set(ref, ledgerPayload);
-    });
-  } else {
-    const existing = await io.readFence(ledgerPath);
-    if (existing) {
-      throw new Error('OPERATION_ALREADY_EXISTS: Operation ' + w.operationId + ' is already recorded in ledger');
-    }
-    await io.writeFence(ledgerPath, ledgerPayload);
-  }
-
   const releasePayload = {
     schema: 'vdsen-autonomous-release-v1',
     enabled: true,
@@ -957,9 +964,34 @@ async function executeArmFences(params, io) {
     updatedAt: nowIso
   };
 
-  await io.writeFence('releaseControl/autonomousProgression', releasePayload, { mask: Object.keys(releasePayload) });
-  await io.writeFence('releaseControl/numericPilot', numericFencePayload, { mask: Object.keys(numericFencePayload) });
-  await io.writeFence('coaches/' + coachId, { autoApplyCanary: scope }, { mask: ['autoApplyCanary'] });
+  // Single all-or-nothing atomic commit (ledger reservation + 3 fences)
+  if (typeof io.commitAtomicArm === 'function') {
+    await io.commitAtomicArm({
+      ledgerPath,
+      ledgerPayload,
+      releasePath: 'releaseControl/autonomousProgression',
+      releasePayload,
+      numericFencePath: 'releaseControl/numericPilot',
+      numericFencePayload,
+      coachPath: 'coaches/' + coachId,
+      coachPayload: { autoApplyCanary: scope },
+      coachMask: ['autoApplyCanary']
+    });
+  } else if (io.db && typeof io.db.runTransaction === 'function') {
+    await io.db.runTransaction(async (tx) => {
+      const ledgerRef = io.db.doc(ledgerPath);
+      const snap = await tx.get(ledgerRef);
+      if (snap.exists) {
+        throw new Error('OPERATION_ALREADY_EXISTS: Operation ' + w.operationId + ' is already recorded in ledger');
+      }
+      tx.set(ledgerRef, ledgerPayload);
+      tx.set(io.db.doc('releaseControl/autonomousProgression'), releasePayload, { mergeFields: Object.keys(releasePayload) });
+      tx.set(io.db.doc('releaseControl/numericPilot'), numericFencePayload, { mergeFields: Object.keys(numericFencePayload) });
+      tx.set(io.db.doc('coaches/' + coachId), { autoApplyCanary: scope }, { mergeFields: ['autoApplyCanary'] });
+    });
+  } else {
+    throw new Error('ATOMIC_ARM_ADAPTER_REQUIRED: An atomic transaction or commit adapter is mandatory');
+  }
 
   // Post-arm readback verification (fail closed on any mismatch)
   const [relAfter, numAfter, coachAfter, ledgerAfter] = await Promise.all([
@@ -980,12 +1012,13 @@ async function executeArmFences(params, io) {
   return {
     status: 'ARMED',
     armed: true,
+    atomicCommit: true,
     operationId: w.operationId,
     uid: w.uid,
     planId: w.planId,
     pid: w.pid,
     runtimeSha: w.runtimeSha,
-    deploymentId: attestation.deploymentId || null,
+    deploymentId: attestation.deploymentId || pfAtt.deploymentId || null,
     startsAt: w.startsAt,
     expiresAt: w.expiresAt,
     armedAt: nowIso,
@@ -995,47 +1028,53 @@ async function executeArmFences(params, io) {
 }
 
 /**
- * Executes protected arm-fences via Firestore REST API using Google OAuth2 access token.
- * Enforces currentDocument.exists=false on ledger creation for atomic duplicate rejection.
+ * Executes protected arm-fences via ONE atomic Firestore REST :commit RPC.
+ * Write 0 creates the ledger document with currentDocument.exists=false; Writes 1-3 arm the 3 fences.
+ * If the operation already exists or any write fails, Firestore aborts the entire batch atomically.
  */
 async function executeArmFencesRest(projectId, token, params, customFetcher) {
   const fetcher = customFetcher || globalThis.fetch;
   const baseUrl = getFirestoreRestBaseUrl(projectId);
+  const docPrefix = 'projects/' + projectId + '/databases/(default)/documents/';
+  const commitUrl = baseUrl.replace(/\/documents\/$/, '/documents:commit');
   const encVal = (v) => v === null || v === undefined ? { nullValue: null } : typeof v === 'boolean' ? { booleanValue: v } : typeof v === 'number' ? { integerValue: String(v) } : typeof v === 'string' ? { stringValue: v }
     : Array.isArray(v) ? { arrayValue: { values: v.map(encVal) } } : { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, encVal(x)])) } };
+  const encFields = (obj) => Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, encVal(v)]));
 
   const io = {
-    createLedgerExclusive: async (docPath, payload) => {
-      const url = baseUrl + docPath + '?currentDocument.exists=false';
-      const body = { fields: Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, encVal(v)])) };
+    commitAtomicArm: async (batch) => {
+      const writes = [
+        {
+          update: { name: docPrefix + batch.ledgerPath, fields: encFields(batch.ledgerPayload) },
+          currentDocument: { exists: false }
+        },
+        {
+          update: { name: docPrefix + batch.releasePath, fields: encFields(batch.releasePayload) },
+          updateMask: { fieldPaths: Object.keys(batch.releasePayload) }
+        },
+        {
+          update: { name: docPrefix + batch.numericFencePath, fields: encFields(batch.numericFencePayload) },
+          updateMask: { fieldPaths: Object.keys(batch.numericFencePayload) }
+        },
+        {
+          update: { name: docPrefix + batch.coachPath, fields: encFields(batch.coachPayload) },
+          updateMask: { fieldPaths: batch.coachMask }
+        }
+      ];
       const headers = { 'content-type': 'application/json' };
       if (token) headers.authorization = 'Bearer ' + token;
-      const res = await fetcher(url, { method: 'PATCH', headers, body: JSON.stringify(body) });
+      const res = await fetcher(commitUrl, { method: 'POST', headers, body: JSON.stringify({ writes }) });
       if (res.status === 409 || res.status === 412) {
-        throw new Error('OPERATION_ALREADY_EXISTS: Operation already reserved in durable ledger');
+        throw new Error('OPERATION_ALREADY_EXISTS: Atomic commit rejected because operation already exists in ledger');
       }
       if (res.status !== 200) {
         const errText = await res.text();
         if (/ALREADY_EXISTS|FAILED_PRECONDITION/i.test(errText)) {
-          throw new Error('OPERATION_ALREADY_EXISTS: Operation already reserved in durable ledger');
+          throw new Error('OPERATION_ALREADY_EXISTS: Atomic commit rejected because operation already exists in ledger');
         }
-        throw new Error('CREATE_LEDGER_FAILED_' + res.status + ': ' + errText);
+        throw new Error('ATOMIC_ARM_COMMIT_FAILED_' + res.status + ': ' + errText);
       }
-      return canary.decDoc(JSON.parse(await res.text()));
-    },
-    writeFence: async (docPath, fields, writeOpts) => {
-      const mask = writeOpts && writeOpts.mask ? writeOpts.mask : Object.keys(fields);
-      const maskParams = mask.map(m => 'updateMask.fieldPaths=' + encodeURIComponent(m)).join('&');
-      const url = baseUrl + docPath + (maskParams ? '?' + maskParams : '');
-      const nested = unflattenFields(fields);
-      const body = { fields: Object.fromEntries(Object.entries(nested).map(([k, v]) => [k, encVal(v)])) };
-      const headers = { 'content-type': 'application/json' };
-      if (token) headers.authorization = 'Bearer ' + token;
-      const res = await fetcher(url, { method: 'PATCH', headers, body: JSON.stringify(body) });
-      if (res.status !== 200) {
-        throw new Error('WRITE_FENCE_FAILED_' + res.status + '_ON_' + docPath + ': ' + (await res.text()));
-      }
-      return canary.decDoc(JSON.parse(await res.text()));
+      return JSON.parse(await res.text());
     },
     readFence: async (docPath) => {
       const headers = {};

@@ -114,7 +114,7 @@ jobs:
       - name: Validate contracts and operational unit tests
         run: |
           node scripts/release/check.cjs
-          node --test tests/t699-numeric-contract.test.js tests/t699-numeric-ops.test.js
+          node --test tests/t699-numeric-contract.test.js tests/t699-numeric-ops.test.js tests/t864-numeric-apply-activation.test.js
 
       - id: google
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
