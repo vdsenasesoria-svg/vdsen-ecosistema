@@ -529,10 +529,15 @@ test('T699-OPS.18 STOP con interruptor numérico OFF: invocation permite stop au
   assert.equal(resStop.authorized, true);
   assert.equal(resStop.action, 'stop');
 
-  // Acción arm-fences inhabilitada con ARM_NOT_IMPLEMENTED
+  // Acción arm-fences bloqueada cuando VDSEN_NUMERIC_PILOT_RELEASE_ENABLED !== 'true'
   assert.throws(() => {
     invocation(env, 'arm-fences');
-  }, /ARM_NOT_IMPLEMENTED/);
+  }, /NUMERIC_PILOT_ARM_DISABLED/);
+
+  // Acción arm-fences permitida únicamente con switch explícito y primer intento
+  const resArm = invocation({ ...env, VDSEN_NUMERIC_PILOT_RELEASE_ENABLED: 'true' }, 'arm-fences');
+  assert.equal(resArm.authorized, true);
+  assert.equal(resArm.action, 'arm-fences');
 });
 
 // 19. STOP con fallo en la segunda escritura (partial failure)

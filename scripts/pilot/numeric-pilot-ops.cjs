@@ -9,7 +9,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const C = require('../../api/_numericPilotContract');
 const canary = require('./ayrton-canary.cjs');
-const { runPreflight } = require('./numeric-preflight.cjs');
+const { runPreflight, validateNumericWindow, validateFences } = require('./numeric-preflight.cjs');
 const { attestRuntime } = require('./numeric-attestation.cjs');
 const { executeStop, auditMesoConsistency, assertFreshAuthorizationRequired } = require('./numeric-stop-recovery.cjs');
 
@@ -40,7 +40,10 @@ function invocation(env, action) {
   assert.equal(env.GITHUB_RUN_ATTEMPT, '1', 'NO_JOB_RERUNS: Reruns are forbidden for numeric operations.');
 
   if (action === 'arm-fences') {
-    throw new Error('ARM_NOT_IMPLEMENTED: Production arming is disabled. Formal owner authorization required.');
+    if (env.VDSEN_NUMERIC_PILOT_RELEASE_ENABLED !== 'true') {
+      throw new Error('NUMERIC_PILOT_ARM_DISABLED: VDSEN_NUMERIC_PILOT_RELEASE_ENABLED must be explicitly true to arm numeric pilot fences.');
+    }
+    return { authorized: true, action: 'arm-fences' };
   }
 
   // Read-only actions (preflight-check, audit-status)
@@ -787,6 +790,46 @@ async function main() {
     process.exit(1);
   }
 
+  if (command === 'arm-fences') {
+    const windowFile = getArg(args, '--window-file');
+    const attestationFile = getArg(args, '--attestation-file');
+    const preflightFile = getArg(args, '--preflight-file');
+    const coachId = getArg(args, '--coach-id');
+    const runId = getArg(args, '--run-id', process.env.GITHUB_RUN_ID || '');
+    const outFile = getArg(args, '--out', 'release-output/numeric-pilot/arm-fences-result.json');
+
+    assert.ok(windowFile && fs.existsSync(windowFile), 'ARM_WINDOW_FILE_REQUIRED');
+    assert.ok(attestationFile && fs.existsSync(attestationFile), 'ARM_ATTESTATION_FILE_REQUIRED');
+    assert.ok(preflightFile && fs.existsSync(preflightFile), 'ARM_PREFLIGHT_FILE_REQUIRED');
+    assert.ok(coachId, 'ARM_COACH_ID_REQUIRED');
+
+    const windowSpec = JSON.parse(fs.readFileSync(windowFile, 'utf8'));
+    const attestation = JSON.parse(fs.readFileSync(attestationFile, 'utf8'));
+    const preflight = JSON.parse(fs.readFileSync(preflightFile, 'utf8'));
+    const params = { window: windowSpec, attestation, preflight, coachId, runId };
+
+    const token = process.env.GOOGLE_ACCESS_TOKEN;
+    const projectId = process.env.GCP_PROJECT_ID || 'vdsen-ecosistema';
+    let rep;
+    if (token) {
+      rep = await executeArmFencesRest(projectId, token, params);
+    } else if (process.env.FIRESTORE_EMULATOR_HOST) {
+      const admin = require('firebase-admin');
+      const app = admin.apps && admin.apps.length ? admin.apps[0] : admin.initializeApp({ projectId: process.env.GCLOUD_PROJECT || 'demo-vdsen-shadow' });
+      const db = app.firestore ? app.firestore() : admin.firestore(app);
+      rep = await executeArmFences(params, createEmulatorIo(db));
+    } else {
+      console.error(JSON.stringify({ status: 'BLOCKED', reason: 'NO_AUTHENTICATED_ADAPTER' }));
+      process.exit(1);
+    }
+
+    fs.mkdirSync(path.dirname(outFile), { recursive: true });
+    fs.writeFileSync(outFile, JSON.stringify(rep, null, 2));
+    console.log(JSON.stringify(rep, null, 2));
+    if (!rep.armed) process.exitCode = 1;
+    return;
+  }
+
   if (command === 'audit') {
     const file = getArg(args, '--file');
     const pilotUid = getArg(args, '--pilot-uid', C.UID);
@@ -821,9 +864,199 @@ if (require.main === module) {
   });
 }
 
+/**
+ * Executes protected arm-fences operation:
+ * 1. Validates window, runtime attestation, and GO preflight.
+ * 2. Atomically reserves releaseControl/numericPilot/operations/{operationId} (non-existence precondition).
+ * 3. Arms the 3 exact Firestore fences (releaseControl/autonomousProgression, releaseControl/numericPilot, coaches/{coachId}.autoApplyCanary).
+ * 4. Reads back and verifies all 3 fences + ledger doc before reporting armed=true.
+ */
+async function executeArmFences(params, io) {
+  const { window: w, attestation, preflight, coachId, runId } = params || {};
+  const nowMs = typeof (params && params.now) === 'number' ? params.now : Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+
+  const wCheck = validateNumericWindow(w, nowMs);
+  if (!wCheck.valid) {
+    throw new Error('ARM_WINDOW_INVALID: ' + wCheck.errors.join('; '));
+  }
+  if (!coachId || typeof coachId !== 'string') {
+    throw new Error('ARM_COACH_ID_REQUIRED: coachId is mandatory');
+  }
+  if (!attestation || attestation.attested !== true) {
+    throw new Error('ARM_ATTESTATION_INVALID: Verified provider runtime attestation is mandatory');
+  }
+  if (attestation.operationId !== w.operationId || (attestation.runtimeSha || attestation.sha) !== w.runtimeSha) {
+    throw new Error('ARM_ATTESTATION_MISMATCH: Attestation does not match window operationId/runtimeSha');
+  }
+  if (!preflight || (preflight.verdict !== 'GO' && preflight.ready !== true)) {
+    throw new Error('ARM_PREFLIGHT_NOT_GO: Preflight verdict must be GO before arming fences');
+  }
+
+  const scope = {
+    enabled: true,
+    clientIds: [w.uid],
+    prescriptionExerciseIds: [w.pid]
+  };
+  const ledgerPath = 'releaseControl/numericPilot/operations/' + w.operationId;
+  const ledgerPayload = {
+    schema: 'vdsen-numeric-operations-ledger-v1',
+    status: 'RESERVED',
+    operationId: w.operationId,
+    uid: w.uid,
+    planId: w.planId,
+    pid: w.pid,
+    runtimeSha: w.runtimeSha,
+    deploymentId: attestation.deploymentId || '',
+    runId: String(runId || 'local'),
+    window: w,
+    scope: scope,
+    appliedRecordKeys: [],
+    reservedAt: nowIso,
+    updatedAt: nowIso
+  };
+
+  if (typeof io.createLedgerExclusive === 'function') {
+    await io.createLedgerExclusive(ledgerPath, ledgerPayload);
+  } else if (io.db && typeof io.db.runTransaction === 'function') {
+    await io.db.runTransaction(async (tx) => {
+      const ref = io.db.doc(ledgerPath);
+      const snap = await tx.get(ref);
+      if (snap.exists) {
+        throw new Error('OPERATION_ALREADY_EXISTS: Operation ' + w.operationId + ' is already recorded in ledger');
+      }
+      tx.set(ref, ledgerPayload);
+    });
+  } else {
+    const existing = await io.readFence(ledgerPath);
+    if (existing) {
+      throw new Error('OPERATION_ALREADY_EXISTS: Operation ' + w.operationId + ' is already recorded in ledger');
+    }
+    await io.writeFence(ledgerPath, ledgerPayload);
+  }
+
+  const releasePayload = {
+    schema: 'vdsen-autonomous-release-v1',
+    enabled: true,
+    clientIds: [w.uid],
+    expiresAt: w.expiresAt,
+    operationId: w.operationId,
+    updatedAt: nowIso
+  };
+  const numericFencePayload = {
+    schema: w.schema,
+    mode: w.mode,
+    enabled: true,
+    uid: w.uid,
+    planId: w.planId,
+    pid: w.pid,
+    runtimeSha: w.runtimeSha,
+    operationId: w.operationId,
+    startsAt: w.startsAt,
+    expiresAt: w.expiresAt,
+    updatedAt: nowIso
+  };
+
+  await io.writeFence('releaseControl/autonomousProgression', releasePayload, { mask: Object.keys(releasePayload) });
+  await io.writeFence('releaseControl/numericPilot', numericFencePayload, { mask: Object.keys(numericFencePayload) });
+  await io.writeFence('coaches/' + coachId, { autoApplyCanary: scope }, { mask: ['autoApplyCanary'] });
+
+  // Post-arm readback verification (fail closed on any mismatch)
+  const [relAfter, numAfter, coachAfter, ledgerAfter] = await Promise.all([
+    io.readFence('releaseControl/autonomousProgression'),
+    io.readFence('releaseControl/numericPilot'),
+    io.readFence('coaches/' + coachId),
+    io.readFence(ledgerPath)
+  ]);
+
+  const fCheck = validateFences({ releaseControl: relAfter, numericPilot: numAfter, coach: coachAfter }, w, 'active');
+  if (!fCheck.valid) {
+    throw new Error('ARM_READBACK_FENCES_INVALID: ' + fCheck.errors.join('; '));
+  }
+  if (!C.ledgerValid(ledgerAfter, w)) {
+    throw new Error('ARM_READBACK_LEDGER_INVALID: Durable ledger document failed contract verification');
+  }
+
+  return {
+    status: 'ARMED',
+    armed: true,
+    operationId: w.operationId,
+    uid: w.uid,
+    planId: w.planId,
+    pid: w.pid,
+    runtimeSha: w.runtimeSha,
+    deploymentId: attestation.deploymentId || null,
+    startsAt: w.startsAt,
+    expiresAt: w.expiresAt,
+    armedAt: nowIso,
+    fencesVerified: true,
+    ledgerStatus: ledgerAfter.status
+  };
+}
+
+/**
+ * Executes protected arm-fences via Firestore REST API using Google OAuth2 access token.
+ * Enforces currentDocument.exists=false on ledger creation for atomic duplicate rejection.
+ */
+async function executeArmFencesRest(projectId, token, params, customFetcher) {
+  const fetcher = customFetcher || globalThis.fetch;
+  const baseUrl = getFirestoreRestBaseUrl(projectId);
+  const encVal = (v) => v === null || v === undefined ? { nullValue: null } : typeof v === 'boolean' ? { booleanValue: v } : typeof v === 'number' ? { integerValue: String(v) } : typeof v === 'string' ? { stringValue: v }
+    : Array.isArray(v) ? { arrayValue: { values: v.map(encVal) } } : { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, encVal(x)])) } };
+
+  const io = {
+    createLedgerExclusive: async (docPath, payload) => {
+      const url = baseUrl + docPath + '?currentDocument.exists=false';
+      const body = { fields: Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, encVal(v)])) };
+      const headers = { 'content-type': 'application/json' };
+      if (token) headers.authorization = 'Bearer ' + token;
+      const res = await fetcher(url, { method: 'PATCH', headers, body: JSON.stringify(body) });
+      if (res.status === 409 || res.status === 412) {
+        throw new Error('OPERATION_ALREADY_EXISTS: Operation already reserved in durable ledger');
+      }
+      if (res.status !== 200) {
+        const errText = await res.text();
+        if (/ALREADY_EXISTS|FAILED_PRECONDITION/i.test(errText)) {
+          throw new Error('OPERATION_ALREADY_EXISTS: Operation already reserved in durable ledger');
+        }
+        throw new Error('CREATE_LEDGER_FAILED_' + res.status + ': ' + errText);
+      }
+      return canary.decDoc(JSON.parse(await res.text()));
+    },
+    writeFence: async (docPath, fields, writeOpts) => {
+      const mask = writeOpts && writeOpts.mask ? writeOpts.mask : Object.keys(fields);
+      const maskParams = mask.map(m => 'updateMask.fieldPaths=' + encodeURIComponent(m)).join('&');
+      const url = baseUrl + docPath + (maskParams ? '?' + maskParams : '');
+      const nested = unflattenFields(fields);
+      const body = { fields: Object.fromEntries(Object.entries(nested).map(([k, v]) => [k, encVal(v)])) };
+      const headers = { 'content-type': 'application/json' };
+      if (token) headers.authorization = 'Bearer ' + token;
+      const res = await fetcher(url, { method: 'PATCH', headers, body: JSON.stringify(body) });
+      if (res.status !== 200) {
+        throw new Error('WRITE_FENCE_FAILED_' + res.status + '_ON_' + docPath + ': ' + (await res.text()));
+      }
+      return canary.decDoc(JSON.parse(await res.text()));
+    },
+    readFence: async (docPath) => {
+      const headers = {};
+      if (token) headers.authorization = 'Bearer ' + token;
+      const res = await fetcher(baseUrl + docPath, { method: 'GET', headers });
+      if (res.status === 404) return null;
+      if (res.status !== 200) {
+        throw new Error('READ_FENCE_FAILED_' + res.status + '_ON_' + docPath + ': ' + (await res.text()));
+      }
+      return canary.decDoc(JSON.parse(await res.text()));
+    }
+  };
+
+  return executeArmFences(params, io);
+}
+
 module.exports = {
   invocation,
   fetchFencesFromRest,
+  executeArmFences,
+  executeArmFencesRest,
   executeStopRest,
   executeAuditStatus,
   createEmulatorIo,

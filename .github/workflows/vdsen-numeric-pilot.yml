@@ -3,11 +3,12 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: Operational action to perform (preflight-check | stop | audit-status)
+        description: Operational action to perform (preflight-check | arm-fences | stop | audit-status)
         default: 'preflight-check'
         type: choice
         options:
           - preflight-check
+          - arm-fences
           - stop
           - audit-status
       operation_id:
@@ -29,16 +30,16 @@ on:
         default: 'z82EDPvsCaabfMN3eGAP3rpxeMt1'
         type: string
       plan_id:
-        description: Explicit authorized planId (2wywK0y0pKtXRzGS8dNx)
-        default: '2wywK0y0pKtXRzGS8dNx'
+        description: Explicit authorized planId (ucwGfeXn2NGPhnY6CZjb)
+        default: 'ucwGfeXn2NGPhnY6CZjb'
         type: string
       coach_id:
         description: Coach UID
         required: true
         type: string
       prescription_exercise_id:
-        description: Explicit single PID (831ccbbe-ab09-4669-a0ef-4c652ca84b7a)
-        default: '831ccbbe-ab09-4669-a0ef-4c652ca84b7a'
+        description: Explicit single PID (8821a34a-3474-4c13-a6c9-6246f92ed438)
+        default: '8821a34a-3474-4c13-a6c9-6246f92ed438'
         type: string
       starts_at:
         description: Window start UTC ISO string (e.g. 2026-11-06T12:00:00Z)
@@ -126,7 +127,7 @@ jobs:
           access_token_scopes: https://www.googleapis.com/auth/datastore
 
       - name: Assemble numeric window specification
-        if: inputs.action == 'preflight-check'
+        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
         run: |
           node -e "
             const fs = require('fs');
@@ -175,7 +176,7 @@ jobs:
 
       # --- ROUTE: PREFLIGHT & RUNTIME ATTESTATION ---
       - name: Provider runtime attestation
-        if: inputs.action == 'preflight-check'
+        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
         run: |
           node scripts/pilot/numeric-pilot-ops.cjs attest \
             --deployment "$INPUT_DEPLOYMENT" \
@@ -185,7 +186,7 @@ jobs:
             --out "$REPORT_DIR/attestation.json"
 
       - name: Collect live fences evidence
-        if: inputs.action == 'preflight-check'
+        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
         env:
           GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
         run: |
@@ -194,13 +195,13 @@ jobs:
             --out "$REPORT_DIR/fences.json"
 
       - name: Collect concurrency and operation history evidence
-        if: inputs.action == 'preflight-check'
+        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
         run: |
           gh api "repos/$GITHUB_REPOSITORY/actions/workflows/vdsen-numeric-pilot.yml/runs?status=in_progress" > "$REPORT_DIR/active-runs.json"
           gh api "repos/$GITHUB_REPOSITORY/actions/workflows/vdsen-numeric-pilot.yml/runs?status=completed&per_page=100" > "$REPORT_DIR/prior-runs.json"
 
       - name: Execute preflight verification with real evidence
-        if: inputs.action == 'preflight-check'
+        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
         env:
           GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
         run: |
@@ -212,6 +213,20 @@ jobs:
             --fences-file "$REPORT_DIR/fences.json" \
             --runs-file "$REPORT_DIR/active-runs.json" \
             --out "$REPORT_DIR/preflight-result.json"
+
+      # --- ROUTE: ARM NUMERIC PILOT FENCES (PROTECTED) ---
+      - name: Arm numeric pilot fences (atomic ledger reservation + 3-fence activation)
+        if: inputs.action == 'arm-fences'
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: |
+          node scripts/pilot/numeric-pilot-ops.cjs arm-fences \
+            --window-file "$REPORT_DIR/window.json" \
+            --attestation-file "$REPORT_DIR/attestation.json" \
+            --preflight-file "$REPORT_DIR/preflight-result.json" \
+            --coach-id "$INPUT_COACH" \
+            --run-id "${{ github.run_id }}" \
+            --out "$REPORT_DIR/arm-fences-result.json"
 
       - name: Upload evidence artifact
         if: always()
