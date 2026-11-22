@@ -12489,8 +12489,8 @@ function _seriesAuthorityHtml(view, si) {
   else if (reasons.some(function(x) { return /INSUFFICIENT|EVIDENCE_COUNT|DIRECTION_NOT_CONFIRMED/.test(x); })) why = 'Faltan exposiciones comparables o una dirección confirmada.';
   else if (reasons.some(function(x) { return /RIR.*MISSING/.test(x); })) why = 'Falta RIR observado válido en la bitácora.';
   else if (reasons.some(function(x) { return /COACH|PLAN_CHANGED|TARGET_INVALIDATED/.test(x); })) why = 'La decisión del Coach o la revisión del plan tiene prioridad.';
-  else if (state === 'PENDING') why = 'El cálculo no modifica el objetivo hasta que el servidor lo autorice y aplique.';
-  else if (state === 'BLOCKED') why = 'La evidencia o la autorización no permiten aplicar un ajuste.';
+  else if (state === 'PENDING') why = 'Tu objetivo sigue igual hasta que el ajuste quede confirmado.';
+  else if (state === 'BLOCKED') why = 'Con tus registros actuales no se puede confirmar un ajuste.';
   var lines = [];
   if (applied) {
     var base = view.baseSets[si] || view.baseSets[0] || {}, set = r.sets[si] && r.sets[si].effective || {};
@@ -12506,7 +12506,9 @@ function _seriesAuthorityHtml(view, si) {
       var after = d === 'LOAD' ? set.load : d === 'SETS' ? r.sets.length : set[d === 'REPS' ? 'repsTarget' : d === 'RIR' ? 'rirTarget' : 'restSeconds'];
       lines.push(names[d]+': '+(!r.dimension ? fmt(after,d)+' · vigente por aplicación anterior' : fmt(before,d)+' → '+fmt(after,d))+(r.dimension === 'FREEZE' ? ' · congelación autorizada' : ''));
     });
-    why = (r.presentation ? r.presentation.text+'. ' : '')+(_ruleReason(view.ruleId) ? 'Motivo: '+_ruleReason(view.ruleId)+'. ' : '')+(view.ruleId ? 'Regla '+view.ruleId+'. ' : '')+'Origen: aplicación del servidor (no es una sugerencia).';
+    var plainReason = _ruleReason(view.ruleId);
+    why = [r.presentation && r.presentation.text, plainReason && 'Motivo: '+plainReason].filter(Boolean).join('. ');
+    if (why) why += '.';
     if (r.equipmentSnapshot && r.equipmentSnapshot.source === 'ADVISORY_GENERIC') why += ' Carga orientativa: incremento exacto del equipo no resuelto; adapta y registra lo ejecutado.';
     if (r.dimension === 'DELOAD' && r.components && r.components.LOAD && !r.equipmentSnapshot) why += ' Carga de descarga calculada; disponibilidad exacta del equipo sin verificar.';
   } else lines.push('Aún sin ajuste autorizado. La referencia histórica no es una progresión.');

@@ -21,11 +21,15 @@ test('T601-2 pending / blocked / review keep their explanation but not the empty
     assert.match(html, label); assert.match(html, new RegExp('data-progression-state="' + state + '"')); assert.match(html, /<p>/); assert.doesNotMatch(html, /CAMBIO RESPECTO/);
   }
 });
-test('T601-3 an APPLIED adjustment still shows the full before -> after with its reason and origin', () => {
+test('T601-3 an APPLIED adjustment still shows the full before -> after with its plain-language reason and no internal rule or origin', () => {
   const view = { state: 'APPLIED', applied: true, ruleId: 'A', unit: 'KG', baseSets: [{ repsTarget: 10, rirTarget: 2, restSeconds: 90 }, {}, {}], previousLoad: 100,
     result: { dimension: 'LOAD', previousValue: 100, components: null, carried: null, presentation: { text: '100 → 105 kg' }, sets: [{ effective: { load: 105, repsTarget: 10, rirTarget: 2, restSeconds: 90 } }, { effective: {} }, { effective: {} }] }, reasons: [] };
   const html = ctx._seriesAuthorityHtml(view, 0);
-  assert.match(html, /AUTOAJUSTE APLICADO/); assert.match(html, /CAMBIO RESPECTO/); assert.match(html, /Carga: 100 KG → 105 KG/); assert.match(html, /Motivo: /); assert.match(html, /no es una sugerencia/);
+  assert.match(html, /AUTOAJUSTE APLICADO/); assert.match(html, /CAMBIO RESPECTO/); assert.match(html, /Carga: 100 KG → 105 KG/); assert.match(html, /Motivo: rendiste con más reserva/);
+  assert.doesNotMatch(html, /Regla A\b|Origen:|servidor|CANONICAL_OVERLAY/);
+  const unknown = ctx._seriesAuthorityHtml({ ...view, ruleId: 'INTERNAL_RULE_X9' }, 0);
+  assert.match(unknown, /AUTOAJUSTE APLICADO/);
+  assert.doesNotMatch(unknown, /INTERNAL_RULE_X9|Regla |Origen:|servidor/);
 });
 test('T601-4 the copy-history button only carries the long label and the warning when executed reps differ from the objective', () => {
   const src = fnSrc('_prevWeekReuseHtml');
