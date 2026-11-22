@@ -3,7 +3,7 @@
  * T294 — Firestore listener lifecycle (audit-only, no code change).
  *
  * Every real onSnapshot() call site in both apps (4 in vdsen-coach.html:
- * monitor plan/client/logs + fichas_publicas; 5 in vdsen-cliente.html:
+ * monitor plan/client/logs + fichas_publicas; 6 in vdsen-cliente.html:
  * onboarding-wait client/plan + live client/plan/logs) already follows
  * the correct lifecycle:
  *
@@ -48,7 +48,7 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 const coachRealOnSnapshot = (COACH.match(/= onSnapshot\(/g) || []).length;
 ok(coachRealOnSnapshot === 4, 'exactly 4 real onSnapshot() listener registrations exist in vdsen-coach.html (monitor plan/client/logs + fichas_publicas)');
 const clientRealOnSnapshot = (CLIENT.match(/FB\.onSnapshot\(/g) || []).length;
-ok(clientRealOnSnapshot === 5, 'exactly 5 real onSnapshot() listener registrations exist in vdsen-cliente.html (2 onboarding-wait + 3 live)');
+ok(clientRealOnSnapshot === 6, 'exactly 6 real onSnapshot() listener registrations exist in vdsen-cliente.html (2 onboarding-wait + 4 live)');
 
 // ── 1/5. Teardown-before-reassign at every subscription site. ─────────────
 ok(COACH.includes("if (window._monitorPlanUnsub) { window._monitorPlanUnsub(); window._monitorPlanUnsub = null; }\n        if (!planId)"),

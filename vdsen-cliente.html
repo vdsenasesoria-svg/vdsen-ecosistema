@@ -3016,18 +3016,24 @@ window._showPhoneConfirmWhenClear = _showPhoneConfirmWhenClear;
 // ══════════════════════════════════════════════════
 // LOAD PLAN
 // ══════════════════════════════════════════════════
-var _liveUnsubClient = null, _liveUnsubPlan = null, _liveUnsubLogs = null;
+var _liveUnsubClient = null, _liveUnsubPlan = null, _liveUnsubLogs = null, _liveUnsubProgression = null;
 var _waitUnsubClientDoc = null, _waitUnsubActivePlan = null;
 // T127-C: generation counter — incremented each time loadPlan starts.
 // Listeners captured their generation at registration time; if a newer loadPlan
 // has started by the time this call reaches the registration point, this call
 // must abort registering to avoid orphaning the newer call's globals.
 var _loadPlanSeq = 0;
+function _clearLiveProgressionListener() {
+  var stop = _liveUnsubProgression;
+  _liveUnsubProgression = null;
+  if (stop) { try { stop(); } catch (_) {} }
+  if (typeof _trustedProgressionRefreshSeq === 'number') _trustedProgressionRefreshSeq++;
+}
 function _clearLiveListeners() {
+  _clearLiveProgressionListener();
   if (_liveUnsubClient)    { try { _liveUnsubClient();    } catch(e){} _liveUnsubClient    = null; }
   if (_liveUnsubPlan)      { try { _liveUnsubPlan();      } catch(e){} _liveUnsubPlan      = null; }
   if (_liveUnsubLogs)      { try { _liveUnsubLogs();      } catch(e){} _liveUnsubLogs      = null; }
-  if (typeof _trustedProgressionRefreshSeq === 'number') _trustedProgressionRefreshSeq++;
   if (typeof _trustedProgressionRetryTimer !== 'undefined' && _trustedProgressionRetryTimer) { clearTimeout(_trustedProgressionRetryTimer); _trustedProgressionRetryTimer = null; }
   if (_waitUnsubClientDoc) { try { _waitUnsubClientDoc(); } catch(e){} _waitUnsubClientDoc = null; }
   if (_waitUnsubActivePlan){ try { _waitUnsubActivePlan();} catch(e){} _waitUnsubActivePlan= null; }
@@ -3602,6 +3608,7 @@ async function loadPlan(user) {
         var newData = snap.data();
         var newPlanId = newData.activePlanId;
         if (newPlanId && newPlanId !== activePlanId) {
+          if (_mySeq === _loadPlanSeq) _clearLiveProgressionListener();
           // El coach asignó un plan completamente nuevo
           // Marcar en sessionStorage para que loadPlan sepa que debe resetear la semana
           try { sessionStorage.setItem('vdsen_plan_changed', '1'); } catch(e2) {}
@@ -3693,6 +3700,8 @@ async function loadPlan(user) {
         }
       });
 
+      // Canonical progression records live in the active mesocycle, not in the root log.
+      _liveUnsubProgression = _watchTrustedProgression(user.uid, activePlanId, _mySeq);
     } catch(snapErr) { console.warn('onSnapshot no disponible:', snapErr.message); }
   } catch(e) {
     console.error('loadPlan ERROR:', e);
@@ -12368,6 +12377,19 @@ function _flushTrustedProgressionRender() {
   st.progressionRenderPending = false;
   try { renderEntrenamiento(); renderResumen(); } catch (_) { console.warn('[progression executor] canonical update awaits next render'); }
 }
+function _watchTrustedProgression(uid, planId, loadSeq) {
+  if (!FB || !USER || USER.uid !== uid || !planId || ACTIVE_PLAN_ID !== planId || _loadPlanSeq !== loadSeq) return null;
+  var watching = true;
+  // A cache snapshot can become server-confirmed without a data change.
+  var unsubscribe = FB.onSnapshot(FB.doc(FB.db, 'logs', uid, 'mesos', planId), { includeMetadataChanges: true }, function(snap) {
+    if (!watching || _loadPlanSeq !== loadSeq) return;
+    // An earlier one-shot refresh may still be in flight when this listener observes a newer update.
+    if (_acceptTrustedProgressionSnapshot(uid, planId, snap)) _trustedProgressionRefreshSeq++;
+  }, function() {
+    if (watching && _loadPlanSeq === loadSeq) console.warn('[progression executor] live update unavailable');
+  });
+  return function() { watching = false; unsubscribe(); };
+}
 function _acceptTrustedProgressionSnapshot(uid, planId, snap) {
   var st = LIFECYCLE_STATE;
   if (!USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId || !st || st.uid !== uid || st.planId !== planId || !snap.exists() || (snap.metadata && (snap.metadata.fromCache || snap.metadata.hasPendingWrites))) return;
@@ -12378,6 +12400,7 @@ function _acceptTrustedProgressionSnapshot(uid, planId, snap) {
   if (before === JSON.stringify([st.records, st.overlays, st.receipts])) return;
   st.progressionRenderPending = true;
   _flushTrustedProgressionRender();
+  return true;
 }
 function _refreshTrustedProgression(uid, planId) {
   if (!FB || typeof FB.getDoc !== 'function' || typeof FB.doc !== 'function') return;
