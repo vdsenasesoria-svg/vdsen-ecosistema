@@ -240,6 +240,13 @@ test('T864-B E2E: Official GO preflight -> atomic arm-fences -> REAL NUMERIC_APP
     }],
   };
 
+  // Clear any leftover demo-* emulator documents from earlier suites in shared runner
+  const clearResp = await fetch(`http://${HOST}/emulator/v1/projects/${PROJECT_ID}/databases/(default)/documents`, {
+    method: 'DELETE',
+    signal: AbortSignal.timeout(10000),
+  });
+  assert.ok(clearResp.ok, `Emulator clear failed (${clearResp.status})`);
+
   // Seed disarmed fences, coach, client, and active plan
   await adminSet('releaseControl/autonomousProgression', { enabled: false, clientIds: [UID], expiresAt });
   await adminSet('releaseControl/numericPilot', { enabled: false, uid: UID, planId: PLAN_ID, pid: PID, runtimeSha: SHA, operationId: OP_ID, expiresAt });
