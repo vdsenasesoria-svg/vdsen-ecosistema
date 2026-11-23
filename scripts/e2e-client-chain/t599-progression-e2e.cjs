@@ -19,9 +19,11 @@ function must(name, ok, detail) { check(name, ok, detail); if (!ok) throw new Er
 const state = async a => (await db.doc('logs/' + a.uid + '/mesos/' + a.planId).get()).data();
 const ovs = m => Object.values(m.nextExposureOverlays || {});
 const recs = m => Object.values(m.progressionApplications || {});
-async function boot(browser, label, port = 5199) {
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+async function boot(browser, label, port = 5199, blockLocalExecutor = false) {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, ...(blockLocalExecutor ? { serviceWorkers: 'block' } : {}) });
   const page = await ctx.newPage();
+  // This case observes the target in a separate browser path, not via a local trigger response.
+  if (blockLocalExecutor) await page.route('**/api/autonomous-progression-trigger', route => route.abort());
   await page.goto('http://localhost:' + port + '/cliente'); await page.addScriptTag({ url: '/__driver.js' });
   await page.evaluate(who => window.__boot(who), label);
   await page.waitForFunction(() => typeof window.selDia === 'function');
@@ -117,12 +119,31 @@ const specs = [
       let m = await state(a); const pending = recs(m).find(r => r.prescriptionExerciseId === a.pids[0] && r.nextExposure?.week === 3);
       must(spec.dim + ' real UI exposure confirmed in Firestore', [0, 1, 2].every(si => m.entries['log_2_0_0_s' + si]?.done), logged);
       must(spec.dim + ' server generates PENDING before numeric sandbox gate opens', pending?.state === 'PENDING' && !ovs(m).length, pending && { state: pending.state, magnitude: pending.magnitude, reason: pending.reasonCode });
-      await b.ctx.close(); await week(a, 3); b = await boot(browser, spec.label);
+      const checkAlreadyOpen = spec.dim === 'LOAD';
+      await b.ctx.close(); await week(a, 3); b = await boot(browser, spec.label, 5199, checkAlreadyOpen);
       const pendUI = await snapshot(b.page);
       must(spec.dim + ' PENDING never changes effective prescription', pendUI.state === 'PENDING' && pendUI.effective.every(s => !s.load) && pendUI.effective.length === 3, pendUI);
-      await b.ctx.close();
+      let openTime;
+      if (checkAlreadyOpen) {
+        openTime = await b.page.evaluate(() => { window.goTab(0); return performance.timeOrigin; });
+      } else await b.ctx.close();
       const applied = await trigger(a); m = await state(a); const ov = ovs(m).find(o => o.target.week === 3);
       must(spec.dim + ' authenticated trusted handler produces APPLIED in sandbox', applied.status === 200 && ov?.status === 'APPLIED' && ov.dimension === spec.dim, { response: applied, overlay: ov });
+      if (checkAlreadyOpen) {
+        // Canonical APPLIED exists, but the same already-authenticated Client has not reentered Training.
+        const previous = await b.page.evaluate(() => Object.keys(LIFECYCLE_STATE.overlays || {}).length);
+        must('LOAD already-open Client still has its prior target on Home', previous === 0, previous);
+        await b.page.locator('#nb1').click();
+        await b.page.waitForFunction(() => document.querySelector('.workout-set-current [data-progression-state="APPLIED"]'));
+        const samePage = await b.page.evaluate(() => performance.timeOrigin);
+        const openView = await snapshot(b.page);
+        const afterEntry = await state(a);
+        must('LOAD already-open next-session entry reads exact APPLIED target without navigation or a set save',
+          samePage === openTime && openView.state === 'APPLIED' && openView.rows === pendUI.rows &&
+          openView.effective.length === pendUI.effective.length && openView.effective.every(s => s.load === ov.appliedValue) &&
+          !Object.keys(afterEntry.entries || {}).some(k => /^log_3_0_0_s/.test(k)), openView);
+        await b.ctx.close();
+      }
       b = await boot(browser, spec.label, 5200); const ui = await snapshot(b.page);
       const eff = ui.effective, c = ov.components || {}, expectedN = spec.dim === 'SETS' ? ov.appliedValue : (c.SETS || 3);
       const targetNumbersMatch = eff.every(s => ui.target.includes(s.repsTarget + ' reps') && ui.target.includes('RIR ' + s.rirTarget) && ui.target.includes(expectedN + ' series') && ui.target.includes('Descanso ' + Math.floor(s.restSeconds / 60) + ':' + String(s.restSeconds % 60).padStart(2, '0')));

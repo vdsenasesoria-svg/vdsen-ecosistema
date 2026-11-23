@@ -69,6 +69,26 @@ function _webTx(tx) {
     set: function(ref, data, opts) { return opts ? tx.set(ref, data, opts) : tx.set(ref, data); } };
 }
 
+function _isContentionError(err) {
+  if (!err) return false;
+  var code = err.code;
+  if (code === 10 || code === 'aborted') return true;
+  var msg = err.message ? String(err.message) : '';
+  return /\bABORTED\b|contention/i.test(msg);
+}
+
+async function _runTx(db, fn) {
+  var maxOuter = 4;
+  for (var attempt = 0; attempt < maxOuter; attempt++) {
+    try {
+      return await db.runTransaction(fn);
+    } catch (err) {
+      if (!_isContentionError(err) || attempt + 1 >= maxOuter) throw err;
+      await new Promise(function(resolve) { setTimeout(resolve, 25 + Math.floor(Math.random() * 70)); });
+    }
+  }
+}
+
 async function materialize(db, clientId, requestedPlanId, clock, opts) {
   opts = opts || {};
   // A configured numeric lane never falls back to the general/shadow scope.
@@ -76,7 +96,7 @@ async function materialize(db, clientId, requestedPlanId, clock, opts) {
     process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED === 'true';
   var numericWindow = numericMode ? numericPilot.runtimeAuthorization(process.env, Date.now(), clientId) : null;
   if (numericMode && (!numericWindow || clientId !== numericWindow.uid || requestedPlanId !== numericWindow.planId)) return { status: 'OUT_OF_NUMERIC_PILOT' };
-  return db.runTransaction(async function(tx) {
+  return _runTx(db, async function(tx) {
     var clientRef = db.collection('clients').doc(clientId);
     var clientSnap = await tx.get(clientRef), client = _data(clientSnap);
     // The authenticated athlete is the sole tenant selector. A plan id from
@@ -230,7 +250,7 @@ async function applyPending(db, clientId, planId, clock) {
   var results = [];
   for (var i = 0; i < keys.length; i++) {
     var key = keys[i];
-    var r = await db.runTransaction(async function(tx) {
+    var r = await _runTx(db, async function(tx) {
       var clientSnap = await tx.get(db.collection('clients').doc(clientId)), client = _data(clientSnap);
       if (!client || client.activePlanId !== planId || !eligibility.isClientStatusValid(client)) return { written: false, reason: 'PLAN_MISMATCH' };
       var refs = _refs(db, clientId, planId, client.coachId);
@@ -339,7 +359,7 @@ async function consumePending(db, clientId, planId, clock) {
   var results = [];
   for (var i = 0; i < keys.length; i++) {
     var key = keys[i];
-    var r = await db.runTransaction(async function(tx) {
+    var r = await _runTx(db, async function(tx) {
       var clientSnap = await tx.get(db.collection('clients').doc(clientId)), client = _data(clientSnap);
       if (!client || !eligibility.isClientStatusValid(client)) return { written: false, reason: 'PLAN_MISMATCH' };
       var refs = _refs(db, clientId, planId, client.coachId);
