@@ -40,7 +40,7 @@ test('T512.1 every required precise blocker code exists', () => {
 test('T512.2 each fact is reachable and reported alone (no generic NOT_ELIGIBLE)', () => {
   const cases = [
     ['IDENTITY_UNRESOLVED', () => plan1(rec(GOOD), { plan: { ...plan, days: [{ dayIndex: 0, exercises: [] }, plan.days[1]] } })],
-    ['EVIDENCE_COUNT_INSUFFICIENT', () => plan1(rec([[1, 2, { rir_real: 3 }]]))],
+    ['EVIDENCE_COUNT_INSUFFICIENT', () => plan1(rec([]))],
     ['DIRECTION_UNCONFIRMED', () => plan1(rec([[1, 0, { rir_real: 2 }], [1, 2, { rir_real: 3 }]]))],
     ['DIRECTION_CONFLICTING', () => plan1(rec([[1, 0, { reps: '6', rir_real: 0 }], [1, 2, { rir_real: 3 }]]))],
     ['SAFETY_CONFLICT', () => plan1(rec(GOOD), { safetyConflict: true })],
@@ -92,7 +92,7 @@ test('T512.5 (T523) the representative set is closed product policy: provenance,
 
 test('T512.6 readiness.state distinguishes BLOCKED / READY_BUT_DISABLED / EXECUTABLE', () => {
   assert.equal(plan1(rec(GOOD)).readiness.state, 'READY_BUT_DISABLED');
-  assert.equal(plan1(rec([[1, 2, { rir_real: 3 }]])).readiness.state, 'BLOCKED');
+  assert.equal(plan1(rec([])).readiness.state, 'BLOCKED');
 });
 
 test('T512.7 the EQUIPMENT_IDENTITY gate exists before EQUIPMENT_INCREMENT and owns its own codes', () => {

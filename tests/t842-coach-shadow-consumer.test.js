@@ -361,10 +361,10 @@ test('T842.U2 Real App Coach consumer renders all 5 STAGE1_SHADOW motor states c
   assert.match(s3.html, /RECHAZADA/);
   assert.match(s3.html, /NO_NUMERIC_DELTA/);
 
-  // State 4: Evaluación no elegible (single comparable exposure -> INSUFFICIENT_COMPARABLE_EXPOSURES)
+  // State 4: Evaluación no elegible (0 comparable exposures via autoFilled sets -> INSUFFICIENT_COMPARABLE_EXPOSURES)
   const eInelig = {};
   [0, 1, 2].forEach((s) => {
-    eInelig['log_1_0_0_s' + s] = { done: true, carga: '100', reps: '10', unit: 'KG', rir: 2, rir_real: 4, ics: 7.5, prescriptionExerciseId: pid, ts: T0 + 1e6 + s };
+    eInelig['log_1_0_0_s' + s] = { done: true, autoFilled: true, carga: '100', reps: '10', unit: 'KG', rir: 2, rir_real: 4, ics: 7.5, prescriptionExerciseId: pid, ts: T0 + 1e6 + s };
   });
   eInelig.progrec_1_0 = { calculatedAt: calcAt, recommendations: [{ prescriptionExerciseId: pid, exerciseName: 'Press de pecho T842', action: 'increase_load', newLoad: 102.5, newReps: 10 }] };
   const s4 = runCoachFeedFor(eInelig, 'NOT_ELIGIBLE');

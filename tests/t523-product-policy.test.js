@@ -76,7 +76,7 @@ test('T523.7 no E escalation from a stale / non-comparable exposure', () => {
   const d = run([old, expo(1, 0, ok), expo(1, 2, lastReps9)]);
   assert.equal(d.coachReviewRequired, null);
   const stale = run([old, expo(1, 2, lastReps9)]);
-  assert.ok(stale.excludedExposures.some(x => x.reason === 'PRESCRIPTION_CHANGED')); assert.equal(stale.comparableExposureCount, 1); assert.equal(stale.eligible, false);
+  assert.ok(stale.excludedExposures.some(x => x.reason === 'PRESCRIPTION_CHANGED')); assert.equal(stale.comparableExposureCount, 1); assert.equal(stale.coachReviewRequired, null); assert.equal(stale.ruleId, 'C'); assert.equal(stale.eligible, true);
   // autofilled / express / unit-mismatch previous exposures are not comparable either
   const auto = expo(1, 0, lastReps9.map(o => Object.assign({}, o, { autoFilled: true })));
   assert.equal(run([auto, expo(1, 2, lastReps9)]).comparableExposureCount, 1);

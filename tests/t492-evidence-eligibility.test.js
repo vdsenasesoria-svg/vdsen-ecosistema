@@ -39,8 +39,9 @@ test('T492.2 one unusually good/bad session after neutral history is not authori
     assert.ok(r.reasonCodes.includes('DIRECTION_NOT_CONFIRMED_BY_PRIOR_EXPOSURE'));
     assert.equal(r.candidates[0].rawCandidate, 102.5, 'the shadow candidate itself is unchanged');
   }
-  assert.equal(run([UP]).directionConsistency, 'UNCONFIRMED');
-  assert.equal(run([UP]).eligible, false);
+  assert.equal(run([UP]).directionConsistency, 'NOT_APPLICABLE');
+  assert.equal(run([UP]).eligible, true);
+  assert.equal(run([UP]).minExposures, 1);
 });
 
 test('T492.3 conflicting direction across exposures goes to explicit review and is never eligible', () => {

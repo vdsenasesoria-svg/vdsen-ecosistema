@@ -130,8 +130,8 @@
       !(record.state === 'REJECTED' && record.reasonCode === 'COACH_KEEP_ORIGINAL');
     r.noSafetyConflict = ctx.safetyConflict !== true && (m.reasonCodes || []).indexOf('SAFETY_CONFLICT') < 0;
     r.noPolicyReview = !m.coachReviewRequired;
-    // T586: progression needs two comparable exposures; the protective structural rules (fatigue, technique, soreness, effort) declare their own minimum (>= 1) in the policy.
-    r.evidenceEligible = m.eligible === true && _num(m.comparableExposureCount) !== null && m.comparableExposureCount >= Math.max(1, _num(m.minExposures) || 2) && record.state === 'PENDING';
+    // T586/T873: engine eligibility starts at 1 valid comparable exposure; rules requiring persistence declare minExposures=2 in the policy.
+    r.evidenceEligible = m.eligible === true && _num(m.comparableExposureCount) !== null && m.comparableExposureCount >= Math.max(1, _num(m.minExposures) || 1) && record.state === 'PENDING';
     r.directionConsistent = m.directionConsistency === 'CONSISTENT' || m.directionConsistency === 'NOT_APPLICABLE';
     r.magnitudeResolved = !m.unresolved && !!cand && m.mode === 'SHADOW' && m.numericApplyAllowed === false;
     // T582: an ADVISORY load (no equipment claim at all) is a first-class resolution: equipment data is optional, so there is no identity / increment to verify.

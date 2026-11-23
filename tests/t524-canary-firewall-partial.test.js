@@ -111,7 +111,7 @@ test('T524.I even with the flag on, automatic application is impossible for ever
   };
   for (const [name, mk] of Object.entries(cases)) {
     let [sc, o] = mk();
-    if (o.single) { const e = { ...sc.entries }; Object.keys(e).filter(k => k.startsWith('log_1_0_')).forEach(k => delete e[k]); const rec = shadow.buildRecord({ clientId: 'c', planId: 'p', activePlanId: 'p', plan: sc.plan, entries: e, week: 1, dayIndex: 2,
+    if (o.single) { const e = { ...sc.entries }; Object.keys(e).filter(k => k.startsWith('log_1_0_') || k.startsWith('log_1_2_')).forEach(k => delete e[k]); const rec = shadow.buildRecord({ clientId: 'c', planId: 'p', activePlanId: 'p', plan: sc.plan, entries: e, week: 1, dayIndex: 2,
       calculatedAt: '2026-09-27T12:00:00.000Z', sourceMatches: true, sourcePidCount: 1, recommendation: { prescriptionExerciseId: 'pid-1', exerciseId: sc.exerciseId, exerciseName: 'X', action: 'increase_load', newLoad: 5 } }, 'x'); sc = { ...sc, rec, entries: e }; }
     const d = decide(consumerOn, sc, o);
     assert.equal(d.canApply, false, name); assert.equal(d.overlay, null, name + ' produced an overlay'); assert.equal(d.readiness.executable, false, name);

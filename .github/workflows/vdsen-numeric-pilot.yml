@@ -40,8 +40,8 @@ on:
         required: true
         type: string
       prescription_exercise_id:
-        description: Explicit single PID (8821a34a-3474-4c13-a6c9-6246f92ed438)
-        default: '8821a34a-3474-4c13-a6c9-6246f92ed438'
+        description: Explicit single PID (453d6665-79a7-4052-a5a4-6cfc0f410187)
+        default: '453d6665-79a7-4052-a5a4-6cfc0f410187'
         type: string
       starts_at:
         description: Window start UTC ISO string (e.g. 2026-11-06T12:00:00Z)

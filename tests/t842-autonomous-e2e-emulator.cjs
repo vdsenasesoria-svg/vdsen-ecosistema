@@ -614,7 +614,7 @@ test('T842.E4 Incomplete logbook, invalid/non-canonical sets, ineligible session
   assert.ok(['NO_VERIFIABLE_APP_USAGE', 'NEEDS_VERIFIED_ACTIVITY', 'AWAITING_FIRST_ACTIVITY', 'NEW_CLIENT_AWAITING_FIRST_ACTIVITY', 'NO_TEMPORAL_EVIDENCE'].includes(rNoStart.body.status), 'Expected activity gate rejection, got: ' + rNoStart.body.status);
   assert.equal((await adminDb.doc('logs/' + fNoStart.uid + '/mesos/' + fNoStart.planId).get()).data().progressionApplications, undefined);
 
-  // 2. Single comparable exposure (W1 only) -> PENDING, magnitude.eligible=false (INSUFFICIENT_COMPARABLE_EXPOSURES), Coach renders blocked
+  // 2. Single comparable exposure (W1 only) -> PENDING, magnitude.eligible=true (T873: 1 valid exposure with Rule A), zero overlays while NUMERIC_APPLY_ENABLED=false
   const fSingle = await seedShadowFixture('e4-single');
   const uSingle = await asUser(fSingle.uid);
   await writeRealClientSessions(uSingle.db, {
@@ -625,11 +625,12 @@ test('T842.E4 Incomplete logbook, invalid/non-canonical sets, ineligible session
   assert.equal(rSingle.body.status, 'MATERIALIZED');
   const mSingle = (await adminDb.doc('logs/' + fSingle.uid + '/mesos/' + fSingle.planId).get()).data();
   const recSingle = Object.values(mSingle.progressionApplications)[0];
-  assert.equal(recSingle.magnitude.eligible, false);
-  assert.ok(recSingle.magnitude.reasonCodes.includes('INSUFFICIENT_COMPARABLE_EXPOSURES'));
+  assert.equal(recSingle.magnitude.eligible, true);
+  assert.equal(recSingle.magnitude.comparableExposureCount, 1);
+  assert.equal(recSingle.magnitude.minExposures, 1);
   assert.equal(Object.keys(mSingle.nextExposureOverlays || {}).length, 0);
   const htmlSingle = coachUI._renderShadowAutoFeed(mSingle.progressionApplicationSummary, {});
-  assert.match(htmlSingle, /Sin evidencia suficiente o bloqueada/);
+  assert.match(htmlSingle, /CANDIDATO SHADOW/);
 
   // 3. Invalid / non-canonical evidence (autoFilled=true) -> excluded, never eligible
   const fAuto = await seedShadowFixture('e4-autofill');

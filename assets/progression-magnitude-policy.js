@@ -34,7 +34,8 @@
     ruleAuthority: 'VDSEN_HEURISTIC',
     evidenceLevel: 'C'
   });
-  var MIN_COMPARABLE_EXPOSURES = 2;
+  var MIN_COMPARABLE_EXPOSURES = 1;
+  var MIN_PERSISTENCE_EXPOSURES = 2;
   // T586: structural / fatigue rules live in ONE sibling module (same engine, one candidate per exposure). Loaded lazily; absent => the A/C/D/E rules behave exactly as before.
   function _structural() {
     if (typeof module === 'object' && module.exports && typeof require === 'function') { try { return require('./progression-structural-policy.js'); } catch (e) { return null; } }
@@ -355,7 +356,8 @@
       return res;
     }
     if (repsTarget === null) { res.reasonCodes.push(REASONS.TARGET_NOT_NUMERIC); return res; }
-    var threshold = cmp.kept.length >= MIN_COMPARABLE_EXPOSURES;
+    res.minExposures = MIN_COMPARABLE_EXPOSURES;
+    var threshold = cmp.kept.length >= res.minExposures;
     if (!threshold) res.reasonCodes.push(REASONS.INSUFFICIENT_COMPARABLE_EXPOSURES);
     if (ctx.readinessVeto) { res.reasonCodes.push(REASONS.READINESS_VETO); threshold = false; }
     var prior = cmp.kept.length >= 2 ? cmp.kept[cmp.kept.length - 2] : null;
@@ -384,6 +386,7 @@
     if (cls === 'C') {
       if (priorCls === 'C') {
         // Persistent C: E is reached, and E is Coach review only. No second automatic intervention.
+        res.minExposures = MIN_PERSISTENCE_EXPOSURES;
         review('C+E', 'C_PERSISTS_AT_NEXT_COMPARABLE_EXPOSURE');
         res.collision = { rules: ['C', 'E'], classification: PRECEDENCE.EXPLICIT_VDSEN_PRECEDENCE, order: 'C_THEN_E', policy: 'VDSEN_PRODUCT_POLICY' };
       } else {
@@ -465,7 +468,9 @@
         res.directionConsistency = 'UNCONFIRMED'; res.reasonCodes.push(REASONS.DIRECTION_NOT_CONFIRMED_BY_PRIOR_EXPOSURE);
       }
     } else if (direction === 'UP' || direction === 'DOWN') {
-      res.directionConsistency = 'UNCONFIRMED';
+      // T873: single valid comparable exposure without a prior exposure is evaluated on its own justified evidence.
+      // Persistence-dependent rules declare minExposures=2; when a prior exposure exists, direction consistency still applies above.
+      res.directionConsistency = 'NOT_APPLICABLE';
     }
     var directionOk = res.directionConsistency === 'CONSISTENT' || res.directionConsistency === 'NOT_APPLICABLE';
     res.eligible = threshold && directionOk && !res.unresolved && res.candidates.length > 0 && !blocked;
@@ -482,6 +487,7 @@
       dimension: decision.dimension, methodologyFamily: decision.methodologyFamily,
       ruleAuthority: decision.ruleAuthority, evidenceLevel: decision.evidenceLevel,
       comparableExposureCount: decision.comparableExposureCount,
+      minExposures: decision.minExposures || MIN_COMPARABLE_EXPOSURES,
       unresolved: decision.unresolved ? decision.unresolved.code : null,
       direction: decision.direction || null, directionConsistency: decision.directionConsistency || null,
       review: decision.review ? decision.review.code : null,
@@ -504,7 +510,7 @@
   }
 
   return { PROVENANCE: PROVENANCE, REASONS: REASONS, PRECEDENCE: PRECEDENCE,
-    NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, MIN_COMPARABLE_EXPOSURES: MIN_COMPARABLE_EXPOSURES,
+    NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, MIN_COMPARABLE_EXPOSURES: MIN_COMPARABLE_EXPOSURES, MIN_PERSISTENCE_EXPOSURES: MIN_PERSISTENCE_EXPOSURES,
     EVIDENCE_BASIS: EVIDENCE_BASIS, SCIENCE_GAPS: SCIENCE_GAPS, PRODUCT_POLICIES: PRODUCT_POLICIES, REVIEW_POLICY: REVIEW_POLICY, selectRepresentativeSet: selectRepresentativeSet, explicitSetKind: _explicitKind, PCT: PCT, REST_INCREMENT_SECONDS: REST_INCREMENT_SECONDS,
     extractExposures: extractExposures, evaluate: evaluate, reject: reject, compact: compact };
 });

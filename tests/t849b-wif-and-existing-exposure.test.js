@@ -216,9 +216,10 @@ test('T849B.3 Existing 4-set exposure distinguishes: trigger OK, NO_CHANGE idemp
   const meso1 = store1.get('logs/' + UID + '/mesos/' + PLAN);
   const rec1 = meso1.progressionApplications[first.body.created[0]];
   assert.equal(rec1.state, shadow.STATES.PENDING);
-  assert.equal(rec1.magnitude.eligible, false);
+  assert.equal(rec1.magnitude.eligible, true);
+  assert.equal(rec1.magnitude.comparableExposureCount, 1);
+  assert.equal(rec1.magnitude.minExposures, 1);
   assert.equal(rec1.magnitude.actionable, false);
-  assert.ok((rec1.magnitude.reasonCodes || []).includes('INSUFFICIENT_COMPARABLE_EXPOSURES') || rec1.magnitude.unresolved === 'INSUFFICIENT_COMPARABLE_EXPOSURES');
   assert.equal(JSON.stringify(store1.get('plans/' + PLAN)), planBefore1, 'prescription untouched');
   assert.equal(JSON.stringify(meso1.entries), entriesBefore1, 'existing 4 sets never duplicated or mutated');
 

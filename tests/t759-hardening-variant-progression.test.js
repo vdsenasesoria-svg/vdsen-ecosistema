@@ -398,9 +398,18 @@ test('T759-I: Sustitución autorizada con solo 1 exposición comparable no progr
     exposures: exposures
   });
 
-  assert.equal(polRes.eligible, false);
+  var zeroRes = policy.evaluate({
+    clientId: CLIENT_AYRTON, planId: PLAN_ID, prescriptionExerciseId: PID_PRESS, executionExerciseId: varAId,
+    plan: BASE_PLAN, prescription: { prescriptionExerciseId: PID_PRESS, sets: BASE_PLAN.days[0].exercises[0].sets, repsRange: { min: 8, max: 12 } },
+    exposures: []
+  });
+  assert.equal(zeroRes.eligible, false);
+  assert.equal(zeroRes.comparableExposureCount, 0);
+  assert.ok(zeroRes.reasonCodes.includes('INSUFFICIENT_COMPARABLE_EXPOSURES'));
+
+  assert.equal(polRes.eligible, true);
   assert.equal(polRes.comparableExposureCount, 1);
-  assert.ok(polRes.reasonCodes.includes('INSUFFICIENT_COMPARABLE_EXPOSURES'));
+  assert.equal(polRes.minExposures, 1);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
