@@ -394,8 +394,22 @@ async function executeClientRevocation(opts, io) {
   // Path A: If atomic transaction runner is available, execute all fence updates atomically
   if (typeof io.runTransaction === 'function' && io.db) {
     const db = io.db;
+    const runTxRetry = async (txFn) => {
+      const maxOuter = 4;
+      for (let attempt = 0; attempt < maxOuter; attempt++) {
+        try {
+          return await io.runTransaction(txFn);
+        } catch (err) {
+          const code = err && err.code;
+          const msg = err && err.message ? String(err.message) : '';
+          const isContention = code === 10 || code === 'aborted' || /\bABORTED\b|contention/i.test(msg);
+          if (!isContention || attempt + 1 >= maxOuter) throw err;
+          await new Promise(resolve => setTimeout(resolve, 25 + Math.floor(Math.random() * 70)));
+        }
+      }
+    };
     try {
-      const txRes = await io.runTransaction(async (tx) => {
+      const txRes = await runTxRetry(async (tx) => {
         const numRef = db.doc('releaseControl/numericPilot');
         const relRef = db.doc('releaseControl/autonomousProgression');
         const coachRef = db.doc('coaches/' + coachId);
