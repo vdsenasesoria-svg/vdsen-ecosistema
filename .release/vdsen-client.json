@@ -1,9 +1,9 @@
 {
-  "runtime_sha": "bfa380c1148064df3c037dca85ee3ff4b49de40a",
-  "production_deployment": "dpl_3yr6ntHAP3Lg2jqMRPtnuYT2o9si",
+  "runtime_sha": "fc6937882c3ed6b225301dc068e72e3be9a92585",
+  "production_deployment": "dpl_3FUD41kgs6FXXyVPrY6DnTnpVxCy",
   "rollback_deployment": "dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8",
   "rollback_runtime_sha": "3fc264e23d67a8ecb1611a6c8af04ad739f422da",
-  "target_deployment": "dpl_3yr6ntHAP3Lg2jqMRPtnuYT2o9si",
+  "target_deployment": "dpl_3FUD41kgs6FXXyVPrY6DnTnpVxCy",
   "production_project": "prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN",
   "vercel_team": "team_VZc5H7Q1DBIJ3g0mwrSBz1o8",
   "production_origin": "https://vdsen-ecosistema.vercel.app",
@@ -41,19 +41,19 @@
     "preview_production_env_verified": true,
     "human_ux_approved": true
   },
-  "observation_source": "T868 provenance sync after official APP-ONLY release run 45088520701 (official ZIP artifact app-release-result-45088520701 id 14780936126 digest sha256:77f42a6bc0656be9975abc71a99df1d654f9fdac376186e2a6c43e506243a0ce). Production serves dpl_3yr6ntHAP3Lg2jqMRPtnuYT2o9si (runtime bfa380c1148064df3c037dca85ee3ff4b49de40a, candidate dpl_4UZQngimFXHTj2yDVJC9ketWop2x, 46 verified surfaces, state=VERIFIED, Numeric Apply DISARMED, rules_mutated=false, main_unchanged=true). Immediate previous production deployment is dpl_GdjjRpevKPXMUvW52fkfbKfdDXTA (runtime 487bd58dee1491c4f6c83b42b74ff852580d9d37, run 45036988679, digest sha256:bf7b974d0d5e0c25257acad64c561a8dbfdedcec057824e0de6d963fa7153a4d). Live SAFE_OFF_BASELINE anchor remains dpl_4H91D85NYxvq4FSaJRvtdzRH3bcT (runtime af2629a8e6f9f4473bd583005d5ed2a5f2be9d5f, run 44662166798, official ZIP digest sha256:05e67f626c98e128963d55485dff86d11279072a8215ca2cdb3702b87c404b82). Historical rollback provenance remains dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8 (runtime 3fc264e23d67a8ecb1611a6c8af04ad739f422da, run 43132135716). Published Firestore rules T788 (sha256 486606574a2f10d65212cedb26fe7f73686e5d6610995e9c4bfe4a424972c460) from T810 run 43620978036.",
+  "observation_source": "T871 provenance sync after official APP-ONLY release run 45114732758 (official ZIP artifact app-release-result-45114732758 id 14791581470 digest sha256:cb46a15007cdb04dba7c2551226950969ff50de3acf7d6508b64a18c4bdbd636). Production serves dpl_3FUD41kgs6FXXyVPrY6DnTnpVxCy (runtime fc6937882c3ed6b225301dc068e72e3be9a92585, candidate dpl_2H63vZwUNqHK5SW6147ZHBDQUL9E, 46 verified surfaces, state=VERIFIED, Numeric Apply DISARMED, rules_mutated=false, main_unchanged=true). Immediate previous production deployment is dpl_3yr6ntHAP3Lg2jqMRPtnuYT2o9si (runtime bfa380c1148064df3c037dca85ee3ff4b49de40a, run 45088520701, digest sha256:77f42a6bc0656be9975abc71a99df1d654f9fdac376186e2a6c43e506243a0ce). Live SAFE_OFF_BASELINE anchor remains dpl_4H91D85NYxvq4FSaJRvtdzRH3bcT (runtime af2629a8e6f9f4473bd583005d5ed2a5f2be9d5f, run 44662166798, official ZIP digest sha256:05e67f626c98e128963d55485dff86d11279072a8215ca2cdb3702b87c404b82). Historical rollback provenance remains dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8 (runtime 3fc264e23d67a8ecb1611a6c8af04ad739f422da, run 43132135716). Published Firestore rules T788 (sha256 486606574a2f10d65212cedb26fe7f73686e5d6610995e9c4bfe4a424972c460) from T810 run 43620978036.",
   "release_mode": "app_only",
   "app_release": {
-    "runtime_sha": "bfa380c1148064df3c037dca85ee3ff4b49de40a",
-    "deployment": "dpl_3yr6ntHAP3Lg2jqMRPtnuYT2o9si",
+    "runtime_sha": "fc6937882c3ed6b225301dc068e72e3be9a92585",
+    "deployment": "dpl_3FUD41kgs6FXXyVPrY6DnTnpVxCy",
     "promotion_model": "staged_production",
-    "previous_deployment": "dpl_GdjjRpevKPXMUvW52fkfbKfdDXTA",
-    "previous_runtime_sha": "487bd58dee1491c4f6c83b42b74ff852580d9d37",
+    "previous_deployment": "dpl_3yr6ntHAP3Lg2jqMRPtnuYT2o9si",
+    "previous_runtime_sha": "bfa380c1148064df3c037dca85ee3ff4b49de40a",
     "safe_recovery_deployment": "dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8",
     "safe_recovery_runtime_sha": "3fc264e23d67a8ecb1611a6c8af04ad739f422da",
     "verified_surfaces": 46,
-    "source_release_run": "45088520701",
-    "completed_at": "2026-11-23T00:33:23Z"
+    "source_release_run": "45114732758",
+    "completed_at": "2026-11-23T05:06:05Z"
   },
   "published_rules": {
     "sha256": "486606574a2f10d65212cedb26fe7f73686e5d6610995e9c4bfe4a424972c460",
