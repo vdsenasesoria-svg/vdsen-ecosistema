@@ -673,8 +673,14 @@ test('T709: Multiclient authentic emulator verification: Ayrton and Client B 8-s
   await db.doc('plans/' + plan1).set(Object.assign({}, sc1.plan, { coachId, status: 'active' }));
   await db.doc('plans/' + plan2).set(Object.assign({}, sc2.plan, { coachId, status: 'active' }));
 
-  // Ensure serverPlanUpdatedAt committed on Firestore clock is strictly prior to calculation timestamp
-  await new Promise(r => setTimeout(r, 1100));
+  // Ensure serverPlanUpdatedAt committed on Firestore clock is strictly prior to truncated startsAt
+  const plan2Snap = await db.doc('plans/' + plan2).get();
+  const plan2UpdateMs = plan2Snap && plan2Snap.updateTime && typeof plan2Snap.updateTime.toMillis === 'function'
+    ? plan2Snap.updateTime.toMillis()
+    : Date.now();
+  while (Math.floor(Date.now() / 1000) * 1000 < plan2UpdateMs + 1000) {
+    await new Promise(r => setTimeout(r, 150));
+  }
 
   const nowSec = Math.floor(Date.now() / 1000) * 1000;
   const startsAt = new Date(nowSec).toISOString().replace('.000Z', 'Z');
