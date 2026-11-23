@@ -60,7 +60,7 @@ window.addEventListener('appinstalled', function() {
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, setPersistence, browserLocalPersistence }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { initializeFirestore, persistentLocalCache, doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc, orderBy, limit, onSnapshot, runTransaction, waitForPendingWrites, deleteField, FieldPath, serverTimestamp }
+import { initializeFirestore, persistentLocalCache, doc, getDoc, getDocFromServer, setDoc, updateDoc, collection, query, where, getDocs, addDoc, orderBy, limit, onSnapshot, runTransaction, waitForPendingWrites, deleteField, FieldPath, serverTimestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ══════════════════════════════════════════════════
@@ -83,7 +83,7 @@ const db = initializeFirestore(app, { localCache: persistentLocalCache() });
 setPersistence(auth, browserLocalPersistence).catch(() => {});
 window._fb = { auth, db, signInWithEmailAndPassword, signOut, onAuthStateChanged,
                sendPasswordResetEmail,
-               doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs,
+               doc, getDoc, getDocFromServer, setDoc, updateDoc, collection, query, where, getDocs,
                addDoc, orderBy, limit, onSnapshot, runTransaction, waitForPendingWrites, deleteField, FieldPath, serverTimestamp };
 window._fbReady = true;
 window.dispatchEvent(new Event('fbReady'));
@@ -2604,6 +2604,7 @@ try { localStorage.removeItem('vdsen_light_mode'); } catch(e) {}
 
 waitFB(() => {
   FB.onAuthStateChanged(FB.auth, async (user) => {
+    _clearHistoricalView();
     if (user && user.email) {
       localStorage.setItem('vdsen_uid', user.uid);
       showScreen('scrLoading');
@@ -2814,6 +2815,7 @@ async function doLogout() {
   // T118-C: Nullify USER before signOut so any buffered Firestore snapshot
   // callbacks that fire after unsub() see USER===null and abort early.
   USER = null;
+  if (typeof _clearHistoricalView === 'function') _clearHistoricalView();
   _clearLiveListeners();
   await FB.signOut(FB.auth);
   _authSessionGen++;
@@ -3440,6 +3442,7 @@ async function loadPlan(user) {
     _primePrescriptionExerciseCatalog();
 
     // Cargar logs (no-fatal)
+    if (ACTIVE_PLAN_ID !== activePlanId) _clearHistoricalView();
     ACTIVE_PLAN_ID = activePlanId; // registrar plan activo actual
     _logsAuthorityUpdatedAt = 0;
     _resetLogsConcurrencyState();
@@ -3604,6 +3607,7 @@ async function loadPlan(user) {
         if (newPlanId && newPlanId !== activePlanId) {
           // El coach asignó un plan completamente nuevo
           // Marcar en sessionStorage para que loadPlan sepa que debe resetear la semana
+          _clearHistoricalView();
           try { sessionStorage.setItem('vdsen_plan_changed', '1'); } catch(e2) {}
           showToast('🔄 Tu coach asignó un plan nuevo. Recargando...');
           setTimeout(function(){ location.reload(); }, 1500);
@@ -9363,6 +9367,122 @@ function _refreshSessionDashboard() {
 }
 window._refreshSessionDashboard = _refreshSessionDashboard;
 
+
+// Isolated opt-in historical view. Never assign to LOGS or reuse this data as active-plan evidence.
+const _historicalFragmentDigest = '86e6c94f6bc6d8348a40d76ddb84fe9d6d06088ed730622a9de31920de6582e8';
+var _historicalView = null;
+function _clearHistoricalView() {
+  _historicalView = null;
+  const panel = document.getElementById('vdsenHistoryOriginal');
+  if (panel) panel.remove();
+}
+function _collectOriginalWeekOne(plan, meso, oldPlanId) {
+  // Require the document's own plan binding; a path alone does not repair an unbound legacy log.
+  if (!meso || meso.planId !== oldPlanId || !meso.entries || !Array.isArray(plan.days)) return null;
+  const result = [];
+  for (const [dayIndex, expectedCount] of [[0,19],[1,11]]) {
+    const day = plan.days[dayIndex];
+    if (!day || day.dayIndex !== dayIndex || !Array.isArray(day.exercises)) return null;
+    const mark = meso.entries['done_1_' + dayIndex];
+    const completed = mark === true || (!!mark && typeof mark === 'object' && Number.isFinite(Number(mark.ts)) &&
+      Number(mark.ts) > 0 && !mark.partial && !mark.autoClosed && !mark.skipped && !mark.autoFilled);
+    const historicalClose = !!mark && typeof mark === 'object' && mark.fromHistory === true && mark.autoClosed === true &&
+      !mark.skipped && !mark.partial && Number.isFinite(Number(mark.ts)) && Number(mark.ts) > 0;
+    const rows = [];
+    for (const [key, entry] of Object.entries(meso.entries)) {
+      const match = /^log_1_([01])_(\d+)_s(\d+)$/.exec(key);
+      if (!match || Number(match[1]) !== dayIndex || !entry || entry.done !== true || entry.autoFilled || entry.express || entry.expressFinal) continue;
+      const exerciseIndex = Number(match[2]), setIndex = Number(match[3]);
+      const ex = day.exercises[exerciseIndex];
+      if (!ex || typeof ex.exerciseName !== 'string' || !ex.exerciseName.trim() || !Array.isArray(ex.sets) || !ex.sets[setIndex] ||
+          (entry.prescriptionExerciseId && entry.prescriptionExerciseId !== ex.prescriptionExerciseId) ||
+          (!entry.prescriptionExerciseId && entry.exerciseNameSnapshot !== ex.exerciseName) ||
+          !Number.isFinite(Number(entry.ts)) || Number(entry.ts) <= 0) return null;
+      // Never relabel a substitution or conflicting snapshot as the original exercise.
+      if (meso.entries['exsub_1_' + dayIndex + '_' + exerciseIndex] ||
+          entry.substitutedFrom || (entry.exerciseNameSnapshot && entry.exerciseNameSnapshot !== ex.exerciseName)) return null;
+      rows.push({exerciseIndex, setIndex, name:ex.exerciseName, load:entry.carga, unit:entry.unit,
+        reps:entry.reps, rir:entry.rir_real, ics:entry.ics, ts:Number(entry.ts)});
+    }
+    if (rows.length !== expectedCount) return null;
+    rows.sort((a,b) => a.exerciseIndex-b.exerciseIndex || a.setIndex-b.setIndex);
+    result.push({dayIndex, completed, historicalClose, rows});
+  }
+  return result;
+}
+function _renderOriginalSessionsPanel(container) {
+  const hash = location.hash;
+  const fragment = /^#historial-vdsen=([a-f0-9]{64}\.[A-Za-z0-9]{20}\.[A-Za-z0-9]{20})$/.exec(hash);
+  if (!fragment || !USER || !FB.auth.currentUser || FB.auth.currentUser.uid !== USER.uid || !ACTIVE_PLAN_ID) return;
+  const uid = USER.uid, active = ACTIVE_PLAN_ID, [,oldId,newId] = fragment[1].split('.');
+  if (oldId === active || newId !== active) { _clearHistoricalView(); return; }
+  function stillCurrent(state) {
+    return _historicalView === state && state.uid === uid && state.active === active && state.hash === hash && USER && USER.uid === uid && FB.auth.currentUser &&
+      FB.auth.currentUser.uid === uid && ACTIVE_PLAN_ID === active && location.hash === hash;
+  }
+  function paint(sessions) {
+    if (!sessions || document.getElementById('vdsenHistoryOriginal')) return;
+    function element(tag, value) {
+      const el = document.createElement(tag);
+      if (value !== undefined) el.textContent = value;
+      return el;
+    }
+    const panel = element('details');
+    panel.id = 'vdsenHistoryOriginal';
+    panel.className = 'gloss';
+    panel.append(element('summary', 'Semana 1 · sesiones originales recuperadas'));
+    panel.append(element('p', 'Historial de solo lectura del plan anterior. No marca sesiones ni ejercicios del plan actual.'));
+    for (const session of sessions) {
+      panel.append(element('h3', 'D' + (session.dayIndex + 1) + ' · ' +
+        (session.completed ? 'Completada en el plan anterior' : session.historicalClose
+          ? 'Registrada en el plan anterior · cierre automático' : 'Registrada · cierre no verificado') + ' · ' + session.rows.length + ' series'));
+      const list = element('ul');
+      for (const row of session.rows) {
+        const facts = [];
+        const recorded = v => ((typeof v === 'number' && Number.isFinite(v)) ||
+          (typeof v === 'string' && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(v.trim()) && Number.isFinite(Number(v)))) ? String(v).trim() : null;
+        const load = recorded(row.load), reps = recorded(row.reps), rir = recorded(row.rir), ics = recorded(row.ics);
+        if (load !== null) facts.push(load + (typeof row.unit === 'string' && row.unit.trim() ? ' ' + row.unit.trim() : ''));
+        if (reps !== null) facts.push(reps + ' reps');
+        if (rir !== null) facts.push('RIR ' + rir);
+        if (ics !== null) facts.push('ICS ' + ics);
+        const recordedAt = new Date(row.ts);
+        if (Number.isFinite(recordedAt.getTime())) facts.push(recordedAt.toLocaleString('es-MX'));
+        list.append(element('li', row.name + ' · Serie ' + (row.setIndex + 1) + (facts.length ? ' · ' + facts.join(' · ') : '')));
+      }
+      panel.append(list);
+    }
+    container.append(panel);
+  }
+  if (_historicalView && stillCurrent(_historicalView)) {
+    paint(_historicalView.sessions);
+    return;
+  }
+  if (!window.crypto || !window.crypto.subtle || typeof FB.getDocFromServer !== 'function') return;
+  const state = _historicalView = {uid,active,hash,sessions:null};
+  return (async function () {
+    try {
+      const data = new TextEncoder().encode(fragment[1]);
+      const digest = Array.from(new Uint8Array(await window.crypto.subtle.digest('SHA-256',data)),
+        b => b.toString(16).padStart(2,'0')).join('');
+      if (digest !== _historicalFragmentDigest || !stillCurrent(state)) return;
+      const old = await FB.getDocFromServer(FB.doc(FB.db,'plans',oldId));
+      if (!stillCurrent(state) || !old.exists() || !old.metadata || old.metadata.fromCache || old.metadata.hasPendingWrites) return;
+      const plan = old.data();
+      if (plan.clientId !== uid || plan.supersededBy !== active) return;
+      const meso = await FB.getDocFromServer(FB.doc(FB.db,'logs',uid,'mesos',oldId));
+      if (!stillCurrent(state) || !meso.exists() || !meso.metadata || meso.metadata.fromCache || meso.metadata.hasPendingWrites) return;
+      state.sessions = _collectOriginalWeekOne(plan, meso.data(), oldId);
+      paint(state.sessions);
+    } catch (_) { /* Fail closed: do not consume cached or unverified history. */ }
+  })();
+}
+window.addEventListener('hashchange', function () {
+  _clearHistoricalView();
+  const panelHost = document.getElementById('tabEntr');
+  if (panelHost && panelHost.style.display !== 'none') _renderOriginalSessionsPanel(panelHost);
+});
+
 function renderEntrenamiento() {
   if (!PLAN || !PLAN.entrenamiento) return;
   // Clear session timer before re-render
@@ -9785,6 +9905,7 @@ function renderEntrenamiento() {
       '<span id="timerPillNum" class="rt-pnum">—</span>'+
       '<span class="rt-ptxt">Toca para ver</span>'+
     '</div>';
+  _renderOriginalSessionsPanel(cont);
   // T566 — al ENTRAR a la pestaña de entrenamiento, dejar el set activo a la vista. Se consume
   // el marcador que pone goTab, no un temporizador ni un bucle: el re-render que disparan el
   // descanso o un snapshot no debe mover la pantalla bajo los dedos del cliente. Un intento
