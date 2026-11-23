@@ -268,6 +268,18 @@ test('T854.9 Historial, completed_at y deployment anterior preservados en .relea
       STATE.observation_source.includes('sha256:77f42a6bc0656be9975abc71a99df1d654f9fdac376186e2a6c43e506243a0ce') &&
       STATE.observation_source.includes(NEW_DEPLOYMENT) &&
       STATE.observation_source.includes(OFFICIAL_ZIP_DIGEST)
+    ) ||
+    (
+      STATE.production_deployment === 'dpl_5dCM9WMbVCJ3zxKi5XsKU1gvarQG' &&
+      STATE.runtime_sha === '5c9024684a71f10441056404e0bc5a4705fdb377' &&
+      STATE.app_release.source_release_run === '45166439226' &&
+      STATE.app_release.completed_at === '2026-11-23T11:45:11Z' &&
+      STATE.app_release.previous_deployment === 'dpl_3FUD41kgs6FXXyVPrY6DnTnpVxCy' &&
+      STATE.app_release.previous_runtime_sha === 'fc6937882c3ed6b225301dc068e72e3be9a92585' &&
+      STATE.observation_source.includes('sha256:acd295c071aede819606ab1a0ff3652a076c4a9df993ced12b52ad657a080fbe') &&
+      STATE.observation_source.includes('sha256:cb46a15007cdb04dba7c2551226950969ff50de3acf7d6508b64a18c4bdbd636') &&
+      STATE.observation_source.includes(NEW_DEPLOYMENT) &&
+      STATE.observation_source.includes(OFFICIAL_ZIP_DIGEST)
     ),
     'SAFE_OFF_BASELINE anchor and exact accredited current/previous release identities are verified in canonical provenance'
   );
