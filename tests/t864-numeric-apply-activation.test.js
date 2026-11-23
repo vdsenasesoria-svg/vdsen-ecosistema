@@ -17,7 +17,7 @@ const effective = require(path.join(ROOT, 'assets/progression-effective-prescrip
 const executor = require(path.join(ROOT, 'api/_autonomousProgression.js'));
 
 const ACTIVE_UID = 'z82EDPvsCaabfMN3eGAP3rpxeMt1';
-const ACTIVE_PLAN = 'ucwGfeXn2NGPhnY6CZjb';
+const ACTIVE_PLAN = 'yoQVsI7drVJbcHOg4sZQ';
 const ACTIVE_PID = '8821a34a-3474-4c13-a6c9-6246f92ed438';
 const COACH_ID = 'coach-ayrton-t864';
 const SHA = '0e4c98db0999e24e66e0f0455d21f128101f3cca';
@@ -257,11 +257,12 @@ test('T864.5 executeArmFencesRest sends ONE single atomic :commit RPC with 4 wri
   }, fetcher), /OPERATION_ALREADY_EXISTS/);
 });
 
-test('T864.6 Workflow & static invariants: vdsen-numeric-pilot.yml exposes arm-fences with active defaults while static NUMERIC_APPLY_ENABLED stays false', () => {
+test('T864.6 Workflow & static invariants: vdsen-numeric-pilot.yml exposes arm-fences with active defaults and isolated unit-test env while static NUMERIC_APPLY_ENABLED stays false', () => {
   const wf = fs.readFileSync(path.join(ROOT, '.github/workflows/vdsen-numeric-pilot.yml'), 'utf8');
   assert.ok(wf.includes('- arm-fences'));
-  assert.ok(wf.includes("default: 'ucwGfeXn2NGPhnY6CZjb'"));
+  assert.ok(wf.includes("default: 'yoQVsI7drVJbcHOg4sZQ'"));
   assert.ok(wf.includes("default: '8821a34a-3474-4c13-a6c9-6246f92ed438'"));
+  assert.ok(wf.includes("GCP_PROJECT_ID: ''"), 'unit test step must isolate from job-level production GCP_PROJECT_ID');
   assert.ok(wf.includes('node scripts/pilot/numeric-pilot-ops.cjs arm-fences'));
   assert.equal(shadow.NUMERIC_APPLY_ENABLED, false);
   assert.equal(consumer.NUMERIC_APPLY_ENABLED, false);

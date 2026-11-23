@@ -32,8 +32,8 @@ on:
         default: 'z82EDPvsCaabfMN3eGAP3rpxeMt1'
         type: string
       plan_id:
-        description: Explicit authorized planId (ucwGfeXn2NGPhnY6CZjb)
-        default: 'ucwGfeXn2NGPhnY6CZjb'
+        description: Explicit authorized planId (yoQVsI7drVJbcHOg4sZQ)
+        default: 'yoQVsI7drVJbcHOg4sZQ'
         type: string
       coach_id:
         description: Coach UID
@@ -117,6 +117,11 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Validate contracts and operational unit tests
+        env:
+          GCP_PROJECT_ID: ''
+          GCLOUD_PROJECT: demo-vdsen-ops-test
+          FIRESTORE_EMULATOR_HOST: 127.0.0.1:8080
+          VERCEL_TOKEN: ''
         run: |
           node scripts/release/check.cjs
           node --test tests/t699-numeric-contract.test.js tests/t699-numeric-ops.test.js tests/t864-numeric-apply-activation.test.js

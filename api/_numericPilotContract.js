@@ -2,7 +2,7 @@
 
 // Independent numeric pilot and cohort contract. This validator grants no authority by itself.
 var UID = 'z82EDPvsCaabfMN3eGAP3rpxeMt1';
-var PLAN = 'ucwGfeXn2NGPhnY6CZjb';
+var PLAN = 'yoQVsI7drVJbcHOg4sZQ';
 var PID = '8821a34a-3474-4c13-a6c9-6246f92ed438';
 var PILOT_SCHEMA = 'vdsen-numeric-pilot-v1';
 var COHORT_SCHEMA = 'vdsen-numeric-cohort-v1';
