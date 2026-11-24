@@ -53,7 +53,7 @@ test('T504.2 a fully ready candidate passes every gate; only the activation flag
 });
 
 test('T504.3 too few comparable exposures -> EVIDENCE_COUNT_INSUFFICIENT (not a generic NOT_ELIGIBLE)', () => {
-  const d = plan1(rec([[1, 2, { rir_real: 3 }]]));
+  const d = plan1(rec([]));
   assert.ok(d.blockers.includes(B.EVIDENCE_COUNT_INSUFFICIENT)); assert.ok(!d.blockers.includes(B.NOT_ELIGIBLE));
   assert.equal(gate(d, 'EVIDENCE_COUNT').state, 'BLOCKED');
 });

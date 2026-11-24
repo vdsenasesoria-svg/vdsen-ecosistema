@@ -84,7 +84,7 @@ const TAMPER = {
   noCoachOverride: (r, c) => { c.interventions = [{ targetType: 'EXERCISE', targetId: PID, planId: 'p', decidedAt: '2026-09-27T14:00:00.000Z', action: 'CHANGE' }]; },
   noSafetyConflict: (r, c) => { c.safetyConflict = true; },
   noPolicyReview: (r) => { r.magnitude = Object.assign({}, r.magnitude, { coachReviewRequired: { code: 'COACH_REVIEW_REQUIRED', branch: 'D' } }); },
-  evidenceEligible: (r) => { r.magnitude = Object.assign({}, r.magnitude, { comparableExposureCount: 1 }); },
+  evidenceEligible: (r) => { r.magnitude = Object.assign({}, r.magnitude, { comparableExposureCount: 0 }); },
   directionConsistent: (r) => { r.magnitude = Object.assign({}, r.magnitude, { directionConsistency: 'CONFLICTING' }); },
   magnitudeResolved: (r) => { r.magnitude = Object.assign({}, r.magnitude, { unresolved: { code: 'X', rules: ['D'] } }); },
   equipmentIdentityResolved: (r, c) => { c.equipmentResolution = Object.assign({}, c.equipmentResolution, { equipmentId: '' }); },

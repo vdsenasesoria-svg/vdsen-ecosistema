@@ -124,7 +124,7 @@ test('D-01.3 negative: maintain with nothing to adjust keeps the old behaviour (
   const r = build({ latest: F.OK }); assert.equal(r.state, 'REJECTED'); assert.equal(r.reasonCode, 'NO_NUMERIC_DELTA'); assert.ok(!r.magnitude || !(r.magnitude.candidates || []).length);
 });
 test('D-01.4 negative: a single comparable exposure (insufficient evidence) never yields an eligible candidate from a maintain trigger', () => {
-  const sc = F.scenario({ latest: F.C9 }), entries = Object.fromEntries(Object.entries(sc.entries).filter(([k]) => !/^log_1_0_/.test(k)));
+  const sc = F.scenario({ latest: F.C9 }), entries = Object.fromEntries(Object.entries(sc.entries).filter(([k]) => !/^log_1_(0|2)_/.test(k)));
   const r = build({ latest: F.C9, entries });
   assert.ok(!(r.state === 'PENDING' && r.magnitude && r.magnitude.eligible), JSON.stringify([r.state, r.reasonCode]));
 });

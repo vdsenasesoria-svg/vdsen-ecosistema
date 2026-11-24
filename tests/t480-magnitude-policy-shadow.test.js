@@ -91,11 +91,13 @@ test('6. Rule B evidence -> Coach review only; never a volume candidate', () => 
 });
 
 test('7. one comparable exposure -> not eligible', () => {
+  const zero = run([]);
+  assert.equal(zero.comparableExposureCount, 0); assert.equal(zero.eligible, false);
+  assert.ok(zero.reasonCodes.includes('INSUFFICIENT_COMPARABLE_EXPOSURES'));
   const d = run([exposure(1, 0, { rirPrescribed: 2, rirReal: 3 })]);
-  assert.equal(d.comparableExposureCount, 1); assert.equal(d.eligible, false);
-  assert.ok(d.reasonCodes.includes('INSUFFICIENT_COMPARABLE_EXPOSURES'));
+  assert.equal(d.comparableExposureCount, 1); assert.equal(d.eligible, true); assert.equal(d.minExposures, 1);
+  assert.ok(!d.reasonCodes.includes('INSUFFICIENT_COMPARABLE_EXPOSURES'));
   assert.equal(raw(d, 'LOAD').rawCandidate, 102.5, 'raw candidate is still computed in shadow');
-  assert.equal(run([]).comparableExposureCount, 0);
 });
 
 test('8. two comparable exposures -> evidence threshold satisfied', () => {

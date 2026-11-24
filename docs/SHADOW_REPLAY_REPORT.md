@@ -52,7 +52,7 @@ Responde: cuando se active la bandera, ¿por qué se aplicaría o no cada candid
 | D: effort harder than prescribed (Coach review) | — | COACH_REVIEW_REQUIRED | COACH_REVIEW_REQUIRED | COACH_REVIEW_REQUIRED | — |
 | E: reps incomplete without RIR evidence (Coach review) | — | COACH_REVIEW_REQUIRED | COACH_REVIEW_REQUIRED | COACH_REVIEW_REQUIRED | — |
 | Rule A with target RIR 0 (policy undefined by the source) | — | BLOCKED | BLOCKED_POLICY_OTHER | MAGNITUDE_BRANCH_UNRESOLVED | — |
-| single exposure only | LOAD | BLOCKED | BLOCKED_EVIDENCE | EVIDENCE_COUNT_INSUFFICIENT | — |
+| single exposure only | — | BLOCKED | BLOCKED_EVIDENCE | EVIDENCE_COUNT_INSUFFICIENT | — |
 | direction unconfirmed by prior exposure | LOAD | BLOCKED | BLOCKED_EVIDENCE | DIRECTION_UNCONFIRMED | — |
 | direction conflicting across exposures | LOAD | BLOCKED | BLOCKED_EVIDENCE | DIRECTION_CONFLICTING | — |
 | safety conflict | LOAD | BLOCKED | BLOCKED_SAFETY | SAFETY_CONFLICT | — |

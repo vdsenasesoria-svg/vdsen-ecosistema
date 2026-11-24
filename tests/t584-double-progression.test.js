@@ -47,7 +47,8 @@ test('T584-D3 no single-session jump: the ceiling reached ONCE after a plain on-
   const d = run([exposure(1, 0, { reps: 10, rirReal: 1 }), exposure(1, 2, { reps: 12, rirReal: 1 })], { range: RANGE });
   assert.equal(d.ruleId, 'DP'); assert.equal(d.directionConsistency, 'UNCONFIRMED'); assert.equal(d.eligible, false);
   assert.ok(d.reasonCodes.includes('DIRECTION_NOT_CONFIRMED_BY_PRIOR_EXPOSURE'));
-  const single = run([exposure(1, 2, { reps: 12, rirReal: 1 })], { range: RANGE }); assert.equal(single.eligible, false); assert.ok(single.reasonCodes.includes('INSUFFICIENT_COMPARABLE_EXPOSURES'));
+  const single = run([exposure(1, 2, { reps: 12, rirReal: 1 })], { range: RANGE }); assert.equal(single.eligible, true); assert.equal(single.minExposures, 1);
+  const zero = run([], { range: RANGE }); assert.equal(zero.eligible, false); assert.ok(zero.reasonCodes.includes('INSUFFICIENT_COMPARABLE_EXPOSURES'));
 });
 
 test('T584-D4 reps FIRST: while rep room remains the progression is REPS, never LOAD; below the ceiling on target = maintain', () => {

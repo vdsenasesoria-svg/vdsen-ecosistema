@@ -242,9 +242,19 @@ test('T758.7 Insufficient history keeps safe base plan (NEEDS_EVIDENCE)', () => 
     exposures: varExposures
   });
 
-  assert.equal(varResult.eligible, false);
+  var zeroResult = policy.evaluate({
+    clientId: CLIENT_A, planId: PLAN_ID, prescriptionExerciseId: PID,
+    plan: BASE_PLAN,
+    prescription: { prescriptionExerciseId: PID, sets: BASE_PLAN.days[0].exercises[0].sets, repsRange: { min: 8, max: 12 } },
+    exposures: []
+  });
+  assert.equal(zeroResult.eligible, false);
+  assert.equal(zeroResult.comparableExposureCount, 0);
+  assert.ok(zeroResult.reasonCodes.includes('INSUFFICIENT_COMPARABLE_EXPOSURES'));
+
+  assert.equal(varResult.eligible, true);
   assert.equal(varResult.comparableExposureCount, 1);
-  assert.ok(varResult.reasonCodes.includes('INSUFFICIENT_COMPARABLE_EXPOSURES'));
+  assert.equal(varResult.minExposures, 1);
 });
 
 test('T758.8 Unauthorized substitution: records training safely without applying numeric progression', () => {

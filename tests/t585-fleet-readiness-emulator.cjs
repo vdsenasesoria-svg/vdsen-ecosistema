@@ -87,7 +87,7 @@ test('FLEET-01 ten profiles processed in one release window: every outcome is ex
   assert.equal(by('F01').overlays, 'LOAD:100->105'); assert.equal(by('F02').overlays, 'LOAD:225->236'); assert.equal(by('F03').overlays, 'REPS:10->12');
   assert.equal(by('F04').overlays, '-', 'at the ceiling with the effort as prescribed and the Client saying maintain: nothing to change'); assert.equal(by('F05').overlays, 'FREEZE:100->100');
   assert.equal(by('F06').overlays, 'DELOAD:3->2', 'fatigue: the structural rule applies the deload'); assert.equal(by('F07').overlays, 'SETS:3->2', 'soreness veto: one set less'); assert.equal(by('F08').overlays, 'SETS:3->4');
-  assert.equal(by('F09').overlays, 'LOAD:100->105,LOAD:100->105', 'advisory load without catalog identity'); assert.equal(by('F10').overlays, '-'); assert.equal(by('F10').applied, 0);
+  assert.equal(by('F09').overlays, 'LOAD:100->105,LOAD:100->105', 'advisory load without catalog identity'); assert.equal(by('F10').overlays, 'LOAD:100->105'); assert.equal(by('F10').applied, 1);
 });
 
 test('FLEET-02 the 10-client cap is a hard fail-closed: an allowlist of 11 is INVALID and nobody is activated (no partial rollout by accident)', async () => {

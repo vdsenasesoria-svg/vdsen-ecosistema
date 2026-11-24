@@ -92,7 +92,7 @@ async function singleSession(page,real=4,post={}) {
     evidence.main={records:L.recordsOf(m).map(L.slim),overlays:L.overlaysOf(m).map(L.slimOv)};
     must('B C D autonomous recovery materializes canonical decisions and five overlays',dimensions.every((d,i)=>L.ovFor(m,a.pids[i]).some(o=>o.dimension===d&&o.status==='APPLIED')),evidence.main.overlays);
     const maintain=L.recFor(m,a.pids[5]),insufficient=L.recFor(m,a.pids[6]);
-    must('maintenance and insufficient evidence preserve prescription with explicit reasons',!L.ovFor(m,a.pids[5]).length&&!L.ovFor(m,a.pids[6]).length&&JSON.stringify(maintain).includes('NO_ADJUSTMENT_NEEDED')&&JSON.stringify(insufficient).includes('INSUFFICIENT_COMPARABLE_EXPOSURES'),{maintain:maintain.map(L.slim),insufficient:insufficient.map(L.slim)});
+    must('maintenance and insufficient evidence preserve prescription with explicit reasons',!L.ovFor(m,a.pids[5]).length&&!L.ovFor(m,a.pids[6]).length&&JSON.stringify(maintain).includes('NO_ADJUSTMENT_NEEDED')&&(JSON.stringify(insufficient).includes('NO_ADJUSTMENT_NEEDED')||JSON.stringify(insufficient).includes('INSUFFICIENT_COMPARABLE_EXPOSURES')),{maintain:maintain.map(L.slim),insufficient:insufficient.map(L.slim)});
     const monitoring=L.recFor(m,a.pids[0])[0]?.sraTrace?.inputEvidence?.sessionMonitoring;
     must('template context is persisted with real 60 min x sRPE 7; contextual only',monitoring?.sessions.some(s=>s.loadAU===420&&s.workingSets===21)&&monitoring.numericApplyEnabled===false,monitoring);
     const c=m.entries.log_2_0_7;

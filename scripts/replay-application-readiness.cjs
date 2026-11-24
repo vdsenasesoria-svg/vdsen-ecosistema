@@ -45,7 +45,7 @@ const SCENARIOS = [
   ['D: effort harder than prescribed (Coach review)', [[1, 0, { reps: '10', rir_real: 0 }], [1, 2, { reps: '10', rir_real: 0 }]], {}],
   ['E: reps incomplete without RIR evidence (Coach review)', [[1, 0, { reps: '8', rir_real: '' }], [1, 2, { reps: '8', rir_real: '' }]], {}],
   ['Rule A with target RIR 0 (policy undefined by the source)', [[1, 0, { rir: 0, rir_real: 1 }], [1, 2, { rir: 0, rir_real: 1 }]], {}],
-  ['single exposure only', [[1, 2, { rir_real: 3 }]], {}],
+  ['single exposure only', [], {}],
   ['direction unconfirmed by prior exposure', [[1, 0, { rir_real: 2 }], [1, 2, { rir_real: 3 }]], {}],
   ['direction conflicting across exposures', [[1, 0, { reps: '6', rir_real: 0 }], [1, 2, { rir_real: 3 }]], {}],
   ['safety conflict', GOOD, { ctx: { safetyConflict: true } }],
