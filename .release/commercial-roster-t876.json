@@ -1,0 +1,41 @@
+{
+  "schema": "vdsen-commercial-roster-v1",
+  "task": "T876",
+  "confirmedAt": "2026-11-24T22:43:46Z",
+  "confirmedBy": "owner",
+  "firebaseProject": "vdsen-ecosistema",
+  "notes": "Owner-confirmed commercial classification for Grupo A (25 ACTIVE, 4 INACTIVE). Remaining 38 Firebase records are UNCONFIRMED and stay technically excluded without being labeled INACTIVE. Repo-only preparation manifest; zero Firestore mutations.",
+  "activeUids": [
+    "1ogRCYTgaSc9zKuGZiAHq0OmmBK2",
+    "5SGyU3rCaaQUKlkGcG7FKucuB5r1",
+    "6yRKI7cymTTUPEtyB32AKx3OYOZ2",
+    "9VqCeuMRbebaAdd3xKtrpOinKlO2",
+    "9heNUbQ51XSZh2K7bktg4BPLKQs1",
+    "CRwGF2Ql5YbGnJY8tSE8SDaqO6D2",
+    "EjsXdxvnX1Q7GqbVSBktPsHumim1",
+    "H3gHdY4KiWOvX0D7eR6clgrmDa72",
+    "K2tsweLpbHgSpALGtoYSLrYREUT2",
+    "LKEMJIBLcMgxSZgPNB8GK8ms2P83",
+    "PBojbGxDKHTbW4oxPc0wTGSo82n1",
+    "STjL7YrvWgVM1ubhoDFQOec4KEK2",
+    "UlVYmBMce5SMbRmqTPeh5chtqF82",
+    "aM6lDhTVale4F5rtY0sMYjogXpb2",
+    "c51AshFv1mObncwwLP9PV0wihMN2",
+    "cuX7BCkxB3Zft9LUWo1Q9Vdzukf1",
+    "eykWDy6hdxWYUgpjZjnYdg0CyTU2",
+    "fwD2lX25IiO8MCobyoispPMZEws2",
+    "rBVgZ3Dkp2Mr7RpgDr0y9GUZFTo1",
+    "ubDOJn04HYNaX8qY6RW1eHnLkel1",
+    "uhcPUC5gRvXIgd7huOjA7WpDFH12",
+    "w9udfKSESAYiHUTlI7PQKEMIvlD2",
+    "x96Ugy5Nwhg5pif9VXwfXVIsNxu2",
+    "y3FRNHsJAVRklENjd4SW3dRhisn1",
+    "z82EDPvsCaabfMN3eGAP3rpxeMt1"
+  ],
+  "inactiveUids": [
+    "FH2vhVUZBtO7wtjajFQDcjTdtj72",
+    "a17vaFJhoLSbZR5CMksPfIWdokR2",
+    "jbUXXJqoX7OJwyDLd0QRyAQrgvk1",
+    "l0Xsd9nHCFejBPsUpWAqusj5E2A2"
+  ]
+}

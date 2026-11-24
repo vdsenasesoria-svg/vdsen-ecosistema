@@ -80,46 +80,92 @@ function extractPlanPids(plan) {
   return { pids: [...pidSet].sort(), totalExercises, missingPidExercises };
 }
 
+const COMMERCIAL_ROSTER_PATH = path.resolve(__dirname, '../../.release/commercial-roster-t876.json');
+
+function loadCommercialRoster(filePath = COMMERCIAL_ROSTER_PATH) {
+  if (!fs.existsSync(filePath)) return null;
+  const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  const activeSet = new Set(Array.isArray(raw.activeUids) ? raw.activeUids : []);
+  const inactiveSet = new Set(Array.isArray(raw.inactiveUids) ? raw.inactiveUids : []);
+  for (const uid of activeSet) assert.ok(!inactiveSet.has(uid), 'COMMERCIAL_ROSTER_OVERLAP_' + uid);
+  return { schema: raw.schema, task: raw.task || null, activeSet, inactiveSet };
+}
+
 /**
  * Pure, deterministic cohort builder: classifies eligible vs excluded clients and partitions
  * eligible clients into isolated cohorts of <= 10 clients each.
+ * Separates commercialStatus (ACTIVE|INACTIVE|UNCONFIRMED), planStatus (VALID|PENDING_FINALIZATION|INVALID),
+ * numericStatus (ACTIVE|AUTHORIZED_PENDING|EXCLUDED), and cohortId.
  */
 function buildCohortsFromRoster(clients, plansById, opts = {}) {
   const runtimeSha = opts.runtimeSha || '';
   const baseOpId = opts.operationId || 'T875-FLEET-OP';
   const startsAt = opts.startsAt || '';
   const expiresAt = opts.expiresAt || '';
+  const reg = opts.commercialRegistry || null;
+  const activeSet = reg ? (reg.activeSet || new Set(reg.activeUids || [])) : null;
+  const inactiveSet = reg ? (reg.inactiveSet || new Set(reg.inactiveUids || [])) : null;
   const eligible = [];
   const excluded = [];
+  const classifications = [];
 
   const sortedClients = (Array.isArray(clients) ? clients : []).slice().sort((a, b) => String(a._id || a.uid || '').localeCompare(String(b._id || b.uid || '')));
   for (const c of sortedClients) {
     const uid = c._id || c.uid;
     if (!uid) continue;
+    const commercialStatus = reg
+      ? (activeSet.has(uid) ? 'ACTIVE' : inactiveSet.has(uid) ? 'INACTIVE' : 'UNCONFIRMED')
+      : 'UNCONFIRMED';
+    const plan = c.activePlanId && plansById ? plansById[c.activePlanId] : null;
+    const extracted = plan ? extractPlanPids(plan) : { pids: [], totalExercises: 0, missingPidExercises: 0 };
+    const hasValidUpdatedAt = typeof (plan && plan.updatedAt) === 'string' && Number.isFinite(Date.parse(plan.updatedAt));
+    const planValidStructure = !!(
+      c.activePlanId && plan &&
+      eligibility.isPlanStatusValid(plan, c) &&
+      (!plan.clientId || plan.clientId === uid) &&
+      extracted.pids.length > 0
+    );
+    const planStatus = !planValidStructure ? 'INVALID' : (hasValidUpdatedAt ? 'VALID' : 'PENDING_FINALIZATION');
+
+    if (reg && commercialStatus === 'INACTIVE') {
+      excluded.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId || null, commercialStatus, planStatus, reason: 'COMMERCIAL_INACTIVE' });
+      classifications.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId || null, commercialStatus, planStatus, numericStatus: 'EXCLUDED', cohortId: null, pidCount: extracted.pids.length });
+      continue;
+    }
+    if (reg && commercialStatus === 'UNCONFIRMED') {
+      excluded.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId || null, commercialStatus, planStatus, reason: 'COMMERCIAL_UNCONFIRMED' });
+      classifications.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId || null, commercialStatus, planStatus, numericStatus: 'EXCLUDED', cohortId: null, pidCount: extracted.pids.length });
+      continue;
+    }
     if (!eligibility.isClientStatusValid(c)) {
-      excluded.push({ uid, coachId: c.coachId || null, reason: 'CLIENT_INACTIVE_OR_SUSPENDED' });
+      excluded.push({ uid, coachId: c.coachId || null, commercialStatus, planStatus, reason: 'CLIENT_INACTIVE_OR_SUSPENDED' });
+      classifications.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId || null, commercialStatus, planStatus, numericStatus: 'EXCLUDED', cohortId: null, pidCount: 0 });
       continue;
     }
     if (!c.activePlanId) {
-      excluded.push({ uid, coachId: c.coachId || null, reason: 'NO_ACTIVE_PLAN_ID' });
+      excluded.push({ uid, coachId: c.coachId || null, commercialStatus, planStatus, reason: 'NO_ACTIVE_PLAN_ID' });
+      classifications.push({ uid, coachId: c.coachId || null, activePlanId: null, commercialStatus, planStatus, numericStatus: 'EXCLUDED', cohortId: null, pidCount: 0 });
       continue;
     }
-    const plan = plansById && plansById[c.activePlanId];
     if (!plan) {
-      excluded.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, reason: 'ACTIVE_PLAN_NOT_FOUND' });
+      excluded.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, commercialStatus, planStatus, reason: 'ACTIVE_PLAN_NOT_FOUND' });
+      classifications.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, commercialStatus, planStatus, numericStatus: 'EXCLUDED', cohortId: null, pidCount: 0 });
       continue;
     }
     if (!eligibility.isPlanStatusValid(plan, c)) {
-      excluded.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, reason: 'PLAN_STATUS_INVALID' });
+      excluded.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, commercialStatus, planStatus, reason: 'PLAN_STATUS_INVALID' });
+      classifications.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, commercialStatus, planStatus, numericStatus: 'EXCLUDED', cohortId: null, pidCount: 0 });
       continue;
     }
     if (plan.clientId && plan.clientId !== uid) {
-      excluded.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, reason: 'PLAN_CLIENT_MISMATCH' });
+      excluded.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, commercialStatus, planStatus, reason: 'PLAN_CLIENT_MISMATCH' });
+      classifications.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, commercialStatus, planStatus, numericStatus: 'EXCLUDED', cohortId: null, pidCount: 0 });
       continue;
     }
-    const { pids, totalExercises, missingPidExercises } = extractPlanPids(plan);
+    const { pids, totalExercises, missingPidExercises } = extracted;
     if (pids.length === 0) {
-      excluded.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, totalExercises, missingPidExercises, reason: 'NO_PRESCRIPTION_EXERCISE_IDS' });
+      excluded.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, totalExercises, missingPidExercises, commercialStatus, planStatus, reason: 'NO_PRESCRIPTION_EXERCISE_IDS' });
+      classifications.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, commercialStatus, planStatus, numericStatus: 'EXCLUDED', cohortId: null, pidCount: 0 });
       continue;
     }
     const pidsHash = C.computePidsHash(pids);
@@ -128,7 +174,10 @@ function buildCohortsFromRoster(clients, plansById, opts = {}) {
       uid,
       coachId: c.coachId || null,
       planId: c.activePlanId,
+      createdAt: plan.createdAt || null,
       updatedAt: plan.updatedAt || null,
+      commercialStatus,
+      planStatus,
       pids,
       pidCount: pids.length,
       pidsHash,
@@ -143,6 +192,18 @@ function buildCohortsFromRoster(clients, plansById, opts = {}) {
     const cohortId = 'cohort-' + String(idx).padStart(2, '0');
     const slice = eligible.slice(i, i + MAX_COHORT_CLIENTS);
     assert.ok(slice.length >= 1 && slice.length <= MAX_COHORT_CLIENTS, 'COHORT_CAP_VIOLATED');
+    for (const x of slice) {
+      classifications.push({
+        uid: x.uid,
+        coachId: x.coachId,
+        activePlanId: x.planId,
+        commercialStatus: x.commercialStatus,
+        planStatus: x.planStatus,
+        numericStatus: x.planStatus === 'VALID' ? 'ACTIVE' : 'AUTHORIZED_PENDING',
+        cohortId,
+        pidCount: x.pidCount,
+      });
+    }
     const cohortOpId = (baseOpId + '-' + cohortId).slice(0, 80);
     const allPids = [...new Set(slice.flatMap(x => x.pids))].sort();
     const coachIds = [...new Set(slice.map(x => x.coachId).filter(Boolean))].sort();
@@ -198,6 +259,8 @@ function buildCohortsFromRoster(clients, plansById, opts = {}) {
     eligibleCount: eligible.length,
     eligibleWithUpdatedAt: eligible.filter(x => !!x.updatedAt).length,
     eligibleMissingUpdatedAt: eligible.filter(x => !x.updatedAt).length,
+    eligibleWithCanonicalTimestamp: eligible.filter(x => x.planStatus === 'VALID').length,
+    eligibleMissingCanonicalTimestamp: eligible.filter(x => x.planStatus !== 'VALID').length,
     excludedCount: excluded.length,
     excludedByReason,
     totalEligiblePids: eligible.reduce((s, x) => s + x.pidCount, 0),
@@ -205,6 +268,7 @@ function buildCohortsFromRoster(clients, plansById, opts = {}) {
     maxClientsPerCohort: MAX_COHORT_CLIENTS,
     cohorts,
     excluded,
+    classifications,
   };
 }
 
@@ -742,6 +806,7 @@ if (require.main === module) {
 
 module.exports = {
   buildCohortsFromRoster,
+  loadCommercialRoster,
   extractPlanPids,
   MAX_COHORT_CLIENTS,
 };
