@@ -7,7 +7,7 @@
 //   4. 0 exposures -> INSUFFICIENT_COMPARABLE_EXPOSURES, base prescription preserved.
 //   5. Separate PIDs for D1, D3, D5 sharing the same exercise name ("Press Convergente Inclinado") never contaminate each other.
 //   6. No double applications, no retroactive modification of started sessions, Coach override priority preserved.
-//   7. Pilot contract binds Ayrton's real active D3 PID (453d6665-79a7-4052-a5a4-6cfc0f410187) while static NUMERIC_APPLY_ENABLED stays false.
+//   7. Pilot contract scopes only Ayrton's real D2 quadriceps PID (506fb437-f151-499a-bbdb-512cd4d0b7c6) while D3 remains separate and Numeric Apply OFF.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -29,6 +29,7 @@ const PLAN_ID = 'yoQVsI7drVJbcHOg4sZQ';
 const PID_D1 = '5976b808-9efd-4a9d-86c9-0219fa4da167';
 const PID_D3 = '453d6665-79a7-4052-a5a4-6cfc0f410187';
 const PID_D5 = '4fcef626-9dda-4239-b0a6-d7833ba20073';
+const PILOT_PID_D2 = '506fb437-f151-499a-bbdb-512cd4d0b7c6';
 const T0 = Date.parse('2026-11-23T10:00:00.000Z');
 
 function loadWithFlagOn(relPath) {
@@ -364,10 +365,11 @@ test('T873.6 Single-exposure overlay applies to next pending session only, block
   assert.ok(dCoach.blockers.includes('COACH_OVERRIDE'));
 });
 
-test('T873.7 Pilot contract binds Ayrton real active D3 PID and keeps static NUMERIC_APPLY_ENABLED false', () => {
+test('T873.7 Pilot contract binds scoped D2 quadriceps PID, keeps independent D3 PID and Numeric Apply OFF', () => {
   assert.equal(pilotContract.UID, UID);
   assert.equal(pilotContract.PLAN, PLAN_ID);
-  assert.equal(pilotContract.PID, PID_D3);
+  assert.equal(pilotContract.PID, PILOT_PID_D2);
+  assert.notEqual(pilotContract.PID, PID_D3);
   assert.equal(consumer.NUMERIC_APPLY_ENABLED, false);
   assert.equal(shadow.NUMERIC_APPLY_ENABLED, false);
   assert.equal(policy.NUMERIC_APPLY_ENABLED, false);

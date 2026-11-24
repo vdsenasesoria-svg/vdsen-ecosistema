@@ -18,7 +18,7 @@ const executor = require(path.join(ROOT, 'api/_autonomousProgression.js'));
 
 const ACTIVE_UID = 'z82EDPvsCaabfMN3eGAP3rpxeMt1';
 const ACTIVE_PLAN = 'yoQVsI7drVJbcHOg4sZQ';
-const ACTIVE_PID = '453d6665-79a7-4052-a5a4-6cfc0f410187';
+const ACTIVE_PID = '506fb437-f151-499a-bbdb-512cd4d0b7c6';
 const COACH_ID = 'coach-ayrton-t864';
 const SHA = '0e4c98db0999e24e66e0f0455d21f128101f3cca';
 const DEPLOYMENT_ID = 'dpl_26Q4iTpsCbQvPNFR8vKwa74PrPpS';
@@ -130,7 +130,7 @@ function makeAtomicMemoryIo(opts = {}) {
   };
 }
 
-test('T864.1 Contract binds Ayrton active plan ucwGfeXn2NGPhnY6CZjb and D1 PID 8821a34a..., rejecting retired IDs', () => {
+test('T864.1 Contract binds Ayrton active plan and D2 quadriceps PID, rejecting former pilot PID', () => {
   assert.equal(C.UID, ACTIVE_UID);
   assert.equal(C.PLAN, ACTIVE_PLAN);
   assert.equal(C.PID, ACTIVE_PID);
@@ -138,6 +138,7 @@ test('T864.1 Contract binds Ayrton active plan ucwGfeXn2NGPhnY6CZjb and D1 PID 8
   assert.equal(C.windowValid(makeWindow({ planId: '2wywK0y0pKtXRzGS8dNx' }), NOW_MS), false);
   assert.equal(C.windowValid(makeWindow({ planId: 'D5fVjlS3NysTD6Yg2ZpW' }), NOW_MS), false);
   assert.equal(C.windowValid(makeWindow({ pid: '831ccbbe-ab09-4669-a0ef-4c652ca84b7a' }), NOW_MS), false);
+  assert.equal(C.windowValid(makeWindow({ pid: '453d6665-79a7-4052-a5a4-6cfc0f410187' }), NOW_MS), false);
 });
 
 test('T864.2 arm-fences invocation requires explicit VDSEN_NUMERIC_PILOT_RELEASE_ENABLED=true and attempt 1', () => {
@@ -261,7 +262,7 @@ test('T864.6 Workflow & static invariants: vdsen-numeric-pilot.yml exposes arm-f
   const wf = fs.readFileSync(path.join(ROOT, '.github/workflows/vdsen-numeric-pilot.yml'), 'utf8');
   assert.ok(wf.includes('- arm-fences'));
   assert.ok(wf.includes("default: 'yoQVsI7drVJbcHOg4sZQ'"));
-  assert.ok(wf.includes("default: '453d6665-79a7-4052-a5a4-6cfc0f410187'"));
+  assert.ok(wf.includes("default: '506fb437-f151-499a-bbdb-512cd4d0b7c6'"));
   assert.ok(wf.includes("GCP_PROJECT_ID: ''"), 'unit test step must isolate from job-level production GCP_PROJECT_ID');
   assert.ok(wf.includes('node scripts/pilot/numeric-pilot-ops.cjs arm-fences'));
   assert.equal(shadow.NUMERIC_APPLY_ENABLED, false);
