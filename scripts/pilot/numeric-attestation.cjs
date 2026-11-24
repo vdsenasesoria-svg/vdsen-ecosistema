@@ -565,7 +565,11 @@ async function attestRuntime(opts) {
     : (deploymentData.url ? [deploymentData.url] : []));
 
   const aliasMatched = aliases.includes(opts.expectedAlias) || deploymentData.url === opts.expectedAlias;
-  if (!aliasMatched) {
+  // A deployment staged with --skip-domain and promoted via REST may initially report [] or only its own
+  // deploymentData.url in /v13/deployments/:id. In that case defer to Step 4b (authoritative GET /v2/aliases/:alias).
+  // Foreign/other aliases listed on the deployment still fail immediately with ALIAS_MISMATCH.
+  const onlyOwnOrEmptyAlias = aliases.length === 0 || (deploymentData.url && aliases.every(a => a === deploymentData.url));
+  if (!aliasMatched && !onlyOwnOrEmptyAlias) {
     return {
       schema: 'vdsen-numeric-runtime-attestation-v1',
       attested: false,
@@ -576,7 +580,13 @@ async function attestRuntime(opts) {
       message: 'Deployment does not correspond to expected target alias.'
     };
   }
-  checks.push({ check: 'ALIAS_CORRESPONDENCE', expected: opts.expectedAlias, actual: aliases, pass: true });
+  checks.push({
+    check: 'ALIAS_CORRESPONDENCE',
+    expected: opts.expectedAlias,
+    actual: aliases,
+    deferredToLiveAliasEndpoint: !aliasMatched && onlyOwnOrEmptyAlias,
+    pass: true
+  });
 
   if (opts.aliasTargetDeployment && opts.aliasTargetDeployment !== deploymentData.id) {
     return {
