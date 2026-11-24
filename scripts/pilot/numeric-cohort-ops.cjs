@@ -547,7 +547,7 @@ async function armCohort(opts) {
           'autoApplyCanary.enabled',
           'autoApplyCanary.schema',
           'autoApplyCanary.cohort',
-          'autoApplyCanary.cohorts.' + co.cohortId,
+          'autoApplyCanary.cohorts.`' + co.cohortId + '`',
         ],
       },
     },
@@ -646,7 +646,7 @@ async function stopCohorts(opts) {
           name: docName(projectId, 'coaches/' + coachId),
           fields: toFsFields({ autoApplyCanary: { cohorts: { [cid]: { enabled: false, stoppedAt: nowIso } } } }),
         },
-        updateMask: { fieldPaths: ['autoApplyCanary.cohorts.' + cid + '.enabled', 'autoApplyCanary.cohorts.' + cid + '.stoppedAt'] },
+        updateMask: { fieldPaths: ['autoApplyCanary.cohorts.`' + cid + '`.enabled', 'autoApplyCanary.cohorts.`' + cid + '`.stoppedAt'] },
       }
     );
   }
