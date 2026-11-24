@@ -1,6 +1,6 @@
 {
   "schema": "vdsen-deployed-product-v1",
-  "runtime_sha": "df5caa39b273176d6fe415064c2b97619ddf7966",
+  "runtime_sha": "b6c4b86d48e473950a7ad19486c380b7b52ddc9f",
   "note": "Frozen per-file sha256 of the served surface at the DEPLOYED runtime commit. Regenerate only as part of an authorized deploy.",
   "files": {
     "vdsen-cliente.html": "c0c9c5480ea5d96f76f6b43f31ae43fd79f1be739812c2fe7c2db69525696d99",
@@ -27,7 +27,7 @@
     "assets/exercise-visual-catalog.js": "780a45bbeeaa4ccdcd1e74a1b502a04471d9bfe1d8ffb0b23a3f314d60b243bc",
     "assets/exercise-visual-metadata-editor.js": "8bd0e54255fe1e921dbf5fce7b0b16990c83293635183802452d5c64ee8ce1a4",
     "assets/exercises/pending-license.svg": "565b92ebed2f0d6f0bcc4407e543e1f41914e51499aab6ab57ca8fb91cd38ab9",
-    "assets/progression-application-consumer.js": "49d2ca15f81726b00df47867c3d88bbcc27664dae626ef020f13a3446c3caac3",
+    "assets/progression-application-consumer.js": "de940c1ae7408e36bf108b725712b4bfed316d6fb8646b08471272fd9715363f",
     "assets/progression-auto-apply-shadow.js": "39f54521b5d248fdaefce9cfe0cfaffc9741d02a358dd04b7eca4eed95d1dc3b",
     "assets/progression-effective-prescription.js": "a937c64518d3b613d61eb38c36f0f77a82a00d27e030d4d495e0fbe7bff8b652",
     "assets/progression-equipment-resolver.js": "006da3b9061b26973e8463df17a0415ea404ee90bc02b92b34fd97bdd9bd3a42",
