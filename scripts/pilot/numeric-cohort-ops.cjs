@@ -136,6 +136,8 @@ function buildCohortsFromRoster(clients, plansById, opts = {}) {
   }
 
   const cohorts = [];
+  const ENV_SHARD_MAX_CLIENTS = 5;
+  let nextShardIdx = 1;
   for (let i = 0; i < eligible.length; i += MAX_COHORT_CLIENTS) {
     const idx = Math.floor(i / MAX_COHORT_CLIENTS) + 1;
     const cohortId = 'cohort-' + String(idx).padStart(2, '0');
@@ -157,14 +159,25 @@ function buildCohortsFromRoster(clients, plansById, opts = {}) {
       startsAt,
       expiresAt,
     }));
-    const envVarName = 'VDSEN_NUMERIC_COHORT_' + idx;
-    const envVarValue = JSON.stringify(compactWindows);
-    assert.ok(Buffer.byteLength(envVarValue, 'utf8') < 4000, 'COHORT_ENV_SHARD_EXCEEDS_4KB: ' + envVarName);
+    const envShards = [];
+    for (let j = 0; j < compactWindows.length; j += ENV_SHARD_MAX_CLIENTS) {
+      assert.ok(nextShardIdx <= 20, 'COHORT_ENV_SHARD_CAP_EXCEEDED_20');
+      const shardName = 'VDSEN_NUMERIC_COHORT_' + nextShardIdx++;
+      const shardWindows = compactWindows.slice(j, j + ENV_SHARD_MAX_CLIENTS);
+      const shardJson = JSON.stringify(shardWindows);
+      const shardBytes = Buffer.byteLength(shardJson, 'utf8');
+      assert.ok(shardBytes < 4000, 'COHORT_ENV_SHARD_EXCEEDS_4KB: ' + shardName + ' (' + shardBytes + 'B)');
+      envShards.push({ name: shardName, bytes: shardBytes, windows: shardWindows });
+    }
+    const envVarName = envShards[0].name;
+    const envVarNames = envShards.map(sh => sh.name);
     cohorts.push({
       index: idx,
       cohortId,
       envVarName,
-      envVarBytes: Buffer.byteLength(envVarValue, 'utf8'),
+      envVarNames,
+      envShards,
+      envVarBytes: envShards.reduce((s, sh) => s + sh.bytes, 0),
       operationId: cohortOpId,
       coachIds,
       clientIds: slice.map(x => x.uid),
@@ -280,7 +293,10 @@ async function verifyFleetDeploymentLive(vercelToken, deploymentId, expectedSha,
     assert.ok(envNames.includes(req), 'MISSING_REQUIRED_ENV_' + req);
   }
   if (expectedCohortEnvName) {
-    assert.ok(envNames.includes(expectedCohortEnvName), 'MISSING_COHORT_SHARD_' + expectedCohortEnvName);
+    const expectedList = Array.isArray(expectedCohortEnvName) ? expectedCohortEnvName : [expectedCohortEnvName];
+    for (const shardName of expectedList) {
+      assert.ok(envNames.includes(shardName), 'MISSING_COHORT_SHARD_' + shardName);
+    }
   }
   const aliasData = await vget(vercelToken, '/v2/aliases/' + encodeURIComponent(EXPECTED_ALIAS));
   const liveId = aliasData.deploymentId || (aliasData.deployment && aliasData.deployment.id);
@@ -328,7 +344,9 @@ async function prepareFleetRuntime(opts) {
     '-m', 'vdsenBaselineDeployment=' + baselineDeployment,
   ];
   for (const co of manifest.cohorts) {
-    args.push('-e', co.envVarName + '=' + JSON.stringify(co.compactWindows));
+    for (const sh of co.envShards) {
+      args.push('-e', sh.name + '=' + JSON.stringify(sh.windows));
+    }
   }
 
   const r = await A.runVercelCli(args, dest, { VERCEL_ORG_ID: DEFAULT_TEAM_ID, VERCEL_PROJECT_ID: DEFAULT_PROJECT_ID });
@@ -346,7 +364,8 @@ async function prepareFleetRuntime(opts) {
   try {
     await A.promote(s, stagedId);
     const verifiedPaths = await A.verifyPublicBytes(s, runtimeSha, A.servedSurface());
-    const att = await verifyFleetDeploymentLive(vercelToken, stagedId, runtimeSha, manifest.cohorts[0].envVarName);
+    const allShardNames = manifest.cohorts.flatMap(co => co.envVarNames);
+    const att = await verifyFleetDeploymentLive(vercelToken, stagedId, runtimeSha, allShardNames);
     const report = {
       schema: 'vdsen-fleet-runtime-prep-v1',
       status: 'FLEET_RUNTIME_READY_FENCES_CLOSED',
@@ -370,6 +389,7 @@ async function prepareFleetRuntime(opts) {
       cohorts: manifest.cohorts.map(co => ({
         cohortId: co.cohortId,
         envVarName: co.envVarName,
+        envVarNames: co.envVarNames,
         envVarBytes: co.envVarBytes,
         operationId: co.operationId,
         clientCount: co.clientCount,
@@ -393,7 +413,7 @@ async function preflightCohort(opts) {
   const co = manifest.cohorts.find(x => x.cohortId === cohortId);
   assert.ok(co, 'COHORT_NOT_FOUND_' + cohortId);
 
-  const att = await verifyFleetDeploymentLive(vercelToken, deploymentId, runtimeSha, co.envVarName);
+  const att = await verifyFleetDeploymentLive(vercelToken, deploymentId, runtimeSha, co.envVarNames);
   const fences = await fetchCohortFences(projectId, googleToken, cohortId, coachId);
   const priorLedger = await fsGet(projectId, googleToken, 'releaseControl/numericPilot/operations/' + co.operationId);
 
