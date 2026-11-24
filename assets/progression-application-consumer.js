@@ -248,12 +248,38 @@
   function normalizeCanaryScope(raw) {
     var ids = function(a) { return Array.isArray(a) ? a.filter(function(x) { return typeof x === 'string' && x; }) : []; };
     raw = raw && typeof raw === 'object' ? raw : {};
-    return { enabled: raw.enabled === true, clientIds: ids(raw.clientIds), prescriptionExerciseIds: ids(raw.prescriptionExerciseIds) };
+    var clientIds = ids(raw.clientIds), pids = ids(raw.prescriptionExerciseIds);
+    if (raw.enabled === true && raw.cohorts && typeof raw.cohorts === 'object') {
+      var cSet = {}, pSet = {};
+      clientIds.forEach(function(id) { cSet[id] = true; });
+      pids.forEach(function(id) { pSet[id] = true; });
+      Object.keys(raw.cohorts).forEach(function(ck) {
+        var co = raw.cohorts[ck];
+        if (!co || co.enabled !== true) return;
+        var cIds = ids(co.clientIds);
+        if (!cIds.length || cIds.length > 10) return;
+        cIds.forEach(function(id) { if (!cSet[id]) { cSet[id] = true; clientIds.push(id); } });
+        ids(co.prescriptionExerciseIds).forEach(function(id) { if (!pSet[id]) { pSet[id] = true; pids.push(id); } });
+      });
+    }
+    return { enabled: raw.enabled === true, clientIds: clientIds, prescriptionExerciseIds: pids };
   }
   // In scope only when enabled AND the client is listed AND (no PID list = every PID of that client | PID listed).
+  // When isolated cohorts are present, each cohort enforces its own <=10 client cap and explicit PID list.
   function inCanaryScope(raw, clientId, pid) {
-    var sc = normalizeCanaryScope(raw);
-    return sc.enabled && sc.clientIds.indexOf(clientId) >= 0 && (!sc.prescriptionExerciseIds.length || sc.prescriptionExerciseIds.indexOf(pid) >= 0);
+    if (!raw || typeof raw !== 'object' || raw.enabled !== true) return false;
+    var ids = function(a) { return Array.isArray(a) ? a.filter(function(x) { return typeof x === 'string' && x; }) : []; };
+    var topClients = ids(raw.clientIds), topPids = ids(raw.prescriptionExerciseIds);
+    if (topClients.indexOf(clientId) >= 0 && (!topPids.length || topPids.indexOf(pid) >= 0)) return true;
+    if (raw.cohorts && typeof raw.cohorts === 'object') {
+      return Object.keys(raw.cohorts).some(function(ck) {
+        var co = raw.cohorts[ck];
+        if (!co || co.enabled !== true) return false;
+        var cIds = ids(co.clientIds), pIds = ids(co.prescriptionExerciseIds);
+        return cIds.length >= 1 && cIds.length <= 10 && cIds.indexOf(clientId) >= 0 && pIds.length > 0 && pIds.indexOf(pid) >= 0;
+      });
+    }
+    return false;
   }
 
   function planApplication(input) {

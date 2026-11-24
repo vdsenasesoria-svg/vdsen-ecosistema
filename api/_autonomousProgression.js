@@ -35,8 +35,14 @@ function _releaseUnexpired(expiresAt, nowIso) {
   var exp = Date.parse(expiresAt), now = Date.parse(nowIso);
   return isFinite(exp) && isFinite(now) && exp > now && exp - now <= RELEASE_MAX_TTL_MS;
 }
-async function _releaseGate(db, tx, clientId, clock) {
-  var d = _data(await tx.get(db.collection('releaseControl').doc('autonomousProgression')));
+function _releaseFenceRef(db, cohortId) {
+  return db.collection('releaseControl').doc(cohortId ? ('autonomousProgression_cohort_' + cohortId) : 'autonomousProgression');
+}
+function _numericFenceRef(db, cohortId) {
+  return db.collection('releaseControl').doc(cohortId ? ('numericPilot_cohort_' + cohortId) : 'numericPilot');
+}
+async function _releaseGate(db, tx, clientId, clock, cohortId) {
+  var d = _data(await tx.get(_releaseFenceRef(db, cohortId)));
   if (!d || d.schema !== RELEASE_SCHEMA || d.enabled !== true || !Array.isArray(d.clientIds)) return false;
   if (!_releaseUnexpired(d.expiresAt, _now(clock))) return false;
   var ids = d.clientIds;
@@ -92,9 +98,13 @@ async function _runTx(db, fn) {
 async function materialize(db, clientId, requestedPlanId, clock, opts) {
   opts = opts || {};
   // A configured numeric lane never falls back to the general/shadow scope.
-  var numericMode = process.env.VDSEN_NUMERIC_PILOT_WINDOW !== undefined || process.env.VDSEN_NUMERIC_PILOT_ENABLED === 'true' ||
+  var hasCohortShard = false;
+  for (var cs = 1; cs <= 20; cs++) { if (process.env['VDSEN_NUMERIC_COHORT_' + cs] !== undefined) { hasCohortShard = true; break; } }
+  var numericMode = hasCohortShard || process.env.VDSEN_NUMERIC_COHORT_WINDOWS !== undefined ||
+    process.env.VDSEN_NUMERIC_PILOT_WINDOW !== undefined || process.env.VDSEN_NUMERIC_PILOT_ENABLED === 'true' ||
     process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED === 'true';
   var numericWindow = numericMode ? numericPilot.runtimeAuthorization(process.env, Date.now(), clientId) : null;
+  var cohortId = numericWindow && numericWindow.cohortId || null;
   if (numericMode && (!numericWindow || clientId !== numericWindow.uid || requestedPlanId !== numericWindow.planId)) return { status: 'OUT_OF_NUMERIC_PILOT' };
   return _runTx(db, async function(tx) {
     var clientRef = db.collection('clients').doc(clientId);
@@ -105,28 +115,32 @@ async function materialize(db, clientId, requestedPlanId, clock, opts) {
     var refs = _refs(db, clientId, requestedPlanId, client.coachId);
     // Release-controlled canary: re-read INSIDE this transaction, before any read of evidence or any write.
     // No canary document / disabled / athlete not listed => zero writes of any kind.
-    if (!(await _releaseGate(db, tx, clientId, clock))) return { status: 'OUT_OF_ALLOWLIST' };
+    if (!(await _releaseGate(db, tx, clientId, clock, cohortId))) return { status: 'OUT_OF_ALLOWLIST' };
     var coachData = refs.coach ? _data(await tx.get(refs.coach)) : null;
     var scope = consumer.normalizeCanaryScope(coachData && coachData.autoApplyCanary);
     if (!scope.enabled || scope.clientIds.indexOf(clientId) < 0) return { status: 'OUT_OF_CANARY' };
     var snaps = await Promise.all([tx.get(refs.plan), tx.get(refs.meso), tx.get(refs.root)]);
     var plan = _data(snaps[0]), meso = _data(snaps[1]), root = _data(snaps[2]);
     if (!plan || !root || !eligibility.isPlanStatusValid(plan, client) || (plan.clientId && plan.clientId !== clientId) || root.planId !== requestedPlanId || (meso && meso.planId !== requestedPlanId)) return { status: 'SOURCE_INVALID' };
+    var activeFenceForClient = null;
     if (numericMode) {
       var freshWindow = numericPilot.runtimeAuthorization(process.env, Date.now(), clientId);
-      var numericFence = _data(await tx.get(db.collection('releaseControl').doc('numericPilot')));
-      var releaseFence = _data(await tx.get(db.collection('releaseControl').doc('autonomousProgression')));
+      var numericFence = _data(await tx.get(_numericFenceRef(db, cohortId)));
+      var releaseFence = _data(await tx.get(_releaseFenceRef(db, cohortId)));
       var fenceForClient = (numericFence && numericFence.windows && numericFence.windows[clientId]) || numericFence;
+      activeFenceForClient = fenceForClient;
       var isCohort = freshWindow && freshWindow.schema === numericPilot.COHORT_SCHEMA;
       var releaseAllowed = releaseFence && Array.isArray(releaseFence.clientIds) &&
         (isCohort
           ? (releaseFence.clientIds.length >= 1 && releaseFence.clientIds.length <= 10 && releaseFence.clientIds.indexOf(clientId) >= 0)
           : (releaseFence.clientIds.length === 1 && releaseFence.clientIds[0] === clientId));
+      var scopeCheckPid = freshWindow && (freshWindow.pid || (fenceForClient && Array.isArray(fenceForClient.pids) && fenceForClient.pids[0])) || null;
       if (!freshWindow || JSON.stringify(freshWindow) !== JSON.stringify(numericWindow) || !numericFence || numericFence.enabled !== true ||
           !fenceForClient || fenceForClient.enabled !== true ||
           !releaseAllowed || releaseFence.expiresAt !== freshWindow.expiresAt ||
-          ['schema', 'mode', 'uid', 'planId', 'pid', 'runtimeSha', 'operationId', 'startsAt', 'expiresAt'].some(function(k) { return fenceForClient[k] !== freshWindow[k]; }) ||
-          !numericPilot.scopeValid(coachData && coachData.autoApplyCanary, clientId, freshWindow.pid, plan, { cohort: isCohort })) return { status: 'OUT_OF_NUMERIC_PILOT' };
+          !numericPilot.windowFieldsMatch(fenceForClient, freshWindow) ||
+          !numericPilot.pidAuthorized(freshWindow, fenceForClient, scopeCheckPid) ||
+          !numericPilot.scopeValid(coachData && coachData.autoApplyCanary, clientId, scopeCheckPid, plan, { cohort: isCohort, cohortId: cohortId })) return { status: 'OUT_OF_NUMERIC_PILOT' };
     }
     var authority = shadow.selectLogAuthority(meso, root, requestedPlanId);
     if (!authority) return { status: 'SOURCE_INVALID' };
@@ -200,14 +214,14 @@ async function materialize(db, clientId, requestedPlanId, clock, opts) {
     // PID-level scope: neither numericMode nor canaryMode may create or alter lifecycle records (including staled) for PIDs outside scope.
     out.created = out.created.filter(function(key) {
       var pid = out.records[key].prescriptionExerciseId;
-      var inScope = consumer.inCanaryScope(coachData.autoApplyCanary, clientId, pid) && (!numericMode || pid === numericWindow.pid);
+      var inScope = consumer.inCanaryScope(coachData.autoApplyCanary, clientId, pid) && (!numericMode || numericPilot.pidAuthorized(numericWindow, activeFenceForClient, pid));
       if (!inScope) delete out.records[key];
       return inScope;
     });
     out.staled = out.staled.filter(function(key) {
       var prior = existingRecords[key];
       var priorPid = prior && prior.prescriptionExerciseId;
-      var inScope = prior && consumer.inCanaryScope(coachData.autoApplyCanary, clientId, priorPid) && (!numericMode || priorPid === numericWindow.pid);
+      var inScope = prior && consumer.inCanaryScope(coachData.autoApplyCanary, clientId, priorPid) && (!numericMode || numericPilot.pidAuthorized(numericWindow, activeFenceForClient, priorPid));
       if (!inScope) {
         if (prior !== undefined) out.records[key] = prior;
         else delete out.records[key];
@@ -236,6 +250,7 @@ async function applyPending(db, clientId, planId, clock) {
   // A direct call must not bypass the independently authorized numeric lane.
   var authorizedWindow = numericPilot.runtimeAuthorization(process.env, Date.now(), clientId);
   if (!authorizedWindow || clientId !== authorizedWindow.uid || planId !== authorizedWindow.planId) return [];
+  var cohortId = authorizedWindow.cohortId || null;
   var snap = await db.collection('logs').doc(clientId).collection('mesos').doc(planId).get();
   var meso = _data(snap);
   var clientDoc = _data(await db.collection('clients').doc(clientId).get());
@@ -254,7 +269,7 @@ async function applyPending(db, clientId, planId, clock) {
       var clientSnap = await tx.get(db.collection('clients').doc(clientId)), client = _data(clientSnap);
       if (!client || client.activePlanId !== planId || !eligibility.isClientStatusValid(client)) return { written: false, reason: 'PLAN_MISMATCH' };
       var refs = _refs(db, clientId, planId, client.coachId);
-      if (!(await _releaseGate(db, tx, clientId, clock))) return { written: false, reason: 'OUT_OF_ALLOWLIST' };
+      if (!(await _releaseGate(db, tx, clientId, clock, cohortId))) return { written: false, reason: 'OUT_OF_ALLOWLIST' };
       var planDoc = _data(await tx.get(refs.plan));
       if (!planDoc || (planDoc.clientId && planDoc.clientId !== clientId) || (planDoc.coachId && planDoc.coachId !== client.coachId)) {
         return { written: false, reason: 'PLAN_MISMATCH' };
@@ -265,9 +280,9 @@ async function applyPending(db, clientId, planId, clock) {
       var equipmentResolution = null;
       var pre = _data(await tx.get(refs.meso)), precord = pre && pre.progressionApplications && pre.progressionApplications[key];
       // Re-read both fences and the canonical record in the same transaction as the write.
-      var numericFence = _data(await tx.get(db.collection('releaseControl').doc('numericPilot')));
+      var numericFence = _data(await tx.get(_numericFenceRef(db, cohortId)));
       var nw = numericPilot.runtimeAuthorization(process.env, Date.now(), clientId);
-      var releaseFence = _data(await tx.get(db.collection('releaseControl').doc('autonomousProgression')));
+      var releaseFence = _data(await tx.get(_releaseFenceRef(db, cohortId)));
       var fenceForClient = (numericFence && numericFence.windows && numericFence.windows[clientId]) || numericFence;
       var opRef = db.collection('releaseControl').doc('numericPilot').collection('operations').doc(authorizedWindow.operationId);
       var opDoc = _data(await tx.get(opRef));
@@ -280,7 +295,7 @@ async function applyPending(db, clientId, planId, clock) {
       if (Array.isArray(opDoc.appliedRecordKeys) && opDoc.appliedRecordKeys.indexOf(key) >= 0) {
         return { written: false, reason: 'ALREADY_APPLIED_FOR_OPERATION' };
       }
-      if (!numericPilot.ledgerValid(opDoc, nw, key)) {
+      if (!numericPilot.ledgerValid(opDoc, nw, key, precord && precord.prescriptionExerciseId)) {
         return { written: false, reason: 'NUMERIC_LEDGER_INVALID' };
       }
       if (precord && !consumer.inCanaryScope(coachDoc && coachDoc.autoApplyCanary, clientId, precord.prescriptionExerciseId)) {
@@ -363,7 +378,9 @@ async function consumePending(db, clientId, planId, clock) {
       var clientSnap = await tx.get(db.collection('clients').doc(clientId)), client = _data(clientSnap);
       if (!client || !eligibility.isClientStatusValid(client)) return { written: false, reason: 'PLAN_MISMATCH' };
       var refs = _refs(db, clientId, planId, client.coachId);
-      if (!(await _releaseGate(db, tx, clientId, clock))) return { written: false, reason: 'OUT_OF_ALLOWLIST' };
+      var nwConsume = numericPilot.runtimeAuthorization(process.env, Date.now(), clientId);
+      var consumeCohortId = nwConsume && nwConsume.cohortId || null;
+      if (!(await _releaseGate(db, tx, clientId, clock, consumeCohortId))) return { written: false, reason: 'OUT_OF_ALLOWLIST' };
       var planDoc = _data(await tx.get(refs.plan));
       if (!planDoc || (planDoc.clientId && planDoc.clientId !== clientId) || (planDoc.coachId && planDoc.coachId !== client.coachId)) {
         return { written: false, reason: 'PLAN_MISMATCH' };

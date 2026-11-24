@@ -137,7 +137,7 @@ jobs:
           access_token_scopes: https://www.googleapis.com/auth/datastore
 
       - name: Assemble numeric window specification
-        if: inputs.action == 'preflight-check' || inputs.action == 'prepare-runtime' || inputs.action == 'arm-fences'
+        if: (inputs.action == 'preflight-check' || inputs.action == 'prepare-runtime' || inputs.action == 'arm-fences') && !startsWith(inputs.pilot_uid, 'FLEET:') && !startsWith(inputs.pilot_uid, 'COHORT:')
         run: |
           node -e "
             const fs = require('fs');
@@ -160,9 +160,40 @@ jobs:
             fs.writeFileSync('$REPORT_DIR/window.json', JSON.stringify(w, null, 2));
           "
 
+      # --- ROUTE: MULTI-COHORT FLEET OPERATIONS (T875, <=10 CLIENTS PER ISOLATED COHORT) ---
+      - name: Fleet cohort audit (read-only)
+        if: inputs.action == 'audit-status' && (startsWith(inputs.pilot_uid, 'FLEET:') || startsWith(inputs.pilot_uid, 'COHORT:'))
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: node scripts/pilot/numeric-cohort-ops.cjs audit-fleet
+
+      - name: Prepare deployment-scoped multi-cohort fleet runtime (fences closed, project Numeric Guard OFF)
+        if: inputs.action == 'prepare-runtime' && startsWith(inputs.pilot_uid, 'FLEET:')
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: node scripts/pilot/numeric-cohort-ops.cjs prepare-fleet-runtime
+
+      - name: Per-cohort preflight verification (GO required)
+        if: inputs.action == 'preflight-check' && startsWith(inputs.pilot_uid, 'COHORT:')
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: node scripts/pilot/numeric-cohort-ops.cjs preflight-cohort
+
+      - name: Arm isolated cohort fences (atomic ledger + <=10 clients)
+        if: inputs.action == 'arm-fences' && startsWith(inputs.pilot_uid, 'COHORT:')
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: node scripts/pilot/numeric-cohort-ops.cjs arm-cohort
+
+      - name: Stop isolated cohort or full fleet (Safety Disarm)
+        if: inputs.action == 'stop' && (startsWith(inputs.pilot_uid, 'FLEET:') || startsWith(inputs.pilot_uid, 'COHORT:'))
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: node scripts/pilot/numeric-cohort-ops.cjs stop-cohort
+
       # --- ROUTE: PREPARE DEPLOYMENT-SCOPED NUMERIC RUNTIME (PROTECTED, FENCES CLOSED) ---
       - name: Prepare deployment-scoped numeric pilot runtime (fences closed, project Numeric Guard OFF)
-        if: inputs.action == 'prepare-runtime'
+        if: inputs.action == 'prepare-runtime' && !startsWith(inputs.pilot_uid, 'FLEET:') && !startsWith(inputs.pilot_uid, 'COHORT:')
         env:
           GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
         run: |
@@ -185,7 +216,7 @@ jobs:
 
       # --- ROUTE: STOP OPERATIVO ---
       - name: Execute STOP (Safety Disarm)
-        if: inputs.action == 'stop'
+        if: inputs.action == 'stop' && !startsWith(inputs.pilot_uid, 'FLEET:') && !startsWith(inputs.pilot_uid, 'COHORT:')
         env:
           GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
         run: |
@@ -197,7 +228,7 @@ jobs:
 
       # --- ROUTE: AUDIT STATUS (READ-ONLY) ---
       - name: Execute real read-only consistency audit
-        if: inputs.action == 'audit-status'
+        if: inputs.action == 'audit-status' && !startsWith(inputs.pilot_uid, 'FLEET:') && !startsWith(inputs.pilot_uid, 'COHORT:')
         env:
           GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
         run: |
@@ -209,7 +240,7 @@ jobs:
 
       # --- ROUTE: PREFLIGHT & RUNTIME ATTESTATION ---
       - name: Provider runtime attestation
-        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
+        if: (inputs.action == 'preflight-check' || inputs.action == 'arm-fences') && !startsWith(inputs.pilot_uid, 'FLEET:') && !startsWith(inputs.pilot_uid, 'COHORT:')
         run: |
           node scripts/pilot/numeric-pilot-ops.cjs attest \
             --deployment "$INPUT_DEPLOYMENT" \
@@ -220,7 +251,7 @@ jobs:
             --out "$REPORT_DIR/attestation.json"
 
       - name: Collect live fences evidence
-        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
+        if: (inputs.action == 'preflight-check' || inputs.action == 'arm-fences') && !startsWith(inputs.pilot_uid, 'FLEET:') && !startsWith(inputs.pilot_uid, 'COHORT:')
         env:
           GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
         run: |
@@ -229,13 +260,13 @@ jobs:
             --out "$REPORT_DIR/fences.json"
 
       - name: Collect concurrency and operation history evidence
-        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
+        if: (inputs.action == 'preflight-check' || inputs.action == 'arm-fences') && !startsWith(inputs.pilot_uid, 'FLEET:') && !startsWith(inputs.pilot_uid, 'COHORT:')
         run: |
           gh api "repos/$GITHUB_REPOSITORY/actions/workflows/vdsen-numeric-pilot.yml/runs?status=in_progress" > "$REPORT_DIR/active-runs.json"
           gh api "repos/$GITHUB_REPOSITORY/actions/workflows/vdsen-numeric-pilot.yml/runs?status=completed&per_page=100" > "$REPORT_DIR/prior-runs.json"
 
       - name: Execute preflight verification with real evidence
-        if: inputs.action == 'preflight-check' || inputs.action == 'arm-fences'
+        if: (inputs.action == 'preflight-check' || inputs.action == 'arm-fences') && !startsWith(inputs.pilot_uid, 'FLEET:') && !startsWith(inputs.pilot_uid, 'COHORT:')
         env:
           GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
         run: |
@@ -250,7 +281,7 @@ jobs:
 
       # --- ROUTE: ARM NUMERIC PILOT FENCES (PROTECTED) ---
       - name: Arm numeric pilot fences (atomic ledger reservation + 3-fence activation)
-        if: inputs.action == 'arm-fences'
+        if: inputs.action == 'arm-fences' && !startsWith(inputs.pilot_uid, 'FLEET:') && !startsWith(inputs.pilot_uid, 'COHORT:')
         env:
           GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
         run: |
