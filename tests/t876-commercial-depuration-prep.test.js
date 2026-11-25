@@ -506,6 +506,10 @@ test('T876.4 Real operational paths (loadLiveRoster, preflightCohort, armCohort,
   assert.equal(audit.excludedByReason.COMMERCIAL_INACTIVE, 4);
   assert.equal(audit.excludedByReason.COMMERCIAL_UNCONFIRMED, 38);
   assert.equal(audit.allCohortsArmed, true);
+  assert.equal(audit.exactCoverageVerified, true);
+  assert.deepEqual(audit.staleOpenCohorts, []);
+  assert.deepEqual(audit.outOfRosterClients, []);
+  assert.ok(audit.cohorts.every(c => c.exactMatch === true && c.mismatches.length === 0));
 });
 
 test('T876.5 Fail-closed behavior when commercial manifest is missing, malformed, wrong project, unapproved, or overlapping', async () => {
@@ -593,4 +597,124 @@ test('T876.6 STOP disarms ALL currently open cohorts including legacy cohorts ab
   const coachAfter = world.docs.get('coaches/' + COACH_ID);
   assert.equal(coachAfter.fields.autoApplyCanary.mapValue.fields.enabled.booleanValue, false);
   assert.equal(coachAfter.fields.autoApplyCanary.mapValue.fields.cohorts.mapValue.fields['cohort-04-legacy'].mapValue.fields.enabled.booleanValue, false);
+});
+
+test('T876.7 auditFleet rejects false positives: detects stale open cohorts, out-of-roster INACTIVE clients, and pidsHash/planId/operationId/expiresAt drift even when allCohortsArmed=true', async () => {
+  const reg = cohortOps.loadCommercialRoster();
+  const { clients, plans } = makeSyntheticRoster67(reg);
+  const world = createInMemoryOpsWorld(clients, plans);
+
+  // Arm all 3 valid cohorts cleanly first
+  for (const cid of ['cohort-01', 'cohort-02', 'cohort-03']) {
+    const armed = await cohortOps.armCohort({
+      projectId: world.projectId, googleToken: 'tok', vercelToken: 'vtok',
+      cohortId: cid, deploymentId: world.dplId, runtimeSha: SHA,
+      operationId: 'T876-DRIFT-TEST', startsAt: STARTS, expiresAt: EXPIRES,
+      coachId: COACH_ID, runId: '777', fetcher: world.fetcher,
+    });
+    assert.equal(armed.status, 'COHORT_ARMED_VERIFIED');
+  }
+
+  // Inject: (a) a legacy open cohort-04-legacy containing an INACTIVE client, and
+  //         (b) an INACTIVE client + tampered pidsHash in cohort-01 numeric fence while keeping enabled=true
+  const inactiveUid = 'a17vaFJhoLSbZR5CMksPfIWdokR2';
+  world.docs.set('releaseControl/autonomousProgression_cohort_cohort-04-legacy', {
+    name: 'projects/' + world.projectId + '/databases/(default)/documents/releaseControl/autonomousProgression_cohort_cohort-04-legacy',
+    fields: cohortOps.toFsFields({ enabled: true, cohortId: 'cohort-04-legacy', clientIds: [inactiveUid], expiresAt: EXPIRES }),
+  });
+  const c1Num = world.docs.get('releaseControl/numericPilot_cohort_cohort-01');
+  const firstActiveUid = Object.keys(c1Num.fields.windows.mapValue.fields)[0];
+  c1Num.fields.windows.mapValue.fields[firstActiveUid].mapValue.fields.pidsHash = { stringValue: '0'.repeat(64) };
+  c1Num.fields.windows.mapValue.fields[inactiveUid] = { mapValue: { fields: cohortOps.toFsFields({ enabled: true, uid: inactiveUid }) } };
+
+  const audit = await cohortOps.auditFleet({
+    projectId: world.projectId, googleToken: 'tok', coachId: COACH_ID,
+    expectedRuntimeSha: SHA, fetcher: world.fetcher,
+  });
+
+  // allCohortsArmed is still true (the classic false positive!), but exactCoverageVerified MUST be false
+  assert.equal(audit.allCohortsArmed, true);
+  assert.equal(audit.exactCoverageVerified, false);
+  assert.deepEqual(audit.staleOpenCohorts, ['cohort-04-legacy']);
+  assert.ok(audit.outOfRosterClients.includes(inactiveUid));
+  const c1Audit = audit.cohorts.find(c => c.cohortId === 'cohort-01');
+  assert.equal(c1Audit.exactMatch, false);
+  assert.ok(c1Audit.mismatches.length >= 1);
+});
+
+test('T876.8 stopCohorts(ALL) under partial discovery failure still disarms reachable cohorts but returns STOP_INCOMPLETE (never STOPPED_VERIFIED)', async () => {
+  const reg = cohortOps.loadCommercialRoster();
+  const { clients, plans } = makeSyntheticRoster67(reg);
+  const world = createInMemoryOpsWorld(clients, plans, {
+    initialCoachDoc: {
+      autoApplyCanary: {
+        enabled: true,
+        cohorts: { 'cohort-01': { enabled: true }, 'cohort-legacy': { enabled: true } },
+      },
+    },
+    extraDocs: {
+      'releaseControl/autonomousProgression_cohort_cohort-01': { enabled: true, cohortId: 'cohort-01' },
+      'releaseControl/numericPilot_cohort_cohort-01': { enabled: true, cohortId: 'cohort-01' },
+      'releaseControl/autonomousProgression_cohort_cohort-legacy': { enabled: true, cohortId: 'cohort-legacy' },
+      'releaseControl/numericPilot_cohort_cohort-legacy': { enabled: true, cohortId: 'cohort-legacy' },
+    },
+  });
+
+  // Fail releaseControl collection list (HTTP 500), while coaches/{coachId} and :commit still succeed
+  const partialFetcher = async (url, init) => {
+    if (String(url).includes('/documents/releaseControl?')) {
+      return { status: 500, json: async () => ({ error: { code: 500, message: 'TRANSIENT_BACKEND_ERROR' } }) };
+    }
+    return world.fetcher(url, init);
+  };
+
+  const rep = await cohortOps.stopCohorts({
+    projectId: world.projectId, googleToken: 'tok', coachId: COACH_ID,
+    targetCohortId: 'ALL', reason: 'EMERGENCY_PARTIAL_DISCOVERY', fetcher: partialFetcher,
+  });
+
+  // Emergency disarm STILL closed the reachable cohorts
+  assert.equal(world.docs.get('releaseControl/autonomousProgression_cohort_cohort-legacy').fields.enabled.booleanValue, false);
+  assert.equal(world.docs.get('coaches/' + COACH_ID).fields.autoApplyCanary.mapValue.fields.enabled.booleanValue, false);
+  // MUST return STOP_INCOMPLETE because releaseControl discovery failed
+  assert.equal(rep.status, 'STOP_INCOMPLETE');
+  assert.ok(rep.discoveryErrors.some(e => e.includes('RELEASE_CONTROL_LIST_FAILED')));
+  assert.ok(rep.incompleteReasons.length >= 1);
+});
+
+test('T876.9 stopCohorts(ALL) post-verification detects a fence that stayed enabled and returns STOP_INCOMPLETE with pendingCohorts', async () => {
+  const reg = cohortOps.loadCommercialRoster();
+  const { clients, plans } = makeSyntheticRoster67(reg);
+  const world = createInMemoryOpsWorld(clients, plans, {
+    initialCoachDoc: {
+      autoApplyCanary: { enabled: true, cohorts: { 'cohort-01': { enabled: true }, 'cohort-02': { enabled: true } } },
+    },
+    extraDocs: {
+      'releaseControl/autonomousProgression_cohort_cohort-01': { enabled: true, cohortId: 'cohort-01' },
+      'releaseControl/numericPilot_cohort_cohort-01': { enabled: true, cohortId: 'cohort-01' },
+      'releaseControl/autonomousProgression_cohort_cohort-02': { enabled: true, cohortId: 'cohort-02' },
+      'releaseControl/numericPilot_cohort_cohort-02': { enabled: true, cohortId: 'cohort-02' },
+    },
+  });
+
+  // Simulate cohort-02 numericFence remaining enabled=true on post-STOP readback (e.g. concurrent re-arm or stale write)
+  const stickyFetcher = async (url, init) => {
+    const res = await world.fetcher(url, init);
+    if (String(url).endsWith('/documents/releaseControl/numericPilot_cohort_cohort-02') && (!init || !init.method || init.method === 'GET')) {
+      const data = await res.json();
+      data.fields.enabled = { booleanValue: true };
+      return { status: 200, json: async () => data };
+    }
+    return res;
+  };
+
+  const rep = await cohortOps.stopCohorts({
+    projectId: world.projectId, googleToken: 'tok', coachId: COACH_ID,
+    targetCohortId: 'ALL', reason: 'VERIFY_STICKY_FENCE', fetcher: stickyFetcher,
+  });
+
+  assert.equal(rep.status, 'STOP_INCOMPLETE');
+  assert.deepEqual(rep.pendingCohorts, ['cohort-02']);
+  assert.ok(rep.stoppedCohorts.includes('cohort-01'));
+  assert.ok(!rep.stoppedCohorts.includes('cohort-02'));
 });

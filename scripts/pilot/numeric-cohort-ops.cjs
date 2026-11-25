@@ -686,6 +686,7 @@ async function armCohort(opts) {
 
 async function discoverOpenCohortIds(projectId, googleToken, coachId, fetcher = globalThis.fetch) {
   const discovered = new Set();
+  const discoveryErrors = [];
   try {
     const rcDocs = await fsList(projectId, googleToken, 'releaseControl', fetcher);
     for (const d of rcDocs) {
@@ -693,8 +694,8 @@ async function discoverOpenCohortIds(projectId, googleToken, coachId, fetcher = 
       if (id.startsWith('autonomousProgression_cohort_')) discovered.add(id.slice('autonomousProgression_cohort_'.length));
       if (id.startsWith('numericPilot_cohort_')) discovered.add(id.slice('numericPilot_cohort_'.length));
     }
-  } catch (_) {
-    // Fallback to coach document & roster if releaseControl list is unavailable
+  } catch (err) {
+    discoveryErrors.push('RELEASE_CONTROL_LIST_FAILED: ' + (err && err.message ? err.message : String(err)));
   }
   if (coachId) {
     try {
@@ -703,31 +704,160 @@ async function discoverOpenCohortIds(projectId, googleToken, coachId, fetcher = 
       if (cohortsMap && typeof cohortsMap === 'object') {
         for (const cid of Object.keys(cohortsMap)) discovered.add(cid);
       }
-    } catch (_) {}
+    } catch (err) {
+      discoveryErrors.push('COACH_DOC_READ_FAILED: ' + (err && err.message ? err.message : String(err)));
+    }
   }
-  return [...discovered].filter(Boolean).sort();
+  return {
+    cohortIds: [...discovered].filter(Boolean).sort(),
+    discoveryErrors,
+    complete: discoveryErrors.length === 0,
+  };
+}
+
+function _sameSortedArray(a, b) {
+  const sa = (Array.isArray(a) ? a : []).map(String).sort();
+  const sb = (Array.isArray(b) ? b : []).map(String).sort();
+  if (sa.length !== sb.length) return false;
+  for (let i = 0; i < sa.length; i++) if (sa[i] !== sb[i]) return false;
+  return true;
+}
+
+function _verifyCohortAuthorizationExact(co, f, activeSet, expectedRuntimeSha) {
+  const mismatches = [];
+  const outOfRoster = new Set();
+  const rel = f.releaseFence;
+  const num = f.numericFence;
+  const cc = f.coachCanaryCohort;
+  const relEnabled = !!(rel && rel.enabled === true);
+  const numEnabled = !!(num && num.enabled === true);
+  const ccEnabled = !!(cc && cc.enabled === true);
+
+  if (rel && Array.isArray(rel.clientIds)) {
+    for (const u of rel.clientIds) if (activeSet && !activeSet.has(u)) outOfRoster.add(u);
+  }
+  if (num && num.windows && typeof num.windows === 'object') {
+    for (const u of Object.keys(num.windows)) if (activeSet && !activeSet.has(u)) outOfRoster.add(u);
+  }
+  if (cc && Array.isArray(cc.clientIds)) {
+    for (const u of cc.clientIds) if (activeSet && !activeSet.has(u)) outOfRoster.add(u);
+  }
+
+  if (!relEnabled) mismatches.push('RELEASE_FENCE_DISABLED');
+  if (!numEnabled) mismatches.push('NUMERIC_FENCE_DISABLED');
+  if (!ccEnabled) mismatches.push('COACH_COHORT_DISABLED');
+  if (!f.coachCanaryEnabled) mismatches.push('COACH_CANARY_DISABLED');
+
+  if (relEnabled && !_sameSortedArray(rel.clientIds, co.clientIds)) mismatches.push('RELEASE_CLIENT_IDS_MISMATCH');
+  if (ccEnabled && !_sameSortedArray(cc.clientIds, co.clientIds)) mismatches.push('COACH_CLIENT_IDS_MISMATCH');
+  if (ccEnabled && !_sameSortedArray(cc.prescriptionExerciseIds, co.allPids)) mismatches.push('COACH_PIDS_MISMATCH');
+
+  const opId = (num && num.operationId) || null;
+  const expAt = (rel && rel.expiresAt) || null;
+  const rtSha = (num && num.runtimeSha) || null;
+  if (relEnabled && numEnabled && ccEnabled) {
+    if (!opId || rel.operationId !== opId || cc.operationId !== opId) mismatches.push('OPERATION_ID_MISMATCH');
+    if (!expAt || num.expiresAt !== expAt || cc.expiresAt !== expAt) mismatches.push('EXPIRES_AT_MISMATCH');
+    if (expAt && (!Number.isFinite(Date.parse(expAt)) || Date.parse(expAt) <= Date.now())) mismatches.push('WINDOW_EXPIRED');
+    if (!rtSha || !/^[0-9a-f]{40}$/.test(rtSha)) mismatches.push('RUNTIME_SHA_INVALID');
+    if (expectedRuntimeSha && rtSha !== expectedRuntimeSha) mismatches.push('RUNTIME_SHA_MISMATCH');
+  }
+
+  if (numEnabled) {
+    const winMap = (num.windows && typeof num.windows === 'object') ? num.windows : {};
+    if (!_sameSortedArray(Object.keys(winMap), co.clientIds)) {
+      mismatches.push('NUMERIC_WINDOW_CLIENTS_MISMATCH');
+    } else {
+      for (const client of co.clients) {
+        const w = winMap[client.uid];
+        if (!w || w.enabled !== true) { mismatches.push('WINDOW_DISABLED_' + client.uid); continue; }
+        if (w.planId !== client.planId) mismatches.push('PLAN_ID_MISMATCH_' + client.uid);
+        if (w.pidsHash !== client.pidsHash) mismatches.push('PIDS_HASH_MISMATCH_' + client.uid);
+        if (w.pidCount !== client.pidCount) mismatches.push('PID_COUNT_MISMATCH_' + client.uid);
+        if (!_sameSortedArray(w.pids, client.pids)) mismatches.push('PIDS_LIST_MISMATCH_' + client.uid);
+        if (w.runtimeSha !== rtSha) mismatches.push('WINDOW_RUNTIME_SHA_MISMATCH_' + client.uid);
+        if (w.operationId !== opId) mismatches.push('WINDOW_OPERATION_ID_MISMATCH_' + client.uid);
+        if (w.expiresAt !== expAt) mismatches.push('WINDOW_EXPIRES_AT_MISMATCH_' + client.uid);
+      }
+    }
+  }
+
+  return {
+    releaseFenceEnabled: relEnabled,
+    numericFenceEnabled: numEnabled,
+    coachCohortEnabled: ccEnabled,
+    runtimeSha: rtSha,
+    expiresAt: expAt,
+    operationId: opId,
+    exactMatch: mismatches.length === 0 && outOfRoster.size === 0,
+    mismatches,
+    outOfRosterClients: [...outOfRoster].sort(),
+  };
 }
 
 async function auditFleet(opts) {
-  const { projectId, googleToken, coachId, outFile, fetcher = globalThis.fetch, commercialRosterPath } = opts;
-  const manifest = await loadLiveRoster(projectId, googleToken, { fetcher, commercialRosterPath });
+  const { projectId, googleToken, coachId, outFile, expectedRuntimeSha, fetcher = globalThis.fetch, commercialRosterPath } = opts;
+  const reg = loadCommercialRoster(commercialRosterPath);
+  const manifest = await loadLiveRoster(projectId, googleToken, { fetcher, commercialRegistry: reg });
+  const expectedCohortSet = new Set(manifest.cohorts.map(c => c.cohortId));
+  const discovery = await discoverOpenCohortIds(projectId, googleToken, coachId, fetcher);
+
   const cohortStates = [];
+  const allOutOfRoster = new Set();
   for (const co of manifest.cohorts) {
     const f = await fetchCohortFences(projectId, googleToken, co.cohortId, coachId, fetcher);
+    const v = _verifyCohortAuthorizationExact(co, f, reg.activeSet, expectedRuntimeSha);
+    for (const u of v.outOfRosterClients) allOutOfRoster.add(u);
     cohortStates.push({
       cohortId: co.cohortId,
       clientCount: co.clientCount,
       pidCount: co.pidCount,
-      releaseFenceEnabled: !!(f.releaseFence && f.releaseFence.enabled === true),
-      numericFenceEnabled: !!(f.numericFence && f.numericFence.enabled === true),
-      coachCohortEnabled: !!(f.coachCanaryCohort && f.coachCanaryCohort.enabled === true),
-      expiresAt: (f.releaseFence && f.releaseFence.expiresAt) || null,
-      operationId: (f.numericFence && f.numericFence.operationId) || null,
+      releaseFenceEnabled: v.releaseFenceEnabled,
+      numericFenceEnabled: v.numericFenceEnabled,
+      coachCohortEnabled: v.coachCohortEnabled,
+      runtimeSha: v.runtimeSha,
+      expiresAt: v.expiresAt,
+      operationId: v.operationId,
+      exactMatch: v.exactMatch,
+      mismatches: v.mismatches,
     });
   }
+
+  // Detect any stale/legacy cohorts still open outside the current commercial manifest
+  const staleOpenCohorts = [];
+  for (const cid of discovery.cohortIds) {
+    if (expectedCohortSet.has(cid)) continue;
+    const f = await fetchCohortFences(projectId, googleToken, cid, coachId, fetcher);
+    const anyOpen = !!(
+      (f.releaseFence && f.releaseFence.enabled === true) ||
+      (f.numericFence && f.numericFence.enabled === true) ||
+      (f.coachCanaryCohort && f.coachCanaryCohort.enabled === true)
+    );
+    if (anyOpen) {
+      staleOpenCohorts.push(cid);
+      if (f.releaseFence && Array.isArray(f.releaseFence.clientIds)) {
+        for (const u of f.releaseFence.clientIds) if (!reg.activeSet.has(u)) allOutOfRoster.add(u);
+      }
+      if (f.numericFence && f.numericFence.windows && typeof f.numericFence.windows === 'object') {
+        for (const u of Object.keys(f.numericFence.windows)) if (!reg.activeSet.has(u)) allOutOfRoster.add(u);
+      }
+      if (f.coachCanaryCohort && Array.isArray(f.coachCanaryCohort.clientIds)) {
+        for (const u of f.coachCanaryCohort.clientIds) if (!reg.activeSet.has(u)) allOutOfRoster.add(u);
+      }
+    }
+  }
+
+  const allCohortsArmed = cohortStates.length > 0 && cohortStates.every(x => x.releaseFenceEnabled && x.numericFenceEnabled && x.coachCohortEnabled);
+  const outOfRosterClients = [...allOutOfRoster].sort();
+  const exactCoverageVerified = allCohortsArmed &&
+    cohortStates.every(x => x.exactMatch === true) &&
+    staleOpenCohorts.length === 0 &&
+    outOfRosterClients.length === 0 &&
+    discovery.complete === true;
+
   const report = {
     schema: 'vdsen-fleet-audit-v1',
-    status: 'FLEET_AUDIT_SUCCESS',
+    status: discovery.complete ? 'FLEET_AUDIT_SUCCESS' : 'FLEET_AUDIT_INCOMPLETE',
     totalClients: manifest.totalClients,
     eligibleCount: manifest.eligibleCount,
     eligibleWithUpdatedAt: manifest.eligibleWithUpdatedAt,
@@ -736,7 +866,11 @@ async function auditFleet(opts) {
     excludedByReason: manifest.excludedByReason,
     totalEligiblePids: manifest.totalEligiblePids,
     cohortCount: manifest.cohortCount,
-    allCohortsArmed: cohortStates.length > 0 && cohortStates.every(x => x.releaseFenceEnabled && x.numericFenceEnabled && x.coachCohortEnabled),
+    allCohortsArmed,
+    exactCoverageVerified,
+    staleOpenCohorts,
+    outOfRosterClients,
+    discoveryErrors: discovery.discoveryErrors,
     cohorts: cohortStates,
     auditedAt: new Date().toISOString(),
   };
@@ -750,18 +884,27 @@ async function auditFleet(opts) {
 async function stopCohorts(opts) {
   const { projectId, googleToken, coachId, targetCohortId, reason, outFile, fetcher = globalThis.fetch, commercialRosterPath } = opts;
   let targets;
+  const discoveryErrors = [];
+  const incompleteReasons = [];
+
   if (targetCohortId === 'ALL') {
-    const union = new Set(await discoverOpenCohortIds(projectId, googleToken, coachId, fetcher));
+    const discovery = await discoverOpenCohortIds(projectId, googleToken, coachId, fetcher);
+    discoveryErrors.push(...discovery.discoveryErrors);
+    const union = new Set(discovery.cohortIds);
     try {
       const manifest = await loadLiveRoster(projectId, googleToken, { fetcher, commercialRosterPath });
       for (const co of manifest.cohorts) union.add(co.cohortId);
-    } catch (_) {
-      // STOP must remain operational even if the commercial manifest is missing or updated
+    } catch (err) {
+      // Emergency STOP continues even if manifest is missing/updated, but records incomplete discovery if Firestore discovery also failed
+      if (!discovery.complete) {
+        incompleteReasons.push('MANIFEST_FALLBACK_UNAVAILABLE: ' + (err && err.message ? err.message : String(err)));
+      }
     }
     targets = [...union].sort();
   } else {
     targets = [targetCohortId];
   }
+
   const nowIso = new Date().toISOString();
   const writes = [];
   for (const cid of targets) {
@@ -801,7 +944,49 @@ async function stopCohorts(opts) {
   if (writes.length > 0) {
     await fsCommit(projectId, googleToken, writes, fetcher);
   }
-  const out = { schema: 'vdsen-cohort-stop-v1', status: 'STOPPED_VERIFIED', stoppedCohorts: targets, stoppedAt: nowIso };
+
+  // Mandatory post-STOP readback verification of all targeted fences
+  const pendingCohorts = [];
+  let coachCanaryDisabledVerified = targetCohortId !== 'ALL';
+  for (const cid of targets) {
+    try {
+      const vf = await fetchCohortFences(projectId, googleToken, cid, coachId, fetcher);
+      const stillOpen = !!(
+        (vf.releaseFence && vf.releaseFence.enabled === true) ||
+        (vf.numericFence && vf.numericFence.enabled === true) ||
+        (vf.coachCanaryCohort && vf.coachCanaryCohort.enabled === true)
+      );
+      if (stillOpen) pendingCohorts.push(cid);
+    } catch (err) {
+      pendingCohorts.push(cid);
+      incompleteReasons.push('POST_VERIFY_READ_FAILED_' + cid + ': ' + (err && err.message ? err.message : String(err)));
+    }
+  }
+  if (targetCohortId === 'ALL' && coachId) {
+    try {
+      const coachDoc = await fsGet(projectId, googleToken, 'coaches/' + coachId, fetcher);
+      const globalEnabled = !!(coachDoc && coachDoc.autoApplyCanary && coachDoc.autoApplyCanary.enabled === true);
+      coachCanaryDisabledVerified = !globalEnabled;
+      if (globalEnabled) incompleteReasons.push('COACH_CANARY_STILL_ENABLED');
+    } catch (err) {
+      coachCanaryDisabledVerified = false;
+      incompleteReasons.push('POST_VERIFY_COACH_READ_FAILED: ' + (err && err.message ? err.message : String(err)));
+    }
+  }
+
+  if (discoveryErrors.length > 0) {
+    incompleteReasons.push(...discoveryErrors);
+  }
+  const verifiedComplete = pendingCohorts.length === 0 && incompleteReasons.length === 0 && coachCanaryDisabledVerified;
+  const out = {
+    schema: 'vdsen-cohort-stop-v1',
+    status: verifiedComplete ? 'STOPPED_VERIFIED' : 'STOP_INCOMPLETE',
+    stoppedCohorts: targets.filter(cid => !pendingCohorts.includes(cid)),
+    pendingCohorts,
+    discoveryErrors,
+    incompleteReasons,
+    stoppedAt: nowIso,
+  };
   if (outFile) {
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
     fs.writeFileSync(outFile, JSON.stringify(out, null, 2) + '\n');
@@ -822,6 +1007,7 @@ async function main() {
   if (cmd === 'audit-fleet') {
     const rep = await auditFleet({ projectId, googleToken, coachId: env.INPUT_COACH, outFile: path.join(reportDir, 'fleet-audit.json') });
     console.log(JSON.stringify(rep, null, 2));
+    if (rep.status !== 'FLEET_AUDIT_SUCCESS') process.exitCode = 1;
     return;
   }
   if (cmd === 'prepare-fleet-runtime') {
@@ -869,6 +1055,7 @@ async function main() {
       outFile: path.join(reportDir, 'cohort-stop.json'),
     });
     console.log(JSON.stringify(rep, null, 2));
+    if (rep.status !== 'STOPPED_VERIFIED') process.exitCode = 1;
     return;
   }
   throw new Error('UNKNOWN_COHORT_CMD: ' + cmd);
