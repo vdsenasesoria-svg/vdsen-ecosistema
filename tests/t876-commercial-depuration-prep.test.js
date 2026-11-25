@@ -7,6 +7,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const C = require('../api/_numericPilotContract.js');
 const cohortOps = require('../scripts/pilot/numeric-cohort-ops.cjs');
@@ -314,4 +317,280 @@ test('T876.3 Runtime authorization strictly rejects the 4 INACTIVE and 38 UNCONF
   assert.ok(blocked.blockers.includes('PLAN_CHANGED'));
   const unblocked = consumer.planApplication({ record: dryRec, context: { clientId: c0.uid, planId: c0.planId, activePlanId: c0.planId, plan: Object.assign({}, planObj, { updatedAt: planObj.createdAt }), entries: {}, interventions: [] } });
   assert.ok(!unblocked.blockers.includes('PLAN_CHANGED'));
+});
+
+function createInMemoryOpsWorld(clients, plans, opts = {}) {
+  const projectId = 'vdsen-ecosistema';
+  const dplId = opts.deploymentId || 'dpl_T876_MOCK_FLEET';
+  const docs = new Map();
+  const commits = [];
+
+  for (const c of clients) {
+    const { _id, ...rest } = c;
+    docs.set('clients/' + _id, { name: 'projects/' + projectId + '/databases/(default)/documents/clients/' + _id, fields: cohortOps.toFsFields(rest) });
+  }
+  for (const [pid, p] of Object.entries(plans)) {
+    docs.set('plans/' + pid, { name: 'projects/' + projectId + '/databases/(default)/documents/plans/' + pid, fields: cohortOps.toFsFields(p) });
+  }
+  docs.set('coaches/' + COACH_ID, {
+    name: 'projects/' + projectId + '/databases/(default)/documents/coaches/' + COACH_ID,
+    fields: cohortOps.toFsFields(opts.initialCoachDoc || { autoApplyCanary: { enabled: false, cohorts: {} } }),
+  });
+  for (const [docPath, obj] of Object.entries(opts.extraDocs || {})) {
+    docs.set(docPath, { name: 'projects/' + projectId + '/databases/(default)/documents/' + docPath, fields: cohortOps.toFsFields(obj) });
+  }
+
+  function mergeCoachFields(existingFields, incomingFields) {
+    const out = JSON.parse(JSON.stringify(existingFields || {}));
+    const inCanary = incomingFields && incomingFields.autoApplyCanary && incomingFields.autoApplyCanary.mapValue && incomingFields.autoApplyCanary.mapValue.fields || {};
+    out.autoApplyCanary = out.autoApplyCanary || { mapValue: { fields: {} } };
+    const outCanary = out.autoApplyCanary.mapValue.fields;
+    for (const [k, v] of Object.entries(inCanary)) {
+      if (k === 'cohorts' && v.mapValue && v.mapValue.fields) {
+        outCanary.cohorts = outCanary.cohorts || { mapValue: { fields: {} } };
+        for (const [cid, cv] of Object.entries(v.mapValue.fields)) {
+          const prev = outCanary.cohorts.mapValue.fields[cid];
+          if (prev && prev.mapValue && prev.mapValue.fields && cv.mapValue && cv.mapValue.fields) {
+            outCanary.cohorts.mapValue.fields[cid] = { mapValue: { fields: Object.assign({}, prev.mapValue.fields, cv.mapValue.fields) } };
+          } else {
+            outCanary.cohorts.mapValue.fields[cid] = cv;
+          }
+        }
+      } else {
+        outCanary[k] = v;
+      }
+    }
+    return out;
+  }
+
+  const fetcher = async (url, init = {}) => {
+    const u = String(url);
+    if (u.startsWith('https://api.vercel.com/v13/deployments/')) {
+      return {
+        status: 200,
+        json: async () => ({
+          id: dplId,
+          projectId: 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN',
+          teamId: 'team_VZc5H7Q1DBIJ3g0mwrSBz1o8',
+          readyState: 'READY',
+          target: 'production',
+          meta: { githubCommitSha: SHA },
+          env: [
+            'AUTONOMOUS_PROGRESSION_ENABLED',
+            'AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED',
+            'VDSEN_NUMERIC_PILOT_ENABLED',
+            'VDSEN_NUMERIC_PILOT_RUNTIME_SHA',
+            'VDSEN_NUMERIC_COHORT_1',
+            'VDSEN_NUMERIC_COHORT_2',
+            'VDSEN_NUMERIC_COHORT_3',
+            'VDSEN_NUMERIC_COHORT_4',
+            'VDSEN_NUMERIC_COHORT_5',
+          ],
+        }),
+      };
+    }
+    if (u.startsWith('https://api.vercel.com/v2/aliases/')) {
+      return { status: 200, json: async () => ({ deploymentId: dplId }) };
+    }
+    if (u.endsWith('/documents:commit') && init.method === 'POST') {
+      const payload = JSON.parse(init.body);
+      commits.push(payload);
+      for (const w of payload.writes || []) {
+        const docPath = w.update.name.split('/documents/')[1];
+        if (w.currentDocument && w.currentDocument.exists === false && docs.has(docPath)) {
+          return { status: 409, json: async () => ({ error: { code: 409, message: 'ALREADY_EXISTS' } }) };
+        }
+        if (docPath.startsWith('coaches/')) {
+          const prev = docs.get(docPath);
+          docs.set(docPath, { name: w.update.name, fields: mergeCoachFields(prev && prev.fields, w.update.fields) });
+        } else {
+          const prev = docs.get(docPath);
+          const merged = Object.assign({}, prev && prev.fields, w.update.fields);
+          docs.set(docPath, { name: w.update.name, fields: merged });
+        }
+      }
+      return { status: 200, json: async () => ({ writeResults: (payload.writes || []).map(() => ({})) }) };
+    }
+    const prefix = 'https://firestore.googleapis.com/v1/projects/' + projectId + '/databases/(default)/documents/';
+    if (u.startsWith(prefix)) {
+      const rel = u.slice(prefix.length).split('?')[0];
+      if (rel === 'clients' || rel === 'releaseControl') {
+        const list = [];
+        for (const [k, v] of docs.entries()) {
+          if (k.startsWith(rel + '/') && k.slice(rel.length + 1).indexOf('/') < 0) list.push(v);
+        }
+        return { status: 200, json: async () => ({ documents: list }) };
+      }
+      if (docs.has(rel)) return { status: 200, json: async () => docs.get(rel) };
+      return { status: 404, json: async () => ({ error: { code: 404 } }) };
+    }
+    throw new Error('UNEXPECTED_FETCH_URL: ' + u);
+  };
+  return { fetcher, docs, commits, dplId, projectId };
+}
+
+test('T876.4 Real operational paths (loadLiveRoster, preflightCohort, armCohort, auditFleet) enforce commercial roster automatically and never authorize the 4 INACTIVE clients', async () => {
+  const reg = cohortOps.loadCommercialRoster();
+  const { clients, plans } = makeSyntheticRoster67(reg);
+  const world = createInMemoryOpsWorld(clients, plans);
+
+  // 1. loadLiveRoster WITHOUT manual commercialRegistry injection loads .release/commercial-roster-t876.json automatically
+  const manifest = await cohortOps.loadLiveRoster(world.projectId, 'tok', {
+    runtimeSha: SHA,
+    operationId: 'T876-REAL-PATH',
+    startsAt: STARTS,
+    expiresAt: EXPIRES,
+    fetcher: world.fetcher,
+  });
+  assert.equal(manifest.totalClients, 67);
+  assert.equal(manifest.eligibleCount, 25);
+  assert.equal(manifest.excludedByReason.COMMERCIAL_INACTIVE, 4);
+  assert.equal(manifest.excludedByReason.COMMERCIAL_UNCONFIRMED, 38);
+  assert.deepEqual(manifest.cohorts.map(c => c.clientCount), [10, 10, 5]);
+
+  // 2. Real preflightCohort + armCohort for all 3 cohorts (no commercialRegistry passed!)
+  for (const cid of ['cohort-01', 'cohort-02', 'cohort-03']) {
+    const pf = await cohortOps.preflightCohort({
+      projectId: world.projectId,
+      googleToken: 'tok',
+      vercelToken: 'vtok',
+      cohortId: cid,
+      deploymentId: world.dplId,
+      runtimeSha: SHA,
+      operationId: 'T876-REAL-PATH',
+      startsAt: STARTS,
+      expiresAt: EXPIRES,
+      coachId: COACH_ID,
+      fetcher: world.fetcher,
+    });
+    assert.equal(pf.result.decision, 'GO', cid + ' must be GO');
+    for (const badUid of reg.inactiveSet) {
+      assert.ok(!pf.result.clientIds.includes(badUid), 'INACTIVE uid must never appear in preflight: ' + badUid);
+    }
+
+    const armed = await cohortOps.armCohort({
+      projectId: world.projectId,
+      googleToken: 'tok',
+      vercelToken: 'vtok',
+      cohortId: cid,
+      deploymentId: world.dplId,
+      runtimeSha: SHA,
+      operationId: 'T876-REAL-PATH',
+      startsAt: STARTS,
+      expiresAt: EXPIRES,
+      coachId: COACH_ID,
+      runId: '999876',
+      fetcher: world.fetcher,
+    });
+    assert.equal(armed.status, 'COHORT_ARMED_VERIFIED');
+    for (const badUid of reg.inactiveSet) {
+      assert.ok(!armed.clientIds.includes(badUid), 'INACTIVE uid must never be armed: ' + badUid);
+    }
+  }
+
+  // Verify zero INACTIVE UIDs exist in ANY committed Firestore write payload
+  const serializedCommits = JSON.stringify(world.commits);
+  for (const badUid of reg.inactiveSet) {
+    assert.ok(!serializedCommits.includes(badUid), 'INACTIVE uid leaked into Firestore commit: ' + badUid);
+  }
+
+  // 3. Real auditFleet verifies 25 eligible, 4 inactive excluded, 38 unconfirmed excluded, all 3 cohorts armed
+  const audit = await cohortOps.auditFleet({
+    projectId: world.projectId,
+    googleToken: 'tok',
+    coachId: COACH_ID,
+    fetcher: world.fetcher,
+  });
+  assert.equal(audit.status, 'FLEET_AUDIT_SUCCESS');
+  assert.equal(audit.eligibleCount, 25);
+  assert.equal(audit.excludedByReason.COMMERCIAL_INACTIVE, 4);
+  assert.equal(audit.excludedByReason.COMMERCIAL_UNCONFIRMED, 38);
+  assert.equal(audit.allCohortsArmed, true);
+});
+
+test('T876.5 Fail-closed behavior when commercial manifest is missing, malformed, wrong project, unapproved, or overlapping', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vdsen-t876-roster-'));
+  const missingPath = path.join(tmpDir, 'missing.json');
+  assert.throws(() => cohortOps.loadCommercialRoster(missingPath), /COMMERCIAL_ROSTER_MISSING/);
+
+  const badJsonPath = path.join(tmpDir, 'bad.json');
+  fs.writeFileSync(badJsonPath, '{broken');
+  assert.throws(() => cohortOps.loadCommercialRoster(badJsonPath), /COMMERCIAL_ROSTER_INVALID_JSON/);
+
+  const wrongProjectPath = path.join(tmpDir, 'wrong-proj.json');
+  fs.writeFileSync(wrongProjectPath, JSON.stringify({
+    schema: 'vdsen-commercial-roster-v1',
+    firebaseProject: 'vdsen-planes',
+    confirmedBy: 'owner',
+    confirmedAt: '2026-11-24T22:43:46Z',
+    activeUids: ['uid12345678'],
+    inactiveUids: [],
+  }));
+  assert.throws(() => cohortOps.loadCommercialRoster(wrongProjectPath), /COMMERCIAL_ROSTER_PROJECT_MISMATCH/);
+
+  const overlapPath = path.join(tmpDir, 'overlap.json');
+  fs.writeFileSync(overlapPath, JSON.stringify({
+    schema: 'vdsen-commercial-roster-v1',
+    firebaseProject: 'vdsen-ecosistema',
+    confirmedBy: 'owner',
+    confirmedAt: '2026-11-24T22:43:46Z',
+    activeUids: ['uid12345678'],
+    inactiveUids: ['uid12345678'],
+  }));
+  assert.throws(() => cohortOps.loadCommercialRoster(overlapPath), /COMMERCIAL_ROSTER_OVERLAP_/);
+
+  // Real operational path loadLiveRoster fails closed on missing manifest
+  await assert.rejects(
+    () => cohortOps.loadLiveRoster('vdsen-ecosistema', 'tok', { commercialRosterPath: missingPath, fetcher: async () => { throw new Error('MUST_NOT_CALL_NETWORK'); } }),
+    /COMMERCIAL_ROSTER_MISSING/
+  );
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('T876.6 STOP disarms ALL currently open cohorts including legacy cohorts absent from the new commercial roster or when manifest is missing', async () => {
+  const reg = cohortOps.loadCommercialRoster();
+  const { clients, plans } = makeSyntheticRoster67(reg);
+  const world = createInMemoryOpsWorld(clients, plans, {
+    initialCoachDoc: {
+      autoApplyCanary: {
+        enabled: true,
+        cohorts: {
+          'cohort-01': { enabled: true },
+          'cohort-03': { enabled: true },
+          'cohort-04-legacy': { enabled: true },
+        },
+      },
+    },
+    extraDocs: {
+      'releaseControl/autonomousProgression_cohort_cohort-01': { enabled: true, cohortId: 'cohort-01' },
+      'releaseControl/numericPilot_cohort_cohort-01': { enabled: true, cohortId: 'cohort-01' },
+      'releaseControl/autonomousProgression_cohort_cohort-04-legacy': { enabled: true, cohortId: 'cohort-04-legacy' },
+      'releaseControl/numericPilot_cohort_cohort-04-legacy': { enabled: true, cohortId: 'cohort-04-legacy' },
+    },
+  });
+
+  // Even with a missing commercialRosterPath, STOP ALL discovers and disarms EVERY open cohort including cohort-04-legacy
+  const stopRep = await cohortOps.stopCohorts({
+    projectId: world.projectId,
+    googleToken: 'tok',
+    coachId: COACH_ID,
+    targetCohortId: 'ALL',
+    reason: 'T876_TRANSITION_STOP',
+    commercialRosterPath: '/nonexistent/missing-roster.json',
+    fetcher: world.fetcher,
+  });
+
+  assert.equal(stopRep.status, 'STOPPED_VERIFIED');
+  assert.ok(stopRep.stoppedCohorts.includes('cohort-01'));
+  assert.ok(stopRep.stoppedCohorts.includes('cohort-03'));
+  assert.ok(stopRep.stoppedCohorts.includes('cohort-04-legacy'), 'STOP must disarm legacy cohorts not in new roster');
+
+  // Verify the legacy cohort fences were actually set to enabled: false in Firestore
+  const legacyRel = world.docs.get('releaseControl/autonomousProgression_cohort_cohort-04-legacy');
+  const legacyNum = world.docs.get('releaseControl/numericPilot_cohort_cohort-04-legacy');
+  assert.equal(legacyRel.fields.enabled.booleanValue, false);
+  assert.equal(legacyNum.fields.enabled.booleanValue, false);
+  const coachAfter = world.docs.get('coaches/' + COACH_ID);
+  assert.equal(coachAfter.fields.autoApplyCanary.mapValue.fields.enabled.booleanValue, false);
+  assert.equal(coachAfter.fields.autoApplyCanary.mapValue.fields.cohorts.mapValue.fields['cohort-04-legacy'].mapValue.fields.enabled.booleanValue, false);
 });

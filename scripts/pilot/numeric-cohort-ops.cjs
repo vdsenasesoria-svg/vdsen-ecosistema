@@ -83,12 +83,44 @@ function extractPlanPids(plan) {
 const COMMERCIAL_ROSTER_PATH = path.resolve(__dirname, '../../.release/commercial-roster-t876.json');
 
 function loadCommercialRoster(filePath = COMMERCIAL_ROSTER_PATH) {
-  if (!fs.existsSync(filePath)) return null;
-  const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  const activeSet = new Set(Array.isArray(raw.activeUids) ? raw.activeUids : []);
-  const inactiveSet = new Set(Array.isArray(raw.inactiveUids) ? raw.inactiveUids : []);
-  for (const uid of activeSet) assert.ok(!inactiveSet.has(uid), 'COMMERCIAL_ROSTER_OVERLAP_' + uid);
-  return { schema: raw.schema, task: raw.task || null, activeSet, inactiveSet };
+  assert.ok(typeof filePath === 'string' && filePath.trim(), 'COMMERCIAL_ROSTER_PATH_INVALID');
+  assert.ok(fs.existsSync(filePath), 'COMMERCIAL_ROSTER_MISSING: ' + filePath);
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (err) {
+    throw new Error('COMMERCIAL_ROSTER_INVALID_JSON: ' + (err && err.message ? err.message : String(err)));
+  }
+  assert.ok(raw && typeof raw === 'object' && !Array.isArray(raw), 'COMMERCIAL_ROSTER_INVALID_OBJECT');
+  assert.equal(raw.schema, 'vdsen-commercial-roster-v1', 'COMMERCIAL_ROSTER_INVALID_SCHEMA');
+  assert.equal(raw.firebaseProject, 'vdsen-ecosistema', 'COMMERCIAL_ROSTER_PROJECT_MISMATCH');
+  assert.equal(raw.confirmedBy, 'owner', 'COMMERCIAL_ROSTER_UNAPPROVED');
+  assert.ok(typeof raw.confirmedAt === 'string' && Number.isFinite(Date.parse(raw.confirmedAt)), 'COMMERCIAL_ROSTER_INVALID_CONFIRMED_AT');
+  assert.ok(Array.isArray(raw.activeUids) && raw.activeUids.length >= 1, 'COMMERCIAL_ROSTER_EMPTY_ACTIVE_UIDS');
+  assert.ok(Array.isArray(raw.inactiveUids), 'COMMERCIAL_ROSTER_INVALID_INACTIVE_UIDS');
+
+  const activeSet = new Set();
+  for (const uid of raw.activeUids) {
+    assert.ok(typeof uid === 'string' && uid.trim().length >= 8 && uid === uid.trim(), 'COMMERCIAL_ROSTER_INVALID_ACTIVE_UID_' + String(uid));
+    assert.ok(!activeSet.has(uid), 'COMMERCIAL_ROSTER_DUPLICATE_ACTIVE_UID_' + uid);
+    activeSet.add(uid);
+  }
+  const inactiveSet = new Set();
+  for (const uid of raw.inactiveUids) {
+    assert.ok(typeof uid === 'string' && uid.trim().length >= 8 && uid === uid.trim(), 'COMMERCIAL_ROSTER_INVALID_INACTIVE_UID_' + String(uid));
+    assert.ok(!inactiveSet.has(uid), 'COMMERCIAL_ROSTER_DUPLICATE_INACTIVE_UID_' + uid);
+    assert.ok(!activeSet.has(uid), 'COMMERCIAL_ROSTER_OVERLAP_' + uid);
+    inactiveSet.add(uid);
+  }
+  return {
+    schema: raw.schema,
+    task: raw.task || null,
+    firebaseProject: raw.firebaseProject,
+    confirmedAt: raw.confirmedAt,
+    confirmedBy: raw.confirmedBy,
+    activeSet,
+    inactiveSet,
+  };
 }
 
 /**
@@ -277,12 +309,12 @@ function fsBase(projectId) {
   return 'https://firestore.googleapis.com/v1/projects/' + projectId + '/databases/(default)/documents';
 }
 
-async function fsList(projectId, token, col) {
+async function fsList(projectId, token, col, fetcher = globalThis.fetch) {
   const docs = [];
   let pageToken = '';
   while (true) {
     const url = fsBase(projectId) + '/' + col + '?pageSize=300' + (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : '');
-    const res = await fetch(url, { headers: { authorization: 'Bearer ' + token } });
+    const res = await fetcher(url, { headers: { authorization: 'Bearer ' + token } });
     assert.equal(res.status, 200, 'FS_LIST_FAILED_' + col + '_' + res.status);
     const data = await res.json();
     if (Array.isArray(data.documents)) docs.push(...data.documents.map(fromFsDoc));
@@ -292,16 +324,16 @@ async function fsList(projectId, token, col) {
   return docs;
 }
 
-async function fsGet(projectId, token, docPath) {
-  const res = await fetch(fsBase(projectId) + '/' + docPath, { headers: { authorization: 'Bearer ' + token } });
+async function fsGet(projectId, token, docPath, fetcher = globalThis.fetch) {
+  const res = await fetcher(fsBase(projectId) + '/' + docPath, { headers: { authorization: 'Bearer ' + token } });
   if (res.status === 404) return null;
   assert.equal(res.status, 200, 'FS_GET_FAILED_' + docPath + '_' + res.status);
   return fromFsDoc(await res.json());
 }
 
-async function fsCommit(projectId, token, writes) {
+async function fsCommit(projectId, token, writes, fetcher = globalThis.fetch) {
   const url = 'https://firestore.googleapis.com/v1/projects/' + projectId + '/databases/(default)/documents:commit';
-  const res = await fetch(url, {
+  const res = await fetcher(url, {
     method: 'POST',
     headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
     body: JSON.stringify({ writes }),
@@ -317,34 +349,43 @@ function docName(projectId, docPath) {
   return 'projects/' + projectId + '/databases/(default)/documents/' + docPath;
 }
 
-async function loadLiveRoster(projectId, token, opts) {
-  const clients = await fsList(projectId, token, 'clients');
+async function loadLiveRoster(projectId, token, opts = {}) {
+  const fetcher = opts.fetcher || globalThis.fetch;
+  // Fail-closed: real operational paths always enforce the owner-confirmed commercial roster.
+  const commercialRegistry = opts.commercialRegistry !== undefined
+    ? opts.commercialRegistry
+    : loadCommercialRoster(opts.commercialRosterPath);
+  assert.ok(
+    commercialRegistry && commercialRegistry.activeSet instanceof Set && commercialRegistry.activeSet.size >= 1,
+    'COMMERCIAL_ROSTER_REQUIRED'
+  );
+  const clients = await fsList(projectId, token, 'clients', fetcher);
   const plansById = {};
   const planIds = [...new Set(clients.map(c => c.activePlanId).filter(Boolean))];
   for (const pid of planIds) {
-    const p = await fsGet(projectId, token, 'plans/' + pid);
+    const p = await fsGet(projectId, token, 'plans/' + pid, fetcher);
     if (p) plansById[pid] = p;
   }
-  return buildCohortsFromRoster(clients, plansById, opts);
+  return buildCohortsFromRoster(clients, plansById, Object.assign({}, opts, { commercialRegistry }));
 }
 
-async function fetchCohortFences(projectId, token, cohortId, coachId) {
-  const relDoc = await fsGet(projectId, token, 'releaseControl/autonomousProgression_cohort_' + cohortId);
-  const numDoc = await fsGet(projectId, token, 'releaseControl/numericPilot_cohort_' + cohortId);
-  const coachDoc = coachId ? await fsGet(projectId, token, 'coaches/' + coachId) : null;
+async function fetchCohortFences(projectId, token, cohortId, coachId, fetcher = globalThis.fetch) {
+  const relDoc = await fsGet(projectId, token, 'releaseControl/autonomousProgression_cohort_' + cohortId, fetcher);
+  const numDoc = await fsGet(projectId, token, 'releaseControl/numericPilot_cohort_' + cohortId, fetcher);
+  const coachDoc = coachId ? await fsGet(projectId, token, 'coaches/' + coachId, fetcher) : null;
   const canaryCohort = coachDoc && coachDoc.autoApplyCanary && coachDoc.autoApplyCanary.cohorts && coachDoc.autoApplyCanary.cohorts[cohortId] || null;
   return { releaseFence: relDoc, numericFence: numDoc, coachCanaryCohort: canaryCohort, coachCanaryEnabled: !!(coachDoc && coachDoc.autoApplyCanary && coachDoc.autoApplyCanary.enabled === true) };
 }
 
-async function vget(vercelToken, p) {
+async function vget(vercelToken, p, fetcher = globalThis.fetch) {
   const url = 'https://api.vercel.com' + p + (p.includes('?') ? '&' : '?') + 'teamId=' + DEFAULT_TEAM_ID;
-  const r = await fetch(url, { headers: { authorization: 'Bearer ' + vercelToken }, redirect: 'error', signal: AbortSignal.timeout(30000) });
+  const r = await fetcher(url, { headers: { authorization: 'Bearer ' + vercelToken }, redirect: 'error', signal: AbortSignal.timeout(30000) });
   assert.equal(r.status, 200, 'VERCEL_GET_FAILED_' + r.status + '_' + p);
   return r.json();
 }
 
-async function verifyFleetDeploymentLive(vercelToken, deploymentId, expectedSha, expectedCohortEnvName) {
-  const d = await vget(vercelToken, '/v13/deployments/' + encodeURIComponent(deploymentId));
+async function verifyFleetDeploymentLive(vercelToken, deploymentId, expectedSha, expectedCohortEnvName, fetcher = globalThis.fetch) {
+  const d = await vget(vercelToken, '/v13/deployments/' + encodeURIComponent(deploymentId), fetcher);
   assert.equal(d.id || d.uid, deploymentId, 'DEPLOYMENT_ID_MISMATCH');
   assert.equal(d.projectId, DEFAULT_PROJECT_ID, 'PROJECT_ID_MISMATCH');
   assert.equal(d.teamId || d.ownerId, DEFAULT_TEAM_ID, 'TEAM_ID_MISMATCH');
@@ -362,7 +403,7 @@ async function verifyFleetDeploymentLive(vercelToken, deploymentId, expectedSha,
       assert.ok(envNames.includes(shardName), 'MISSING_COHORT_SHARD_' + shardName);
     }
   }
-  const aliasData = await vget(vercelToken, '/v2/aliases/' + encodeURIComponent(EXPECTED_ALIAS));
+  const aliasData = await vget(vercelToken, '/v2/aliases/' + encodeURIComponent(EXPECTED_ALIAS), fetcher);
   const liveId = aliasData.deploymentId || (aliasData.deployment && aliasData.deployment.id);
   assert.equal(liveId, deploymentId, 'LIVE_ALIAS_TARGET_MISMATCH: expected=' + deploymentId + ' actual=' + liveId);
   return { attested: true, deploymentId, runtimeSha: expectedSha, alias: EXPECTED_ALIAS, envNames };
@@ -472,14 +513,14 @@ async function prepareFleetRuntime(opts) {
 }
 
 async function preflightCohort(opts) {
-  const { projectId, googleToken, vercelToken, cohortId, deploymentId, runtimeSha, operationId, startsAt, expiresAt, coachId, outFile } = opts;
-  const manifest = await loadLiveRoster(projectId, googleToken, { runtimeSha, operationId, startsAt, expiresAt });
+  const { projectId, googleToken, vercelToken, cohortId, deploymentId, runtimeSha, operationId, startsAt, expiresAt, coachId, outFile, fetcher = globalThis.fetch, commercialRosterPath } = opts;
+  const manifest = await loadLiveRoster(projectId, googleToken, { runtimeSha, operationId, startsAt, expiresAt, fetcher, commercialRosterPath });
   const co = manifest.cohorts.find(x => x.cohortId === cohortId);
   assert.ok(co, 'COHORT_NOT_FOUND_' + cohortId);
 
-  const att = await verifyFleetDeploymentLive(vercelToken, deploymentId, runtimeSha, co.envVarNames);
-  const fences = await fetchCohortFences(projectId, googleToken, cohortId, coachId);
-  const priorLedger = await fsGet(projectId, googleToken, 'releaseControl/numericPilot/operations/' + co.operationId);
+  const att = await verifyFleetDeploymentLive(vercelToken, deploymentId, runtimeSha, co.envVarNames, fetcher);
+  const fences = await fetchCohortFences(projectId, googleToken, cohortId, coachId, fetcher);
+  const priorLedger = await fsGet(projectId, googleToken, 'releaseControl/numericPilot/operations/' + co.operationId, fetcher);
 
   const blockers = [];
   if (fences.releaseFence && fences.releaseFence.enabled === true) blockers.push('COHORT_RELEASE_FENCE_ALREADY_ACTIVE');
@@ -617,8 +658,9 @@ async function armCohort(opts) {
     },
   ];
 
-  await fsCommit(projectId, googleToken, writes);
-  const verifiedFences = await fetchCohortFences(projectId, googleToken, co.cohortId, coachId);
+  const fetcher = opts.fetcher || globalThis.fetch;
+  await fsCommit(projectId, googleToken, writes, fetcher);
+  const verifiedFences = await fetchCohortFences(projectId, googleToken, co.cohortId, coachId, fetcher);
   assert.equal(verifiedFences.releaseFence && verifiedFences.releaseFence.enabled, true, 'VERIFY_RELEASE_FENCE_FAILED');
   assert.equal(verifiedFences.numericFence && verifiedFences.numericFence.enabled, true, 'VERIFY_NUMERIC_FENCE_FAILED');
   assert.equal(verifiedFences.coachCanaryCohort && verifiedFences.coachCanaryCohort.enabled, true, 'VERIFY_COACH_COHORT_FAILED');
@@ -642,12 +684,36 @@ async function armCohort(opts) {
   return out;
 }
 
+async function discoverOpenCohortIds(projectId, googleToken, coachId, fetcher = globalThis.fetch) {
+  const discovered = new Set();
+  try {
+    const rcDocs = await fsList(projectId, googleToken, 'releaseControl', fetcher);
+    for (const d of rcDocs) {
+      const id = String(d && d._id || '');
+      if (id.startsWith('autonomousProgression_cohort_')) discovered.add(id.slice('autonomousProgression_cohort_'.length));
+      if (id.startsWith('numericPilot_cohort_')) discovered.add(id.slice('numericPilot_cohort_'.length));
+    }
+  } catch (_) {
+    // Fallback to coach document & roster if releaseControl list is unavailable
+  }
+  if (coachId) {
+    try {
+      const coachDoc = await fsGet(projectId, googleToken, 'coaches/' + coachId, fetcher);
+      const cohortsMap = coachDoc && coachDoc.autoApplyCanary && coachDoc.autoApplyCanary.cohorts;
+      if (cohortsMap && typeof cohortsMap === 'object') {
+        for (const cid of Object.keys(cohortsMap)) discovered.add(cid);
+      }
+    } catch (_) {}
+  }
+  return [...discovered].filter(Boolean).sort();
+}
+
 async function auditFleet(opts) {
-  const { projectId, googleToken, coachId, outFile } = opts;
-  const manifest = await loadLiveRoster(projectId, googleToken, {});
+  const { projectId, googleToken, coachId, outFile, fetcher = globalThis.fetch, commercialRosterPath } = opts;
+  const manifest = await loadLiveRoster(projectId, googleToken, { fetcher, commercialRosterPath });
   const cohortStates = [];
   for (const co of manifest.cohorts) {
-    const f = await fetchCohortFences(projectId, googleToken, co.cohortId, coachId);
+    const f = await fetchCohortFences(projectId, googleToken, co.cohortId, coachId, fetcher);
     cohortStates.push({
       cohortId: co.cohortId,
       clientCount: co.clientCount,
@@ -682,11 +748,20 @@ async function auditFleet(opts) {
 }
 
 async function stopCohorts(opts) {
-  const { projectId, googleToken, coachId, targetCohortId, reason, outFile } = opts;
-  const manifest = await loadLiveRoster(projectId, googleToken, {});
-  const targets = targetCohortId === 'ALL'
-    ? manifest.cohorts.map(x => x.cohortId)
-    : [targetCohortId];
+  const { projectId, googleToken, coachId, targetCohortId, reason, outFile, fetcher = globalThis.fetch, commercialRosterPath } = opts;
+  let targets;
+  if (targetCohortId === 'ALL') {
+    const union = new Set(await discoverOpenCohortIds(projectId, googleToken, coachId, fetcher));
+    try {
+      const manifest = await loadLiveRoster(projectId, googleToken, { fetcher, commercialRosterPath });
+      for (const co of manifest.cohorts) union.add(co.cohortId);
+    } catch (_) {
+      // STOP must remain operational even if the commercial manifest is missing or updated
+    }
+    targets = [...union].sort();
+  } else {
+    targets = [targetCohortId];
+  }
   const nowIso = new Date().toISOString();
   const writes = [];
   for (const cid of targets) {
@@ -723,7 +798,9 @@ async function stopCohorts(opts) {
       updateMask: { fieldPaths: ['autoApplyCanary.enabled'] },
     });
   }
-  await fsCommit(projectId, googleToken, writes);
+  if (writes.length > 0) {
+    await fsCommit(projectId, googleToken, writes, fetcher);
+  }
   const out = { schema: 'vdsen-cohort-stop-v1', status: 'STOPPED_VERIFIED', stoppedCohorts: targets, stoppedAt: nowIso };
   if (outFile) {
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
@@ -807,6 +884,14 @@ if (require.main === module) {
 module.exports = {
   buildCohortsFromRoster,
   loadCommercialRoster,
+  loadLiveRoster,
+  discoverOpenCohortIds,
+  prepareFleetRuntime,
+  preflightCohort,
+  armCohort,
+  auditFleet,
+  stopCohorts,
   extractPlanPids,
+  toFsFields,
   MAX_COHORT_CLIENTS,
 };
