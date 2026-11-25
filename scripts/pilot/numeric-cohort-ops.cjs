@@ -80,46 +80,124 @@ function extractPlanPids(plan) {
   return { pids: [...pidSet].sort(), totalExercises, missingPidExercises };
 }
 
+const COMMERCIAL_ROSTER_PATH = path.resolve(__dirname, '../../.release/commercial-roster-t876.json');
+
+function loadCommercialRoster(filePath = COMMERCIAL_ROSTER_PATH) {
+  assert.ok(typeof filePath === 'string' && filePath.trim(), 'COMMERCIAL_ROSTER_PATH_INVALID');
+  assert.ok(fs.existsSync(filePath), 'COMMERCIAL_ROSTER_MISSING: ' + filePath);
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (err) {
+    throw new Error('COMMERCIAL_ROSTER_INVALID_JSON: ' + (err && err.message ? err.message : String(err)));
+  }
+  assert.ok(raw && typeof raw === 'object' && !Array.isArray(raw), 'COMMERCIAL_ROSTER_INVALID_OBJECT');
+  assert.equal(raw.schema, 'vdsen-commercial-roster-v1', 'COMMERCIAL_ROSTER_INVALID_SCHEMA');
+  assert.equal(raw.firebaseProject, 'vdsen-ecosistema', 'COMMERCIAL_ROSTER_PROJECT_MISMATCH');
+  assert.equal(raw.confirmedBy, 'owner', 'COMMERCIAL_ROSTER_UNAPPROVED');
+  assert.ok(typeof raw.confirmedAt === 'string' && Number.isFinite(Date.parse(raw.confirmedAt)), 'COMMERCIAL_ROSTER_INVALID_CONFIRMED_AT');
+  assert.ok(Array.isArray(raw.activeUids) && raw.activeUids.length >= 1, 'COMMERCIAL_ROSTER_EMPTY_ACTIVE_UIDS');
+  assert.ok(Array.isArray(raw.inactiveUids), 'COMMERCIAL_ROSTER_INVALID_INACTIVE_UIDS');
+
+  const activeSet = new Set();
+  for (const uid of raw.activeUids) {
+    assert.ok(typeof uid === 'string' && uid.trim().length >= 8 && uid === uid.trim(), 'COMMERCIAL_ROSTER_INVALID_ACTIVE_UID_' + String(uid));
+    assert.ok(!activeSet.has(uid), 'COMMERCIAL_ROSTER_DUPLICATE_ACTIVE_UID_' + uid);
+    activeSet.add(uid);
+  }
+  const inactiveSet = new Set();
+  for (const uid of raw.inactiveUids) {
+    assert.ok(typeof uid === 'string' && uid.trim().length >= 8 && uid === uid.trim(), 'COMMERCIAL_ROSTER_INVALID_INACTIVE_UID_' + String(uid));
+    assert.ok(!inactiveSet.has(uid), 'COMMERCIAL_ROSTER_DUPLICATE_INACTIVE_UID_' + uid);
+    assert.ok(!activeSet.has(uid), 'COMMERCIAL_ROSTER_OVERLAP_' + uid);
+    inactiveSet.add(uid);
+  }
+  return {
+    schema: raw.schema,
+    task: raw.task || null,
+    firebaseProject: raw.firebaseProject,
+    confirmedAt: raw.confirmedAt,
+    confirmedBy: raw.confirmedBy,
+    activeSet,
+    inactiveSet,
+  };
+}
+
 /**
  * Pure, deterministic cohort builder: classifies eligible vs excluded clients and partitions
  * eligible clients into isolated cohorts of <= 10 clients each.
+ * Separates commercialStatus (ACTIVE|INACTIVE|UNCONFIRMED), planStatus (VALID|PENDING_FINALIZATION|INVALID),
+ * numericStatus (ACTIVE|AUTHORIZED_PENDING|EXCLUDED), and cohortId.
  */
 function buildCohortsFromRoster(clients, plansById, opts = {}) {
   const runtimeSha = opts.runtimeSha || '';
   const baseOpId = opts.operationId || 'T875-FLEET-OP';
   const startsAt = opts.startsAt || '';
   const expiresAt = opts.expiresAt || '';
+  const reg = opts.commercialRegistry || null;
+  const activeSet = reg ? (reg.activeSet || new Set(reg.activeUids || [])) : null;
+  const inactiveSet = reg ? (reg.inactiveSet || new Set(reg.inactiveUids || [])) : null;
   const eligible = [];
   const excluded = [];
+  const classifications = [];
 
   const sortedClients = (Array.isArray(clients) ? clients : []).slice().sort((a, b) => String(a._id || a.uid || '').localeCompare(String(b._id || b.uid || '')));
   for (const c of sortedClients) {
     const uid = c._id || c.uid;
     if (!uid) continue;
+    const commercialStatus = reg
+      ? (activeSet.has(uid) ? 'ACTIVE' : inactiveSet.has(uid) ? 'INACTIVE' : 'UNCONFIRMED')
+      : 'UNCONFIRMED';
+    const plan = c.activePlanId && plansById ? plansById[c.activePlanId] : null;
+    const extracted = plan ? extractPlanPids(plan) : { pids: [], totalExercises: 0, missingPidExercises: 0 };
+    const hasValidUpdatedAt = typeof (plan && plan.updatedAt) === 'string' && Number.isFinite(Date.parse(plan.updatedAt));
+    const planValidStructure = !!(
+      c.activePlanId && plan &&
+      eligibility.isPlanStatusValid(plan, c) &&
+      (!plan.clientId || plan.clientId === uid) &&
+      extracted.pids.length > 0
+    );
+    const planStatus = !planValidStructure ? 'INVALID' : (hasValidUpdatedAt ? 'VALID' : 'PENDING_FINALIZATION');
+
+    if (reg && commercialStatus === 'INACTIVE') {
+      excluded.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId || null, commercialStatus, planStatus, reason: 'COMMERCIAL_INACTIVE' });
+      classifications.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId || null, commercialStatus, planStatus, numericStatus: 'EXCLUDED', cohortId: null, pidCount: extracted.pids.length });
+      continue;
+    }
+    if (reg && commercialStatus === 'UNCONFIRMED') {
+      excluded.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId || null, commercialStatus, planStatus, reason: 'COMMERCIAL_UNCONFIRMED' });
+      classifications.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId || null, commercialStatus, planStatus, numericStatus: 'EXCLUDED', cohortId: null, pidCount: extracted.pids.length });
+      continue;
+    }
     if (!eligibility.isClientStatusValid(c)) {
-      excluded.push({ uid, coachId: c.coachId || null, reason: 'CLIENT_INACTIVE_OR_SUSPENDED' });
+      excluded.push({ uid, coachId: c.coachId || null, commercialStatus, planStatus, reason: 'CLIENT_INACTIVE_OR_SUSPENDED' });
+      classifications.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId || null, commercialStatus, planStatus, numericStatus: 'EXCLUDED', cohortId: null, pidCount: 0 });
       continue;
     }
     if (!c.activePlanId) {
-      excluded.push({ uid, coachId: c.coachId || null, reason: 'NO_ACTIVE_PLAN_ID' });
+      excluded.push({ uid, coachId: c.coachId || null, commercialStatus, planStatus, reason: 'NO_ACTIVE_PLAN_ID' });
+      classifications.push({ uid, coachId: c.coachId || null, activePlanId: null, commercialStatus, planStatus, numericStatus: 'EXCLUDED', cohortId: null, pidCount: 0 });
       continue;
     }
-    const plan = plansById && plansById[c.activePlanId];
     if (!plan) {
-      excluded.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, reason: 'ACTIVE_PLAN_NOT_FOUND' });
+      excluded.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, commercialStatus, planStatus, reason: 'ACTIVE_PLAN_NOT_FOUND' });
+      classifications.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, commercialStatus, planStatus, numericStatus: 'EXCLUDED', cohortId: null, pidCount: 0 });
       continue;
     }
     if (!eligibility.isPlanStatusValid(plan, c)) {
-      excluded.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, reason: 'PLAN_STATUS_INVALID' });
+      excluded.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, commercialStatus, planStatus, reason: 'PLAN_STATUS_INVALID' });
+      classifications.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, commercialStatus, planStatus, numericStatus: 'EXCLUDED', cohortId: null, pidCount: 0 });
       continue;
     }
     if (plan.clientId && plan.clientId !== uid) {
-      excluded.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, reason: 'PLAN_CLIENT_MISMATCH' });
+      excluded.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, commercialStatus, planStatus, reason: 'PLAN_CLIENT_MISMATCH' });
+      classifications.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, commercialStatus, planStatus, numericStatus: 'EXCLUDED', cohortId: null, pidCount: 0 });
       continue;
     }
-    const { pids, totalExercises, missingPidExercises } = extractPlanPids(plan);
+    const { pids, totalExercises, missingPidExercises } = extracted;
     if (pids.length === 0) {
-      excluded.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, totalExercises, missingPidExercises, reason: 'NO_PRESCRIPTION_EXERCISE_IDS' });
+      excluded.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, totalExercises, missingPidExercises, commercialStatus, planStatus, reason: 'NO_PRESCRIPTION_EXERCISE_IDS' });
+      classifications.push({ uid, coachId: c.coachId || null, activePlanId: c.activePlanId, commercialStatus, planStatus, numericStatus: 'EXCLUDED', cohortId: null, pidCount: 0 });
       continue;
     }
     const pidsHash = C.computePidsHash(pids);
@@ -128,7 +206,10 @@ function buildCohortsFromRoster(clients, plansById, opts = {}) {
       uid,
       coachId: c.coachId || null,
       planId: c.activePlanId,
+      createdAt: plan.createdAt || null,
       updatedAt: plan.updatedAt || null,
+      commercialStatus,
+      planStatus,
       pids,
       pidCount: pids.length,
       pidsHash,
@@ -143,6 +224,18 @@ function buildCohortsFromRoster(clients, plansById, opts = {}) {
     const cohortId = 'cohort-' + String(idx).padStart(2, '0');
     const slice = eligible.slice(i, i + MAX_COHORT_CLIENTS);
     assert.ok(slice.length >= 1 && slice.length <= MAX_COHORT_CLIENTS, 'COHORT_CAP_VIOLATED');
+    for (const x of slice) {
+      classifications.push({
+        uid: x.uid,
+        coachId: x.coachId,
+        activePlanId: x.planId,
+        commercialStatus: x.commercialStatus,
+        planStatus: x.planStatus,
+        numericStatus: x.planStatus === 'VALID' ? 'ACTIVE' : 'AUTHORIZED_PENDING',
+        cohortId,
+        pidCount: x.pidCount,
+      });
+    }
     const cohortOpId = (baseOpId + '-' + cohortId).slice(0, 80);
     const allPids = [...new Set(slice.flatMap(x => x.pids))].sort();
     const coachIds = [...new Set(slice.map(x => x.coachId).filter(Boolean))].sort();
@@ -198,6 +291,8 @@ function buildCohortsFromRoster(clients, plansById, opts = {}) {
     eligibleCount: eligible.length,
     eligibleWithUpdatedAt: eligible.filter(x => !!x.updatedAt).length,
     eligibleMissingUpdatedAt: eligible.filter(x => !x.updatedAt).length,
+    eligibleWithCanonicalTimestamp: eligible.filter(x => x.planStatus === 'VALID').length,
+    eligibleMissingCanonicalTimestamp: eligible.filter(x => x.planStatus !== 'VALID').length,
     excludedCount: excluded.length,
     excludedByReason,
     totalEligiblePids: eligible.reduce((s, x) => s + x.pidCount, 0),
@@ -205,6 +300,7 @@ function buildCohortsFromRoster(clients, plansById, opts = {}) {
     maxClientsPerCohort: MAX_COHORT_CLIENTS,
     cohorts,
     excluded,
+    classifications,
   };
 }
 
@@ -213,12 +309,12 @@ function fsBase(projectId) {
   return 'https://firestore.googleapis.com/v1/projects/' + projectId + '/databases/(default)/documents';
 }
 
-async function fsList(projectId, token, col) {
+async function fsList(projectId, token, col, fetcher = globalThis.fetch) {
   const docs = [];
   let pageToken = '';
   while (true) {
     const url = fsBase(projectId) + '/' + col + '?pageSize=300' + (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : '');
-    const res = await fetch(url, { headers: { authorization: 'Bearer ' + token } });
+    const res = await fetcher(url, { headers: { authorization: 'Bearer ' + token } });
     assert.equal(res.status, 200, 'FS_LIST_FAILED_' + col + '_' + res.status);
     const data = await res.json();
     if (Array.isArray(data.documents)) docs.push(...data.documents.map(fromFsDoc));
@@ -228,16 +324,16 @@ async function fsList(projectId, token, col) {
   return docs;
 }
 
-async function fsGet(projectId, token, docPath) {
-  const res = await fetch(fsBase(projectId) + '/' + docPath, { headers: { authorization: 'Bearer ' + token } });
+async function fsGet(projectId, token, docPath, fetcher = globalThis.fetch) {
+  const res = await fetcher(fsBase(projectId) + '/' + docPath, { headers: { authorization: 'Bearer ' + token } });
   if (res.status === 404) return null;
   assert.equal(res.status, 200, 'FS_GET_FAILED_' + docPath + '_' + res.status);
   return fromFsDoc(await res.json());
 }
 
-async function fsCommit(projectId, token, writes) {
+async function fsCommit(projectId, token, writes, fetcher = globalThis.fetch) {
   const url = 'https://firestore.googleapis.com/v1/projects/' + projectId + '/databases/(default)/documents:commit';
-  const res = await fetch(url, {
+  const res = await fetcher(url, {
     method: 'POST',
     headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
     body: JSON.stringify({ writes }),
@@ -253,34 +349,43 @@ function docName(projectId, docPath) {
   return 'projects/' + projectId + '/databases/(default)/documents/' + docPath;
 }
 
-async function loadLiveRoster(projectId, token, opts) {
-  const clients = await fsList(projectId, token, 'clients');
+async function loadLiveRoster(projectId, token, opts = {}) {
+  const fetcher = opts.fetcher || globalThis.fetch;
+  // Fail-closed: real operational paths always enforce the owner-confirmed commercial roster.
+  const commercialRegistry = opts.commercialRegistry !== undefined
+    ? opts.commercialRegistry
+    : loadCommercialRoster(opts.commercialRosterPath);
+  assert.ok(
+    commercialRegistry && commercialRegistry.activeSet instanceof Set && commercialRegistry.activeSet.size >= 1,
+    'COMMERCIAL_ROSTER_REQUIRED'
+  );
+  const clients = await fsList(projectId, token, 'clients', fetcher);
   const plansById = {};
   const planIds = [...new Set(clients.map(c => c.activePlanId).filter(Boolean))];
   for (const pid of planIds) {
-    const p = await fsGet(projectId, token, 'plans/' + pid);
+    const p = await fsGet(projectId, token, 'plans/' + pid, fetcher);
     if (p) plansById[pid] = p;
   }
-  return buildCohortsFromRoster(clients, plansById, opts);
+  return buildCohortsFromRoster(clients, plansById, Object.assign({}, opts, { commercialRegistry }));
 }
 
-async function fetchCohortFences(projectId, token, cohortId, coachId) {
-  const relDoc = await fsGet(projectId, token, 'releaseControl/autonomousProgression_cohort_' + cohortId);
-  const numDoc = await fsGet(projectId, token, 'releaseControl/numericPilot_cohort_' + cohortId);
-  const coachDoc = coachId ? await fsGet(projectId, token, 'coaches/' + coachId) : null;
+async function fetchCohortFences(projectId, token, cohortId, coachId, fetcher = globalThis.fetch) {
+  const relDoc = await fsGet(projectId, token, 'releaseControl/autonomousProgression_cohort_' + cohortId, fetcher);
+  const numDoc = await fsGet(projectId, token, 'releaseControl/numericPilot_cohort_' + cohortId, fetcher);
+  const coachDoc = coachId ? await fsGet(projectId, token, 'coaches/' + coachId, fetcher) : null;
   const canaryCohort = coachDoc && coachDoc.autoApplyCanary && coachDoc.autoApplyCanary.cohorts && coachDoc.autoApplyCanary.cohorts[cohortId] || null;
   return { releaseFence: relDoc, numericFence: numDoc, coachCanaryCohort: canaryCohort, coachCanaryEnabled: !!(coachDoc && coachDoc.autoApplyCanary && coachDoc.autoApplyCanary.enabled === true) };
 }
 
-async function vget(vercelToken, p) {
+async function vget(vercelToken, p, fetcher = globalThis.fetch) {
   const url = 'https://api.vercel.com' + p + (p.includes('?') ? '&' : '?') + 'teamId=' + DEFAULT_TEAM_ID;
-  const r = await fetch(url, { headers: { authorization: 'Bearer ' + vercelToken }, redirect: 'error', signal: AbortSignal.timeout(30000) });
+  const r = await fetcher(url, { headers: { authorization: 'Bearer ' + vercelToken }, redirect: 'error', signal: AbortSignal.timeout(30000) });
   assert.equal(r.status, 200, 'VERCEL_GET_FAILED_' + r.status + '_' + p);
   return r.json();
 }
 
-async function verifyFleetDeploymentLive(vercelToken, deploymentId, expectedSha, expectedCohortEnvName) {
-  const d = await vget(vercelToken, '/v13/deployments/' + encodeURIComponent(deploymentId));
+async function verifyFleetDeploymentLive(vercelToken, deploymentId, expectedSha, expectedCohortEnvName, fetcher = globalThis.fetch) {
+  const d = await vget(vercelToken, '/v13/deployments/' + encodeURIComponent(deploymentId), fetcher);
   assert.equal(d.id || d.uid, deploymentId, 'DEPLOYMENT_ID_MISMATCH');
   assert.equal(d.projectId, DEFAULT_PROJECT_ID, 'PROJECT_ID_MISMATCH');
   assert.equal(d.teamId || d.ownerId, DEFAULT_TEAM_ID, 'TEAM_ID_MISMATCH');
@@ -298,7 +403,7 @@ async function verifyFleetDeploymentLive(vercelToken, deploymentId, expectedSha,
       assert.ok(envNames.includes(shardName), 'MISSING_COHORT_SHARD_' + shardName);
     }
   }
-  const aliasData = await vget(vercelToken, '/v2/aliases/' + encodeURIComponent(EXPECTED_ALIAS));
+  const aliasData = await vget(vercelToken, '/v2/aliases/' + encodeURIComponent(EXPECTED_ALIAS), fetcher);
   const liveId = aliasData.deploymentId || (aliasData.deployment && aliasData.deployment.id);
   assert.equal(liveId, deploymentId, 'LIVE_ALIAS_TARGET_MISMATCH: expected=' + deploymentId + ' actual=' + liveId);
   return { attested: true, deploymentId, runtimeSha: expectedSha, alias: EXPECTED_ALIAS, envNames };
@@ -408,14 +513,14 @@ async function prepareFleetRuntime(opts) {
 }
 
 async function preflightCohort(opts) {
-  const { projectId, googleToken, vercelToken, cohortId, deploymentId, runtimeSha, operationId, startsAt, expiresAt, coachId, outFile } = opts;
-  const manifest = await loadLiveRoster(projectId, googleToken, { runtimeSha, operationId, startsAt, expiresAt });
+  const { projectId, googleToken, vercelToken, cohortId, deploymentId, runtimeSha, operationId, startsAt, expiresAt, coachId, outFile, fetcher = globalThis.fetch, commercialRosterPath } = opts;
+  const manifest = await loadLiveRoster(projectId, googleToken, { runtimeSha, operationId, startsAt, expiresAt, fetcher, commercialRosterPath });
   const co = manifest.cohorts.find(x => x.cohortId === cohortId);
   assert.ok(co, 'COHORT_NOT_FOUND_' + cohortId);
 
-  const att = await verifyFleetDeploymentLive(vercelToken, deploymentId, runtimeSha, co.envVarNames);
-  const fences = await fetchCohortFences(projectId, googleToken, cohortId, coachId);
-  const priorLedger = await fsGet(projectId, googleToken, 'releaseControl/numericPilot/operations/' + co.operationId);
+  const att = await verifyFleetDeploymentLive(vercelToken, deploymentId, runtimeSha, co.envVarNames, fetcher);
+  const fences = await fetchCohortFences(projectId, googleToken, cohortId, coachId, fetcher);
+  const priorLedger = await fsGet(projectId, googleToken, 'releaseControl/numericPilot/operations/' + co.operationId, fetcher);
 
   const blockers = [];
   if (fences.releaseFence && fences.releaseFence.enabled === true) blockers.push('COHORT_RELEASE_FENCE_ALREADY_ACTIVE');
@@ -553,8 +658,9 @@ async function armCohort(opts) {
     },
   ];
 
-  await fsCommit(projectId, googleToken, writes);
-  const verifiedFences = await fetchCohortFences(projectId, googleToken, co.cohortId, coachId);
+  const fetcher = opts.fetcher || globalThis.fetch;
+  await fsCommit(projectId, googleToken, writes, fetcher);
+  const verifiedFences = await fetchCohortFences(projectId, googleToken, co.cohortId, coachId, fetcher);
   assert.equal(verifiedFences.releaseFence && verifiedFences.releaseFence.enabled, true, 'VERIFY_RELEASE_FENCE_FAILED');
   assert.equal(verifiedFences.numericFence && verifiedFences.numericFence.enabled, true, 'VERIFY_NUMERIC_FENCE_FAILED');
   assert.equal(verifiedFences.coachCanaryCohort && verifiedFences.coachCanaryCohort.enabled, true, 'VERIFY_COACH_COHORT_FAILED');
@@ -578,26 +684,180 @@ async function armCohort(opts) {
   return out;
 }
 
+async function discoverOpenCohortIds(projectId, googleToken, coachId, fetcher = globalThis.fetch) {
+  const discovered = new Set();
+  const discoveryErrors = [];
+  try {
+    const rcDocs = await fsList(projectId, googleToken, 'releaseControl', fetcher);
+    for (const d of rcDocs) {
+      const id = String(d && d._id || '');
+      if (id.startsWith('autonomousProgression_cohort_')) discovered.add(id.slice('autonomousProgression_cohort_'.length));
+      if (id.startsWith('numericPilot_cohort_')) discovered.add(id.slice('numericPilot_cohort_'.length));
+    }
+  } catch (err) {
+    discoveryErrors.push('RELEASE_CONTROL_LIST_FAILED: ' + (err && err.message ? err.message : String(err)));
+  }
+  if (coachId) {
+    try {
+      const coachDoc = await fsGet(projectId, googleToken, 'coaches/' + coachId, fetcher);
+      const cohortsMap = coachDoc && coachDoc.autoApplyCanary && coachDoc.autoApplyCanary.cohorts;
+      if (cohortsMap && typeof cohortsMap === 'object') {
+        for (const cid of Object.keys(cohortsMap)) discovered.add(cid);
+      }
+    } catch (err) {
+      discoveryErrors.push('COACH_DOC_READ_FAILED: ' + (err && err.message ? err.message : String(err)));
+    }
+  }
+  return {
+    cohortIds: [...discovered].filter(Boolean).sort(),
+    discoveryErrors,
+    complete: discoveryErrors.length === 0,
+  };
+}
+
+function _sameSortedArray(a, b) {
+  const sa = (Array.isArray(a) ? a : []).map(String).sort();
+  const sb = (Array.isArray(b) ? b : []).map(String).sort();
+  if (sa.length !== sb.length) return false;
+  for (let i = 0; i < sa.length; i++) if (sa[i] !== sb[i]) return false;
+  return true;
+}
+
+function _verifyCohortAuthorizationExact(co, f, activeSet, expectedRuntimeSha) {
+  const mismatches = [];
+  const outOfRoster = new Set();
+  const rel = f.releaseFence;
+  const num = f.numericFence;
+  const cc = f.coachCanaryCohort;
+  const relEnabled = !!(rel && rel.enabled === true);
+  const numEnabled = !!(num && num.enabled === true);
+  const ccEnabled = !!(cc && cc.enabled === true);
+
+  if (rel && Array.isArray(rel.clientIds)) {
+    for (const u of rel.clientIds) if (activeSet && !activeSet.has(u)) outOfRoster.add(u);
+  }
+  if (num && num.windows && typeof num.windows === 'object') {
+    for (const u of Object.keys(num.windows)) if (activeSet && !activeSet.has(u)) outOfRoster.add(u);
+  }
+  if (cc && Array.isArray(cc.clientIds)) {
+    for (const u of cc.clientIds) if (activeSet && !activeSet.has(u)) outOfRoster.add(u);
+  }
+
+  if (!relEnabled) mismatches.push('RELEASE_FENCE_DISABLED');
+  if (!numEnabled) mismatches.push('NUMERIC_FENCE_DISABLED');
+  if (!ccEnabled) mismatches.push('COACH_COHORT_DISABLED');
+  if (!f.coachCanaryEnabled) mismatches.push('COACH_CANARY_DISABLED');
+
+  if (relEnabled && !_sameSortedArray(rel.clientIds, co.clientIds)) mismatches.push('RELEASE_CLIENT_IDS_MISMATCH');
+  if (ccEnabled && !_sameSortedArray(cc.clientIds, co.clientIds)) mismatches.push('COACH_CLIENT_IDS_MISMATCH');
+  if (ccEnabled && !_sameSortedArray(cc.prescriptionExerciseIds, co.allPids)) mismatches.push('COACH_PIDS_MISMATCH');
+
+  const opId = (num && num.operationId) || null;
+  const expAt = (rel && rel.expiresAt) || null;
+  const rtSha = (num && num.runtimeSha) || null;
+  if (relEnabled && numEnabled && ccEnabled) {
+    if (!opId || rel.operationId !== opId || cc.operationId !== opId) mismatches.push('OPERATION_ID_MISMATCH');
+    if (!expAt || num.expiresAt !== expAt || cc.expiresAt !== expAt) mismatches.push('EXPIRES_AT_MISMATCH');
+    if (expAt && (!Number.isFinite(Date.parse(expAt)) || Date.parse(expAt) <= Date.now())) mismatches.push('WINDOW_EXPIRED');
+    if (!rtSha || !/^[0-9a-f]{40}$/.test(rtSha)) mismatches.push('RUNTIME_SHA_INVALID');
+    if (expectedRuntimeSha && rtSha !== expectedRuntimeSha) mismatches.push('RUNTIME_SHA_MISMATCH');
+  }
+
+  if (numEnabled) {
+    const winMap = (num.windows && typeof num.windows === 'object') ? num.windows : {};
+    if (!_sameSortedArray(Object.keys(winMap), co.clientIds)) {
+      mismatches.push('NUMERIC_WINDOW_CLIENTS_MISMATCH');
+    } else {
+      for (const client of co.clients) {
+        const w = winMap[client.uid];
+        if (!w || w.enabled !== true) { mismatches.push('WINDOW_DISABLED_' + client.uid); continue; }
+        if (w.planId !== client.planId) mismatches.push('PLAN_ID_MISMATCH_' + client.uid);
+        if (w.pidsHash !== client.pidsHash) mismatches.push('PIDS_HASH_MISMATCH_' + client.uid);
+        if (w.pidCount !== client.pidCount) mismatches.push('PID_COUNT_MISMATCH_' + client.uid);
+        if (!_sameSortedArray(w.pids, client.pids)) mismatches.push('PIDS_LIST_MISMATCH_' + client.uid);
+        if (w.runtimeSha !== rtSha) mismatches.push('WINDOW_RUNTIME_SHA_MISMATCH_' + client.uid);
+        if (w.operationId !== opId) mismatches.push('WINDOW_OPERATION_ID_MISMATCH_' + client.uid);
+        if (w.expiresAt !== expAt) mismatches.push('WINDOW_EXPIRES_AT_MISMATCH_' + client.uid);
+      }
+    }
+  }
+
+  return {
+    releaseFenceEnabled: relEnabled,
+    numericFenceEnabled: numEnabled,
+    coachCohortEnabled: ccEnabled,
+    runtimeSha: rtSha,
+    expiresAt: expAt,
+    operationId: opId,
+    exactMatch: mismatches.length === 0 && outOfRoster.size === 0,
+    mismatches,
+    outOfRosterClients: [...outOfRoster].sort(),
+  };
+}
+
 async function auditFleet(opts) {
-  const { projectId, googleToken, coachId, outFile } = opts;
-  const manifest = await loadLiveRoster(projectId, googleToken, {});
+  const { projectId, googleToken, coachId, outFile, expectedRuntimeSha, fetcher = globalThis.fetch, commercialRosterPath } = opts;
+  const reg = loadCommercialRoster(commercialRosterPath);
+  const manifest = await loadLiveRoster(projectId, googleToken, { fetcher, commercialRegistry: reg });
+  const expectedCohortSet = new Set(manifest.cohorts.map(c => c.cohortId));
+  const discovery = await discoverOpenCohortIds(projectId, googleToken, coachId, fetcher);
+
   const cohortStates = [];
+  const allOutOfRoster = new Set();
   for (const co of manifest.cohorts) {
-    const f = await fetchCohortFences(projectId, googleToken, co.cohortId, coachId);
+    const f = await fetchCohortFences(projectId, googleToken, co.cohortId, coachId, fetcher);
+    const v = _verifyCohortAuthorizationExact(co, f, reg.activeSet, expectedRuntimeSha);
+    for (const u of v.outOfRosterClients) allOutOfRoster.add(u);
     cohortStates.push({
       cohortId: co.cohortId,
       clientCount: co.clientCount,
       pidCount: co.pidCount,
-      releaseFenceEnabled: !!(f.releaseFence && f.releaseFence.enabled === true),
-      numericFenceEnabled: !!(f.numericFence && f.numericFence.enabled === true),
-      coachCohortEnabled: !!(f.coachCanaryCohort && f.coachCanaryCohort.enabled === true),
-      expiresAt: (f.releaseFence && f.releaseFence.expiresAt) || null,
-      operationId: (f.numericFence && f.numericFence.operationId) || null,
+      releaseFenceEnabled: v.releaseFenceEnabled,
+      numericFenceEnabled: v.numericFenceEnabled,
+      coachCohortEnabled: v.coachCohortEnabled,
+      runtimeSha: v.runtimeSha,
+      expiresAt: v.expiresAt,
+      operationId: v.operationId,
+      exactMatch: v.exactMatch,
+      mismatches: v.mismatches,
     });
   }
+
+  // Detect any stale/legacy cohorts still open outside the current commercial manifest
+  const staleOpenCohorts = [];
+  for (const cid of discovery.cohortIds) {
+    if (expectedCohortSet.has(cid)) continue;
+    const f = await fetchCohortFences(projectId, googleToken, cid, coachId, fetcher);
+    const anyOpen = !!(
+      (f.releaseFence && f.releaseFence.enabled === true) ||
+      (f.numericFence && f.numericFence.enabled === true) ||
+      (f.coachCanaryCohort && f.coachCanaryCohort.enabled === true)
+    );
+    if (anyOpen) {
+      staleOpenCohorts.push(cid);
+      if (f.releaseFence && Array.isArray(f.releaseFence.clientIds)) {
+        for (const u of f.releaseFence.clientIds) if (!reg.activeSet.has(u)) allOutOfRoster.add(u);
+      }
+      if (f.numericFence && f.numericFence.windows && typeof f.numericFence.windows === 'object') {
+        for (const u of Object.keys(f.numericFence.windows)) if (!reg.activeSet.has(u)) allOutOfRoster.add(u);
+      }
+      if (f.coachCanaryCohort && Array.isArray(f.coachCanaryCohort.clientIds)) {
+        for (const u of f.coachCanaryCohort.clientIds) if (!reg.activeSet.has(u)) allOutOfRoster.add(u);
+      }
+    }
+  }
+
+  const allCohortsArmed = cohortStates.length > 0 && cohortStates.every(x => x.releaseFenceEnabled && x.numericFenceEnabled && x.coachCohortEnabled);
+  const outOfRosterClients = [...allOutOfRoster].sort();
+  const exactCoverageVerified = allCohortsArmed &&
+    cohortStates.every(x => x.exactMatch === true) &&
+    staleOpenCohorts.length === 0 &&
+    outOfRosterClients.length === 0 &&
+    discovery.complete === true;
+
   const report = {
     schema: 'vdsen-fleet-audit-v1',
-    status: 'FLEET_AUDIT_SUCCESS',
+    status: discovery.complete ? 'FLEET_AUDIT_SUCCESS' : 'FLEET_AUDIT_INCOMPLETE',
     totalClients: manifest.totalClients,
     eligibleCount: manifest.eligibleCount,
     eligibleWithUpdatedAt: manifest.eligibleWithUpdatedAt,
@@ -606,7 +866,11 @@ async function auditFleet(opts) {
     excludedByReason: manifest.excludedByReason,
     totalEligiblePids: manifest.totalEligiblePids,
     cohortCount: manifest.cohortCount,
-    allCohortsArmed: cohortStates.length > 0 && cohortStates.every(x => x.releaseFenceEnabled && x.numericFenceEnabled && x.coachCohortEnabled),
+    allCohortsArmed,
+    exactCoverageVerified,
+    staleOpenCohorts,
+    outOfRosterClients,
+    discoveryErrors: discovery.discoveryErrors,
     cohorts: cohortStates,
     auditedAt: new Date().toISOString(),
   };
@@ -618,11 +882,29 @@ async function auditFleet(opts) {
 }
 
 async function stopCohorts(opts) {
-  const { projectId, googleToken, coachId, targetCohortId, reason, outFile } = opts;
-  const manifest = await loadLiveRoster(projectId, googleToken, {});
-  const targets = targetCohortId === 'ALL'
-    ? manifest.cohorts.map(x => x.cohortId)
-    : [targetCohortId];
+  const { projectId, googleToken, coachId, targetCohortId, reason, outFile, fetcher = globalThis.fetch, commercialRosterPath } = opts;
+  let targets;
+  const discoveryErrors = [];
+  const incompleteReasons = [];
+
+  if (targetCohortId === 'ALL') {
+    const discovery = await discoverOpenCohortIds(projectId, googleToken, coachId, fetcher);
+    discoveryErrors.push(...discovery.discoveryErrors);
+    const union = new Set(discovery.cohortIds);
+    try {
+      const manifest = await loadLiveRoster(projectId, googleToken, { fetcher, commercialRosterPath });
+      for (const co of manifest.cohorts) union.add(co.cohortId);
+    } catch (err) {
+      // Emergency STOP continues even if manifest is missing/updated, but records incomplete discovery if Firestore discovery also failed
+      if (!discovery.complete) {
+        incompleteReasons.push('MANIFEST_FALLBACK_UNAVAILABLE: ' + (err && err.message ? err.message : String(err)));
+      }
+    }
+    targets = [...union].sort();
+  } else {
+    targets = [targetCohortId];
+  }
+
   const nowIso = new Date().toISOString();
   const writes = [];
   for (const cid of targets) {
@@ -659,8 +941,52 @@ async function stopCohorts(opts) {
       updateMask: { fieldPaths: ['autoApplyCanary.enabled'] },
     });
   }
-  await fsCommit(projectId, googleToken, writes);
-  const out = { schema: 'vdsen-cohort-stop-v1', status: 'STOPPED_VERIFIED', stoppedCohorts: targets, stoppedAt: nowIso };
+  if (writes.length > 0) {
+    await fsCommit(projectId, googleToken, writes, fetcher);
+  }
+
+  // Mandatory post-STOP readback verification of all targeted fences
+  const pendingCohorts = [];
+  let coachCanaryDisabledVerified = targetCohortId !== 'ALL';
+  for (const cid of targets) {
+    try {
+      const vf = await fetchCohortFences(projectId, googleToken, cid, coachId, fetcher);
+      const stillOpen = !!(
+        (vf.releaseFence && vf.releaseFence.enabled === true) ||
+        (vf.numericFence && vf.numericFence.enabled === true) ||
+        (vf.coachCanaryCohort && vf.coachCanaryCohort.enabled === true)
+      );
+      if (stillOpen) pendingCohorts.push(cid);
+    } catch (err) {
+      pendingCohorts.push(cid);
+      incompleteReasons.push('POST_VERIFY_READ_FAILED_' + cid + ': ' + (err && err.message ? err.message : String(err)));
+    }
+  }
+  if (targetCohortId === 'ALL' && coachId) {
+    try {
+      const coachDoc = await fsGet(projectId, googleToken, 'coaches/' + coachId, fetcher);
+      const globalEnabled = !!(coachDoc && coachDoc.autoApplyCanary && coachDoc.autoApplyCanary.enabled === true);
+      coachCanaryDisabledVerified = !globalEnabled;
+      if (globalEnabled) incompleteReasons.push('COACH_CANARY_STILL_ENABLED');
+    } catch (err) {
+      coachCanaryDisabledVerified = false;
+      incompleteReasons.push('POST_VERIFY_COACH_READ_FAILED: ' + (err && err.message ? err.message : String(err)));
+    }
+  }
+
+  if (discoveryErrors.length > 0) {
+    incompleteReasons.push(...discoveryErrors);
+  }
+  const verifiedComplete = pendingCohorts.length === 0 && incompleteReasons.length === 0 && coachCanaryDisabledVerified;
+  const out = {
+    schema: 'vdsen-cohort-stop-v1',
+    status: verifiedComplete ? 'STOPPED_VERIFIED' : 'STOP_INCOMPLETE',
+    stoppedCohorts: targets.filter(cid => !pendingCohorts.includes(cid)),
+    pendingCohorts,
+    discoveryErrors,
+    incompleteReasons,
+    stoppedAt: nowIso,
+  };
   if (outFile) {
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
     fs.writeFileSync(outFile, JSON.stringify(out, null, 2) + '\n');
@@ -681,6 +1007,7 @@ async function main() {
   if (cmd === 'audit-fleet') {
     const rep = await auditFleet({ projectId, googleToken, coachId: env.INPUT_COACH, outFile: path.join(reportDir, 'fleet-audit.json') });
     console.log(JSON.stringify(rep, null, 2));
+    if (rep.status !== 'FLEET_AUDIT_SUCCESS') process.exitCode = 1;
     return;
   }
   if (cmd === 'prepare-fleet-runtime') {
@@ -728,6 +1055,7 @@ async function main() {
       outFile: path.join(reportDir, 'cohort-stop.json'),
     });
     console.log(JSON.stringify(rep, null, 2));
+    if (rep.status !== 'STOPPED_VERIFIED') process.exitCode = 1;
     return;
   }
   throw new Error('UNKNOWN_COHORT_CMD: ' + cmd);
@@ -742,6 +1070,15 @@ if (require.main === module) {
 
 module.exports = {
   buildCohortsFromRoster,
+  loadCommercialRoster,
+  loadLiveRoster,
+  discoverOpenCohortIds,
+  prepareFleetRuntime,
+  preflightCohort,
+  armCohort,
+  auditFleet,
+  stopCohorts,
   extractPlanPids,
+  toFsFields,
   MAX_COHORT_CLIENTS,
 };
