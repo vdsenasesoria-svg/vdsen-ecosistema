@@ -56,7 +56,8 @@ const SUITES = [
   { name: 'T817 full cycle closure', file: path.join('tests', 't817-full-cycle-emulator.cjs') },
   { name: 'T842 autonomous shadow E2E', file: path.join('tests', 't842-autonomous-e2e-emulator.cjs') },
   { name: 'T848 window fences recovery', file: path.join('tests', 't848-window-fences-emulator.cjs') },
-  { name: 'T864 controlled numeric apply E2E', file: path.join('tests', 't864-numeric-apply-emulator.cjs') }
+  { name: 'T864 controlled numeric apply E2E', file: path.join('tests', 't864-numeric-apply-emulator.cjs') },
+  { name: 'T878 new plan engine integration', file: path.join('tests', 't878-new-plan-engine-emulator.cjs') }
 ].filter(x => fs.existsSync(path.join(__dirname, '..', x.file)));
 const ONLY = process.env.VDSEN_EMU_ONLY;   // e.g. "rules" to run a single suite (used for RED demonstrations)
 const isWin = process.platform === 'win32';

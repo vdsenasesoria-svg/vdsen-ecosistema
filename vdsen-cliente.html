@@ -12610,6 +12610,7 @@ function _seriesAuthorityHtml(view, si) {
   else if (reasons.some(function(x) { return /INSUFFICIENT|EVIDENCE_COUNT|DIRECTION_NOT_CONFIRMED/.test(x); })) why = 'Faltan exposiciones comparables o una dirección confirmada.';
   else if (reasons.some(function(x) { return /RIR.*MISSING/.test(x); })) why = 'Falta RIR observado válido en la bitácora.';
   else if (reasons.some(function(x) { return /COACH|PLAN_CHANGED|TARGET_INVALIDATED/.test(x); })) why = 'La decisión del Coach o la revisión del plan tiene prioridad.';
+  else if (reasons.some(function(x) { return /OUT_OF_CANARY_SCOPE|NUMERIC_PILOT|AUTHORIZATION|PLAN_MISMATCH|PIDS_HASH/.test(x); })) why = 'Autorización del motor pendiente o bloqueada para este plan.';
   else if (state === 'PENDING') why = 'Tu objetivo sigue igual hasta que el ajuste quede confirmado.';
   else if (state === 'BLOCKED') why = 'Con tus registros actuales no se puede confirmar un ajuste.';
   var lines = [];

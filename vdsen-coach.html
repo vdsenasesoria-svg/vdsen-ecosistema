@@ -20559,6 +20559,16 @@ El esfuerzo no es negociable.
   }
   function _renderShadowAutoFeed(summary, dryRuns) {
     var items = Array.isArray(summary.items) ? summary.items : [];
+    var counts = { applied: 0, consumed: 0, pending: 0, review: 0, stale: 0 };
+    items.forEach(function(item) {
+      if (!item) return;
+      if (item.state === 'APPLIED') counts.applied++;
+      else if (item.state === 'CONSUMED') counts.consumed++;
+      else if (item.state === 'PENDING') {
+        counts.pending++;
+        if (item.magnitude && item.magnitude.coachReviewRequired) counts.review++;
+      } else if (item.state === 'STALE') counts.stale++;
+    });
     var rows = items.map(function(item) {
       if (!/^v1_[a-f0-9]{16}$/.test(item.key || '') || !Number.isInteger(item.revision)) return '';
       var label = _LIFECYCLE_LABEL[item.state] || 'RECHAZADA';
@@ -20579,9 +20589,13 @@ El esfuerzo no es negociable.
         + '<button type="button" data-shadow-action="OPEN" data-shadow-key="' + item.key + '">Abrir ejercicio</button> '
         + button + '</li>';
     }).join('');
+    var summaryLine = '<div data-coach-engine-summary="true" style="font-size:11px;color:#9aa;margin-top:4px">'
+      + 'Aplicados: ' + counts.applied + ' · Consumidos: ' + counts.consumed + ' · Pendientes: ' + counts.pending
+      + ' · Revisión Coach: ' + counts.review + ' · Obsoletos/Cambio de plan: ' + counts.stale + '</div>';
     return '<section class="card p-3 mb-3" aria-label="Auto apply en observación">'
       + '<div class="text-xs uppercase font-semibold tracking-wide">AUTO ' + (Number.isInteger(summary.autoCount) ? summary.autoCount : 0) + '</div>'
       + '<p class="text-xs text-[#888]">Modo observación · prescripción original intacta <button type="button" class="btn-secondary text-xs" onclick="openEquipmentReadinessQueue()">Cola de equipos</button></p>'
+      + summaryLine
       + (rows ? '<ul style="list-style:none;margin:8px 0 0;padding:0">' + rows + '</ul>'
         : '<p class="text-xs text-[#888]">Sin decisiones registradas.</p>') + '</section>';
   }
@@ -23829,7 +23843,9 @@ El esfuerzo no es negociable.
       // T591-C: backup + plan + activePlanId + historical retirement in ONE transaction
       await _assignPlanTxn({ kind: 'template-assign', sourceKey: JSON.stringify([template.name || '', template.weeks || 6, template.days]), clientId, expectedPrevPlanId: _prevTplActive2, buildPlanDoc: function(_planId, _nowIso) {
         return {
-          days: _stampPrescriptionIds(days), weeks: template.weeks || 6, daysPerWeek: days.length,
+          days: _restampPrescriptionIds(days), weeks: template.weeks || 6, daysPerWeek: days.length,
+          rirByWeek: rirSchemeForWeeks(template.weeks || 6),
+          rirByWeekSource: 'coach-default',
           coachId: currentCoach.uid, clientId, status: 'active',
           generatedBy: 'template:'+template.name, createdAt: _nowIso,
           updatedAt: _nowIso  // T119-H (QA-R3-02): client listener requires updatedAt
