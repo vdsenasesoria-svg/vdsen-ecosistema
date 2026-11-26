@@ -2334,6 +2334,180 @@ test('T-N09: normalizer: plan en wrapper {plan:{...}} → desenvuelto y normaliz
   assert(r.plan.days.length === 4, '4 días');
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// T589 — Contrato de Cardio sin series ficticias (normalizer + coach + cliente)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test('T-N10 (T589): vdsen-plan-v2 mixto fuerza + cardio sin sets → ok=true', function() {
+  var input = {
+    schema: 'vdsen-plan-v2',
+    entrenamiento: {
+      weeks: 6,
+      daysPerWeek: 1,
+      days: [{
+        dayIndex: 0,
+        label: 'Upper + Cardio Z2',
+        exercises: [
+          {
+            exerciseName: 'Press de banca con barra',
+            sets: [
+              { setIndex: 0, repsTarget: 8, rirTarget: 2, load: 0, restSeconds: 150 },
+              { setIndex: 1, repsTarget: 8, rirTarget: 2, load: 0, restSeconds: 150 }
+            ]
+          },
+          {
+            exerciseName: 'Caminadora Zona 2',
+            exerciseType: 'cardio',
+            modo: 'z2',
+            duracionMin: 25
+          }
+        ]
+      }]
+    }
+  };
+  var norm = normalizeVdsenPlan(input);
+  assert(norm.ok === true, 'normalize ok: ' + (norm.message || ''));
+  var val = validateVdsenPlan(norm.plan);
+  assert(val.ok === true, 'validate mixed strength+cardio ok: ' + (val.message || ''));
+  assert(norm.plan.days[0].exercises[1].exerciseType === 'cardio', 'exerciseType preserved');
+  assert(norm.plan.days[0].exercises[1].duracionMin === 25, 'duracionMin preserved');
+});
+
+test('T-N11 (T589): día solo cardio (sets:[] y tipo:"cardio" con distanciaKm) → ok=true', function() {
+  var plan = {
+    days: [{
+      dayIndex: 0,
+      label: 'Cardio Activo',
+      exercises: [
+        { exerciseName: 'Bici estática', exerciseType: 'cardio', duracionMin: 20, sets: [] },
+        { exerciseName: 'Trote continuo', tipo: 'cardio', distanciaKm: 5 }
+      ]
+    }]
+  };
+  var val = validateVdsenPlan(plan);
+  assert(val.ok === true, 'cardio-only day ok: ' + (val.message || ''));
+});
+
+test('T-N12 (T589): cardio inválido (duracionMin<=0, string o sin objetivo) → INVALID_CARDIO', function() {
+  var bad1 = { days: [{ dayIndex: 0, label: 'D1', exercises: [{ exerciseName: 'Bici', exerciseType: 'cardio', duracionMin: 0 }] }] };
+  var r1 = validateVdsenPlan(bad1);
+  assert(r1.ok === false && r1.error === N_ERR.INVALID_CARDIO, 'duracionMin=0 → INVALID_CARDIO, got: ' + r1.error);
+
+  var bad2 = { days: [{ dayIndex: 0, label: 'D1', exercises: [{ exerciseName: 'Bici', exerciseType: 'cardio', duracionMin: '20' }] }] };
+  var r2 = validateVdsenPlan(bad2);
+  assert(r2.ok === false && r2.error === N_ERR.INVALID_CARDIO, 'duracionMin string → INVALID_CARDIO, got: ' + r2.error);
+
+  var bad3 = { days: [{ dayIndex: 0, label: 'D1', exercises: [{ exerciseName: 'Bici', exerciseType: 'cardio' }] }] };
+  var r3 = validateVdsenPlan(bad3);
+  assert(r3.ok === false && r3.error === N_ERR.INVALID_CARDIO, 'cardio sin objetivo → INVALID_CARDIO, got: ' + r3.error);
+});
+
+test('T-N13 (T589): fuerza sin sets sigue fallando con EXERCISE_WITHOUT_SETS', function() {
+  var plan = { days: [{ dayIndex: 0, label: 'D1', exercises: [{ exerciseName: 'Sentadilla', exerciseType: 'fuerza', sets: [] }] }] };
+  var r = validateVdsenPlan(plan);
+  assert(r.ok === false && r.error === N_ERR.EXERCISE_WITHOUT_SETS, 'fuerza sin sets → EXERCISE_WITHOUT_SETS, got: ' + r.error);
+});
+
+test('T-N14 (T589): vdsen-cliente.html adapter + _getExType preserva cardio y despacha a cardio (no fuerza)', function() {
+  var fs = require('fs');
+  var path = require('path');
+  var vm = require('vm');
+  var clientHtml = fs.readFileSync(path.join(__dirname, '..', 'vdsen-cliente.html'), 'utf8');
+
+  var adapterMatch = clientHtml.match(/const sesiones = \(planData\.days \|\| \[\]\)\.map\(function\(d, i\) \{[\s\S]*?return \{ dia: d\.label[\s\S]*?\}\);/);
+  assert(adapterMatch, 'adapter block found in vdsen-cliente.html');
+  var exTypeMatch = clientHtml.match(/function _getExType\(ej\) \{[\s\S]*?\n\}/);
+  assert(exTypeMatch, '_getExType found in vdsen-cliente.html');
+
+  var ctx = {
+    planData: {
+      days: [{
+        dayIndex: 0,
+        label: 'Upper + Cardio',
+        exercises: [
+          { exerciseName: 'Press inclinado', sets: [{ setIndex: 0, repsTarget: 10, rirTarget: 2, load: 0, restSeconds: 120 }] },
+          { exerciseName: 'Escaladora Z2', exerciseType: 'cardio', modo: 'z2', duracionMin: 25, fcZonaMin: 130, fcZonaMax: 145 }
+        ]
+      }]
+    },
+    _setsRepsLabel: function(sets) { return (sets && sets[0]) ? String(sets[0].repsTarget) : ''; },
+    isY3TExercise: function() { return false; }
+  };
+  vm.createContext(ctx);
+  vm.runInContext(adapterMatch[0] + '\n' + exTypeMatch[0] + '\nthis._outSesiones = sesiones; this._outType0 = _getExType(sesiones[0].exercises[0]); this._outType1 = _getExType(sesiones[0].exercises[1]);', ctx);
+
+  var strengthEx = ctx._outSesiones[0].exercises[0];
+  var cardioEx   = ctx._outSesiones[0].exercises[1];
+  assert(ctx._outType0 === 'fuerza', 'strength dispatches to fuerza');
+  assert(ctx._outType1 === 'cardio', 'cardio dispatches to cardio, got: ' + ctx._outType1);
+  assert(cardioEx.exerciseType === 'cardio', 'adapter preserved exerciseType');
+  assert(cardioEx.duracionMin === 25, 'adapter preserved duracionMin=25, got: ' + cardioEx.duracionMin);
+  assert(cardioEx.modo === 'z2', 'adapter preserved modo=z2');
+  assert(cardioEx.fcZonaMin === 130 && cardioEx.fcZonaMax === 145, 'adapter preserved HR zone');
+  assert(cardioEx.numSeries === 0 && cardioEx.sets.length === 0, 'no fake sets fabricated for cardio');
+  assert(cardioEx.setsReps === '25 min', 'setsReps shows 25 min, got: ' + cardioEx.setsReps);
+  assert(ctx._outSesiones[0].contenido.indexOf('CARDIO · 25 min') !== -1, 'contenido renders CARDIO · 25 min');
+  assert(strengthEx.numSeries === 1 && strengthEx.sets.length === 1, 'strength unchanged');
+});
+
+test('T-N15 (T589): vdsen-coach.html _normalizeTrainingPlan + _guardPlanIntegrity + _runPreWritePlanGate + _buildPlanQualityAudit aceptan cardio sin sets', function() {
+  var fs = require('fs');
+  var path = require('path');
+  var vm = require('vm');
+  var coachHtml = fs.readFileSync(path.join(__dirname, '..', 'vdsen-coach.html'), 'utf8');
+
+  var normFn  = coachHtml.match(/  function _normalizeTrainingPlan\(obj\) \{[\s\S]*?\n  \}/);
+  var guardFn = coachHtml.match(/  function _guardPlanIntegrity\(planObj\) \{[\s\S]*?\n  \}/);
+  var gateFn  = coachHtml.match(/  function _runPreWritePlanGate\(planObj, context\) \{[\s\S]*?\n  \}/);
+  var auditFn = coachHtml.match(/  function _buildPlanQualityAudit\(training, nutrition, supplements\) \{[\s\S]*?\n  \}/);
+  assert(normFn && guardFn && gateFn && auditFn, 'all 4 coach functions found');
+
+  var ctx = { window: {} };
+  vm.createContext(ctx);
+  vm.runInContext(normFn[0] + '\n' + guardFn[0] + '\n' + gateFn[0] + '\n' + auditFn[0] + '\nthis._norm=_normalizeTrainingPlan; this._guard=_guardPlanIntegrity; this._gate=_runPreWritePlanGate; this._audit=_buildPlanQualityAudit;', ctx);
+
+  var rawMixed = {
+    weeks: 6,
+    daysPerWeek: 1,
+    days: [{
+      dayIndex: 0,
+      label: 'Pull + Cardio',
+      exercises: [
+        { exerciseName: 'Jalón al pecho', sets: [{ setIndex: 0, repsTarget: 10, rirTarget: 2, load: 0, restSeconds: 120 }] },
+        { exerciseName: 'Caminadora Inclinada', exerciseType: 'cardio', modo: 'z2', duracionMin: 30 }
+      ]
+    }]
+  };
+
+  var normalized = ctx._norm(rawMixed);
+  assert(normalized && normalized.days[0].exercises.length === 2, 'coach _normalizeTrainingPlan preserved cardio exercise');
+  var cEx = normalized.days[0].exercises[1];
+  assert(cEx.exerciseType === 'cardio' && cEx.duracionMin === 30 && cEx.sets.length === 0, 'coach preserved cardio metadata without fake sets');
+
+  var g = ctx._guard(normalized);
+  assert(g.valid === true && g.errors.length === 0, '_guardPlanIntegrity passed for mixed plan: ' + JSON.stringify(g.errors));
+
+  var gate = ctx._gate(normalized, {});
+  assert(gate.status === 'PASS' && gate.blockers.length === 0, '_runPreWritePlanGate PASS: ' + JSON.stringify(gate));
+
+  var aud = ctx._audit(normalized, null, null);
+  assert(aud.status === 'OK' && aud.stats.cardio === 1 && aud.issues.length === 0, '_buildPlanQualityAudit OK: ' + JSON.stringify(aud));
+
+  // Cardio-only plan should also pass guard & quality audit (not fail "Cero series en total")
+  var cardioOnly = ctx._norm({
+    weeks: 4,
+    daysPerWeek: 1,
+    days: [{ dayIndex: 0, label: 'Cardio Z2', exercises: [{ exerciseName: 'Bici Z2', exerciseType: 'cardio', duracionMin: 40 }] }]
+  });
+  assert(cardioOnly && cardioOnly.days[0].exercises.length === 1, 'cardio-only normalized');
+  assert(ctx._guard(cardioOnly).valid === true, 'cardio-only _guardPlanIntegrity valid');
+  assert(ctx._audit(cardioOnly, null, null).status === 'OK', 'cardio-only _buildPlanQualityAudit OK');
+
+  // Strength without sets MUST still be BLOCKED
+  var badStrength = { days: [{ dayIndex: 0, label: 'D1', exercises: [{ exerciseName: 'Press banca', sets: [] }] }] };
+  assert(ctx._gate(badStrength, {}).status === 'BLOCK', 'strength without sets still BLOCK');
+});
+
 // ─── Runner ───────────────────────────────────────────────────────────────────
 
 var passed = 0;
