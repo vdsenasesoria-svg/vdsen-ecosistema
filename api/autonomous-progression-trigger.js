@@ -2,6 +2,7 @@
 
 var executor = require('./_autonomousProgression');
 var sweepLib = require('./_autonomousProgressionSweep');
+var planSyncLib = require('./_planActivationSync');
 var randomUUID = require('node:crypto').randomUUID;
 var PILOT_UID_HASH = 'fb6c056b17d798c07d06878a857c359aa70828ea44debb1bcab5eb644701fe12';
 var GH_OIDC_ISSUER = 'https://token.actions.githubusercontent.com';
@@ -139,6 +140,17 @@ function makeHandler(deps) {
     var trace = { requestId: randomUUID(), authentication: 'NOT_CHECKED' };
     var send = function(code, body) { return reply(res, code, body, trace, deps); };
     if (req.method !== 'POST') return send(405, { error: 'METHOD_NOT_ALLOWED' });
+    if ((req.query && req.query.action === 'plan-activation-sync') || (req.body && req.body.action === 'plan-activation-sync')) {
+      return planSyncLib.makeHandler({
+        db: deps.db,
+        verifyIdToken: deps.verifyIdToken,
+        commercialRoster: deps.commercialRoster,
+        autoRenewalEnabled: deps.autoRenewalEnabled,
+        runtimeSha: deps.runtimeSha,
+        clock: deps.clock,
+        syncCohortRuntimeEnv: deps.syncCohortRuntimeEnv,
+      })(req, res);
+    }
     var header = req.headers && req.headers.authorization;
     var token = typeof header === 'string' && /^Bearer\s+(\S+)$/.exec(header.trim());
     if (!token) { trace.authentication = 'MISSING'; return send(401, { error: 'AUTH_MISSING' }); }

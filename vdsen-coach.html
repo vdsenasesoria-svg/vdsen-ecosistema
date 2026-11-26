@@ -7384,10 +7384,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         return noTok;
       }
       var idToken = await user.getIdToken();
-      var resp = await fetch('/api/plan-activation-sync', {
+      var resp = await fetch('/api/autonomous-progression-trigger?action=plan-activation-sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
-        body: JSON.stringify({ clientId: clientId, planId: planId })
+        body: JSON.stringify({ action: 'plan-activation-sync', clientId: clientId, planId: planId })
       });
       var data = await resp.json().catch(function() { return null; });
       if (!resp.ok || !data || typeof data !== 'object') {

@@ -20,7 +20,7 @@ const vm = require('node:vm');
 const ROOT = path.join(__dirname, '..');
 const C = require(path.join(ROOT, 'api/_numericPilotContract'));
 const trigger = require(path.join(ROOT, 'api/autonomous-progression-trigger.js'));
-const planSync = require(path.join(ROOT, 'api/plan-activation-sync.js'));
+const planSync = require(path.join(ROOT, 'api/_planActivationSync.js'));
 const effective = require(path.join(ROOT, 'assets/progression-effective-prescription.js'));
 
 const COACH_HTML = fs.readFileSync(path.join(ROOT, 'vdsen-coach.html'), 'utf8');

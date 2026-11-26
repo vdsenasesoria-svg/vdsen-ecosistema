@@ -556,10 +556,10 @@ test('T878-JSON-03 & T878-JSON-12 — All activation routes auto-trigger /api/pl
   assert.equal(sandbox._renderPlanEngineSyncStatus({ engineState: 'BLOCKED_INCOMPATIBLE' }).label, 'Bloqueado por incompatibilidad o seguridad');
   assert.equal(sandbox._renderPlanEngineSyncStatus({ engineState: 'COACH_INTERVENTION_REQUIRED' }).label, 'Requiere intervención del Coach');
 
-  // Automatic call sends Coach Bearer token to /api/plan-activation-sync and updates UI
+  // Automatic call sends Coach Bearer token to /api/autonomous-progression-trigger?action=plan-activation-sync and updates UI
   const res = await sandbox._syncPlanEngineAfterActivation('client_01', 'plan_new_01');
   assert.equal(fetchCalls.length, 1);
-  assert.equal(fetchCalls[0].url, '/api/plan-activation-sync');
+  assert.equal(fetchCalls[0].url, '/api/autonomous-progression-trigger?action=plan-activation-sync');
   assert.equal(fetchCalls[0].init.headers.Authorization, 'Bearer coach-jwt-token');
   assert.equal(res.status, 'RENEWED_VERIFIED');
   assert.match(statusHtml, /Motor integrado y autorizado/);
