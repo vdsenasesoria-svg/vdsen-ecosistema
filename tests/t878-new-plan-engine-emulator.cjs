@@ -872,17 +872,33 @@ test('T878-JSON-05..12 E2E Emulator: Real /api/plan-activation-sync automatic re
   const c1StillArmed = (await adminDb.doc('releaseControl/numericPilot_cohort_cohort-01').get()).data();
   assert.equal(c1StillArmed.enabled, true, 'Missing shard syncer must fail closed BEFORE touching cohort-01');
 
-  // T878-JSON-05 & 12: Automatic server-side renewal on cohort-01 ONLY (with runtime shard update)
+  // T878-A01: Upsert-only shard sync (servedDeploymentVerified !== true) MUST fail closed (500 SERVED_DEPLOYMENT_NOT_VERIFIED)
+  const syncHandlerUnserved = planSync.makeHandler({
+    db: adminDb, verifyIdToken: async () => ({ uid: COACH_ID }),
+    commercialRoster: roster, autoRenewalEnabled: true, runtimeSha: SHA,
+    clock: () => new Date(nowMs + 1800).toISOString(),
+    syncCohortRuntimeEnv: async () => ({ ok: true, verified: true, servedDeploymentVerified: false }),
+  });
+  const rUnserved = await invokeTrigger(syncHandlerUnserved, { clientId: UID_C1, planId: PLAN_C1_JSON });
+  assert.equal(rUnserved.statusCode, 500);
+  assert.equal(rUnserved.payload.status, 'RENEWAL_FAILED');
+  assert.equal(rUnserved.payload.errorCode, 'SERVED_DEPLOYMENT_NOT_VERIFIED');
+  assert.equal(rUnserved.payload.servedDeploymentVerified, false);
+  assert.equal(rUnserved.payload.numericApplyAuthorized, false);
+
+  // T878-JSON-05, A02 & 12: Automatic server-side renewal on cohort-01 ONLY (with served deployment verified!)
   let syncedCohortShard = null;
   const syncHandlerAuto = planSync.makeHandler({
     db: adminDb, verifyIdToken: async () => ({ uid: COACH_ID }),
     commercialRoster: roster, autoRenewalEnabled: true, runtimeSha: SHA,
     clock: () => new Date(nowMs + 2000).toISOString(),
-    syncCohortRuntimeEnv: async (payload) => { syncedCohortShard = payload; return { ok: true }; },
+    syncCohortRuntimeEnv: async (payload) => { syncedCohortShard = payload; return { ok: true, verified: true, servedDeploymentVerified: true, deploymentId: 'dpl_emu_verified_01' }; },
   });
   const rRenew = await invokeTrigger(syncHandlerAuto, { clientId: UID_C1, planId: PLAN_C1_JSON });
   assert.equal(rRenew.statusCode, 200, JSON.stringify(rRenew.payload));
   assert.equal(rRenew.payload.status, 'RENEWED_VERIFIED');
+  assert.equal(rRenew.payload.servedDeploymentVerified, true);
+  assert.equal(rRenew.payload.deploymentId, 'dpl_emu_verified_01');
   assert.equal(rRenew.payload.engineState, 'MOTOR_INTEGRATED_AUTHORIZED');
   assert.equal(rRenew.payload.numericApplyAuthorized, true);
   assert.equal(rRenew.payload.stoppedVerified, true);
@@ -967,9 +983,18 @@ test('T878-JSON-05..12 E2E Emulator: Real /api/plan-activation-sync automatic re
     assert.match(renderClient(viewJson, 0), /AUTOAJUSTE APLICADO/);
     assert.match(renderCoach(mesoJson.progressionApplicationSummary || { autoCount: 0, items: [] }, {}), /Aplicados: [1-9]/);
 
-    // T878-JSON-08: Prior plan logs remain 100% intact
+    // T878-JSON-08 & Section 13/14: Quantitative before/after SHA-256 integrity for Client A prior history & untouched Client B
+    const rec = require(path.join(ROOT, 'scripts/pilot/logbook-integrity-recovery.cjs'));
     const oldMeso = (await adminDb.doc(`logs/${UID_C1}/mesos/${PLAN_C1_OLD}`).get()).data();
+    const oldStats = rec.extractEntryStats(oldMeso);
+    assert.equal(oldStats.logCount, 1);
     assert.equal(oldMeso.entries.log_1_0_0_s0.carga, 75);
+    assert.equal(oldStats.hash, rec.stableHash({ log_1_0_0_s0: { done: true, carga: 75, reps: 8, unit: 'KG', rir: 3, rir_real: 3, ts: nowMs - 20 * 3600000 } }));
+
+    // Unaffected Client B (UID_C2 in cohort-02) fence & history untouched (0 cross-client mutation)
+    const c2FenceAfter = (await adminDb.doc('releaseControl/numericPilot_cohort_cohort-02').get()).data();
+    assert.equal(c2FenceAfter.operationId, 'op-init-c2');
+    assert.equal(c2FenceAfter.windows[UID_C2].planId, PLAN_C2);
 
     // T878-JSON-10b: Fail-closed when runtime shard sync fails -> cohort stays STOPPED (enabled: false)
     const PLAN_C1_V3 = 'plan-c1-json-v3';

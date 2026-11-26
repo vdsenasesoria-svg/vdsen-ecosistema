@@ -103,8 +103,47 @@ function shardKeysForCohort(cohortId, windowCount) {
   return keys;
 }
 
-// Server-only Vercel cohort shard synchronizer. Returns null when scoped credentials are absent
-// (forcing fail-closed RENEWAL_BLOCKED_NO_SHARD_SYNC before any Firestore fence is touched).
+// Server-only Vercel cohort shard synchronizer WITH mandatory served-deployment verification
+// and automatic project-env rollback on failure (prevents silent poisoning of future deployments).
+// Returns null when scoped credentials are absent (fail-closed BEFORE any Firestore fence is touched).
+function computeServedCohortDigest(windows) {
+  const canonical = (Array.isArray(windows) ? windows : [])
+    .map(w => ({
+      uidHash: crypto.createHash('sha256').update(String(w.uid || '')).digest('hex'),
+      planId: String(w.planId || ''),
+      pidsHash: String(w.pidsHash || ''),
+      pidCount: Number(w.pidCount || 0),
+      operationId: String(w.operationId || ''),
+      runtimeSha: String(w.runtimeSha || ''),
+      expiresAt: String(w.expiresAt || ''),
+    }))
+    .sort((a, b) => a.uidHash.localeCompare(b.uidHash));
+  return crypto.createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
+}
+
+function buildServedCohortProbePayload(env, cohortId) {
+  env = env || process.env;
+  const matched = [];
+  for (let s = 1; s <= 20; s++) {
+    const raw = env['VDSEN_NUMERIC_COHORT_' + s];
+    if (!raw) continue;
+    try {
+      const parsed = JSON.parse(raw);
+      const arr = Array.isArray(parsed) ? parsed : Object.values(parsed || {});
+      for (const item of arr) {
+        if (item && item.cohortId === cohortId) matched.push(item);
+      }
+    } catch (_) { /* ignore malformed shard */ }
+  }
+  return {
+    schema: 'vdsen-served-cohort-probe-v1',
+    cohortId,
+    runtimeSha: env.VDSEN_NUMERIC_PILOT_RUNTIME_SHA || env.VERCEL_GIT_COMMIT_SHA || null,
+    windowCount: matched.length,
+    windowsDigest: computeServedCohortDigest(matched),
+  };
+}
+
 function createVercelCohortShardSyncer(env, fetcher) {
   env = env || process.env;
   const token = typeof env.VERCEL_TOKEN === 'string' ? env.VERCEL_TOKEN.trim() : '';
@@ -115,67 +154,133 @@ function createVercelCohortShardSyncer(env, fetcher) {
   if (typeof doFetch !== 'function') return null;
 
   return async function syncCohortRuntimeEnv(payload) {
+    const qs = 'teamId=' + encodeURIComponent(orgId);
+    const envBaseUrl = 'https://api.vercel.com/v10/projects/' + encodeURIComponent(projectId) + '/env';
+    const prevSnapshot = [];
+
+    const rollbackShards = async () => {
+      for (const prev of prevSnapshot) {
+        try {
+          if (prev.hadPrevious) {
+            await doFetch(envBaseUrl + '?upsert=true&' + qs, {
+              method: 'POST',
+              headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ key: prev.key, value: prev.value, type: 'plain', target: ['production'] }),
+              signal: AbortSignal.timeout(10000),
+            });
+          } else if (prev.createdId) {
+            await doFetch(envBaseUrl + '/' + encodeURIComponent(prev.createdId) + '?' + qs, {
+              method: 'DELETE',
+              headers: { Authorization: 'Bearer ' + token },
+              signal: AbortSignal.timeout(10000),
+            });
+          }
+        } catch (_) { /* best-effort rollback */ }
+      }
+    };
+
     try {
       const windows = Array.isArray(payload && payload.windows) ? payload.windows : [];
       if (!windows.length || windows.length > MAX_COHORT_CLIENTS) {
-        return { ok: false, verified: false, errorCode: 'INVALID_SHARD_WINDOWS' };
+        return { ok: false, verified: false, servedDeploymentVerified: false, errorCode: 'INVALID_SHARD_WINDOWS' };
       }
       const shardKeys = shardKeysForCohort(payload.cohortId, windows.length);
-      if (!shardKeys) return { ok: false, verified: false, errorCode: 'UNSUPPORTED_COHORT_SHARD_ID' };
+      if (!shardKeys) return { ok: false, verified: false, servedDeploymentVerified: false, errorCode: 'UNSUPPORTED_COHORT_SHARD_ID' };
 
       const shards = [];
       for (let i = 0; i < shardKeys.length; i++) {
         const slice = windows.slice(i * ENV_SHARD_MAX_CLIENTS, (i + 1) * ENV_SHARD_MAX_CLIENTS);
         const serialized = JSON.stringify(slice);
         if (Buffer.byteLength(serialized, 'utf8') > ENV_SHARD_MAX_BYTES) {
-          return { ok: false, verified: false, errorCode: 'SHARD_PAYLOAD_EXCEEDS_LIMIT' };
+          return { ok: false, verified: false, servedDeploymentVerified: false, errorCode: 'SHARD_PAYLOAD_EXCEEDS_LIMIT' };
         }
         shards.push({ key: shardKeys[i], value: serialized, expectedSlice: slice });
       }
 
-      const qs = 'upsert=true&teamId=' + encodeURIComponent(orgId);
-      const url = 'https://api.vercel.com/v10/projects/' + encodeURIComponent(projectId) + '/env?' + qs;
-      for (const sh of shards) {
-        const resp = await doFetch(url, {
-          method: 'POST',
-          headers: {
-            Authorization: 'Bearer ' + token,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            key: sh.key,
-            value: sh.value,
-            type: 'plain',
-            target: ['production'],
-          }),
-          signal: AbortSignal.timeout(10000),
-        });
-        if (!resp || !resp.ok) {
-          return { ok: false, verified: false, errorCode: 'VERCEL_ENV_UPSERT_FAILED' };
-        }
-      }
-
-      // Post-upsert verification: read back production env vars and confirm exact shard payloads
-      const verifyUrl = 'https://api.vercel.com/v10/projects/' + encodeURIComponent(projectId) + '/env?teamId=' + encodeURIComponent(orgId);
-      const vResp = await doFetch(verifyUrl, {
+      // Step 1: Capture previous project env values for rollback safety
+      const preResp = await doFetch(envBaseUrl + '?' + qs, {
         method: 'GET',
         headers: { Authorization: 'Bearer ' + token },
         signal: AbortSignal.timeout(10000),
       });
-      if (!vResp || !vResp.ok) {
-        return { ok: false, verified: false, errorCode: 'VERCEL_ENV_VERIFY_READ_FAILED' };
-      }
-      const vData = await vResp.json().catch(() => null);
-      const envs = Array.isArray(vData && vData.envs) ? vData.envs : [];
+      const preData = preResp && preResp.ok ? await preResp.json().catch(() => null) : null;
+      const preEnvs = Array.isArray(preData && preData.envs) ? preData.envs : [];
+
+      // Step 2: Upsert ONLY the affected cohort shard(s)
       for (const sh of shards) {
-        const found = envs.find(e => e && e.key === sh.key && Array.isArray(e.target) && e.target.includes('production'));
-        if (!found || found.value !== sh.value) {
-          return { ok: false, verified: false, errorCode: 'VERCEL_ENV_VERIFY_MISMATCH' };
+        const old = preEnvs.find(e => e && e.key === sh.key && Array.isArray(e.target) && e.target.includes('production'));
+        const snapEntry = { key: sh.key, hadPrevious: !!old, value: old ? old.value : null, createdId: null };
+        const resp = await doFetch(envBaseUrl + '?upsert=true&' + qs, {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: sh.key, value: sh.value, type: 'plain', target: ['production'] }),
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!resp || !resp.ok) {
+          await rollbackShards();
+          return { ok: false, verified: false, servedDeploymentVerified: false, rolledBack: true, errorCode: 'VERCEL_ENV_UPSERT_FAILED' };
         }
+        const created = await resp.json().catch(() => null);
+        if (created && created.created && created.created.id) snapEntry.createdId = created.created.id;
+        prevSnapshot.push(snapEntry);
       }
-      return { ok: true, verified: true, shardKeys };
+
+      // Step 3: Trigger a new deployment pinned to runtimeSha so the updated shard enters the served runtime
+      const deployResp = await doFetch('https://api.vercel.com/v13/deployments?' + qs, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'vdsen-ecosistema',
+          project: projectId,
+          target: 'production',
+          gitSource: { type: 'github', ref: 'codex/client-app-next', sha: payload.runtimeSha },
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!deployResp || !deployResp.ok) {
+        await rollbackShards();
+        return { ok: false, verified: false, servedDeploymentVerified: false, rolledBack: true, errorCode: 'VERCEL_DEPLOYMENT_CREATE_FAILED' };
+      }
+      const dep = await deployResp.json().catch(() => null);
+      const deploymentId = dep && (dep.id || dep.uid);
+      const deploymentUrl = dep && dep.url ? ('https://' + String(dep.url).replace(/^https?:\/\//, '')) : null;
+      if (!deploymentId || !deploymentUrl || dep.readyState === 'ERROR' || dep.readyState === 'CANCELED') {
+        await rollbackShards();
+        return { ok: false, verified: false, servedDeploymentVerified: false, rolledBack: true, errorCode: 'VERCEL_DEPLOYMENT_NOT_READY' };
+      }
+
+      // Step 4: Verify the ACTUALLY SERVED deployment reports the exact expected windowsDigest
+      const expectedDigest = computeServedCohortDigest(windows);
+      const probeUrl = deploymentUrl + '/api/autonomous-progression-trigger?check=cohort-shard&cohortId=' + encodeURIComponent(payload.cohortId);
+      const probeHeaders = {};
+      if (payload.authHeader) probeHeaders.Authorization = payload.authHeader;
+      const probeResp = await doFetch(probeUrl, {
+        method: 'GET',
+        headers: probeHeaders,
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!probeResp || !probeResp.ok) {
+        await rollbackShards();
+        return { ok: false, verified: false, servedDeploymentVerified: false, rolledBack: true, errorCode: 'SERVED_DEPLOYMENT_PROBE_FAILED' };
+      }
+      const probeData = await probeResp.json().catch(() => null);
+      const exactServed = !!(
+        probeData &&
+        probeData.schema === 'vdsen-served-cohort-probe-v1' &&
+        probeData.cohortId === payload.cohortId &&
+        probeData.runtimeSha === payload.runtimeSha &&
+        probeData.windowCount === windows.length &&
+        probeData.windowsDigest === expectedDigest
+      );
+      if (!exactServed) {
+        await rollbackShards();
+        return { ok: false, verified: false, servedDeploymentVerified: false, rolledBack: true, errorCode: 'SERVED_DEPLOYMENT_SHARD_MISMATCH' };
+      }
+
+      return { ok: true, verified: true, servedDeploymentVerified: true, deploymentId, deploymentUrl, windowsDigest: expectedDigest, shardKeys };
     } catch (_) {
-      return { ok: false, verified: false, errorCode: 'VERCEL_SHARD_SYNC_EXCEPTION' };
+      await rollbackShards();
+      return { ok: false, verified: false, servedDeploymentVerified: false, rolledBack: true, errorCode: 'VERCEL_SHARD_SYNC_EXCEPTION' };
     }
   };
 }
@@ -610,17 +715,21 @@ function makeHandler(deps) {
         };
       }
 
-      // Step 6D: Mandatory runtime shard sync & verification. If it fails, cohort stays STOPPED (fail-closed!).
+      // Step 6D: Mandatory runtime shard sync & SERVED deployment verification.
+      // Never re-arms Firestore fences based only on project env upsert!
       const shardRes = await deps.syncCohortRuntimeEnv({
         cohortId,
         operationId: renewalOpId,
         runtimeSha,
         startsAt,
         expiresAt,
+        authHeader,
         windows: Object.values(compactWindows),
       });
-      if (!shardRes || shardRes.ok !== true || shardRes.verified === false) {
-        await opRef.set({ status: 'FAILED', errorCode: (shardRes && shardRes.errorCode) || 'RUNTIME_SHARD_SYNC_FAILED', failedAt: nowIso }, { merge: true });
+      if (!shardRes || shardRes.ok !== true || shardRes.verified !== true || shardRes.servedDeploymentVerified !== true) {
+        const errCode = (shardRes && shardRes.errorCode) ||
+          (shardRes && shardRes.ok === true && shardRes.servedDeploymentVerified !== true ? 'SERVED_DEPLOYMENT_NOT_VERIFIED' : 'RUNTIME_SHARD_SYNC_FAILED');
+        await opRef.set({ status: 'FAILED', errorCode: errCode, failedAt: nowIso }, { merge: true });
         return res.status(500).json({
           schema: 'vdsen-plan-activation-sync-v1',
           status: 'RENEWAL_FAILED',
@@ -629,10 +738,11 @@ function makeHandler(deps) {
           numericApplyAuthorized: false,
           renewed: false,
           stoppedVerified: true,
+          servedDeploymentVerified: false,
           cohortId,
           clientId,
           planId,
-          errorCode: (shardRes && shardRes.errorCode) || 'RUNTIME_SHARD_SYNC_FAILED',
+          errorCode: errCode,
         });
       }
 
@@ -734,6 +844,8 @@ function makeHandler(deps) {
         renewed: true,
         stoppedVerified: true,
         shardSyncedVerified: true,
+        servedDeploymentVerified: true,
+        deploymentId: shardRes.deploymentId || null,
         cohortId,
         clientId,
         previousPlanId,
@@ -786,4 +898,6 @@ defaultHandler.loadBundledCommercialRoster = loadBundledCommercialRoster;
 defaultHandler.loadCommercialRosterSafe = loadCommercialRosterSafe;
 defaultHandler.createVercelCohortShardSyncer = createVercelCohortShardSyncer;
 defaultHandler.shardKeysForCohort = shardKeysForCohort;
+defaultHandler.computeServedCohortDigest = computeServedCohortDigest;
+defaultHandler.buildServedCohortProbePayload = buildServedCohortProbePayload;
 module.exports = defaultHandler;

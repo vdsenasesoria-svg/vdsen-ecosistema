@@ -12118,6 +12118,15 @@ function _selectLogAuthority(mesoData, rootData, planId) {
 // week 1, so no execution evidence of plan A can ever feed plan B (previous-week reference / reuse are SAME-PLAN only, even when both plans share a PID).
 function _logsPlanChanged(logData, activePlanId, flagSession, localPlanId) {
   var firestorePlanId = (logData && logData.planId) || null;
+  // T878: Fail-safe logbook integrity guard — NEVER trigger a plan-change wipe when Firestore
+  // ALREADY holds authoritative logged sets/sessions bound to the CURRENT activePlanId.
+  // Prevents stale localStorage on a second device or a stray sessionStorage flag from
+  // erasing real workouts via deleteField().
+  if (firestorePlanId && firestorePlanId === activePlanId) {
+    var _e = (logData && logData.entries) || {};
+    var _hasLogged = Object.keys(_e).some(function(k) { return k.indexOf('log_') === 0 || k.indexOf('done_') === 0; });
+    if (_hasLogged) return false;
+  }
   return !!(flagSession || (localPlanId && localPlanId !== activePlanId) || (firestorePlanId && firestorePlanId !== activePlanId));
 }
 

@@ -134,6 +134,16 @@ function makeHandler(deps) {
         runtimeSha: deps.runtimeSha || process.env.VERCEL_GIT_COMMIT_SHA || null,
       });
     }
+    if (req.method === 'GET' && req.query && req.query.check === 'cohort-shard') {
+      // T878: Read-only non-secret probe reporting SHA-256 digest of the cohort shard ACTUALLY served by this deployment.
+      if (typeof res.setHeader === 'function') res.setHeader('Cache-Control', 'no-store');
+      var csToken = /^Bearer\s+(\S+)$/.exec(String(req.headers && req.headers.authorization || '').trim());
+      if (!csToken) return res.status(401).json({ error: 'AUTH_MISSING' });
+      try { await deps.verifyIdToken(csToken[1]); } catch (_) { return res.status(401).json({ error: 'AUTH_INVALID' }); }
+      var cid = typeof req.query.cohortId === 'string' ? req.query.cohortId.trim() : '';
+      if (!/^cohort-\d{2}$/.test(cid)) return res.status(400).json({ error: 'COHORT_ID_INVALID' });
+      return res.status(200).json(planSyncLib.buildServedCohortProbePayload(deps.runtimeEnv || process.env, cid));
+    }
     if (req.method === 'GET' && (deps.pilotWindow !== undefined || deps.numericPilotWindow !== undefined)) return res.status(403).json({ error: 'PILOT_CRON_DISABLED' });
     if (req.method === 'GET') return sweepLib.makeHandler({ db: deps.db, cronSecret: deps.cronSecret, enabled: deps.enabled === true,
       numericApplyEnabled: deps.numericApplyEnabled === true })(req, res);

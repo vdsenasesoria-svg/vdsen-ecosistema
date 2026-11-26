@@ -710,40 +710,98 @@ test('T878-PROD-01 — Real production defaultHandler() wires bundled T876 roste
     assert.equal(rNoSync.payload.errorCode, 'RUNTIME_SHARD_SYNC_UNAVAILABLE');
     assert.equal(store.get('releaseControl/numericPilot_cohort_cohort-01').enabled, true, 'Missing syncer must fail closed BEFORE touching cohort-01');
 
-    // 4. Fallo de sincronización Vercel (HTTP 500) -> cohort stays STOPPED, ledger FAILED (retryable)
+    // 4. T878-A03: Fallo de deployment Vercel -> rollback del shard en proyecto + cohorte STOPPED + ledger FAILED
     process.env.VERCEL_TOKEN = 'vtok';
     process.env.VERCEL_PROJECT_ID = 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN';
     process.env.VERCEL_ORG_ID = 'team_VZc5H7Q1DBIJ3g0mwrSBz1o8';
-    globalThis.fetch = async () => ({ ok: false, status: 500, json: async () => ({ error: 'boom' }) });
+    const projectEnvState = new Map([['VDSEN_NUMERIC_COHORT_1', '[{"old":"shard"}]']]);
+    globalThis.fetch = async (url, init = {}) => {
+      const u = String(url);
+      if (u.includes('/v10/projects/') && u.includes('/env')) {
+        if (init.method === 'POST') {
+          const b = JSON.parse(init.body);
+          projectEnvState.set(b.key, b.value);
+          return { ok: true, status: 200, json: async () => ({ created: { id: 'env_1', key: b.key } }) };
+        }
+        return { ok: true, status: 200, json: async () => ({ envs: [...projectEnvState.entries()].map(([key, value]) => ({ key, value, target: ['production'] })) }) };
+      }
+      if (u.includes('/v13/deployments')) {
+        return { ok: false, status: 500, json: async () => ({ error: 'deploy_failed' }) };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    };
     const rFail = await invokeDefault({ action: 'plan-activation-sync', clientId: ACTIVE_UID, planId: 'plan-new-json-1' });
     assert.equal(rFail.statusCode, 500);
     assert.equal(rFail.payload.status, 'RENEWAL_FAILED');
-    assert.equal(rFail.payload.errorCode, 'VERCEL_ENV_UPSERT_FAILED');
+    assert.equal(rFail.payload.errorCode, 'VERCEL_DEPLOYMENT_CREATE_FAILED');
     assert.equal(rFail.payload.stoppedVerified, true);
-    assert.equal(store.get('releaseControl/numericPilot_cohort_cohort-01').enabled, false, 'Failed Vercel sync must keep cohort STOPPED');
+    assert.equal(rFail.payload.servedDeploymentVerified, false);
+    assert.equal(projectEnvState.get('VDSEN_NUMERIC_COHORT_1'), '[{"old":"shard"}]', 'T878-A03: failed deployment must roll back project env shard');
+    assert.equal(store.get('releaseControl/numericPilot_cohort_cohort-01').enabled, false, 'Failed deployment must keep cohort STOPPED');
     assert.equal(store.get('releaseControl/numericPilot_cohort_cohort-02').operationId, 'op-c2-keep', 'Unaffected cohort-02 untouched');
 
-    // 5. Reintento exitoso cuando Vercel responde y read-back verifica el shard exacto
-    const upsertedEnvs = [];
+    // 5. T878-A01: Upsert de variables sin que el deployment servido incorpore el shard -> SERVED_DEPLOYMENT_SHARD_MISMATCH + rollback
     globalThis.fetch = async (url, init = {}) => {
-      if (init.method === 'POST') {
-        const body = JSON.parse(init.body);
-        upsertedEnvs.push(body);
-        return { ok: true, status: 200, json: async () => ({ created: body }) };
+      const u = String(url);
+      if (u.includes('/v10/projects/') && u.includes('/env')) {
+        if (init.method === 'POST') {
+          const b = JSON.parse(init.body);
+          projectEnvState.set(b.key, b.value);
+          return { ok: true, status: 200, json: async () => ({ created: { id: 'env_1', key: b.key } }) };
+        }
+        return { ok: true, status: 200, json: async () => ({ envs: [...projectEnvState.entries()].map(([key, value]) => ({ key, value, target: ['production'] })) }) };
       }
-      return { ok: true, status: 200, json: async () => ({ envs: upsertedEnvs }) };
+      if (u.includes('/v13/deployments')) {
+        return { ok: true, status: 200, json: async () => ({ id: 'dpl_stale_01', url: 'stale-preview.vercel.app', readyState: 'READY' }) };
+      }
+      if (u.includes('check=cohort-shard')) {
+        // Served deployment STILL has stale digest (not matching new plan!)
+        return { ok: true, status: 200, json: async () => ({ schema: 'vdsen-served-cohort-probe-v1', cohortId: 'cohort-01', runtimeSha: SHA, windowCount: 1, windowsDigest: '0'.repeat(64) }) };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    };
+    const rStale = await invokeDefault({ action: 'plan-activation-sync', clientId: ACTIVE_UID, planId: 'plan-new-json-1' });
+    assert.equal(rStale.statusCode, 500);
+    assert.equal(rStale.payload.errorCode, 'SERVED_DEPLOYMENT_SHARD_MISMATCH');
+    assert.equal(rStale.payload.servedDeploymentVerified, false);
+    assert.equal(projectEnvState.get('VDSEN_NUMERIC_COHORT_1'), '[{"old":"shard"}]', 'T878-A01: stale served deployment must roll back project env shard');
+
+    // 6. T878-A02: Reintento exitoso cuando el nuevo deployment servido reporta el digest exacto vía GET ?check=cohort-shard
+    const planSyncMod = require(path.join(ROOT, 'api/_planActivationSync.js'));
+    globalThis.fetch = async (url, init = {}) => {
+      const u = String(url);
+      if (u.includes('/v10/projects/') && u.includes('/env')) {
+        if (init.method === 'POST') {
+          const b = JSON.parse(init.body);
+          projectEnvState.set(b.key, b.value);
+          return { ok: true, status: 200, json: async () => ({ created: { id: 'env_1', key: b.key } }) };
+        }
+        return { ok: true, status: 200, json: async () => ({ envs: [...projectEnvState.entries()].map(([key, value]) => ({ key, value, target: ['production'] })) }) };
+      }
+      if (u.includes('/v13/deployments')) {
+        return { ok: true, status: 200, json: async () => ({ id: 'dpl_new_verified_01', url: 'vdsen-new.vercel.app', readyState: 'READY' }) };
+      }
+      if (u.includes('check=cohort-shard')) {
+        // Real probe payload built from the newly deployed shard env!
+        const servedProbe = planSyncMod.buildServedCohortProbePayload({
+          VDSEN_NUMERIC_COHORT_1: projectEnvState.get('VDSEN_NUMERIC_COHORT_1'),
+          VDSEN_NUMERIC_PILOT_RUNTIME_SHA: SHA,
+        }, 'cohort-01');
+        return { ok: true, status: 200, json: async () => servedProbe };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
     };
     const rOk = await invokeDefault({ action: 'plan-activation-sync', clientId: ACTIVE_UID, planId: 'plan-new-json-1' });
     assert.equal(rOk.statusCode, 200, JSON.stringify(rOk.payload));
     assert.equal(rOk.payload.status, 'RENEWED_VERIFIED');
     assert.equal(rOk.payload.shardSyncedVerified, true);
+    assert.equal(rOk.payload.servedDeploymentVerified, true);
+    assert.equal(rOk.payload.deploymentId, 'dpl_new_verified_01');
     assert.equal(rOk.payload.engineState, 'MOTOR_INTEGRATED_AUTHORIZED');
     assert.equal(rOk.payload.numericApplyAuthorized, true);
-    assert.equal(upsertedEnvs.length, 1);
-    assert.equal(upsertedEnvs[0].key, 'VDSEN_NUMERIC_COHORT_1');
     assert.equal(store.get('releaseControl/numericPilot_cohort_cohort-02').operationId, 'op-c2-keep', 'Unaffected cohort-02 untouched');
 
-    // 6. Idempotencia en repetición
+    // 7. T878-A06: Idempotencia en repetición
     const rIdem = await invokeDefault({ action: 'plan-activation-sync', clientId: ACTIVE_UID, planId: 'plan-new-json-1' });
     assert.equal(rIdem.statusCode, 200);
     assert.equal(rIdem.payload.status, 'AUTHORIZED_VERIFIED');
@@ -792,4 +850,52 @@ test('T878-PROD-02 — Fail-closed on missing or invalid commercial roster and b
   assert.match(modalSubmit, /await saveImportedPlan\(clientId\)/, 'Modal Pegar JSON must invoke saveImportedPlan');
   const previewBtn = COACH_HTML.indexOf('id="saveImportedPlanBtn" onclick="saveImportedPlan()"');
   assert.ok(previewBtn !== -1, 'Main Pegar JSON preview must invoke saveImportedPlan');
+});
+
+test('T878-LOGBOOK-01 (B12/B16/B18/B19) — _logsPlanChanged never wipes active-plan logs on stale localStorage/flagSession & recovery DRY_RUN is idempotent', () => {
+  // 1. Multi-device / stale localStorage protection in vdsen-cliente.html
+  const fnSrc = extractFn(CLIENT_HTML, 'function _logsPlanChanged(logData, activePlanId, flagSession, localPlanId)');
+  const sb = {};
+  vm.runInNewContext(fnSrc + '\nthis._logsPlanChanged = _logsPlanChanged;', sb);
+
+  const activeWithSets = {
+    planId: 'plan-B',
+    entries: { log_1_0_0_s0: { done: true, carga: 80, reps: 8, rir_real: 2, ics: 9, ts: 1700000000000 } },
+  };
+  // Stale Device 2 has localStorage='plan-A' and/or flagSession=true while Firestore ALREADY has logged sets for 'plan-B' -> MUST NOT WIPE!
+  assert.equal(sb._logsPlanChanged(activeWithSets, 'plan-B', true, 'plan-A'), false);
+  assert.equal(sb._logsPlanChanged(activeWithSets, 'plan-B', false, 'plan-A'), false);
+  // Real plan switch (Firestore still has 'plan-A' entries, activePlanId is 'plan-B') -> still detected as true!
+  assert.equal(sb._logsPlanChanged({ planId: 'plan-A', entries: { log_1_0_0_s0: { done: true } } }, 'plan-B', false, 'plan-A'), true);
+
+  // 2. Recovery tool classification (A/B/C/D/E), mandatory DRY_RUN, and idempotent non-destructive merge
+  const rec = require(path.join(ROOT, 'scripts/pilot/logbook-integrity-recovery.cjs'));
+  assert.throws(() => rec.buildRecoveryPlan([], { mode: 'APPLY' }), /RECOVERY_APPLY_BLOCKED/);
+
+  const plan = rec.buildRecoveryPlan([
+    // Cat A: intact
+    { uid: 'uA', activePlanId: 'pA', rootDoc: { planId: 'pA', entries: { log_1_0_0_s0: { carga: 50 } } }, mesosById: { pA: { planId: 'pA', entries: { log_1_0_0_s0: { carga: 50 } } } }, startsDocs: [] },
+    // Cat C: root has logs, meso mirror missing
+    { uid: 'uC', activePlanId: 'pC', rootDoc: { planId: 'pC', entries: { log_1_0_0_s0: { carga: 60 }, log_1_0_0_s1: { carga: 60 } } }, mesosById: {}, startsDocs: [] },
+    // Cat E: active meso wiped with immutable starts proof and no backup
+    { uid: 'uE', activePlanId: 'pE', rootDoc: { planId: 'pE', entries: {} }, mesosById: { pE: { planId: 'pE', entries: {} }, pE_old: { planId: 'pE_old', entries: { log_1_0_0_s0: { carga: 70 } } } }, startsDocs: [{ id: 'pE_1_0_0', planId: 'pE', week: 1, dayIndex: 0, exerciseIndex: 0, setKey: 'log_1_0_0_s0' }] },
+  ], { mode: 'DRY_RUN' });
+  assert.equal(plan.mode, 'DRY_RUN');
+  assert.equal(plan.countsByCategory.A, 1);
+  assert.equal(plan.countsByCategory.C, 1);
+  assert.equal(plan.countsByCategory.E, 1);
+  assert.equal(plan.clients[2].prevMesosPreserved, 1);
+
+  // T878-B16 & B19: Repeated non-destructive merge never duplicates or overwrites post-snapshot sets
+  const postSnapshot = { log_2_0_0_s0: { carga: 85, reps: 8, ts: 2000 } };
+  const backup = { log_1_0_0_s0: { carga: 80, reps: 8, ts: 1000 }, log_2_0_0_s0: { carga: 70, reps: 8, ts: 1500 } };
+  const m1 = rec.applyNonDestructiveMerge(postSnapshot, backup);
+  assert.equal(m1.deletedCount, 0);
+  assert.equal(m1.overwrittenCount, 0);
+  assert.equal(m1.duplicatedCount, 0);
+  assert.equal(m1.merged.log_2_0_0_s0.carga, 85, 'Post-snapshot set must NEVER be overwritten by older backup');
+  assert.equal(m1.merged.log_1_0_0_s0.carga, 80, 'Missing historical set restored');
+  const m2 = rec.applyNonDestructiveMerge(m1.merged, backup);
+  assert.equal(m2.addedKeys.length, 0, 'T878-B16: repeated recovery is 100% idempotent');
+  assert.equal(m2.beforeHash, m2.afterHash);
 });
