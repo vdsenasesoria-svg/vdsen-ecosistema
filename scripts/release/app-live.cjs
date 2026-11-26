@@ -666,15 +666,14 @@ async function promote(s, id) {
 // alias must converge to exactly `id` (awaitApp) or the operation throws.
 async function revertApp(s, id, deps = {}) {
   const post = deps.post || (() => vercel(s, '/v1/projects/' + encodeURIComponent(s.production_project) + '/rollback/' + encodeURIComponent(id), 'POST'));
-  const viaCli = deps.promoteViaCli || promoteViaCli;
+  const viaPromote = deps.promote || promote;
   const converge = deps.awaitApp || awaitApp;
   try {
     await post();
   } catch (e) {
     if (!/HTTP 402\b/.test(String(e && e.message))) throw e;
-    console.log('rollback endpoint answered HTTP 402 (plan entitlement); using documented `vercel promote` for the exact captured deployment');
-    const cli = await viaCli(s, id);
-    assert.ok(cli.ok, 'Rollback fallback via vercel promote failed: ' + String(cli.detail || '').replace(/[A-Za-z0-9_-]{24,}/g, '<redacted>'));
+    console.log('rollback endpoint answered HTTP 402 (plan entitlement); promoting the exact captured deployment through the lane promote path (CLI, then REST requestPromote)');
+    await viaPromote(s, id);
   }
   const ok = await converge(s, id);
   assert.ok(ok, 'Production alias did not converge back to the captured deployment');
