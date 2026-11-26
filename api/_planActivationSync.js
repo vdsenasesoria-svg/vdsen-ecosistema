@@ -303,6 +303,78 @@ function createVercelCohortShardSyncer(env, fetcher) {
   };
 }
 
+const PILOT_SCOPE_SCHEMA = 'vdsen-auto-renewal-pilot-scope-v1';
+const PILOT_SCOPE_MAX_DURATION_MS = 168 * 3600 * 1000;
+
+/**
+ * T881-B fail-closed pilot scope guard.
+ * When VDSEN_AUTO_COHORT_RENEWAL_PILOT_SCOPE is absent/empty, returns { active: false, allowed: true }.
+ * When configured, restricts auto-renewal exclusively to ONE authorized client (and optional planId)
+ * inside a bounded [startsAt, expiresAt) UTC window. Any malformed, expired, or non-matching scope
+ * fails closed without touching Firestore fences or runtime shards.
+ */
+function parseAndEvaluatePilotScope(rawScope, ctx) {
+  ctx = ctx || {};
+  if (rawScope === undefined || rawScope === null || (typeof rawScope === 'string' && rawScope.trim() === '')) {
+    return { active: false, allowed: true, reason: null, scope: null };
+  }
+  let scope = null;
+  if (typeof rawScope === 'string') {
+    try { scope = JSON.parse(rawScope); } catch (_) {
+      return { active: true, allowed: false, reason: 'PILOT_SCOPE_INVALID_JSON', scope: null };
+    }
+  } else if (typeof rawScope === 'object' && !Array.isArray(rawScope)) {
+    scope = rawScope;
+  } else {
+    return { active: true, allowed: false, reason: 'PILOT_SCOPE_INVALID_TYPE', scope: null };
+  }
+  if (!scope || typeof scope !== 'object' || Array.isArray(scope) || scope.schema !== PILOT_SCOPE_SCHEMA) {
+    return { active: true, allowed: false, reason: 'PILOT_SCOPE_INVALID_SCHEMA', scope: null };
+  }
+  const uid = typeof scope.uid === 'string' ? scope.uid.trim() : '';
+  const opId = typeof scope.operationId === 'string' ? scope.operationId.trim() : '';
+  const startsAt = typeof scope.startsAt === 'string' ? scope.startsAt.trim() : '';
+  const expiresAt = typeof scope.expiresAt === 'string' ? scope.expiresAt.trim() : '';
+  const scopedPlanId = scope.planId === undefined || scope.planId === null || scope.planId === ''
+    ? null
+    : (typeof scope.planId === 'string' ? scope.planId.trim() : null);
+
+  if (!uid || !/^[a-zA-Z0-9-]{8,80}$/.test(opId)) {
+    return { active: true, allowed: false, reason: 'PILOT_SCOPE_INVALID_IDENTITY', scope: null };
+  }
+  if (scope.planId !== undefined && scope.planId !== null && scope.planId !== '' && !scopedPlanId) {
+    return { active: true, allowed: false, reason: 'PILOT_SCOPE_INVALID_PLAN_ID', scope: null };
+  }
+  const isoRe = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+  if (!isoRe.test(startsAt) || !isoRe.test(expiresAt)) {
+    return { active: true, allowed: false, reason: 'PILOT_SCOPE_INVALID_WINDOW', scope: null };
+  }
+  const startsMs = Date.parse(startsAt);
+  const expiresMs = Date.parse(expiresAt);
+  if (!Number.isFinite(startsMs) || !Number.isFinite(expiresMs) || expiresMs <= startsMs || (expiresMs - startsMs) > PILOT_SCOPE_MAX_DURATION_MS) {
+    return { active: true, allowed: false, reason: 'PILOT_SCOPE_WINDOW_BOUNDS_INVALID', scope: null };
+  }
+  const nowMs = Number.isFinite(ctx.nowMs) ? ctx.nowMs : Date.now();
+  if (nowMs < startsMs) {
+    return { active: true, allowed: false, reason: 'PILOT_SCOPE_NOT_STARTED', scope: null };
+  }
+  if (nowMs >= expiresMs) {
+    return { active: true, allowed: false, reason: 'PILOT_SCOPE_EXPIRED', scope: null };
+  }
+  if (ctx.clientId !== uid) {
+    return { active: true, allowed: false, reason: 'PILOT_SCOPE_UID_MISMATCH', scope: null };
+  }
+  if (scopedPlanId && ctx.planId !== scopedPlanId) {
+    return { active: true, allowed: false, reason: 'PILOT_SCOPE_PLAN_MISMATCH', scope: null };
+  }
+  return {
+    active: true,
+    allowed: true,
+    reason: null,
+    scope: { schema: PILOT_SCOPE_SCHEMA, uid, planId: scopedPlanId, operationId: opId, startsAt, expiresAt },
+  };
+}
+
 function validateNewPlanForEngine(plan) {
   const reasons = [];
   if (!plan || typeof plan !== 'object') return { ok: false, reasons: ['PLAN_NOT_FOUND'], pids: [], pidCount: 0, pidsHash: null };
@@ -554,6 +626,32 @@ function makeHandler(deps) {
         commercialAuthorized: true,
         numericApplyAuthorized: false,
         renewed: false,
+        cohortId,
+        clientId,
+        previousPlanId,
+        planId,
+        pidsHash: planCheck.pidsHash,
+        pidCount: planCheck.pidCount,
+        planUpdatedAt: planDoc.updatedAt,
+        expiresAt: expiresAt || null,
+      });
+    }
+
+    // T881-B: Single-client / bounded-window pilot scope isolation guard (fail-closed when configured).
+    const rawPilotScope = deps.pilotScope !== undefined
+      ? deps.pilotScope
+      : process.env.VDSEN_AUTO_COHORT_RENEWAL_PILOT_SCOPE;
+    const pilotCheck = parseAndEvaluatePilotScope(rawPilotScope, { clientId, planId, nowMs });
+    if (pilotCheck.active && !pilotCheck.allowed) {
+      return res.status(200).json({
+        schema: 'vdsen-plan-activation-sync-v1',
+        status: 'AUTHORIZATION_PENDING',
+        engineState: 'AUTHORIZATION_PENDING',
+        commercialAuthorized: true,
+        numericApplyAuthorized: false,
+        renewed: false,
+        pilotScopeBlocked: true,
+        pilotScopeReason: pilotCheck.reason,
         cohortId,
         clientId,
         previousPlanId,
@@ -901,6 +999,7 @@ function defaultHandler(req, res) {
       verifyIdToken: (tok) => fbAdmin.getAuth().verifyIdToken(tok),
       commercialRoster: () => loadBundledCommercialRoster(),
       autoRenewalEnabled: process.env.VDSEN_AUTO_COHORT_RENEWAL_ENABLED === 'true',
+      pilotScope: process.env.VDSEN_AUTO_COHORT_RENEWAL_PILOT_SCOPE,
       runtimeSha: process.env.VDSEN_NUMERIC_PILOT_RUNTIME_SHA || process.env.VERCEL_GIT_COMMIT_SHA || null,
       syncCohortRuntimeEnv: createVercelCohortShardSyncer(process.env),
     });
@@ -909,6 +1008,7 @@ function defaultHandler(req, res) {
 }
 
 defaultHandler.makeHandler = makeHandler;
+defaultHandler.parseAndEvaluatePilotScope = parseAndEvaluatePilotScope;
 defaultHandler.validateNewPlanForEngine = validateNewPlanForEngine;
 defaultHandler.buildRenewalOperationId = buildRenewalOperationId;
 defaultHandler.validateCommercialRoster = validateCommercialRoster;
