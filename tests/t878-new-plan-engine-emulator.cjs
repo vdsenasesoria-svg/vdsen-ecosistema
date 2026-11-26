@@ -20,6 +20,7 @@ const vm = require('node:vm');
 const ROOT = path.join(__dirname, '..');
 const C = require(path.join(ROOT, 'api/_numericPilotContract'));
 const trigger = require(path.join(ROOT, 'api/autonomous-progression-trigger.js'));
+const planSync = require(path.join(ROOT, 'api/plan-activation-sync.js'));
 const effective = require(path.join(ROOT, 'assets/progression-effective-prescription.js'));
 
 const COACH_HTML = fs.readFileSync(path.join(ROOT, 'vdsen-coach.html'), 'utf8');
@@ -706,6 +707,293 @@ test('T878 E2E Emulator: All 10 mandatory scenarios (new plan -> 1st session -> 
     assert.ok(v2Ov, 'Scenario 5 & 6: FREEZE overlay materialized on PLAN_V2 (harder than target RIR)');
     assert.equal(v2Ov.dimension, 'FREEZE');
     assert.equal(v2Ov.appliedValue, 50);
+  } finally {
+    for (const [k, v] of Object.entries(savedEnv)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+});
+
+test('T878-JSON-05..12 E2E Emulator: Real /api/plan-activation-sync automatic renewal, cohort isolation, idempotency, inactive exclusion, and fail-closed recovery', async () => {
+  const adminDb = makeAdminDb();
+  const renderClient = loadClientRenderer();
+  const renderCoach = loadCoachRenderer();
+
+  const COACH_ID = 'coach-t878-json-owner';
+  const UID_C1 = 'client-t878-json-c1';
+  const UID_C2 = 'client-t878-json-c2';
+  const UID_INACTIVE = 'client-t878-json-inactive';
+  const SHA = 'b6c4b86d48e473950a7ad19486c380b7b52ddc9f';
+  const nowMs = Date.now();
+  const startsAt = new Date(nowMs - 3600 * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const expiresAt = new Date(nowMs + 12 * 3600 * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const oldTime = new Date(nowMs - 24 * 3600 * 1000).toISOString();
+  const newTime = new Date(nowMs - 30 * 60 * 1000).toISOString();
+
+  const clearResp = await fetch(`http://${HOST}/emulator/v1/projects/${PROJECT_ID}/databases/(default)/documents`, {
+    method: 'DELETE',
+    signal: AbortSignal.timeout(10000),
+  });
+  assert.ok(clearResp.ok, `Emulator clear failed (${clearResp.status})`);
+
+  const roster = {
+    schema: 'vdsen-commercial-roster-v1',
+    activeUids: [UID_C1, UID_C2],
+    inactiveUids: [UID_INACTIVE],
+    activeSet: new Set([UID_C1, UID_C2]),
+    inactiveSet: new Set([UID_INACTIVE]),
+  };
+
+  // Seed cohort-01 (UID_C1 on plan-old-v1) AND unaffected cohort-02 (UID_C2 on plan-c2-v1)
+  const PID_C1_OLD = 'pid-c1-old-1';
+  const PID_C2 = 'pid-c2-1';
+  const PID_JSON_NEW = 'pid-c1-json-new-1';
+  const PLAN_C1_OLD = 'plan-c1-old-v1';
+  const PLAN_C1_JSON = 'plan-c1-json-v2';
+  const PLAN_C2 = 'plan-c2-v1';
+  const PLAN_INACTIVE = 'plan-inactive-v1';
+
+  await adminSet(`coaches/${COACH_ID}`, {
+    uid: COACH_ID,
+    name: 'Coach JSON Sync',
+    autoApplyCanary: {
+      enabled: true,
+      cohorts: {
+        'cohort-01': {
+          enabled: true, cohortId: 'cohort-01', operationId: 'op-init-c1', startsAt, expiresAt,
+          clientIds: [UID_C1], prescriptionExerciseIds: [PID_C1_OLD],
+        },
+        'cohort-02': {
+          enabled: true, cohortId: 'cohort-02', operationId: 'op-init-c2', startsAt, expiresAt,
+          clientIds: [UID_C2], prescriptionExerciseIds: [PID_C2],
+        },
+      },
+    },
+  });
+
+  await adminSet('releaseControl/autonomousProgression_cohort_cohort-01', {
+    schema: 'vdsen-autonomous-release-v1', enabled: true, cohortId: 'cohort-01',
+    operationId: 'op-init-c1', startsAt, expiresAt, clientIds: [UID_C1],
+  });
+  await adminSet('releaseControl/numericPilot_cohort_cohort-01', {
+    schema: C.COHORT_SCHEMA, mode: 'NUMERIC_APPLY', enabled: true, cohortId: 'cohort-01',
+    operationId: 'op-init-c1', runtimeSha: SHA, startsAt, expiresAt,
+    windows: {
+      [UID_C1]: {
+        schema: C.COHORT_SCHEMA, mode: 'NUMERIC_APPLY', cohortId: 'cohort-01', enabled: true,
+        uid: UID_C1, planId: PLAN_C1_OLD, pids: [PID_C1_OLD], pidCount: 1,
+        pidsHash: C.computePidsHash([PID_C1_OLD]), runtimeSha: SHA, operationId: 'op-init-c1', startsAt, expiresAt,
+      },
+    },
+  });
+  // Unaffected cohort-02
+  await adminSet('releaseControl/autonomousProgression_cohort_cohort-02', {
+    schema: 'vdsen-autonomous-release-v1', enabled: true, cohortId: 'cohort-02',
+    operationId: 'op-init-c2', startsAt, expiresAt, clientIds: [UID_C2],
+  });
+  await adminSet('releaseControl/numericPilot_cohort_cohort-02', {
+    schema: C.COHORT_SCHEMA, mode: 'NUMERIC_APPLY', enabled: true, cohortId: 'cohort-02',
+    operationId: 'op-init-c2', runtimeSha: SHA, startsAt, expiresAt,
+    windows: {
+      [UID_C2]: {
+        schema: C.COHORT_SCHEMA, mode: 'NUMERIC_APPLY', cohortId: 'cohort-02', enabled: true,
+        uid: UID_C2, planId: PLAN_C2, pids: [PID_C2], pidCount: 1,
+        pidsHash: C.computePidsHash([PID_C2]), runtimeSha: SHA, operationId: 'op-init-c2', startsAt, expiresAt,
+      },
+    },
+  });
+
+  // Preserve historical logs on PLAN_C1_OLD (T878-JSON-08)
+  await adminSet(`logs/${UID_C1}/mesos/${PLAN_C1_OLD}`, {
+    planId: PLAN_C1_OLD, currentWeek: 3,
+    entries: { log_1_0_0_s0: { done: true, carga: 75, reps: 8, unit: 'KG', rir: 3, rir_real: 3, ts: nowMs - 20 * 3600000 } },
+    updatedAt: nowMs - 20 * 3600000,
+  });
+
+  // Coach activates pasted-JSON plan PLAN_C1_JSON for UID_C1
+  const jsonPlanDoc = {
+    id: PLAN_C1_JSON, clientId: UID_C1, coachId: COACH_ID, status: 'active',
+    generatedBy: 'import', weeks: 6, daysPerWeek: 1, createdAt: newTime, updatedAt: newTime,
+    rirByWeek: { 1: 3, 2: 3, 3: 2, 4: 2, 5: 1, 6: 3 },
+    days: [{
+      dayIndex: 0, label: 'Día 1 — Pegar JSON',
+      exercises: [{
+        exerciseIndex: 0, exerciseName: 'Press Militar Barra', exerciseType: 'fuerza',
+        prescriptionExerciseId: PID_JSON_NEW,
+        sets: [
+          { setIndex: 0, load: 90, repsTarget: 8, rirTarget: 3, restSeconds: 150 },
+          { setIndex: 1, load: 90, repsTarget: 8, rirTarget: 3, restSeconds: 150 },
+        ],
+      }],
+    }],
+  };
+  await adminSet(`plans/${PLAN_C1_JSON}`, jsonPlanDoc);
+  await adminSet(`clients/${UID_C1}`, { uid: UID_C1, coachId: COACH_ID, status: 'active', activePlanId: PLAN_C1_JSON });
+
+  // Inactive client activates a pasted JSON plan (T878-JSON-09)
+  await adminSet(`plans/${PLAN_INACTIVE}`, {
+    id: PLAN_INACTIVE, clientId: UID_INACTIVE, coachId: COACH_ID, status: 'active',
+    generatedBy: 'import', weeks: 6, daysPerWeek: 1, createdAt: newTime, updatedAt: newTime,
+    days: [{ dayIndex: 0, label: 'D1', exercises: [{ exerciseName: 'Curl', prescriptionExerciseId: 'pid-inact-1', sets: [{ setIndex: 0, load: 20, repsTarget: 10, rirTarget: 2, restSeconds: 90 }] }] }],
+  });
+  await adminSet(`clients/${UID_INACTIVE}`, { uid: UID_INACTIVE, coachId: COACH_ID, status: 'active', activePlanId: PLAN_INACTIVE });
+
+  // T878-JSON-09: Inactive client -> NOT_COMMERCIALLY_AUTHORIZED, 0 fence writes
+  const syncHandlerOff = planSync.makeHandler({
+    db: adminDb, verifyIdToken: async () => ({ uid: COACH_ID }),
+    commercialRoster: roster, autoRenewalEnabled: false, runtimeSha: SHA,
+    clock: () => new Date(nowMs + 1000).toISOString(),
+  });
+  const rInact = await invokeTrigger(syncHandlerOff, { clientId: UID_INACTIVE, planId: PLAN_INACTIVE });
+  assert.equal(rInact.statusCode, 200);
+  assert.equal(rInact.payload.status, 'NOT_COMMERCIALLY_AUTHORIZED');
+  assert.equal(rInact.payload.engineState, 'BLOCKED_COMMERCIAL');
+  assert.equal(rInact.payload.numericApplyAuthorized, false);
+
+  // T878-JSON-10a: With autoRenewalEnabled=false -> AUTHORIZATION_PENDING (never claims active!)
+  const rPend = await invokeTrigger(syncHandlerOff, { clientId: UID_C1, planId: PLAN_C1_JSON });
+  assert.equal(rPend.statusCode, 200);
+  assert.equal(rPend.payload.status, 'AUTHORIZATION_PENDING');
+  assert.equal(rPend.payload.engineState, 'AUTHORIZATION_PENDING');
+  assert.equal(rPend.payload.numericApplyAuthorized, false);
+
+  // T878-JSON-05 & 12: Automatic server-side renewal on cohort-01 ONLY (with runtime shard update)
+  let syncedCohortShard = null;
+  const syncHandlerAuto = planSync.makeHandler({
+    db: adminDb, verifyIdToken: async () => ({ uid: COACH_ID }),
+    commercialRoster: roster, autoRenewalEnabled: true, runtimeSha: SHA,
+    clock: () => new Date(nowMs + 2000).toISOString(),
+    syncCohortRuntimeEnv: async (payload) => { syncedCohortShard = payload; return { ok: true }; },
+  });
+  const rRenew = await invokeTrigger(syncHandlerAuto, { clientId: UID_C1, planId: PLAN_C1_JSON });
+  assert.equal(rRenew.statusCode, 200, JSON.stringify(rRenew.payload));
+  assert.equal(rRenew.payload.status, 'RENEWED_VERIFIED');
+  assert.equal(rRenew.payload.engineState, 'MOTOR_INTEGRATED_AUTHORIZED');
+  assert.equal(rRenew.payload.numericApplyAuthorized, true);
+  assert.equal(rRenew.payload.stoppedVerified, true);
+  assert.equal(rRenew.payload.cohortId, 'cohort-01');
+  assert.equal(rRenew.payload.previousPlanId, PLAN_C1_OLD);
+  assert.equal(rRenew.payload.planId, PLAN_C1_JSON);
+  assert.ok(syncedCohortShard && syncedCohortShard.cohortId === 'cohort-01');
+
+  // Verify unaffected cohort-02 was NEVER touched
+  const c2Fence = (await adminDb.doc('releaseControl/numericPilot_cohort_cohort-02').get()).data();
+  assert.equal(c2Fence.operationId, 'op-init-c2', 'Unaffected cohort-02 must remain completely untouched');
+  assert.equal(c2Fence.enabled, true);
+
+  // Idempotent repeat call -> AUTHORIZED_VERIFIED (no rewrite)
+  const rRepeat = await invokeTrigger(syncHandlerAuto, { clientId: UID_C1, planId: PLAN_C1_JSON });
+  assert.equal(rRepeat.statusCode, 200);
+  assert.equal(rRepeat.payload.status, 'AUTHORIZED_VERIFIED');
+  assert.equal(rRepeat.payload.idempotent, true);
+
+  // T878-JSON-06, 07, 08, 11: Real progression execution on the renewed pasted-JSON plan
+  const savedEnv = {
+    AUTONOMOUS_PROGRESSION_ENABLED: process.env.AUTONOMOUS_PROGRESSION_ENABLED,
+    AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED: process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED,
+    VDSEN_NUMERIC_PILOT_ENABLED: process.env.VDSEN_NUMERIC_PILOT_ENABLED,
+    VDSEN_NUMERIC_PILOT_RUNTIME_SHA: process.env.VDSEN_NUMERIC_PILOT_RUNTIME_SHA,
+    VDSEN_NUMERIC_COHORT_1: process.env.VDSEN_NUMERIC_COHORT_1,
+  };
+  try {
+    process.env.AUTONOMOUS_PROGRESSION_ENABLED = 'true';
+    process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED = 'true';
+    process.env.VDSEN_NUMERIC_PILOT_ENABLED = 'true';
+    process.env.VDSEN_NUMERIC_PILOT_RUNTIME_SHA = SHA;
+    process.env.VDSEN_NUMERIC_COHORT_1 = JSON.stringify(syncedCohortShard.windows);
+
+    const trigHandler = trigger.makeHandler({
+      db: adminDb, verifyIdToken: async () => ({ uid: UID_C1 }),
+      enabled: true, numericApplyEnabled: true, canaryClientIds: [UID_C1],
+      clock: () => new Date(nowMs + 10000),
+    });
+
+    // T878-JSON-06: First session on pasted JSON plan -> 0 artificial increments
+    const t1 = nowMs - 600000;
+    const w1Entries = {
+      log_1_0_0_s0: { done: true, carga: 90, reps: 8, unit: 'KG', rir: 3, rir_real: 3, ics: 7, ts: t1, planId: PLAN_C1_JSON, prescriptionExerciseId: PID_JSON_NEW },
+      log_1_0_0_s1: { done: true, carga: 90, reps: 8, unit: 'KG', rir: 3, rir_real: 3, ics: 7, ts: t1 + 1000, planId: PLAN_C1_JSON, prescriptionExerciseId: PID_JSON_NEW },
+      done_1_0: { ts: t1 + 2000, planId: PLAN_C1_JSON },
+      progrec_1_0: { calculatedAt: new Date(t1 + 3000).toISOString(), recommendations: [{ prescriptionExerciseId: PID_JSON_NEW, exerciseName: 'Press Militar Barra', action: 'maintain' }] },
+    };
+    await athleteWriteLog(UID_C1, `logs/${UID_C1}/mesos/${PLAN_C1_JSON}`, { planId: PLAN_C1_JSON, currentWeek: 1, entries: w1Entries, updatedAt: t1 + 3000 });
+    await athleteWriteLog(UID_C1, `logs/${UID_C1}`, { planId: PLAN_C1_JSON, currentWeek: 1, entries: w1Entries, updatedAt: t1 + 3000 });
+    await athleteWriteStart(UID_C1, PLAN_C1_JSON, 1, 0, 0, 'log_1_0_0_s0');
+    const rJ1 = await invokeTrigger(trigHandler, { planId: PLAN_C1_JSON });
+    assert.deepEqual(rJ1.payload.applied, [], 'T878-JSON-06: first session must apply 0 artificial increments');
+
+    // T878-JSON-07 & 11: Comparable W1+W2 exposures -> real LOAD progression -> App Cliente + App Coach sync
+    const t2 = nowMs - 60000;
+    const w2Entries = {
+      log_1_0_0_s0: { done: true, carga: 90, reps: 8, unit: 'KG', rir: 3, rir_real: 5, ics: 7, ts: t1, planId: PLAN_C1_JSON, prescriptionExerciseId: PID_JSON_NEW },
+      log_1_0_0_s1: { done: true, carga: 90, reps: 8, unit: 'KG', rir: 3, rir_real: 5, ics: 7, ts: t1 + 1000, planId: PLAN_C1_JSON, prescriptionExerciseId: PID_JSON_NEW },
+      done_1_0: { ts: t1 + 2000, planId: PLAN_C1_JSON },
+      log_2_0_0_s0: { done: true, carga: 90, reps: 8, unit: 'KG', rir: 3, rir_real: 5, ics: 7, ts: t2, planId: PLAN_C1_JSON, prescriptionExerciseId: PID_JSON_NEW },
+      log_2_0_0_s1: { done: true, carga: 90, reps: 8, unit: 'KG', rir: 3, rir_real: 5, ics: 7, ts: t2 + 1000, planId: PLAN_C1_JSON, prescriptionExerciseId: PID_JSON_NEW },
+      done_2_0: { ts: t2 + 2000, planId: PLAN_C1_JSON },
+      progrec_2_0: { calculatedAt: new Date(t2 + 3000).toISOString(), recommendations: [{ prescriptionExerciseId: PID_JSON_NEW, exerciseName: 'Press Militar Barra', action: 'increase_load', newLoad: 92.5 }] },
+    };
+    await athleteWriteLog(UID_C1, `logs/${UID_C1}/mesos/${PLAN_C1_JSON}`, { planId: PLAN_C1_JSON, currentWeek: 2, entries: w2Entries, updatedAt: t2 + 3000 });
+    await athleteWriteLog(UID_C1, `logs/${UID_C1}`, { planId: PLAN_C1_JSON, currentWeek: 2, entries: w2Entries, updatedAt: t2 + 3000 });
+    await athleteWriteStart(UID_C1, PLAN_C1_JSON, 2, 0, 0, 'log_2_0_0_s0');
+    const rJ2 = await invokeTrigger(trigHandler, { planId: PLAN_C1_JSON });
+    assert.ok(rJ2.payload.applied.length >= 1, 'T878-JSON-07: renewed pasted-JSON plan must apply LOAD progression');
+
+    const mesoJson = (await adminDb.doc(`logs/${UID_C1}/mesos/${PLAN_C1_JSON}`).get()).data();
+    const viewJson = effective.describeProgression({
+      clientId: UID_C1, planId: PLAN_C1_JSON, activePlanId: PLAN_C1_JSON, pid: PID_JSON_NEW,
+      week: 3, dayIndex: 0, records: mesoJson.progressionApplications || {},
+      overlays: mesoJson.nextExposureOverlays || {}, interventions: [], plan: jsonPlanDoc,
+      entries: w2Entries, baseSets: jsonPlanDoc.days[0].exercises[0].sets, unit: 'KG', canonicalOverlayRead: true,
+    });
+    assert.equal(viewJson.state, 'APPLIED');
+    viewJson.baseSets = jsonPlanDoc.days[0].exercises[0].sets;
+    viewJson.unit = 'KG';
+    assert.match(renderClient(viewJson, 0), /AUTOAJUSTE APLICADO/);
+    assert.match(renderCoach(mesoJson.progressionApplicationSummary || { autoCount: 0, items: [] }, {}), /Aplicados: [1-9]/);
+
+    // T878-JSON-08: Prior plan logs remain 100% intact
+    const oldMeso = (await adminDb.doc(`logs/${UID_C1}/mesos/${PLAN_C1_OLD}`).get()).data();
+    assert.equal(oldMeso.entries.log_1_0_0_s0.carga, 75);
+
+    // T878-JSON-10b: Fail-closed when runtime shard sync fails -> cohort stays STOPPED (enabled: false)
+    const PLAN_C1_V3 = 'plan-c1-json-v3';
+    const PID_C1_V3 = 'pid-c1-json-v3-1';
+    await adminSet(`plans/${PLAN_C1_V3}`, Object.assign({}, jsonPlanDoc, {
+      id: PLAN_C1_V3, days: [{ dayIndex: 0, label: 'D1', exercises: [{ exerciseName: 'Press Militar Barra', prescriptionExerciseId: PID_C1_V3, sets: jsonPlanDoc.days[0].exercises[0].sets }] }],
+    }));
+    await adminSet(`clients/${UID_C1}`, { activePlanId: PLAN_C1_V3 }, true);
+    const syncHandlerShardFail = planSync.makeHandler({
+      db: adminDb, verifyIdToken: async () => ({ uid: COACH_ID }),
+      commercialRoster: roster, autoRenewalEnabled: true, runtimeSha: SHA,
+      clock: () => new Date(nowMs + 15000).toISOString(),
+      syncCohortRuntimeEnv: async () => ({ ok: false, error: 'VERCEL_ENV_REJECTED' }),
+    });
+    const rShardFail = await invokeTrigger(syncHandlerShardFail, { clientId: UID_C1, planId: PLAN_C1_V3 });
+    assert.equal(rShardFail.statusCode, 500);
+    assert.equal(rShardFail.payload.status, 'RENEWAL_FAILED');
+    assert.equal(rShardFail.payload.errorCode, 'RUNTIME_SHARD_SYNC_FAILED');
+    assert.equal(rShardFail.payload.numericApplyAuthorized, false);
+    const c1AfterFail = (await adminDb.doc('releaseControl/numericPilot_cohort_cohort-01').get()).data();
+    assert.equal(c1AfterFail.enabled, false, 'T878-JSON-10: failed runtime shard sync must leave cohort STOPPED (fail-closed)');
+
+    // T878-JSON-10c: Concurrent renewal lock (IN_PROGRESS) -> HTTP 409 RENEWAL_CONFLICT
+    const PLAN_C1_V4 = 'plan-c1-json-v4';
+    const PID_C1_V4 = 'pid-c1-json-v4-1';
+    await adminSet(`plans/${PLAN_C1_V4}`, Object.assign({}, jsonPlanDoc, {
+      id: PLAN_C1_V4, days: [{ dayIndex: 0, label: 'D1', exercises: [{ exerciseName: 'Press Militar Barra', prescriptionExerciseId: PID_C1_V4, sets: jsonPlanDoc.days[0].exercises[0].sets }] }],
+    }));
+    await adminSet(`clients/${UID_C1}`, { activePlanId: PLAN_C1_V4 }, true);
+    const lockOpId = planSync.buildRenewalOperationId('cohort-01', UID_C1, PLAN_C1_V4, C.computePidsHash([PID_C1_V4]));
+    await adminSet(`releaseControl/numericPilot/operations/${lockOpId}`, {
+      schema: 'vdsen-numeric-operations-ledger-v1', status: 'IN_PROGRESS', cohortId: 'cohort-01', operationId: lockOpId,
+    });
+    const rConc = await invokeTrigger(syncHandlerAuto, { clientId: UID_C1, planId: PLAN_C1_V4 });
+    assert.equal(rConc.statusCode, 409);
+    assert.equal(rConc.payload.status, 'RENEWAL_CONFLICT');
+    assert.equal(rConc.payload.errorCode, 'CONCURRENT_RENEWAL_IN_PROGRESS');
+    assert.equal(rConc.payload.numericApplyAuthorized, false);
   } finally {
     for (const [k, v] of Object.entries(savedEnv)) {
       if (v === undefined) delete process.env[k];

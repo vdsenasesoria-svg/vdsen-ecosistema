@@ -6808,7 +6808,42 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     // Resolve canonical vdsen-plan-v2 (entrenamiento.days) or legacy root-days
     const trainingBlock = (obj && obj.entrenamiento && Array.isArray(obj.entrenamiento.days)) ? obj.entrenamiento : obj;
     if (!trainingBlock || !Array.isArray(trainingBlock.days) || trainingBlock.days.length === 0) {
+      window._importedPlan = null;
       statusEl.innerHTML = `<span class="text-red-400">❌ El JSON debe tener "days" como arreglo no vacío (en entrenamiento.days o en la raíz)</span>`;
+      return;
+    }
+    // T878: Fail-closed validation of incompatible prescriptive fields (never invent prescriptive values).
+    const _compatErrors = [];
+    trainingBlock.days.forEach((d, di) => {
+      if (!d || typeof d !== 'object') { _compatErrors.push(`Día ${di + 1}: estructura inválida`); return; }
+      const dLabel = String(d.label || `Día ${di + 1}`);
+      if (!Array.isArray(d.exercises)) { _compatErrors.push(`${dLabel}: falta el arreglo "exercises"`); return; }
+      d.exercises.forEach((ex, ei) => {
+        if (!ex || typeof ex !== 'object') { _compatErrors.push(`${dLabel} · ej. ${ei + 1}: objeto inválido`); return; }
+        const exName = String(ex.exerciseName || `Ejercicio ${ei + 1}`).trim();
+        if (Array.isArray(ex.sets)) {
+          ex.sets.forEach((s, si) => {
+            if (!s || typeof s !== 'object') { _compatErrors.push(`${dLabel} · ${exName} · serie ${si + 1}: objeto inválido`); return; }
+            if (s.load !== undefined && s.load !== null && s.load !== '') {
+              const lv = Number(s.load);
+              if (!Number.isFinite(lv) || lv < 0) _compatErrors.push(`${dLabel} · ${exName} · serie ${si + 1}: carga inválida (${s.load})`);
+            }
+            if (s.rirTarget !== undefined && s.rirTarget !== null && s.rirTarget !== '') {
+              const rv = Number(s.rirTarget);
+              if (!Number.isFinite(rv) || rv < 0 || rv > 6) _compatErrors.push(`${dLabel} · ${exName} · serie ${si + 1}: RIR inválido (${s.rirTarget}; rango 0-6)`);
+            }
+            if (s.repsTarget !== undefined && s.repsTarget !== null && s.repsTarget !== '' &&
+                s.repsTarget !== 'SST-PROTOCOL' && s.repsTarget !== 'SST-RIV-PROTOCOL') {
+              const rp = Number(s.repsTarget);
+              if (!Number.isFinite(rp) || rp <= 0) _compatErrors.push(`${dLabel} · ${exName} · serie ${si + 1}: repsTarget inválido (${s.repsTarget})`);
+            }
+          });
+        }
+      });
+    });
+    if (_compatErrors.length > 0) {
+      window._importedPlan = null;
+      statusEl.innerHTML = `<span class="text-red-400">❌ JSON incompatible — activación rechazada:<br>${_compatErrors.slice(0, 6).map(_escH).join('<br>')}</span>`;
       return;
     }
     // T591: nothing is dropped or ignored silently: every exercise that cannot be imported, and every cardio entry whose strength sets are ignored, is reported in the preview
@@ -6887,6 +6922,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if (obj.reverse_diet) planObj.reverse_diet = obj.reverse_diet;
     if (obj.distribucion_zonas_carga) planObj.distribucion_zonas_carga = obj.distribucion_zonas_carga;
     { const _mp = typeof _normalizeMusclePriorities === 'function' ? _normalizeMusclePriorities(trainingBlock.musclePriorities || obj.musclePriorities) : null; if (_mp) planObj.musclePriorities = _mp; }   // T586: declared muscle priorities (explicit only)
+    const _srcClientId = (typeof obj.clientId === 'string' && obj.clientId.trim()) ? obj.clientId.trim()
+      : ((typeof trainingBlock.clientId === 'string' && trainingBlock.clientId.trim()) ? trainingBlock.clientId.trim() : null);
+    if (_srcClientId) planObj._sourceClientId = _srcClientId;
     statusEl.innerHTML = `<span class="text-green-400">✅ JSON válido: ${planObj.weeks} semanas, ${days.length} día(s)</span>`;
     showParsedPreview(planObj, _importWarnings);
     window._importedPlan = planObj;
@@ -7241,6 +7279,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     }
     _assignJournalClear(opKey);
     if (outcome === 'COMMITTED' && typeof _initNewPlanWeekOne === 'function') await _initNewPlanWeekOne(o.clientId, planId, prevId);
+    if (outcome === 'COMMITTED' && typeof _syncPlanEngineAfterActivation === 'function') {
+      await _syncPlanEngineAfterActivation(o.clientId, planId);
+    }
     return { planId, outcome, prevPlanId: prevId };
   }
   // T858: strict cross-plan log isolation for Coach Dashboard & Monitor.
@@ -7298,6 +7339,75 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       console.warn('[T858] initNewPlanWeekOne non-fatal:', e && e.message);
     }
   }
+
+  // T878: Truthful rendering of real server-confirmed progression engine integration status.
+  // Never displays "Motor integrado y autorizado" unless the server confirmed AUTHORIZED_VERIFIED or RENEWED_VERIFIED.
+  function _renderPlanEngineSyncStatus(syncRes) {
+    var st = syncRes && syncRes.engineState;
+    var okAuth = !!(syncRes && syncRes.numericApplyAuthorized === true &&
+      (syncRes.status === 'AUTHORIZED_VERIFIED' || syncRes.status === 'RENEWED_VERIFIED'));
+    if (okAuth && st === 'MOTOR_INTEGRATED_AUTHORIZED') {
+      return { code: 'MOTOR_INTEGRATED_AUTHORIZED', label: 'Motor integrado y autorizado', color: '#44BB88' };
+    }
+    if (st === 'AUTHORIZATION_PREPARING') {
+      return { code: 'AUTHORIZATION_PREPARING', label: 'Autorización en preparación', color: '#C4FF00' };
+    }
+    if (st === 'AUTHORIZATION_PENDING') {
+      return { code: 'AUTHORIZATION_PENDING', label: 'Autorización pendiente', color: '#e8a040' };
+    }
+    if (st === 'BLOCKED_INCOMPATIBLE' || st === 'BLOCKED_COMMERCIAL') {
+      return { code: st, label: 'Bloqueado por incompatibilidad o seguridad', color: '#ff6060' };
+    }
+    return { code: 'COACH_INTERVENTION_REQUIRED', label: 'Requiere intervención del Coach', color: '#ff6060' };
+  }
+
+  // T878: Automatic post-activation server sync for ALL plan activation routes (no manual Coach setup).
+  // Uses exclusively the Coach's Firebase ID token against /api/plan-activation-sync (zero admin privileges in browser).
+  async function _syncPlanEngineAfterActivation(clientId, planId) {
+    if (!clientId || !planId) return null;
+    var prep = _renderPlanEngineSyncStatus({ engineState: 'AUTHORIZATION_PREPARING' });
+    var _setStatusUi = function(view, detail) {
+      var html = '<span data-plan-engine-sync="' + _escH(view.code) + '" style="color:' + view.color + ';font-weight:700">' + _escH(view.label) + '</span>' +
+        (detail ? ' <span style="color:#888;font-size:11px">· ' + _escH(detail) + '</span>' : '');
+      var el1 = typeof document !== 'undefined' && document.getElementById('jsonPlanStatus');
+      var el2 = typeof document !== 'undefined' && document.getElementById('_importPlanStatus');
+      if (el1) el1.innerHTML = html;
+      if (el2) el2.innerHTML = html;
+    };
+    _setStatusUi(prep, 'Verificando autorización del motor…');
+    try {
+      var user = (typeof auth !== 'undefined' && auth && auth.currentUser) || null;
+      if (!user || typeof user.getIdToken !== 'function' || typeof fetch !== 'function') {
+        var noTok = { status: 'RENEWAL_FAILED', engineState: 'COACH_INTERVENTION_REQUIRED', numericApplyAuthorized: false, errorCode: 'AUTH_UNAVAILABLE' };
+        if (typeof window !== 'undefined') window._lastPlanEngineSync = noTok;
+        _setStatusUi(_renderPlanEngineSyncStatus(noTok), 'Sesión no disponible');
+        return noTok;
+      }
+      var idToken = await user.getIdToken();
+      var resp = await fetch('/api/plan-activation-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+        body: JSON.stringify({ clientId: clientId, planId: planId })
+      });
+      var data = await resp.json().catch(function() { return null; });
+      if (!resp.ok || !data || typeof data !== 'object') {
+        var failObj = Object.assign({ status: 'RENEWAL_FAILED', engineState: 'COACH_INTERVENTION_REQUIRED', numericApplyAuthorized: false }, data || {});
+        if (typeof window !== 'undefined') window._lastPlanEngineSync = failObj;
+        _setStatusUi(_renderPlanEngineSyncStatus(failObj), failObj.errorCode || ('HTTP ' + resp.status));
+        return failObj;
+      }
+      if (typeof window !== 'undefined') window._lastPlanEngineSync = data;
+      var view = _renderPlanEngineSyncStatus(data);
+      var detail = data.cohortId ? ('Cohorte ' + data.cohortId + (data.pidCount ? ' · ' + data.pidCount + ' PID' : '')) : (data.errorCode || '');
+      _setStatusUi(view, detail);
+      return data;
+    } catch (e) {
+      var errObj = { status: 'RENEWAL_FAILED', engineState: 'COACH_INTERVENTION_REQUIRED', numericApplyAuthorized: false, errorCode: 'SYNC_REQUEST_FAILED' };
+      if (typeof window !== 'undefined') window._lastPlanEngineSync = errObj;
+      _setStatusUi(_renderPlanEngineSyncStatus(errObj), e && e.message ? e.message : 'Error de red');
+      return errObj;
+    }
+  }
   async function saveImportedPlan(clientIdArg) {
     if (_savingImportedPlan) return false;
     if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return false; }
@@ -7335,14 +7445,19 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if (prevClientSnap.data().coachId !== currentCoach.uid) { showToast("❌ No tenés permiso sobre este cliente", true); return false; }
       const prevPlanId = prevClientSnap.data().activePlanId || null;
       const _importKey = _importSourceKey(planObj), _pendingId = _assignPeekPlanId(_assignOpKey('import', _importKey, clientId));
+      const prevPlanSnap = prevPlanId ? await getDoc(doc(db, "plans", prevPlanId)).catch(() => null) : null;
+      const prevPlanDays = prevPlanSnap && prevPlanSnap.exists() ? (prevPlanSnap.data().days || []) : [];
       if (prevPlanId && prevPlanId !== _pendingId) {   // a retry of an assignment that already committed asks nothing
-        const prevPlanSnap = await getDoc(doc(db, "plans", prevPlanId)).catch(() => null);
-        const prevDays = prevPlanSnap && prevPlanSnap.exists() ? (prevPlanSnap.data().days || []) : [];
         const newDays  = planObj.days || [];
-        const confirmed = await _askConfirm(`⚠️ Reemplazar plan activo\n\nPlan actual: ${prevDays.length} días · ${prevPlanSnap?.data()?.weeks||'?'} semanas\nPlan nuevo: ${newDays.length} días · ${newDays[0]?.exercises?.length||'?'} ej. el primer día\n\nEl plan actual se guardará como respaldo y será reemplazado.`);
+        const confirmed = await _askConfirm(`⚠️ Reemplazar plan activo\n\nPlan actual: ${prevPlanDays.length} días · ${prevPlanSnap?.data()?.weeks||'?'} semanas\nPlan nuevo: ${newDays.length} días · ${newDays[0]?.exercises?.length||'?'} ej. el primer día\n\nEl plan actual se guardará como respaldo y será reemplazado.`);
         if (!confirmed) return false;
       }
       // T591-C: plan + activePlanId + backup + historical retirement in ONE transaction (see _assignPlanTxn); the Generator's explicit rirByWeek is kept, the Coach default only when it is absent/invalid.
+      const _isForeignSource = !!(planObj._sourceClientId && planObj._sourceClientId !== clientId);
+      delete planObj._sourceClientId;
+      if (typeof _stampImportPrescriptionIds === 'function') {
+        planObj.days = _stampImportPrescriptionIds(planObj.days, prevPlanDays, _isForeignSource);
+      }
       let _txOutcome = null;
       try {
         const _res = await _assignPlanTxn({ kind: 'import', sourceKey: _importKey, clientId, expectedPrevPlanId: prevPlanId, buildPlanDoc: function(_planId, _nowIso) {
@@ -9665,6 +9780,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if (!days.length) return null;
     const _norm = { weeks: parseInt(obj.weeks) || 6, daysPerWeek: parseInt(obj.daysPerWeek) || days.length, days };
     if (obj.distribucion_zonas_carga) _norm.distribucion_zonas_carga = obj.distribucion_zonas_carga;
+    if (obj.carb_cycling_y3t) _norm.carb_cycling_y3t = obj.carb_cycling_y3t;
+    if (obj.reverse_diet) _norm.reverse_diet = obj.reverse_diet;
+    if (obj.rirByWeek !== undefined && obj.rirByWeek !== null && typeof _normRirByWeek === 'function') {
+      const _r = _normRirByWeek(obj.rirByWeek, _norm.weeks);
+      if (_r) _norm.rirByWeek = _r;
+    }
+    if (typeof obj.clientId === 'string' && obj.clientId.trim()) _norm._sourceClientId = obj.clientId.trim();
     { const _mp = typeof _normalizeMusclePriorities === 'function' ? _normalizeMusclePriorities(obj.musclePriorities) : null; if (_mp) _norm.musclePriorities = _mp; }   // T586: declared muscle priorities (explicit only)
     return _norm;
   }
@@ -10806,6 +10928,38 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     });
   }
 
+  // T878: Import PID stamping — never reuse another client's PIDs when pasting/importing a JSON.
+  // Preserves valid existing PIDs ONLY when they already belong to THIS client's active plan
+  // (T150-H same-client re-import continuity) and the source JSON is not from another client.
+  function _stampImportPrescriptionIds(days, prevPlanDays, isForeignSource) {
+    var allowed = {};
+    if (!isForeignSource && Array.isArray(prevPlanDays)) {
+      prevPlanDays.forEach(function(day) {
+        ((day && day.exercises) || []).forEach(function(ex) {
+          if (ex && typeof ex.prescriptionExerciseId === 'string' && ex.prescriptionExerciseId.trim()) {
+            allowed[ex.prescriptionExerciseId.trim()] = true;
+          }
+        });
+      });
+    }
+    var seen = {};
+    return (days || []).map(function(day) {
+      return Object.assign({}, day, {
+        exercises: (day.exercises || []).map(function(ex) {
+          var id = (ex && typeof ex.prescriptionExerciseId === 'string') ? ex.prescriptionExerciseId.trim() : '';
+          if (id && allowed[id] && !seen[id]) {
+            seen[id] = true;
+            return Object.assign({}, ex, { prescriptionExerciseId: id });
+          }
+          var newId = _genPrescriptionId();
+          while (seen[newId]) { newId = _genPrescriptionId(); }
+          seen[newId] = true;
+          return Object.assign({}, ex, { prescriptionExerciseId: newId });
+        })
+      });
+    });
+  }
+
   // Read-only audit: detects missing or duplicate IDs across all days
   // Returns [] if clean; never mutates the plan
   function _validatePrescriptionIds(days) {
@@ -11383,6 +11537,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     });
     if (typeof _initNewPlanWeekOne === 'function') {
       await _initNewPlanWeekOne(clientId, planId, _prevActivePlanId);
+    }
+    if (typeof _syncPlanEngineAfterActivation === 'function') {
+      await _syncPlanEngineAfterActivation(clientId, planId);
     }
   }
 

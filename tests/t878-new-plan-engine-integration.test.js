@@ -62,7 +62,7 @@ test('T878.1 — All 7 Coach creation/import/template/duplicate/AI-draft paths e
     const idx = COACH_HTML.indexOf("kind: '" + kind + "'");
     assert.ok(idx !== -1, 'Missing _assignPlanTxn route: ' + kind);
     const slice = COACH_HTML.slice(idx, idx + 900);
-    assert.match(slice, /_(re)?stampPrescriptionIds\(/, kind + ' must stamp unique PIDs');
+    assert.match(slice, /_(re)?stamp(Import)?PrescriptionIds\(/, kind + ' must stamp unique PIDs');
     assert.match(slice, /createdAt:\s*_nowIso/, kind + ' must stamp ISO createdAt');
     assert.match(slice, /updatedAt:\s*_nowIso/, kind + ' must stamp ISO updatedAt');
   }
@@ -406,4 +406,162 @@ test('T878.5 — renewDriftedCohort renews ONLY affected cohort atomically, leav
     assert.deepEqual(postDrift.affectedCohortIds, []);
     assert.deepEqual(postDrift.unaffectedCohortIds, ['cohort-01', 'cohort-02', 'cohort-03']);
   } finally { env.cleanup(); }
+});
+
+test('T878-JSON-01 & T878-JSON-02 — Pegar JSON preserves Coach prescription verbatim and rejects incompatible JSON without inventing data', () => {
+  const parseSrc = extractFn(COACH_HTML, 'function parsePlanFromJSON()');
+  const normRestSrc = extractFn(COACH_HTML, 'function _normRestSeconds(');
+  const normRirSrc = extractFn(COACH_HTML, 'function _normRirByWeek(');
+  const normMpSrc = extractFn(COACH_HTML, 'function _normalizeMusclePriorities(');
+
+  let lastPreview = null, lastStatus = '';
+  const dom = {
+    planJsonInput: { value: '' },
+    jsonPlanStatus: { set innerHTML(v) { lastStatus = v; }, get innerHTML() { return lastStatus; } },
+  };
+  const sandbox = {
+    window: { _importedPlan: null },
+    document: { getElementById: id => dom[id] || null },
+    showToast: () => {},
+    _escH: s => String(s ?? ''),
+    _carryClassification: () => ({}),
+    _perfCarryEx: () => ({}),
+    _perfCarrySet: () => ({}),
+    _perfHasNoSetsOk: () => false,
+    _perfType: t => (['fuerza', 'cardio', 'calistenia', 'estacion', 'circuito'].includes(t) ? t : null),
+    _perfEffType: e => e.exerciseType || 'fuerza',
+    showParsedPreview: (p, w) => { lastPreview = { plan: p, warnings: w }; },
+  };
+  vm.runInNewContext(
+    [normRestSrc, normRirSrc, normMpSrc, parseSrc, 'this.parsePlanFromJSON = parsePlanFromJSON;'].join('\n'),
+    sandbox
+  );
+
+  // T878-JSON-01 & 02: Valid pasted JSON preserves every prescription detail verbatim
+  const validJson = {
+    clientId: 'client_source_A',
+    weeks: 6,
+    daysPerWeek: 1,
+    rirByWeek: { 1: 3, 2: 3, 3: 2, 4: 2, 5: 1, 6: 3 },
+    musclePriorities: { pecho: 'ALTA' },
+    days: [{
+      dayIndex: 0,
+      label: 'Día 1 — Empuje',
+      exercises: [{
+        exerciseName: 'Press Banca Barra',
+        prescriptionExerciseId: 'pid-from-client-A',
+        alternatives: ['Press Mancuernas'],
+        technique: 'straight',
+        techniqueNote: 'Pausa 1s en pecho',
+        coachNote: 'Controlar excéntrica',
+        sets: [
+          { setIndex: 0, repsTarget: 8, rirTarget: 3, load: 80, restSeconds: 150, tempo: '3-1-1-0', setNote: 'Top set' },
+          { setIndex: 1, repsTarget: 8, rirTarget: 3, load: 80, restSeconds: 150, tempo: '3-1-1-0', setNote: 'Backoff' },
+        ],
+      }],
+    }],
+  };
+  dom.planJsonInput.value = JSON.stringify(validJson);
+  sandbox.parsePlanFromJSON();
+  assert.ok(sandbox.window._importedPlan, 'Valid JSON must produce _importedPlan');
+  assert.equal(sandbox.window._importedPlan._sourceClientId, 'client_source_A');
+  const parsedPlan = JSON.parse(JSON.stringify(sandbox.window._importedPlan));
+  const ex = parsedPlan.days[0].exercises[0];
+  assert.equal(ex.exerciseName, 'Press Banca Barra');
+  assert.deepEqual(ex.alternatives, ['Press Mancuernas']);
+  assert.equal(ex.techniqueNote, 'Pausa 1s en pecho');
+  assert.equal(ex.coachNote, 'Controlar excéntrica');
+  assert.equal(ex.sets.length, 2);
+  assert.equal(ex.sets[0].load, 80);
+  assert.equal(ex.sets[0].repsTarget, 8);
+  assert.equal(ex.sets[0].rirTarget, 3);
+  assert.equal(ex.sets[0].restSeconds, 150);
+  assert.equal(ex.sets[0].tempo, '3-1-1-0');
+  assert.equal(ex.sets[0].setNote, 'Top set');
+  assert.deepEqual(parsedPlan.rirByWeek, { 1: 3, 2: 3, 3: 2, 4: 2, 5: 1, 6: 3 });
+
+  // Incompatible JSON (negative load & invalid RIR) must be rejected with specific error, clearing _importedPlan
+  dom.planJsonInput.value = JSON.stringify({
+    weeks: 6,
+    days: [{ dayIndex: 0, label: 'Día 1', exercises: [{ exerciseName: 'Sentadilla', sets: [{ repsTarget: 8, rirTarget: 9, load: -20 }] }] }],
+  });
+  sandbox.parsePlanFromJSON();
+  assert.equal(sandbox.window._importedPlan, null, 'Incompatible JSON must clear _importedPlan');
+  assert.match(lastStatus, /JSON incompatible/);
+  assert.match(lastStatus, /carga inválida/);
+  assert.match(lastStatus, /RIR inválido/);
+});
+
+test('T878-JSON-04 — _stampImportPrescriptionIds never reuses another client PID while preserving same-client valid PIDs (T150-H)', () => {
+  const genSrc = extractFn(COACH_HTML, 'function _genPrescriptionId()');
+  const importStampSrc = extractFn(COACH_HTML, 'function _stampImportPrescriptionIds(days, prevPlanDays, isForeignSource)');
+  let seq = 0;
+  const sandbox = { crypto: { randomUUID: () => 'fresh-uuid-' + (++seq) } };
+  vm.runInNewContext(genSrc + '\n' + importStampSrc + '\nthis._stampImportPrescriptionIds = _stampImportPrescriptionIds;', sandbox);
+
+  const clientAPids = [{ dayIndex: 0, exercises: [{ exerciseName: 'Press Banca', prescriptionExerciseId: 'pid-client-A-1' }] }];
+
+  // Case 1: Pasting Client A's JSON into Client B (Client B has different/no prev plan) -> NEVER reuses pid-client-A-1
+  const forClientB = sandbox._stampImportPrescriptionIds(clientAPids, [], true);
+  assert.notEqual(forClientB[0].exercises[0].prescriptionExerciseId, 'pid-client-A-1');
+  assert.equal(forClientB[0].exercises[0].prescriptionExerciseId, 'fresh-uuid-1');
+
+  // Case 2: Pasting JSON with foreign PID without clientId header into Client B -> still NEVER reuses pid-client-A-1
+  const forClientBNoHeader = sandbox._stampImportPrescriptionIds(clientAPids, [{ dayIndex: 0, exercises: [{ prescriptionExerciseId: 'pid-client-B-old' }] }], false);
+  assert.notEqual(forClientBNoHeader[0].exercises[0].prescriptionExerciseId, 'pid-client-A-1');
+
+  // Case 3: Re-importing Client A's own exported JSON for Client A -> preserves valid existing PID (T150-H)
+  const forClientASame = sandbox._stampImportPrescriptionIds(clientAPids, clientAPids, false);
+  assert.equal(forClientASame[0].exercises[0].prescriptionExerciseId, 'pid-client-A-1');
+});
+
+test('T878-JSON-03 & T878-JSON-12 — All activation routes auto-trigger /api/plan-activation-sync and App Coach renders truthful engine states', async () => {
+  // Verify automatic wiring in BOTH _assignPlanTxn (6 routes) and _vdsenActivatePlanInFirestore (AI draft route)
+  const assignTxn = extractFn(COACH_HTML, 'async function _assignPlanTxn(o)');
+  const aiActivate = extractFn(COACH_HTML, 'async function _vdsenActivatePlanInFirestore(planId, clientId)');
+  assert.match(assignTxn, /_syncPlanEngineAfterActivation\(o\.clientId, planId\)/);
+  assert.match(aiActivate, /_syncPlanEngineAfterActivation\(clientId, planId\)/);
+
+  // Verify _renderPlanEngineSyncStatus & _syncPlanEngineAfterActivation truthfulness
+  const renderSrc = extractFn(COACH_HTML, 'function _renderPlanEngineSyncStatus(syncRes)');
+  const syncSrc = extractFn(COACH_HTML, 'async function _syncPlanEngineAfterActivation(clientId, planId)');
+  let statusHtml = '';
+  const fetchCalls = [];
+  const sandbox = {
+    window: {},
+    document: { getElementById: id => id === 'jsonPlanStatus' ? { set innerHTML(v) { statusHtml = v; } } : null },
+    _escH: s => String(s ?? ''),
+    auth: { currentUser: { getIdToken: async () => 'coach-jwt-token' } },
+    fetch: async (url, init) => {
+      fetchCalls.push({ url, init });
+      return {
+        ok: true, status: 200,
+        json: async () => ({
+          status: 'RENEWED_VERIFIED',
+          engineState: 'MOTOR_INTEGRATED_AUTHORIZED',
+          numericApplyAuthorized: true,
+          cohortId: 'cohort-01',
+          pidCount: 3,
+        }),
+      };
+    },
+  };
+  vm.runInNewContext(renderSrc + '\n' + syncSrc + '\nthis._renderPlanEngineSyncStatus = _renderPlanEngineSyncStatus; this._syncPlanEngineAfterActivation = _syncPlanEngineAfterActivation;', sandbox);
+
+  // Never claims "Motor integrado y autorizado" without server confirmation
+  assert.equal(sandbox._renderPlanEngineSyncStatus({ engineState: 'MOTOR_INTEGRATED_AUTHORIZED', status: 'AUTHORIZATION_PENDING', numericApplyAuthorized: false }).label, 'Requiere intervención del Coach');
+  assert.equal(sandbox._renderPlanEngineSyncStatus({ engineState: 'AUTHORIZATION_PREPARING' }).label, 'Autorización en preparación');
+  assert.equal(sandbox._renderPlanEngineSyncStatus({ engineState: 'AUTHORIZATION_PENDING' }).label, 'Autorización pendiente');
+  assert.equal(sandbox._renderPlanEngineSyncStatus({ engineState: 'BLOCKED_COMMERCIAL' }).label, 'Bloqueado por incompatibilidad o seguridad');
+  assert.equal(sandbox._renderPlanEngineSyncStatus({ engineState: 'BLOCKED_INCOMPATIBLE' }).label, 'Bloqueado por incompatibilidad o seguridad');
+  assert.equal(sandbox._renderPlanEngineSyncStatus({ engineState: 'COACH_INTERVENTION_REQUIRED' }).label, 'Requiere intervención del Coach');
+
+  // Automatic call sends Coach Bearer token to /api/plan-activation-sync and updates UI
+  const res = await sandbox._syncPlanEngineAfterActivation('client_01', 'plan_new_01');
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0].url, '/api/plan-activation-sync');
+  assert.equal(fetchCalls[0].init.headers.Authorization, 'Bearer coach-jwt-token');
+  assert.equal(res.status, 'RENEWED_VERIFIED');
+  assert.match(statusHtml, /Motor integrado y autorizado/);
+  assert.match(statusHtml, /cohort-01/);
 });
