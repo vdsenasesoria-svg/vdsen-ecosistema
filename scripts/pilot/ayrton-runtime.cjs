@@ -10,6 +10,7 @@ const LEGACY_T671_SHA = 'a8cf462c78c4bd795cc9f485a82f64429c179f00';
 const T671 = OFF_BASELINE_SHA;
 const FILE = 'release-output/ayrton-runtime.json';
 const REVIEWED_MAIN_SHAS = [
+  '9e2e6a5ce7fbd9ec8d0c211eed495aff6b36b356', // Post-PR244 merge: T589 cardio exercises without sets
   '1ddffaea81ba375593af7f504479d0f04609a79a', // Post-PR226 merge: Numeric pilot workflow registration (T869)
   'bf1b59f33d62e2127b5d5fd969688bff1f7feccf', // Post-PR207 merge: Ayrton fence window workflow registration (T836)
   '5f25b5b9a3c45b425bad4d8eadd145cf7423aec7', // Post-PR179 merge: alias restore & legacy retirement workflow registration (T786)

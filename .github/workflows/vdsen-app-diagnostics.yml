@@ -83,7 +83,7 @@ jobs:
         # No token, no parameter value and no response body is printed.
         env:
           APP_RUNTIME_SHA: ${{ inputs.runtime_sha }}
-          APP_EXPECTED_MAIN_SHA: 1ddffaea81ba375593af7f504479d0f04609a79a
+          APP_EXPECTED_MAIN_SHA: 9e2e6a5ce7fbd9ec8d0c211eed495aff6b36b356
           APP_TRACE_READS: 'true'
         run: |
           set -o pipefail
