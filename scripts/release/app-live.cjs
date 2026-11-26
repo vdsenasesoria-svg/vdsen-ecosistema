@@ -659,9 +659,24 @@ async function promote(s, id) {
 }
 
 // Revert production traffic to the ORIGINAL production deployment. App only.
-async function revertApp(s, id) {
-  await vercel(s, '/v1/projects/' + encodeURIComponent(s.production_project) + '/rollback/' + encodeURIComponent(id), 'POST');
-  const ok = await awaitApp(s, id);
+// T880: the instant-rollback REST endpoint answers HTTP 402 (plan entitlement) for this project, which
+// blocked the official OFF-runtime restore after T876. 402 is deterministic and NOT a transient failure, so
+// the only sanctioned fallback is the same documented, version-pinned `vercel promote` the forward path
+// already uses, targeted at the exact captured deployment. Any other failure still fails closed, and the
+// alias must converge to exactly `id` (awaitApp) or the operation throws.
+async function revertApp(s, id, deps = {}) {
+  const post = deps.post || (() => vercel(s, '/v1/projects/' + encodeURIComponent(s.production_project) + '/rollback/' + encodeURIComponent(id), 'POST'));
+  const viaCli = deps.promoteViaCli || promoteViaCli;
+  const converge = deps.awaitApp || awaitApp;
+  try {
+    await post();
+  } catch (e) {
+    if (!/HTTP 402\b/.test(String(e && e.message))) throw e;
+    console.log('rollback endpoint answered HTTP 402 (plan entitlement); using documented `vercel promote` for the exact captured deployment');
+    const cli = await viaCli(s, id);
+    assert.ok(cli.ok, 'Rollback fallback via vercel promote failed: ' + String(cli.detail || '').replace(/[A-Za-z0-9_-]{24,}/g, '<redacted>'));
+  }
+  const ok = await converge(s, id);
   assert.ok(ok, 'Production alias did not converge back to the captured deployment');
   return id;
 }
