@@ -196,7 +196,11 @@ async function defaultHandler(req, res) {
     numericPilotWindow: process.env.VDSEN_NUMERIC_PILOT_WINDOW,
     allowProbe: admin.isFederatedMode(process.env, req.headers && req.headers['x-vercel-oidc-token']),
     enabled: process.env.AUTONOMOUS_PROGRESSION_ENABLED === 'true',
-    numericApplyEnabled: process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED === 'true' })(req, res);
+    numericApplyEnabled: process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED === 'true',
+    commercialRoster: function() { return planSyncLib.loadBundledCommercialRoster(); },
+    autoRenewalEnabled: process.env.VDSEN_AUTO_COHORT_RENEWAL_ENABLED === 'true',
+    runtimeSha: process.env.VDSEN_NUMERIC_PILOT_RUNTIME_SHA || process.env.VERCEL_GIT_COMMIT_SHA || null,
+    syncCohortRuntimeEnv: planSyncLib.createVercelCohortShardSyncer(process.env) })(req, res);
 }
 
 module.exports = defaultHandler;

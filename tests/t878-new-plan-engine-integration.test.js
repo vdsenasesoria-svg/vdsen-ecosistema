@@ -565,3 +565,231 @@ test('T878-JSON-03 & T878-JSON-12 — All activation routes auto-trigger /api/pl
   assert.match(statusHtml, /Motor integrado y autorizado/);
   assert.match(statusHtml, /cohort-01/);
 });
+
+test('T878-PROD-01 — Real production defaultHandler() wires bundled T876 roster, fails closed when switch off or shard syncer missing, and completes verified renewal + safe retry', async () => {
+  const bundledRoster = JSON.parse(fs.readFileSync(path.join(ROOT, '.release/commercial-roster-t876.json'), 'utf8'));
+  const ACTIVE_UID = bundledRoster.activeUids[0];
+  const OTHER_COHORT_UID = bundledRoster.activeUids[10];
+  const INACTIVE_UID = bundledRoster.inactiveUids[0];
+  const COACH_ID = 'coach-prod-default-1';
+  const SHA = 'b6c4b86d48e473950a7ad19486c380b7b52ddc9f';
+  const startsAt = new Date(Date.now() - 3600000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const expiresAt = new Date(Date.now() + 12 * 3600000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const nowIso = new Date().toISOString();
+
+  const store = new Map();
+  const clone = v => JSON.parse(JSON.stringify(v));
+  const mkRef = (p) => ({
+    path: p,
+    id: p.split('/').pop(),
+    collection: (sub) => ({ doc: (id) => mkRef(`${p}/${sub}/${id}`) }),
+    async get() { return store.has(p) ? { exists: true, id: p.split('/').pop(), data: () => clone(store.get(p)) } : { exists: false, id: p.split('/').pop(), data: () => undefined }; },
+    async set(d, opts) {
+      if (opts && opts.merge && store.has(p)) store.set(p, Object.assign({}, store.get(p), clone(d)));
+      else store.set(p, clone(d));
+    },
+  });
+  const fakeDb = {
+    collection: (c) => ({ doc: (id) => mkRef(`${c}/${id}`) }),
+    doc: (p) => mkRef(p),
+    async runTransaction(fn) {
+      const tx = {
+        get: (r) => r.get(),
+        set: (r, d, opts) => {
+          if (opts && opts.merge && store.has(r.path)) store.set(r.path, Object.assign({}, store.get(r.path), clone(d)));
+          else store.set(r.path, clone(d));
+        },
+      };
+      return await fn(tx);
+    },
+  };
+
+  store.set(`coaches/${COACH_ID}`, {
+    uid: COACH_ID,
+    autoApplyCanary: {
+      enabled: true,
+      cohorts: {
+        'cohort-01': { enabled: true, cohortId: 'cohort-01', operationId: 'op-c1-old', startsAt, expiresAt, clientIds: [ACTIVE_UID], prescriptionExerciseIds: ['pid-old-1'] },
+        'cohort-02': { enabled: true, cohortId: 'cohort-02', operationId: 'op-c2-keep', startsAt, expiresAt, clientIds: [OTHER_COHORT_UID], prescriptionExerciseIds: ['pid-c2-1'] },
+      },
+    },
+  });
+  store.set('releaseControl/autonomousProgression_cohort_cohort-01', {
+    schema: 'vdsen-autonomous-release-v1', enabled: true, cohortId: 'cohort-01', operationId: 'op-c1-old', startsAt, expiresAt, clientIds: [ACTIVE_UID],
+  });
+  store.set('releaseControl/numericPilot_cohort_cohort-01', {
+    schema: C.COHORT_SCHEMA, mode: 'NUMERIC_APPLY', enabled: true, cohortId: 'cohort-01', operationId: 'op-c1-old', runtimeSha: SHA, startsAt, expiresAt,
+    windows: { [ACTIVE_UID]: { schema: C.COHORT_SCHEMA, mode: 'NUMERIC_APPLY', cohortId: 'cohort-01', enabled: true, uid: ACTIVE_UID, planId: 'plan-old-1', pids: ['pid-old-1'], pidCount: 1, pidsHash: C.computePidsHash(['pid-old-1']), runtimeSha: SHA, operationId: 'op-c1-old', startsAt, expiresAt } },
+  });
+  store.set('releaseControl/numericPilot_cohort_cohort-02', {
+    schema: C.COHORT_SCHEMA, mode: 'NUMERIC_APPLY', enabled: true, cohortId: 'cohort-02', operationId: 'op-c2-keep', runtimeSha: SHA, startsAt, expiresAt,
+    windows: { [OTHER_COHORT_UID]: { schema: C.COHORT_SCHEMA, mode: 'NUMERIC_APPLY', cohortId: 'cohort-02', enabled: true, uid: OTHER_COHORT_UID, planId: 'plan-c2-1', pids: ['pid-c2-1'], pidCount: 1, pidsHash: C.computePidsHash(['pid-c2-1']), runtimeSha: SHA, operationId: 'op-c2-keep', startsAt, expiresAt } },
+  });
+
+  store.set(`clients/${ACTIVE_UID}`, { uid: ACTIVE_UID, coachId: COACH_ID, status: 'active', activePlanId: 'plan-new-json-1' });
+  store.set('plans/plan-new-json-1', {
+    id: 'plan-new-json-1', clientId: ACTIVE_UID, coachId: COACH_ID, status: 'active',
+    createdAt: nowIso, updatedAt: nowIso,
+    days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Press Banca', prescriptionExerciseId: 'pid-new-json-1', sets: [{ load: 80, repsTarget: 8, rirTarget: 2, restSeconds: 120 }] }] }],
+  });
+  store.set(`clients/${INACTIVE_UID}`, { uid: INACTIVE_UID, coachId: COACH_ID, status: 'active', activePlanId: 'plan-inact-1' });
+  store.set('plans/plan-inact-1', {
+    id: 'plan-inact-1', clientId: INACTIVE_UID, coachId: COACH_ID, status: 'active',
+    createdAt: nowIso, updatedAt: nowIso,
+    days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Curl', prescriptionExerciseId: 'pid-inact-1', sets: [{ load: 20, repsTarget: 10, rirTarget: 2, restSeconds: 90 }] }] }],
+  });
+
+  const adminPath = require.resolve(path.join(ROOT, 'api/_firebaseAdmin.js'));
+  const fbAdminPath = (() => { try { return require.resolve('firebase-admin'); } catch (_) { return null; } })();
+  const origAdminCache = require.cache[adminPath];
+  const origFbCache = fbAdminPath ? require.cache[fbAdminPath] : null;
+  const origFetch = globalThis.fetch;
+  const savedEnv = {
+    VDSEN_AUTO_COHORT_RENEWAL_ENABLED: process.env.VDSEN_AUTO_COHORT_RENEWAL_ENABLED,
+    VDSEN_NUMERIC_PILOT_RUNTIME_SHA: process.env.VDSEN_NUMERIC_PILOT_RUNTIME_SHA,
+    VERCEL_TOKEN: process.env.VERCEL_TOKEN,
+    VERCEL_PROJECT_ID: process.env.VERCEL_PROJECT_ID,
+    VERCEL_ORG_ID: process.env.VERCEL_ORG_ID,
+  };
+
+  const invokeDefault = async (body) => {
+    let statusCode = 0, payload = null;
+    const req = { method: 'POST', query: { action: 'plan-activation-sync' }, headers: { authorization: 'Bearer coach-jwt' }, body };
+    const res = { setHeader() {}, status(c) { statusCode = c; return this; }, json(d) { payload = d; return this; } };
+    const triggerDefault = require(path.join(ROOT, 'api/autonomous-progression-trigger.js'));
+    await triggerDefault(req, res);
+    return { statusCode, payload };
+  };
+
+  try {
+    require.cache[adminPath] = {
+      id: adminPath, filename: adminPath, loaded: true,
+      exports: {
+        acceptRequestOidcToken: async () => {},
+        getAdminApp: () => ({ name: 'mock-app' }),
+        verifyIdToken: async () => ({ uid: COACH_ID }),
+        isFederatedMode: () => false,
+      },
+    };
+    if (fbAdminPath) {
+      require.cache[fbAdminPath] = {
+        id: fbAdminPath, filename: fbAdminPath, loaded: true,
+        exports: { firestore: () => fakeDb },
+      };
+    } else {
+      const Module = require('node:module');
+      const origLoad = Module._load;
+      Module._load = function(request, parent, isMain) {
+        if (request === 'firebase-admin') return { firestore: () => fakeDb };
+        return origLoad.apply(this, arguments);
+      };
+      savedEnv.__restoreLoad = () => { Module._load = origLoad; };
+    }
+
+    // 1. Cliente fuera del padrón (INACTIVE in real .release/commercial-roster-t876.json)
+    delete process.env.VDSEN_AUTO_COHORT_RENEWAL_ENABLED;
+    delete process.env.VERCEL_TOKEN;
+    const rInact = await invokeDefault({ action: 'plan-activation-sync', clientId: INACTIVE_UID, planId: 'plan-inact-1' });
+    assert.equal(rInact.statusCode, 200);
+    assert.equal(rInact.payload.status, 'NOT_COMMERCIALLY_AUTHORIZED');
+    assert.equal(rInact.payload.engineState, 'BLOCKED_COMMERCIAL');
+    assert.equal(rInact.payload.numericApplyAuthorized, false);
+
+    // 2. Interruptor de renovación deshabilitado -> AUTHORIZATION_PENDING
+    process.env.VDSEN_NUMERIC_PILOT_RUNTIME_SHA = SHA;
+    const rOff = await invokeDefault({ action: 'plan-activation-sync', clientId: ACTIVE_UID, planId: 'plan-new-json-1' });
+    assert.equal(rOff.statusCode, 200);
+    assert.equal(rOff.payload.status, 'AUTHORIZATION_PENDING');
+    assert.equal(rOff.payload.numericApplyAuthorized, false);
+
+    // 3. Sincronizador de shards ausente (VERCEL_TOKEN missing) -> fail-closed BEFORE STOP (503)
+    process.env.VDSEN_AUTO_COHORT_RENEWAL_ENABLED = 'true';
+    const rNoSync = await invokeDefault({ action: 'plan-activation-sync', clientId: ACTIVE_UID, planId: 'plan-new-json-1' });
+    assert.equal(rNoSync.statusCode, 503);
+    assert.equal(rNoSync.payload.status, 'RENEWAL_BLOCKED_NO_SHARD_SYNC');
+    assert.equal(rNoSync.payload.errorCode, 'RUNTIME_SHARD_SYNC_UNAVAILABLE');
+    assert.equal(store.get('releaseControl/numericPilot_cohort_cohort-01').enabled, true, 'Missing syncer must fail closed BEFORE touching cohort-01');
+
+    // 4. Fallo de sincronización Vercel (HTTP 500) -> cohort stays STOPPED, ledger FAILED (retryable)
+    process.env.VERCEL_TOKEN = 'vtok';
+    process.env.VERCEL_PROJECT_ID = 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN';
+    process.env.VERCEL_ORG_ID = 'team_VZc5H7Q1DBIJ3g0mwrSBz1o8';
+    globalThis.fetch = async () => ({ ok: false, status: 500, json: async () => ({ error: 'boom' }) });
+    const rFail = await invokeDefault({ action: 'plan-activation-sync', clientId: ACTIVE_UID, planId: 'plan-new-json-1' });
+    assert.equal(rFail.statusCode, 500);
+    assert.equal(rFail.payload.status, 'RENEWAL_FAILED');
+    assert.equal(rFail.payload.errorCode, 'VERCEL_ENV_UPSERT_FAILED');
+    assert.equal(rFail.payload.stoppedVerified, true);
+    assert.equal(store.get('releaseControl/numericPilot_cohort_cohort-01').enabled, false, 'Failed Vercel sync must keep cohort STOPPED');
+    assert.equal(store.get('releaseControl/numericPilot_cohort_cohort-02').operationId, 'op-c2-keep', 'Unaffected cohort-02 untouched');
+
+    // 5. Reintento exitoso cuando Vercel responde y read-back verifica el shard exacto
+    const upsertedEnvs = [];
+    globalThis.fetch = async (url, init = {}) => {
+      if (init.method === 'POST') {
+        const body = JSON.parse(init.body);
+        upsertedEnvs.push(body);
+        return { ok: true, status: 200, json: async () => ({ created: body }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ envs: upsertedEnvs }) };
+    };
+    const rOk = await invokeDefault({ action: 'plan-activation-sync', clientId: ACTIVE_UID, planId: 'plan-new-json-1' });
+    assert.equal(rOk.statusCode, 200, JSON.stringify(rOk.payload));
+    assert.equal(rOk.payload.status, 'RENEWED_VERIFIED');
+    assert.equal(rOk.payload.shardSyncedVerified, true);
+    assert.equal(rOk.payload.engineState, 'MOTOR_INTEGRATED_AUTHORIZED');
+    assert.equal(rOk.payload.numericApplyAuthorized, true);
+    assert.equal(upsertedEnvs.length, 1);
+    assert.equal(upsertedEnvs[0].key, 'VDSEN_NUMERIC_COHORT_1');
+    assert.equal(store.get('releaseControl/numericPilot_cohort_cohort-02').operationId, 'op-c2-keep', 'Unaffected cohort-02 untouched');
+
+    // 6. Idempotencia en repetición
+    const rIdem = await invokeDefault({ action: 'plan-activation-sync', clientId: ACTIVE_UID, planId: 'plan-new-json-1' });
+    assert.equal(rIdem.statusCode, 200);
+    assert.equal(rIdem.payload.status, 'AUTHORIZED_VERIFIED');
+    assert.equal(rIdem.payload.idempotent, true);
+  } finally {
+    if (savedEnv.__restoreLoad) savedEnv.__restoreLoad();
+    globalThis.fetch = origFetch;
+    if (origAdminCache) require.cache[adminPath] = origAdminCache; else delete require.cache[adminPath];
+    if (fbAdminPath) { if (origFbCache) require.cache[fbAdminPath] = origFbCache; else delete require.cache[fbAdminPath]; }
+    for (const k of ['VDSEN_AUTO_COHORT_RENEWAL_ENABLED', 'VDSEN_NUMERIC_PILOT_RUNTIME_SHA', 'VERCEL_TOKEN', 'VERCEL_PROJECT_ID', 'VERCEL_ORG_ID']) {
+      if (savedEnv[k] === undefined) delete process.env[k]; else process.env[k] = savedEnv[k];
+    }
+  }
+});
+
+test('T878-PROD-02 — Fail-closed on missing or invalid commercial roster and both Pegar JSON UIs route through automatic sync', async () => {
+  const planSync = require(path.join(ROOT, 'api/_planActivationSync.js'));
+  const invokeSync = async (commercialRoster) => {
+    let statusCode = 0, payload = null;
+    const h = planSync.makeHandler({ db: {}, verifyIdToken: async () => ({ uid: 'coach-1' }), commercialRoster });
+    const req = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { clientId: 'c1', planId: 'p1' } };
+    const res = { setHeader() {}, status(c) { statusCode = c; return this; }, json(d) { payload = d; return this; } };
+    await h(req, res);
+    return { statusCode, payload };
+  };
+
+  // Padrón ausente
+  const rMissing = await invokeSync(null);
+  assert.equal(rMissing.statusCode, 500);
+  assert.equal(rMissing.payload.errorCode, 'COMMERCIAL_ROSTER_MISSING');
+
+  // Padrón inválido (schema, project, overlap)
+  const rBadSchema = await invokeSync({ schema: 'wrong', activeUids: ['client_000001'] });
+  assert.equal(rBadSchema.statusCode, 500);
+  assert.equal(rBadSchema.payload.errorCode, 'COMMERCIAL_ROSTER_INVALID_SCHEMA');
+
+  const rOverlap = await invokeSync({
+    schema: 'vdsen-commercial-roster-v1', firebaseProject: 'vdsen-ecosistema', confirmedBy: 'owner',
+    activeUids: ['client_000001'], inactiveUids: ['client_000001'],
+  });
+  assert.equal(rOverlap.statusCode, 500);
+  assert.equal(rOverlap.payload.errorCode, 'COMMERCIAL_ROSTER_OVERLAP');
+
+  // Verify BOTH Pegar JSON UIs route through saveImportedPlan -> _assignPlanTxn -> _syncPlanEngineAfterActivation
+  const modalSubmit = extractFn(COACH_HTML, "window._submitModalImport = async function(mode, clientId)");
+  assert.match(modalSubmit, /await saveImportedPlan\(clientId\)/, 'Modal Pegar JSON must invoke saveImportedPlan');
+  const previewBtn = COACH_HTML.indexOf('id="saveImportedPlanBtn" onclick="saveImportedPlan()"');
+  assert.ok(previewBtn !== -1, 'Main Pegar JSON preview must invoke saveImportedPlan');
+});

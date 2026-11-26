@@ -858,6 +858,20 @@ test('T878-JSON-05..12 E2E Emulator: Real /api/plan-activation-sync automatic re
   assert.equal(rPend.payload.engineState, 'AUTHORIZATION_PENDING');
   assert.equal(rPend.payload.numericApplyAuthorized, false);
 
+  // T878-JSON-10a2: With autoRenewalEnabled=true but syncCohortRuntimeEnv MISSING -> fail-closed 503 BEFORE STOP!
+  const syncHandlerNoShard = planSync.makeHandler({
+    db: adminDb, verifyIdToken: async () => ({ uid: COACH_ID }),
+    commercialRoster: roster, autoRenewalEnabled: true, runtimeSha: SHA,
+    clock: () => new Date(nowMs + 1500).toISOString(),
+  });
+  const rNoShard = await invokeTrigger(syncHandlerNoShard, { clientId: UID_C1, planId: PLAN_C1_JSON });
+  assert.equal(rNoShard.statusCode, 503);
+  assert.equal(rNoShard.payload.status, 'RENEWAL_BLOCKED_NO_SHARD_SYNC');
+  assert.equal(rNoShard.payload.errorCode, 'RUNTIME_SHARD_SYNC_UNAVAILABLE');
+  assert.equal(rNoShard.payload.numericApplyAuthorized, false);
+  const c1StillArmed = (await adminDb.doc('releaseControl/numericPilot_cohort_cohort-01').get()).data();
+  assert.equal(c1StillArmed.enabled, true, 'Missing shard syncer must fail closed BEFORE touching cohort-01');
+
   // T878-JSON-05 & 12: Automatic server-side renewal on cohort-01 ONLY (with runtime shard update)
   let syncedCohortShard = null;
   const syncHandlerAuto = planSync.makeHandler({

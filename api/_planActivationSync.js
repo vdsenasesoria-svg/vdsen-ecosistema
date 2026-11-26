@@ -1,25 +1,27 @@
 'use strict';
 // T878 — Server-Only Automatic Plan-Activation Engine Sync & Controlled Cohort Renewal.
 // Called automatically by App Coach right after any plan activation (Pegar JSON, import,
-// manual, template, duplicate, AI draft_approved).
+// manual, template, duplicate, AI draft_approved) via POST /api/autonomous-progression-trigger?action=plan-activation-sync.
 //
 // Security invariants:
 // - Verifies Coach Firebase ID token server-side; zero admin privileges in browser.
 // - Never enables global NUMERIC_APPLY_ENABLED; respects all T876 commercial boundaries
 //   (strictly the 25 confirmed active clients; 4 inactive / 39 unconfirmed never authorized).
-// - Fail-closed on invalid plan (missing ISO updatedAt, missing/duplicate PIDs),
-//   concurrency collision, STOP verification failure, runtime shard failure, or post-verify mismatch.
+// - Bundles .release/commercial-roster-t876.json via literal require() so Vercel NFT
+//   statically traces it; fails closed if absent or invalid.
+// - Mandatory runtime shard sync: NEVER re-arms Firestore fences unless syncCohortRuntimeEnv
+//   is configured, executes, and verifies shard alignment (fail-closed BEFORE STOP if absent,
+//   and stays STOPPED if shard sync fails).
 // - Never touches unaffected cohorts.
 
 const crypto = require('node:crypto');
-const fs = require('node:fs');
-const path = require('node:path');
 const C = require('./_numericPilotContract');
 
 const RELEASE_SCHEMA = 'vdsen-autonomous-release-v1';
 const LEDGER_SCHEMA = 'vdsen-numeric-operations-ledger-v1';
-const ROSTER_PATH = path.resolve(__dirname, '../.release/commercial-roster-t876.json');
 const MAX_COHORT_CLIENTS = C.COHORT_MAX_CLIENTS || 10;
+const ENV_SHARD_MAX_CLIENTS = 5;
+const ENV_SHARD_MAX_BYTES = 3900;
 
 function _data(snap) {
   return snap && snap.exists === true ? snap.data() : null;
@@ -31,22 +33,150 @@ function _sameSorted(a, b) {
   return sa.every((v, i) => v === sb[i]);
 }
 
-function loadCommercialRosterSafe(customRoster) {
-  if (customRoster && typeof customRoster === 'object' && customRoster.activeSet instanceof Set) {
-    return customRoster;
-  }
-  const raw = JSON.parse(fs.readFileSync(ROSTER_PATH, 'utf8'));
-  if (!raw || raw.schema !== 'vdsen-commercial-roster-v1' || raw.confirmedBy !== 'owner' || !Array.isArray(raw.activeUids)) {
+function validateCommercialRoster(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error('COMMERCIAL_ROSTER_INVALID');
   }
-  const activeSet = new Set(raw.activeUids);
-  const inactiveSet = new Set(Array.isArray(raw.inactiveUids) ? raw.inactiveUids : []);
+  if (raw.schema !== 'vdsen-commercial-roster-v1') throw new Error('COMMERCIAL_ROSTER_INVALID_SCHEMA');
+  if (raw.firebaseProject && raw.firebaseProject !== 'vdsen-ecosistema') throw new Error('COMMERCIAL_ROSTER_PROJECT_MISMATCH');
+  if (raw.confirmedBy !== undefined && raw.confirmedBy !== 'owner') throw new Error('COMMERCIAL_ROSTER_UNAPPROVED');
+  if (raw.confirmedAt !== undefined && (typeof raw.confirmedAt !== 'string' || !Number.isFinite(Date.parse(raw.confirmedAt)))) {
+    throw new Error('COMMERCIAL_ROSTER_INVALID_CONFIRMED_AT');
+  }
+  const activeUids = Array.isArray(raw.activeUids) ? raw.activeUids : null;
+  if (!activeUids || activeUids.length < 1) throw new Error('COMMERCIAL_ROSTER_EMPTY_ACTIVE_UIDS');
+  const activeSet = new Set();
+  for (const uid of activeUids) {
+    if (typeof uid !== 'string' || uid.trim().length < 8 || uid !== uid.trim()) throw new Error('COMMERCIAL_ROSTER_INVALID_UID');
+    if (activeSet.has(uid)) throw new Error('COMMERCIAL_ROSTER_DUPLICATE_ACTIVE_UID');
+    activeSet.add(uid);
+  }
+  const inactiveUids = Array.isArray(raw.inactiveUids) ? raw.inactiveUids : [];
+  const inactiveSet = new Set();
+  for (const uid of inactiveUids) {
+    if (typeof uid !== 'string' || uid.trim().length < 8 || uid !== uid.trim()) throw new Error('COMMERCIAL_ROSTER_INVALID_INACTIVE_UID');
+    if (inactiveSet.has(uid)) throw new Error('COMMERCIAL_ROSTER_DUPLICATE_INACTIVE_UID');
+    if (activeSet.has(uid)) throw new Error('COMMERCIAL_ROSTER_OVERLAP');
+    inactiveSet.add(uid);
+  }
   return {
     schema: raw.schema,
-    activeUids: raw.activeUids.slice(),
+    firebaseProject: raw.firebaseProject || 'vdsen-ecosistema',
+    confirmedBy: raw.confirmedBy || 'owner',
+    confirmedAt: raw.confirmedAt || null,
+    activeUids: activeUids.slice(),
     inactiveUids: [...inactiveSet],
     activeSet,
     inactiveSet,
+  };
+}
+
+// Literal require() guarantees Vercel NFT traces and bundles the reviewed T876 commercial roster.
+function loadBundledCommercialRoster() {
+  const bundled = require('../.release/commercial-roster-t876.json');
+  return validateCommercialRoster(bundled);
+}
+
+function loadCommercialRosterSafe(customRoster) {
+  if (customRoster === null) throw new Error('COMMERCIAL_ROSTER_MISSING');
+  if (typeof customRoster === 'function') {
+    const loaded = customRoster();
+    if (!loaded) throw new Error('COMMERCIAL_ROSTER_MISSING');
+    return validateCommercialRoster(loaded);
+  }
+  if (customRoster !== undefined) {
+    return validateCommercialRoster(customRoster);
+  }
+  return loadBundledCommercialRoster();
+}
+
+function shardKeysForCohort(cohortId, windowCount) {
+  const m = /^cohort-(\d+)$/.exec(String(cohortId || ''));
+  if (!m) return null;
+  const idx = parseInt(m[1], 10);
+  if (!Number.isInteger(idx) || idx < 1 || idx > 10) return null;
+  const startShard = (idx - 1) * 2 + 1;
+  const needed = Math.max(1, Math.ceil(windowCount / ENV_SHARD_MAX_CLIENTS));
+  if (needed > 2) return null;
+  const keys = [];
+  for (let i = 0; i < needed; i++) keys.push('VDSEN_NUMERIC_COHORT_' + (startShard + i));
+  return keys;
+}
+
+// Server-only Vercel cohort shard synchronizer. Returns null when scoped credentials are absent
+// (forcing fail-closed RENEWAL_BLOCKED_NO_SHARD_SYNC before any Firestore fence is touched).
+function createVercelCohortShardSyncer(env, fetcher) {
+  env = env || process.env;
+  const token = typeof env.VERCEL_TOKEN === 'string' ? env.VERCEL_TOKEN.trim() : '';
+  const projectId = typeof env.VERCEL_PROJECT_ID === 'string' ? env.VERCEL_PROJECT_ID.trim() : '';
+  const orgId = typeof env.VERCEL_ORG_ID === 'string' ? env.VERCEL_ORG_ID.trim() : '';
+  if (!token || !projectId || !orgId) return null;
+  const doFetch = fetcher || globalThis.fetch;
+  if (typeof doFetch !== 'function') return null;
+
+  return async function syncCohortRuntimeEnv(payload) {
+    try {
+      const windows = Array.isArray(payload && payload.windows) ? payload.windows : [];
+      if (!windows.length || windows.length > MAX_COHORT_CLIENTS) {
+        return { ok: false, verified: false, errorCode: 'INVALID_SHARD_WINDOWS' };
+      }
+      const shardKeys = shardKeysForCohort(payload.cohortId, windows.length);
+      if (!shardKeys) return { ok: false, verified: false, errorCode: 'UNSUPPORTED_COHORT_SHARD_ID' };
+
+      const shards = [];
+      for (let i = 0; i < shardKeys.length; i++) {
+        const slice = windows.slice(i * ENV_SHARD_MAX_CLIENTS, (i + 1) * ENV_SHARD_MAX_CLIENTS);
+        const serialized = JSON.stringify(slice);
+        if (Buffer.byteLength(serialized, 'utf8') > ENV_SHARD_MAX_BYTES) {
+          return { ok: false, verified: false, errorCode: 'SHARD_PAYLOAD_EXCEEDS_LIMIT' };
+        }
+        shards.push({ key: shardKeys[i], value: serialized, expectedSlice: slice });
+      }
+
+      const qs = 'upsert=true&teamId=' + encodeURIComponent(orgId);
+      const url = 'https://api.vercel.com/v10/projects/' + encodeURIComponent(projectId) + '/env?' + qs;
+      for (const sh of shards) {
+        const resp = await doFetch(url, {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            key: sh.key,
+            value: sh.value,
+            type: 'plain',
+            target: ['production'],
+          }),
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!resp || !resp.ok) {
+          return { ok: false, verified: false, errorCode: 'VERCEL_ENV_UPSERT_FAILED' };
+        }
+      }
+
+      // Post-upsert verification: read back production env vars and confirm exact shard payloads
+      const verifyUrl = 'https://api.vercel.com/v10/projects/' + encodeURIComponent(projectId) + '/env?teamId=' + encodeURIComponent(orgId);
+      const vResp = await doFetch(verifyUrl, {
+        method: 'GET',
+        headers: { Authorization: 'Bearer ' + token },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!vResp || !vResp.ok) {
+        return { ok: false, verified: false, errorCode: 'VERCEL_ENV_VERIFY_READ_FAILED' };
+      }
+      const vData = await vResp.json().catch(() => null);
+      const envs = Array.isArray(vData && vData.envs) ? vData.envs : [];
+      for (const sh of shards) {
+        const found = envs.find(e => e && e.key === sh.key && Array.isArray(e.target) && e.target.includes('production'));
+        if (!found || found.value !== sh.value) {
+          return { ok: false, verified: false, errorCode: 'VERCEL_ENV_VERIFY_MISMATCH' };
+        }
+      }
+      return { ok: true, verified: true, shardKeys };
+    } catch (_) {
+      return { ok: false, verified: false, errorCode: 'VERCEL_SHARD_SYNC_EXCEPTION' };
+    }
   };
 }
 
@@ -141,14 +271,17 @@ function makeHandler(deps) {
     let roster;
     try {
       roster = loadCommercialRosterSafe(deps.commercialRoster);
-    } catch (_) {
+    } catch (err) {
       return res.status(500).json({
+        schema: 'vdsen-plan-activation-sync-v1',
         status: 'RENEWAL_FAILED',
         engineState: 'COACH_INTERVENTION_REQUIRED',
         commercialAuthorized: false,
         numericApplyAuthorized: false,
         renewed: false,
-        errorCode: 'COMMERCIAL_ROSTER_UNAVAILABLE',
+        errorCode: (err && err.message && err.message.startsWith('COMMERCIAL_ROSTER_'))
+          ? err.message
+          : 'COMMERCIAL_ROSTER_UNAVAILABLE',
       });
     }
 
@@ -309,11 +442,33 @@ function makeHandler(deps) {
       });
     }
 
+    // MANDATORY FAIL-CLOSED GUARD: Never STOP or re-arm Firestore fences without a verified
+    // runtime shard synchronizer. Prevents Firestore-vs-Vercel split-brain.
+    if (typeof deps.syncCohortRuntimeEnv !== 'function') {
+      return res.status(503).json({
+        schema: 'vdsen-plan-activation-sync-v1',
+        status: 'RENEWAL_BLOCKED_NO_SHARD_SYNC',
+        engineState: 'AUTHORIZATION_PENDING',
+        commercialAuthorized: true,
+        numericApplyAuthorized: false,
+        renewed: false,
+        cohortId,
+        clientId,
+        previousPlanId,
+        planId,
+        pidsHash: planCheck.pidsHash,
+        pidCount: planCheck.pidCount,
+        planUpdatedAt: planDoc.updatedAt,
+        errorCode: 'RUNTIME_SHARD_SYNC_UNAVAILABLE',
+      });
+    }
+
     const renewalOpId = buildRenewalOperationId(cohortId, clientId, planId, planCheck.pidsHash);
     const opRef = db.collection('releaseControl').doc('numericPilot').collection('operations').doc(renewalOpId);
 
     try {
       // Step 6A: Concurrency guard — reserve renewal lock atomically
+      // (IN_PROGRESS blocks overlapping concurrent callers; FAILED allows safe retry)
       const lockOutcome = await db.runTransaction(async (tx) => {
         const opSnap = await tx.get(opRef);
         const existingOp = _data(opSnap);
@@ -374,7 +529,7 @@ function makeHandler(deps) {
         (!stopCc || stopCc.enabled === false)
       );
       if (!stoppedVerified) {
-        await opRef.set({ status: 'STOP_INCOMPLETE', failedAt: nowIso }, { merge: true });
+        await opRef.set({ status: 'FAILED', errorCode: 'STOP_INCOMPLETE', failedAt: nowIso }, { merge: true });
         return res.status(500).json({
           schema: 'vdsen-plan-activation-sync-v1',
           status: 'RENEWAL_FAILED',
@@ -455,32 +610,30 @@ function makeHandler(deps) {
         };
       }
 
-      // Step 6D: Optional runtime shard sync (if configured). If it fails, cohort stays STOPPED (fail-closed!).
-      if (typeof deps.syncCohortRuntimeEnv === 'function') {
-        const shardRes = await deps.syncCohortRuntimeEnv({
+      // Step 6D: Mandatory runtime shard sync & verification. If it fails, cohort stays STOPPED (fail-closed!).
+      const shardRes = await deps.syncCohortRuntimeEnv({
+        cohortId,
+        operationId: renewalOpId,
+        runtimeSha,
+        startsAt,
+        expiresAt,
+        windows: Object.values(compactWindows),
+      });
+      if (!shardRes || shardRes.ok !== true || shardRes.verified === false) {
+        await opRef.set({ status: 'FAILED', errorCode: (shardRes && shardRes.errorCode) || 'RUNTIME_SHARD_SYNC_FAILED', failedAt: nowIso }, { merge: true });
+        return res.status(500).json({
+          schema: 'vdsen-plan-activation-sync-v1',
+          status: 'RENEWAL_FAILED',
+          engineState: 'COACH_INTERVENTION_REQUIRED',
+          commercialAuthorized: true,
+          numericApplyAuthorized: false,
+          renewed: false,
+          stoppedVerified: true,
           cohortId,
-          operationId: renewalOpId,
-          runtimeSha,
-          startsAt,
-          expiresAt,
-          windows: Object.values(compactWindows),
+          clientId,
+          planId,
+          errorCode: (shardRes && shardRes.errorCode) || 'RUNTIME_SHARD_SYNC_FAILED',
         });
-        if (!shardRes || shardRes.ok !== true) {
-          await opRef.set({ status: 'FAILED', errorCode: 'RUNTIME_SHARD_SYNC_FAILED', failedAt: nowIso }, { merge: true });
-          return res.status(500).json({
-            schema: 'vdsen-plan-activation-sync-v1',
-            status: 'RENEWAL_FAILED',
-            engineState: 'COACH_INTERVENTION_REQUIRED',
-            commercialAuthorized: true,
-            numericApplyAuthorized: false,
-            renewed: false,
-            stoppedVerified: true,
-            cohortId,
-            clientId,
-            planId,
-            errorCode: 'RUNTIME_SHARD_SYNC_FAILED',
-          });
-        }
       }
 
       // Step 6E: Atomic re-arm of ONLY this cohort + ledger RESERVED
@@ -557,6 +710,7 @@ function makeHandler(deps) {
         vOp && vOp.status === 'RESERVED' && vOp.operationId === renewalOpId
       );
       if (!verified) {
+        await opRef.set({ status: 'FAILED', errorCode: 'POST_RENEWAL_VERIFY_FAILED', failedAt: nowIso }, { merge: true }).catch(() => {});
         return res.status(500).json({
           schema: 'vdsen-plan-activation-sync-v1',
           status: 'RENEWAL_FAILED',
@@ -579,6 +733,7 @@ function makeHandler(deps) {
         numericApplyAuthorized: true,
         renewed: true,
         stoppedVerified: true,
+        shardSyncedVerified: true,
         cohortId,
         clientId,
         previousPlanId,
@@ -590,6 +745,7 @@ function makeHandler(deps) {
         expiresAt,
       });
     } catch (_) {
+      await opRef.set({ status: 'FAILED', errorCode: 'RENEWAL_EXECUTION_ERROR', failedAt: nowIso }, { merge: true }).catch(() => {});
       return res.status(500).json({
         schema: 'vdsen-plan-activation-sync-v1',
         status: 'RENEWAL_FAILED',
@@ -613,6 +769,10 @@ function defaultHandler(req, res) {
     _defaultHandler = makeHandler({
       db: fbAdmin.getDb(),
       verifyIdToken: (tok) => fbAdmin.getAuth().verifyIdToken(tok),
+      commercialRoster: () => loadBundledCommercialRoster(),
+      autoRenewalEnabled: process.env.VDSEN_AUTO_COHORT_RENEWAL_ENABLED === 'true',
+      runtimeSha: process.env.VDSEN_NUMERIC_PILOT_RUNTIME_SHA || process.env.VERCEL_GIT_COMMIT_SHA || null,
+      syncCohortRuntimeEnv: createVercelCohortShardSyncer(process.env),
     });
   }
   return _defaultHandler(req, res);
@@ -621,5 +781,9 @@ function defaultHandler(req, res) {
 defaultHandler.makeHandler = makeHandler;
 defaultHandler.validateNewPlanForEngine = validateNewPlanForEngine;
 defaultHandler.buildRenewalOperationId = buildRenewalOperationId;
+defaultHandler.validateCommercialRoster = validateCommercialRoster;
+defaultHandler.loadBundledCommercialRoster = loadBundledCommercialRoster;
 defaultHandler.loadCommercialRosterSafe = loadCommercialRosterSafe;
+defaultHandler.createVercelCohortShardSyncer = createVercelCohortShardSyncer;
+defaultHandler.shardKeysForCohort = shardKeysForCohort;
 module.exports = defaultHandler;
