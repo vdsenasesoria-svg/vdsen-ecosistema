@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
@@ -4791,6 +4791,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       dayIndex: Number.isInteger(d.dayIndex) ? d.dayIndex : di,
       label: String(d.label || `Día ${di + 1}`),
       exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => {
+        const _isCardio = String(ex.exerciseType || ex.tipo || '').toLowerCase().trim() === 'cardio';
         const techRaw = (function(t){ t=String(t||'straight').toLowerCase().trim(); if(t==='rest_pause')return 'rest-pause'; if(t==='superset_antagonist'||t==='superset-antagonist')return 'superset'; if(t==='superset_agonist'||t==='superset-agonist')return 'superset'; return t; })(ex.technique);
         const normEx = {
           exerciseName: String(ex.exerciseName || '').trim(),
@@ -4814,8 +4815,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         };
         // Preservar techniqueFromWeek para activación condicional (Y3T/SST)
         if (ex.techniqueFromWeek) normEx.techniqueFromWeek = parseInt(ex.techniqueFromWeek);
+        // T589: Preservar exerciseType y metadata de cardio/rendimiento
+        ['exerciseType','tipo','modo','cardioMode','duracionMin','targetMinutes','distanciaKm','targetKm',
+         'fcZonaMin','fcMin','fcZonaMax','fcMax','ritmoObjetivo','targetPace','repeticiones',
+         'bloqueTrabajo','workInterval','bloqueDescanso','restInterval'].forEach(f => {
+          if (ex[f] !== undefined) normEx[f] = ex[f];
+        });
+        if (_isCardio && !normEx.exerciseType) normEx.exerciseType = 'cardio';
         return normEx;
-      }).filter(ex => ex.exerciseName.length > 1 && ex.sets.length > 0) : []
+      }).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || String(ex.exerciseType || ex.tipo || '').toLowerCase().trim() === 'cardio')) : []
     })).filter(d => d.exercises.length > 0);
 
     if (days.length === 0) {
@@ -5864,6 +5872,21 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
                   if (!dayMuscleProfiles[m]) dayMuscleProfiles[m] = [];
                   dayMuscleProfiles[m].push({ exName: exName, rp: _meta.resistanceProfile });
                 });
+              }
+
+              // T589: Cardio exercises follow cardio contract (exerciseType:'cardio' + duracionMin/target), not strength sets/nivel_medio
+              var _isCardioEx = String(ex.exerciseType || ex.tipo || '').toLowerCase().trim() === 'cardio';
+              if (_isCardioEx) {
+                var _hasCardioTarget = (typeof ex.duracionMin === 'number' && ex.duracionMin > 0) ||
+                  (typeof ex.targetMinutes === 'number' && ex.targetMinutes > 0) ||
+                  (typeof ex.distanciaKm === 'number' && ex.distanciaKm > 0) ||
+                  (typeof ex.targetKm === 'number' && ex.targetKm > 0) ||
+                  (typeof ex.bloqueTrabajo === 'string' && ex.bloqueTrabajo.trim().length > 0) ||
+                  (Array.isArray(ex.sets) && ex.sets.length > 0);
+                if (!_hasCardioTarget) {
+                  errors.push('Día ' + (di+1) + ' / ' + (exName||'Cardio') + ': cardio sin duracionMin ni objetivo válido');
+                }
+                return;
               }
 
               // P10.1: nivel_medio enum check (fundamental|suplementario|asistencia_mayor|asistencia_secundario)
@@ -7130,31 +7153,42 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const days = obj.days.map((d, di) => ({
       dayIndex: Number.isInteger(d.dayIndex) ? d.dayIndex : di,
       label: String(d.label || ('Día ' + (di + 1))),
-      exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => ({
-        exerciseName: String(ex.exerciseName || '').trim(),
-        alternatives: Array.isArray(ex.alternatives) ? ex.alternatives.map(String) : [],
-        technique: String(ex.technique || 'straight').toLowerCase().trim(),
-        techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
-        coachNote: String(ex.coachNote || '').trim(),
-        supersetGroup: String(ex.supersetGroup || ex.ssGroup || '').trim(),
-        nivel_medio: ['fundamental','suplementario','asistencia_mayor','asistencia_secundario'].includes(ex.nivel_medio) ? ex.nivel_medio : null,
-        variacion_vertical: ex.variacion_vertical && typeof ex.variacion_vertical === 'object' ? {
-          semana_inicio: parseInt(ex.variacion_vertical.semana_inicio) || 1,
-          semana_variacion: ex.variacion_vertical.semana_variacion != null ? parseInt(ex.variacion_vertical.semana_variacion) : null,
-          ejercicio_sustituto: ex.variacion_vertical.ejercicio_sustituto ? String(ex.variacion_vertical.ejercicio_sustituto).trim() : null,
-          nivel_sustituto: ex.variacion_vertical.nivel_sustituto || null
-        } : null,
-        sets: Array.isArray(ex.sets) && ex.sets.length ? ex.sets.map((s, si) => ({
-          setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
-          repsTarget: parseInt(s.repsTarget) || 8,
-          rirTarget: parseInt(s.rirTarget ?? 2),
-          load: parseFloat(s.load ?? 0) || 0,
-          restSeconds: parseInt(s.restSeconds ?? 90) || 90,
-          setNote: String(s.setNote || s.note || '').trim(),
-          drop: s.drop === true,
-          tempo: String(s.tempo || '').trim()
-        })) : []
-      })).filter(ex => ex.exerciseName.length > 1 && ex.sets.length > 0) : []
+      exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => {
+        const _isCardio = String(ex.exerciseType || ex.tipo || '').toLowerCase().trim() === 'cardio';
+        const normEx = {
+          exerciseName: String(ex.exerciseName || '').trim(),
+          alternatives: Array.isArray(ex.alternatives) ? ex.alternatives.map(String) : [],
+          technique: String(ex.technique || 'straight').toLowerCase().trim(),
+          techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
+          coachNote: String(ex.coachNote || '').trim(),
+          supersetGroup: String(ex.supersetGroup || ex.ssGroup || '').trim(),
+          nivel_medio: ['fundamental','suplementario','asistencia_mayor','asistencia_secundario'].includes(ex.nivel_medio) ? ex.nivel_medio : null,
+          variacion_vertical: ex.variacion_vertical && typeof ex.variacion_vertical === 'object' ? {
+            semana_inicio: parseInt(ex.variacion_vertical.semana_inicio) || 1,
+            semana_variacion: ex.variacion_vertical.semana_variacion != null ? parseInt(ex.variacion_vertical.semana_variacion) : null,
+            ejercicio_sustituto: ex.variacion_vertical.ejercicio_sustituto ? String(ex.variacion_vertical.ejercicio_sustituto).trim() : null,
+            nivel_sustituto: ex.variacion_vertical.nivel_sustituto || null
+          } : null,
+          sets: Array.isArray(ex.sets) && ex.sets.length ? ex.sets.map((s, si) => ({
+            setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
+            repsTarget: parseInt(s.repsTarget) || 8,
+            rirTarget: parseInt(s.rirTarget ?? 2),
+            load: parseFloat(s.load ?? 0) || 0,
+            restSeconds: parseInt(s.restSeconds ?? 90) || 90,
+            setNote: String(s.setNote || s.note || '').trim(),
+            drop: s.drop === true,
+            tempo: String(s.tempo || '').trim()
+          })) : []
+        };
+        // T589: Preservar exerciseType y metadata de cardio/rendimiento
+        ['exerciseType','tipo','modo','cardioMode','duracionMin','targetMinutes','distanciaKm','targetKm',
+         'fcZonaMin','fcMin','fcZonaMax','fcMax','ritmoObjetivo','targetPace','repeticiones',
+         'bloqueTrabajo','workInterval','bloqueDescanso','restInterval'].forEach(f => {
+          if (ex[f] !== undefined) normEx[f] = ex[f];
+        });
+        if (_isCardio && !normEx.exerciseType) normEx.exerciseType = 'cardio';
+        return normEx;
+      }).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || String(ex.exerciseType || ex.tipo || '').toLowerCase().trim() === 'cardio')) : []
     })).filter(d => d.exercises.length > 0);
     if (!days.length) return null;
     const _norm = { weeks: parseInt(obj.weeks) || 6, daysPerWeek: parseInt(obj.daysPerWeek) || days.length, days };
@@ -8282,9 +8316,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       training.days.forEach(day => {
         trainingHtml += `<div style="margin-bottom:12px"><b>Día ${day.dayIndex}: ${_escH(day.label || '')}</b><ul style="margin:4px 0 0 16px;font-size:12px">`;
         (day.exercises || []).forEach(ex => {
-          trainingHtml += `<li>${_escH(ex.exerciseName)} — ${ex.sets ? ex.sets.length : 0} series`;
-          if (ex.technique) trainingHtml += ` (${_escH(ex.technique)})`;
-          trainingHtml += '</li>';
+          const _isCardio = String(ex.exerciseType || ex.tipo || '').toLowerCase().trim() === 'cardio';
+          if (_isCardio) {
+            const _cd = ex.duracionMin || ex.targetMinutes;
+            trainingHtml += `<li>${_escH(ex.exerciseName)} — CARDIO${_cd ? ' · ' + _escH(String(_cd)) + ' min' : ''}</li>`;
+          } else {
+            trainingHtml += `<li>${_escH(ex.exerciseName)} — ${ex.sets ? ex.sets.length : 0} series`;
+            if (ex.technique) trainingHtml += ` (${_escH(ex.technique)})`;
+            trainingHtml += '</li>';
+          }
         });
         trainingHtml += '</ul></div>';
       });
@@ -13794,6 +13834,19 @@ El esfuerzo no es negociable.
           day.exercises.forEach(function(ex) {
             var exName = (ex.exerciseName || '').trim();
             if (!exName) warnings.push('Día ' + (di + 1) + ': ejercicio sin nombre');
+            var isCardio = String(ex.exerciseType || ex.tipo || '').toLowerCase().trim() === 'cardio';
+            if (isCardio) {
+              var hasCardioTarget = (typeof ex.duracionMin === 'number' && ex.duracionMin > 0) ||
+                (typeof ex.targetMinutes === 'number' && ex.targetMinutes > 0) ||
+                (typeof ex.distanciaKm === 'number' && ex.distanciaKm > 0) ||
+                (typeof ex.targetKm === 'number' && ex.targetKm > 0) ||
+                (typeof ex.bloqueTrabajo === 'string' && ex.bloqueTrabajo.trim().length > 0) ||
+                (Array.isArray(ex.sets) && ex.sets.length > 0);
+              if (!hasCardioTarget) {
+                errors.push((exName || 'cardio sin nombre') + ': cardio sin duracionMin ni objetivo válido');
+              }
+              return;
+            }
             if (!Array.isArray(ex.sets) || ex.sets.length === 0) {
               errors.push((exName || 'ejercicio sin nombre') + ': sin series');
             } else {
@@ -14013,7 +14066,7 @@ El esfuerzo no es negociable.
   // status: 'OK' | 'WARNINGS' | 'REVIEW'
   function _buildPlanQualityAudit(training, nutrition, supplements) {
     var issues = [];
-    var stats  = { days: 0, exercises: 0, sets: 0, meals: 0 };
+    var stats  = { days: 0, exercises: 0, sets: 0, cardio: 0, meals: 0 };
     function _warn(msg)   { issues.push({ severity: 'WARN',   msg: msg }); }
     function _review(msg) { issues.push({ severity: 'REVIEW', msg: msg }); }
     // ── Training ──────────────────────────────────────────────────────────────
@@ -14029,6 +14082,18 @@ El esfuerzo no es negociable.
           stats.exercises++;
           var exName = (ex.exerciseName || '').trim();
           if (!exName) _review('Día ' + (di + 1) + ': ejercicio sin nombre');
+          var isCardio = String(ex.exerciseType || ex.tipo || '').toLowerCase().trim() === 'cardio';
+          if (isCardio) {
+            stats.cardio++;
+            var hasTarget = (typeof ex.duracionMin === 'number' && ex.duracionMin > 0) ||
+              (typeof ex.targetMinutes === 'number' && ex.targetMinutes > 0) ||
+              (typeof ex.distanciaKm === 'number' && ex.distanciaKm > 0) ||
+              (typeof ex.targetKm === 'number' && ex.targetKm > 0) ||
+              (typeof ex.bloqueTrabajo === 'string' && ex.bloqueTrabajo.trim().length > 0) ||
+              (Array.isArray(ex.sets) && ex.sets.length > 0);
+            if (!hasTarget) _review(dayLabel + ' / ' + (exName || 'Cardio') + ': cardio sin duracionMin ni objetivo');
+            return;
+          }
           if (!Array.isArray(ex.sets) || ex.sets.length === 0) {
             _review(dayLabel + ' / ' + (exName || '?') + ': sin series');
             return;
@@ -14048,7 +14113,7 @@ El esfuerzo no es negociable.
         });
       });
       if (stats.days === 0) _review('Sin días de entrenamiento');
-      if (stats.sets === 0 && stats.days > 0) _review('Cero series en total');
+      if (stats.sets === 0 && stats.cardio === 0 && stats.days > 0) _review('Cero series en total');
     } else if (training != null) {
       _review('training.days no es array');
     }
@@ -17164,31 +17229,42 @@ El esfuerzo no es negociable.
       const days = obj.days.map((d, di) => ({
         dayIndex: Number.isInteger(d.dayIndex) ? d.dayIndex : di,
         label: String(d.label || `Día ${di + 1}`),
-        exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => ({
-          exerciseName: String(ex.exerciseName || '').trim(),
-          alternatives: Array.isArray(ex.alternatives) ? ex.alternatives.map(String) : [],
-          technique: String(ex.technique || 'straight').toLowerCase().trim(),
-          techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
-          coachNote: String(ex.coachNote || '').trim(),
-          supersetGroup: String(ex.supersetGroup || ex.ssGroup || '').trim(),
-          nivel_medio: ['fundamental','suplementario','asistencia_mayor','asistencia_secundario'].includes(ex.nivel_medio) ? ex.nivel_medio : null,
-          variacion_vertical: ex.variacion_vertical && typeof ex.variacion_vertical === 'object' ? {
-            semana_inicio: parseInt(ex.variacion_vertical.semana_inicio) || 1,
-            semana_variacion: ex.variacion_vertical.semana_variacion != null ? parseInt(ex.variacion_vertical.semana_variacion) : null,
-            ejercicio_sustituto: ex.variacion_vertical.ejercicio_sustituto ? String(ex.variacion_vertical.ejercicio_sustituto).trim() : null,
-            nivel_sustituto: ex.variacion_vertical.nivel_sustituto || null
-          } : null,
-          sets: Array.isArray(ex.sets) && ex.sets.length > 0 ? ex.sets.map((s, si) => ({
-            setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
-            repsTarget: parseInt(s.repsTarget) || 8,
-            rirTarget: parseInt(s.rirTarget ?? 2),
-            load: parseFloat(s.load ?? 0) || 0,
-            restSeconds: parseInt(s.restSeconds ?? 90) || 90,
-            setNote: String(s.setNote || s.note || '').trim(),
-            drop: s.drop === true,
-            tempo: String(s.tempo || '').trim()
-          })) : []
-        })).filter(ex => ex.exerciseName.length > 1 && ex.sets.length > 0) : []
+        exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => {
+          const _isCardio = String(ex.exerciseType || ex.tipo || '').toLowerCase().trim() === 'cardio';
+          const normEx = {
+            exerciseName: String(ex.exerciseName || '').trim(),
+            alternatives: Array.isArray(ex.alternatives) ? ex.alternatives.map(String) : [],
+            technique: String(ex.technique || 'straight').toLowerCase().trim(),
+            techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
+            coachNote: String(ex.coachNote || '').trim(),
+            supersetGroup: String(ex.supersetGroup || ex.ssGroup || '').trim(),
+            nivel_medio: ['fundamental','suplementario','asistencia_mayor','asistencia_secundario'].includes(ex.nivel_medio) ? ex.nivel_medio : null,
+            variacion_vertical: ex.variacion_vertical && typeof ex.variacion_vertical === 'object' ? {
+              semana_inicio: parseInt(ex.variacion_vertical.semana_inicio) || 1,
+              semana_variacion: ex.variacion_vertical.semana_variacion != null ? parseInt(ex.variacion_vertical.semana_variacion) : null,
+              ejercicio_sustituto: ex.variacion_vertical.ejercicio_sustituto ? String(ex.variacion_vertical.ejercicio_sustituto).trim() : null,
+              nivel_sustituto: ex.variacion_vertical.nivel_sustituto || null
+            } : null,
+            sets: Array.isArray(ex.sets) && ex.sets.length > 0 ? ex.sets.map((s, si) => ({
+              setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
+              repsTarget: parseInt(s.repsTarget) || 8,
+              rirTarget: parseInt(s.rirTarget ?? 2),
+              load: parseFloat(s.load ?? 0) || 0,
+              restSeconds: parseInt(s.restSeconds ?? 90) || 90,
+              setNote: String(s.setNote || s.note || '').trim(),
+              drop: s.drop === true,
+              tempo: String(s.tempo || '').trim()
+            })) : []
+          };
+          // T589: Preservar exerciseType y metadata de cardio/rendimiento
+          ['exerciseType','tipo','modo','cardioMode','duracionMin','targetMinutes','distanciaKm','targetKm',
+           'fcZonaMin','fcMin','fcZonaMax','fcMax','ritmoObjetivo','targetPace','repeticiones',
+           'bloqueTrabajo','workInterval','bloqueDescanso','restInterval'].forEach(f => {
+            if (ex[f] !== undefined) normEx[f] = ex[f];
+          });
+          if (_isCardio && !normEx.exerciseType) normEx.exerciseType = 'cardio';
+          return normEx;
+        }).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || String(ex.exerciseType || ex.tipo || '').toLowerCase().trim() === 'cardio')) : []
       })).filter(d => d.exercises.length > 0);
       if (days.length !== curDays) {
         st.style.color='#c94a3a'; st.textContent=`Tras normalizar quedaron ${days.length} días válidos (esperaba ${curDays}). Revisa que cada día tenga ejercicios.`;

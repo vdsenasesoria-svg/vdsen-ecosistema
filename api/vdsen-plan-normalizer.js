@@ -17,6 +17,7 @@ var ERROR_CODES = {
   INVALID_VARIACION_VERTICAL: 'INVALID_VARIACION_VERTICAL',
   INVALID_SET:                'INVALID_SET',
   INVALID_LOAD:               'INVALID_LOAD',
+  INVALID_CARDIO:             'INVALID_CARDIO',
   MISSING_NUTRITION:          'MISSING_NUTRITION',
   MISSING_SUPPLEMENTATION:    'MISSING_SUPPLEMENTATION'
 };
@@ -122,6 +123,44 @@ function normalizeVdsenPlan(input) {
   return { ok: true, plan: normalized };
 }
 
+function isCardioExercise(ex) {
+  if (!ex || typeof ex !== 'object') return false;
+  var t = String(ex.exerciseType || ex.tipo || '').toLowerCase().trim();
+  return t === 'cardio';
+}
+
+function _isPositiveNumber(v) {
+  return typeof v === 'number' && !isNaN(v) && isFinite(v) && v > 0;
+}
+
+function _validateCardioExercise(ex) {
+  var name = ex.exerciseName || '?';
+  var numFields = ['duracionMin', 'targetMinutes', 'distanciaKm', 'targetKm'];
+  var hasValidTarget = false;
+  for (var i = 0; i < numFields.length; i++) {
+    var f = numFields[i];
+    if (ex[f] !== undefined && ex[f] !== null) {
+      if (!_isPositiveNumber(ex[f])) {
+        return { ok: false, error: ERROR_CODES.INVALID_CARDIO,
+                 message: f + ' debe ser un número positivo en cardio "' + name + '"' };
+      }
+      hasValidTarget = true;
+    }
+  }
+  if ((typeof ex.bloqueTrabajo === 'string' && ex.bloqueTrabajo.trim().length > 0) ||
+      (typeof ex.workInterval === 'string' && ex.workInterval.trim().length > 0)) {
+    hasValidTarget = true;
+  }
+  if (Array.isArray(ex.sets) && ex.sets.length > 0) {
+    hasValidTarget = true;
+  }
+  if (!hasValidTarget) {
+    return { ok: false, error: ERROR_CODES.INVALID_CARDIO,
+             message: 'Cardio "' + name + '" requiere duracionMin (o distancia/intervalo válido)' };
+  }
+  return { ok: true };
+}
+
 /**
  * validateVdsenPlan(normalized)
  *
@@ -147,10 +186,16 @@ function validateVdsenPlan(normalized) {
     }
     for (var ei = 0; ei < day.exercises.length; ei++) {
       var ex = day.exercises[ei];
-      if (!Array.isArray(ex.sets) || ex.sets.length === 0) {
+      var isCardio = isCardioExercise(ex);
+
+      if (isCardio) {
+        var cardioCheck = _validateCardioExercise(ex);
+        if (!cardioCheck.ok) return cardioCheck;
+      } else if (!ex || !Array.isArray(ex.sets) || ex.sets.length === 0) {
         return { ok: false, error: ERROR_CODES.EXERCISE_WITHOUT_SETS,
-                 message: 'Ejercicio "' + (ex.exerciseName || '?') + '" no tiene series' };
+                 message: 'Ejercicio "' + ((ex && ex.exerciseName) || '?') + '" no tiene series' };
       }
+
       if (ex.nivel_medio !== undefined && ex.nivel_medio !== null &&
           VALID_NIVEL_MEDIO.indexOf(ex.nivel_medio) === -1) {
         return { ok: false, error: ERROR_CODES.INVALID_NIVEL_MEDIO,
@@ -162,16 +207,19 @@ function validateVdsenPlan(normalized) {
                    message: 'variacion_vertical debe ser un objeto en "' + (ex.exerciseName || '?') + '"' };
         }
       }
-      for (var si = 0; si < ex.sets.length; si++) {
-        var s = ex.sets[si];
-        if (!s || typeof s !== 'object') {
-          return { ok: false, error: ERROR_CODES.INVALID_SET,
-                   message: 'Set ' + si + ' inválido en "' + (ex.exerciseName || '?') + '"' };
-        }
-        if (s.load !== undefined && s.load !== null && s.load !== 0 &&
-            typeof s.load !== 'number') {
-          return { ok: false, error: ERROR_CODES.INVALID_LOAD,
-                   message: 'load debe ser número (o 0) en "' + (ex.exerciseName || '?') + '" set ' + si };
+
+      if (Array.isArray(ex.sets) && ex.sets.length > 0) {
+        for (var si = 0; si < ex.sets.length; si++) {
+          var s = ex.sets[si];
+          if (!s || typeof s !== 'object') {
+            return { ok: false, error: ERROR_CODES.INVALID_SET,
+                     message: 'Set ' + si + ' inválido en "' + (ex.exerciseName || '?') + '"' };
+          }
+          if (s.load !== undefined && s.load !== null && s.load !== 0 &&
+              typeof s.load !== 'number') {
+            return { ok: false, error: ERROR_CODES.INVALID_LOAD,
+                     message: 'load debe ser número (o 0) en "' + (ex.exerciseName || '?') + '" set ' + si };
+          }
         }
       }
     }
@@ -183,6 +231,7 @@ function validateVdsenPlan(normalized) {
 module.exports = {
   normalizeVdsenPlan:  normalizeVdsenPlan,
   validateVdsenPlan:   validateVdsenPlan,
+  isCardioExercise:    isCardioExercise,
   VALID_NIVEL_MEDIO:   VALID_NIVEL_MEDIO,
   ERROR_CODES:         ERROR_CODES
 };

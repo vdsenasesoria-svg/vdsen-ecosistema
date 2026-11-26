@@ -1419,20 +1419,24 @@ async function loadPlan(user) {
     // al formato que el renderer espera: sesiones con contenido texto + exercises estructurado
     const sesiones = (planData.days || []).map(function(d, i) {
       var exList = (d.exercises || []).map(function(e, ei) {
-        var numSets = (e.sets || []).length || 3;
+        var _eTypeRaw = String(e.exerciseType || e.tipo || '').toLowerCase().trim();
+        var _isCardio = _eTypeRaw === 'cardio';
+        var numSets = _isCardio ? (Array.isArray(e.sets) ? e.sets.length : 0) : ((e.sets || []).length || 3);
         var _rt0 = (e.sets && e.sets[0]) ? e.sets[0].repsTarget : 8;
         // Preservar string literals tal cual; coercionar solo valores numéricos
         var repsTarget = (_rt0 === 'SST-PROTOCOL' || _rt0 === 'SST-RIV-PROTOCOL') ? _rt0 : (_rt0 || 8);
         var rirTarget  = (e.sets && e.sets[0]) ? (e.sets[0].rirTarget  || 2) : 2;
         // Rango real de reps (heterogéneo Y3T: "5-10", homogéneo: "10", SST puro: "SST")
-        var _repsRangeStr = _setsRepsLabel(e.sets);
+        var _repsRangeStr = _isCardio ? '' : _setsRepsLabel(e.sets);
         var techNorm = (function(t){ t=(t||'straight').toLowerCase().trim(); if(t==='rest_pause')return 'rest-pause'; if(t==='superset-antagonist'||t==='superset_antagonist'||t==='superset-agonist'||t==='superset_agonist')return 'superset'; return t; })(e.technique);
+        var _cardioDur = e.duracionMin != null ? e.duracionMin : (e.targetMinutes != null ? e.targetMinutes : undefined);
+        var _cardioDist = e.distanciaKm != null ? e.distanciaKm : (e.targetKm != null ? e.targetKm : undefined);
         var ex = {
           nombre: e.exerciseName || e.nombre || 'Ejercicio',
           exerciseName: e.exerciseName || e.nombre || 'Ejercicio',
           numSeries: numSets,
           repsRange: _repsRangeStr,
-          rir: String(rirTarget),
+          rir: _isCardio ? '' : String(rirTarget),
           // Pasar TODOS los campos de los sets (setNote, drop, tempo, restSeconds)
           sets: (e.sets || []).map(function(s, si){
             return {
@@ -1458,16 +1462,35 @@ async function loadPlan(user) {
           alternatives: Array.isArray(e.alternatives) ? e.alternatives : [],
           rezagado: false,
           nota: e.coachNote || '',
-          setsReps: numSets + '×' + _repsRangeStr,
+          setsReps: _isCardio
+            ? (_cardioDur ? (_cardioDur + ' min') : (_cardioDist ? (_cardioDist + ' km') : 'CARDIO'))
+            : (numSets + '×' + _repsRangeStr),
           // Identidad estable de la instancia prescrita — requerida por el Progression Engine
           prescriptionExerciseId: e.prescriptionExerciseId || undefined,
           exerciseId: e.exerciseId || undefined
         };
+        // T589: Preservar tipo de ejercicio y campos de cardio/rendimiento sin perder metadata
+        if (e.exerciseType !== undefined) ex.exerciseType = e.exerciseType;
+        if (e.tipo !== undefined) ex.tipo = e.tipo;
+        var _perfFields = [
+          'modo', 'cardioMode', 'duracionMin', 'targetMinutes', 'distanciaKm', 'targetKm',
+          'fcZonaMin', 'fcMin', 'fcZonaMax', 'fcMax', 'ritmoObjetivo', 'targetPace',
+          'repeticiones', 'bloqueTrabajo', 'workInterval', 'bloqueDescanso', 'restInterval',
+          'dosis', 'targetDose', 'dosisUnit', 'doseUnit', 'tiempoObjetivoSeg', 'targetTimeSec',
+          'rondas', 'miembros', 'members', 'descansoRondaSeg', 'formato', 'workSec', 'restSec', 'restSeconds'
+        ];
+        _perfFields.forEach(function(pf) {
+          if (e[pf] !== undefined) ex[pf] = e[pf];
+        });
         // Auto-detectar Y3T en loadPlan para que todos los render paths hereden technique:'y3t'
-        if (ex.technique !== 'y3t' && isY3TExercise(ex)) ex.technique = 'y3t';
+        if (!_isCardio && ex.technique !== 'y3t' && isY3TExercise(ex)) ex.technique = 'y3t';
         return ex;
       });
       var contenido = exList.map(function(e, ei) {
+        if (String(e.exerciseType || e.tipo || '').toLowerCase().trim() === 'cardio') {
+          var _cd = e.duracionMin || e.targetMinutes;
+          return (ei+1)+'. '+e.nombre+' | CARDIO'+(_cd ? ' · '+_cd+' min' : '');
+        }
         return (ei+1)+'. '+e.nombre+' | '+e.numSeries+'x'+e.repsRange+' | RIR '+e.rir;
       }).join('\n');
       return { dia: d.label || ('Día '+(i+1)), nombre: d.label || ('Día '+(i+1)), contenido: contenido, exercises: exList };
@@ -13677,6 +13700,7 @@ function calculateProgression(di, postData) {
   }
 
   var recs = exercises.map(function(ej, ei) {
+    if (typeof _getExType === 'function' && _getExType(ej) === 'cardio') return null;
     var planSets = ej.numSeries || (ej.sets ? ej.sets.length : 3);
     var sets = [];
     for (var s = 0; s < Math.max(planSets, 8); s++) {
