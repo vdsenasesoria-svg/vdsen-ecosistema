@@ -198,10 +198,91 @@ function buildRecoveryPlan(clientSnapshots, opts = {}) {
   };
 }
 
+// T879-C: Controlled, idempotent Category C backfill (logs/{uid} -> logs/{uid}/mesos/{planId}).
+// Requires an explicit DRY_RUN manifest + matching authorizationToken. Never overwrites existing
+// entries, never deletes entries, never touches non-Category-C clients, and verifies post-write SHA-256.
+async function executeControlledCategoryCBackfill(opts = {}) {
+  const { manifest, authorizationToken, expectedAuthToken, readDoc, mergeWriteDoc, targetUid } = opts;
+  if (!manifest || manifest.schema !== 'vdsen-logbook-recovery-plan-v1' || manifest.mode !== 'DRY_RUN') {
+    throw new Error('RECOVERY_MANIFEST_REQUIRED');
+  }
+  if (!authorizationToken || !expectedAuthToken || authorizationToken !== expectedAuthToken) {
+    throw new Error('RECOVERY_AUTHORIZATION_REQUIRED');
+  }
+  if (typeof readDoc !== 'function' || typeof mergeWriteDoc !== 'function') {
+    throw new Error('RECOVERY_IO_HANDLERS_REQUIRED');
+  }
+
+  const targets = (manifest.clients || []).filter(c =>
+    c && c.category === 'C' &&
+    c.plannedAction && c.plannedAction.type === 'BACKFILL_MESO_MIRROR_FROM_ROOT' &&
+    (!targetUid || c.uid === targetUid)
+  );
+  const executed = [];
+  let totalAdded = 0;
+  for (const item of targets) {
+    const uid = item.uid;
+    const planId = item.before && item.before.targetPlanId;
+    if (!uid || !planId) continue;
+    const rootDoc = await readDoc(`logs/${uid}`);
+    const mesoPath = `logs/${uid}/mesos/${planId}`;
+    const mesoDoc = await readDoc(mesoPath);
+    const rootStats = extractEntryStats(rootDoc);
+    const mesoStats = extractEntryStats(mesoDoc);
+    if (rootStats.planId !== planId) {
+      executed.push({ uid, planId, status: 'SKIPPED_PLAN_CHANGED', added: 0, deleted: 0, overwritten: 0 });
+      continue;
+    }
+    const merged = applyNonDestructiveMerge(mesoStats.entries, rootStats.entries);
+    if (merged.addedKeys.length === 0) {
+      executed.push({ uid, planId, status: 'ALREADY_SYNCED_IDEMPOTENT', added: 0, deleted: 0, overwritten: 0, hash: merged.afterHash });
+      continue;
+    }
+    const entriesPatch = {};
+    for (const k of merged.addedKeys) entriesPatch[k] = merged.merged[k];
+    await mergeWriteDoc(mesoPath, {
+      planId,
+      currentWeek: (mesoDoc && mesoDoc.currentWeek) || (rootDoc && rootDoc.currentWeek) || 1,
+      entries: entriesPatch,
+      updatedAt: (rootDoc && rootDoc.updatedAt) || Date.now(),
+    }, merged.addedKeys);
+
+    const postMeso = await readDoc(mesoPath);
+    const postStats = extractEntryStats(postMeso);
+    if (postStats.hash !== merged.afterHash) {
+      throw new Error('RECOVERY_POST_VERIFY_HASH_MISMATCH:' + uid + ':' + planId);
+    }
+    totalAdded += merged.addedKeys.length;
+    executed.push({
+      uid,
+      planId,
+      status: 'BACKFILLED_VERIFIED',
+      added: merged.addedKeys.length,
+      deleted: 0,
+      overwritten: 0,
+      duplicated: 0,
+      beforeHash: merged.beforeHash,
+      afterHash: postStats.hash,
+    });
+  }
+  return {
+    schema: 'vdsen-logbook-recovery-apply-v1',
+    mode: 'CONTROLLED_APPLY',
+    clientsProcessed: executed.length,
+    totalEntriesBackfilled: totalAdded,
+    deletedCount: 0,
+    overwrittenCount: 0,
+    duplicatedCount: 0,
+    results: executed,
+    completedAt: new Date().toISOString(),
+  };
+}
+
 module.exports = {
   stableHash,
   extractEntryStats,
   classifyClientLogbook,
   applyNonDestructiveMerge,
   buildRecoveryPlan,
+  executeControlledCategoryCBackfill,
 };

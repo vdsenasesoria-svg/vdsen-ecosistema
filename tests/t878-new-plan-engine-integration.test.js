@@ -754,6 +754,9 @@ test('T878-PROD-01 — Real production defaultHandler() wires bundled T876 roste
       if (u.includes('/v13/deployments')) {
         return { ok: true, status: 200, json: async () => ({ id: 'dpl_stale_01', url: 'stale-preview.vercel.app', readyState: 'READY' }) };
       }
+      if (u.includes('/v2/aliases/')) {
+        return { ok: true, status: 200, json: async () => ({ deploymentId: 'dpl_stale_01' }) };
+      }
       if (u.includes('check=cohort-shard')) {
         // Served deployment STILL has stale digest (not matching new plan!)
         return { ok: true, status: 200, json: async () => ({ schema: 'vdsen-served-cohort-probe-v1', cohortId: 'cohort-01', runtimeSha: SHA, windowCount: 1, windowsDigest: '0'.repeat(64) }) };
@@ -765,6 +768,30 @@ test('T878-PROD-01 — Real production defaultHandler() wires bundled T876 roste
     assert.equal(rStale.payload.errorCode, 'SERVED_DEPLOYMENT_SHARD_MISMATCH');
     assert.equal(rStale.payload.servedDeploymentVerified, false);
     assert.equal(projectEnvState.get('VDSEN_NUMERIC_COHORT_1'), '[{"old":"shard"}]', 'T878-A01: stale served deployment must roll back project env shard');
+
+    // 5b. T879-E: READY deployment that does NOT serve production alias -> DEPLOYMENT_NOT_SERVING_PRODUCTION_ALIAS + rollback
+    globalThis.fetch = async (url, init = {}) => {
+      const u = String(url);
+      if (u.includes('/v10/projects/') && u.includes('/env')) {
+        if (init.method === 'POST') {
+          const b = JSON.parse(init.body);
+          projectEnvState.set(b.key, b.value);
+          return { ok: true, status: 200, json: async () => ({ created: { id: 'env_1', key: b.key } }) };
+        }
+        return { ok: true, status: 200, json: async () => ({ envs: [...projectEnvState.entries()].map(([key, value]) => ({ key, value, target: ['production'] })) }) };
+      }
+      if (u.includes('/v13/deployments')) {
+        return { ok: true, status: 200, json: async () => ({ id: 'dpl_unaliased_01', url: 'unaliased.vercel.app', readyState: 'READY' }) };
+      }
+      if (u.includes('/v2/aliases/')) {
+        return { ok: true, status: 200, json: async () => ({ deploymentId: 'dpl_older_live_00' }) };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    };
+    const rUnaliased = await invokeDefault({ action: 'plan-activation-sync', clientId: ACTIVE_UID, planId: 'plan-new-json-1' });
+    assert.equal(rUnaliased.statusCode, 500);
+    assert.equal(rUnaliased.payload.errorCode, 'DEPLOYMENT_NOT_SERVING_PRODUCTION_ALIAS');
+    assert.equal(projectEnvState.get('VDSEN_NUMERIC_COHORT_1'), '[{"old":"shard"}]', 'T879-E: unaliased READY deployment must roll back project env shard');
 
     // 6. T878-A02: Reintento exitoso cuando el nuevo deployment servido reporta el digest exacto vía GET ?check=cohort-shard
     const planSyncMod = require(path.join(ROOT, 'api/_planActivationSync.js'));
@@ -780,6 +807,9 @@ test('T878-PROD-01 — Real production defaultHandler() wires bundled T876 roste
       }
       if (u.includes('/v13/deployments')) {
         return { ok: true, status: 200, json: async () => ({ id: 'dpl_new_verified_01', url: 'vdsen-new.vercel.app', readyState: 'READY' }) };
+      }
+      if (u.includes('/v2/aliases/')) {
+        return { ok: true, status: 200, json: async () => ({ deploymentId: 'dpl_new_verified_01' }) };
       }
       if (u.includes('check=cohort-shard')) {
         // Real probe payload built from the newly deployed shard env!
@@ -898,4 +928,36 @@ test('T878-LOGBOOK-01 (B12/B16/B18/B19) — _logsPlanChanged never wipes active-
   const m2 = rec.applyNonDestructiveMerge(m1.merged, backup);
   assert.equal(m2.addedKeys.length, 0, 'T878-B16: repeated recovery is 100% idempotent');
   assert.equal(m2.beforeHash, m2.afterHash);
+});
+
+test('T879-C — executeControlledCategoryCBackfill enforces authorization token, backfills idempotently, and verifies post-write SHA-256', async () => {
+  const rec = require(path.join(ROOT, 'scripts/pilot/logbook-integrity-recovery.cjs'));
+  const mem = new Map([
+    ['logs/uC', { planId: 'pC', currentWeek: 2, entries: { log_1_0_0_s0: { carga: 60, reps: 8, ts: 1000 }, log_1_0_0_s1: { carga: 60, reps: 8, ts: 2000 } }, updatedAt: 2000 }],
+  ]);
+  const manifest = rec.buildRecoveryPlan([
+    { uid: 'uC', activePlanId: 'pC', rootDoc: mem.get('logs/uC'), mesosById: {}, startsDocs: [] },
+  ], { mode: 'DRY_RUN' });
+  const io = {
+    readDoc: async (p) => mem.get(p) || null,
+    mergeWriteDoc: async (p, patch) => {
+      const cur = mem.get(p) || { entries: {} };
+      mem.set(p, {
+        planId: patch.planId,
+        currentWeek: patch.currentWeek,
+        entries: Object.assign({}, cur.entries || {}, patch.entries || {}),
+        updatedAt: patch.updatedAt,
+      });
+    },
+  };
+  await assert.rejects(() => rec.executeControlledCategoryCBackfill({ manifest, authorizationToken: 'bad', expectedAuthToken: 'owner-t879-ok', ...io }), /RECOVERY_AUTHORIZATION_REQUIRED/);
+  const r1 = await rec.executeControlledCategoryCBackfill({ manifest, authorizationToken: 'owner-t879-ok', expectedAuthToken: 'owner-t879-ok', ...io });
+  assert.equal(r1.clientsProcessed, 1);
+  assert.equal(r1.totalEntriesBackfilled, 2);
+  assert.equal(r1.deletedCount, 0);
+  assert.equal(r1.overwrittenCount, 0);
+  assert.equal(r1.results[0].status, 'BACKFILLED_VERIFIED');
+  const r2 = await rec.executeControlledCategoryCBackfill({ manifest, authorizationToken: 'owner-t879-ok', expectedAuthToken: 'owner-t879-ok', ...io });
+  assert.equal(r2.totalEntriesBackfilled, 0);
+  assert.equal(r2.results[0].status, 'ALREADY_SYNCED_IDEMPOTENT');
 });

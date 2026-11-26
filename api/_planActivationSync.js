@@ -138,6 +138,7 @@ function buildServedCohortProbePayload(env, cohortId) {
   return {
     schema: 'vdsen-served-cohort-probe-v1',
     cohortId,
+    deploymentId: env.VERCEL_DEPLOYMENT_ID || null,
     runtimeSha: env.VDSEN_NUMERIC_PILOT_RUNTIME_SHA || env.VERCEL_GIT_COMMIT_SHA || null,
     windowCount: matched.length,
     windowsDigest: computeServedCohortDigest(matched),
@@ -249,7 +250,24 @@ function createVercelCohortShardSyncer(env, fetcher) {
         return { ok: false, verified: false, servedDeploymentVerified: false, rolledBack: true, errorCode: 'VERCEL_DEPLOYMENT_NOT_READY' };
       }
 
-      // Step 4: Verify the ACTUALLY SERVED deployment reports the exact expected windowsDigest
+      // Step 4: Verify the ACTUALLY SERVED production deployment reports the exact expected windowsDigest
+      // AND verify the production alias actually points to deploymentId (prevents READY-but-unserved false positives).
+      const aliasResp = await doFetch('https://api.vercel.com/v2/aliases/vdsen-ecosistema.vercel.app?' + qs, {
+        method: 'GET',
+        headers: { Authorization: 'Bearer ' + token },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!aliasResp || !aliasResp.ok) {
+        await rollbackShards();
+        return { ok: false, verified: false, servedDeploymentVerified: false, rolledBack: true, errorCode: 'PRODUCTION_ALIAS_CHECK_FAILED' };
+      }
+      const aliasData = await aliasResp.json().catch(() => null);
+      const liveAliasDeploymentId = aliasData && (aliasData.deploymentId || (aliasData.deployment && aliasData.deployment.id));
+      if (liveAliasDeploymentId !== deploymentId) {
+        await rollbackShards();
+        return { ok: false, verified: false, servedDeploymentVerified: false, rolledBack: true, errorCode: 'DEPLOYMENT_NOT_SERVING_PRODUCTION_ALIAS' };
+      }
+
       const expectedDigest = computeServedCohortDigest(windows);
       const probeUrl = deploymentUrl + '/api/autonomous-progression-trigger?check=cohort-shard&cohortId=' + encodeURIComponent(payload.cohortId);
       const probeHeaders = {};
