@@ -7,6 +7,12 @@
   "crons": [{ "path": "/api/autonomous-progression-trigger", "schedule": "0 9 * * *" }],
   "headers": [
     {
+      "source": "/(vdsen-cliente\\.html|vdsen-coach\\.html|cliente|coach)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+      ]
+    },
+    {
       "source": "/references/(.*)",
       "headers": [
         { "key": "Content-Type", "value": "text/plain; charset=utf-8" },

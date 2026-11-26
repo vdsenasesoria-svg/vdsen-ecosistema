@@ -1058,7 +1058,194 @@ async function main() {
     if (rep.status !== 'STOPPED_VERIFIED') process.exitCode = 1;
     return;
   }
+  if (cmd === 'detect-plan-drift') {
+    const rep = await detectPlanChangeDrift({
+      projectId, googleToken, coachId: env.INPUT_COACH,
+      outFile: path.join(reportDir, 'plan-change-drift.json'),
+    });
+    console.log(JSON.stringify(rep, null, 2));
+    if (rep.status === 'BLOCKED_NEW_PLAN_INVALID') process.exitCode = 1;
+    return;
+  }
+  if (cmd === 'renew-cohort') {
+    assert.ok(cohortId, 'COHORT_ID_REQUIRED');
+    const rep = await renewDriftedCohort({
+      projectId, googleToken, vercelToken, cohortId,
+      deploymentId: env.INPUT_DEPLOYMENT, runtimeSha: env.INPUT_RUNTIME,
+      operationId: env.INPUT_OPERATION, startsAt: env.INPUT_STARTS,
+      expiresAt: env.INPUT_EXPIRES, coachId: env.INPUT_COACH,
+      runId: env.GITHUB_RUN_ID,
+      outFile: path.join(reportDir, 'cohort-renew-' + cohortId + '.json'),
+    });
+    console.log(JSON.stringify(rep, null, 2));
+    if (rep.status !== 'COHORT_RENEWED_VERIFIED') process.exitCode = 1;
+    return;
+  }
   throw new Error('UNKNOWN_COHORT_CMD: ' + cmd);
+}
+
+// T878 — Detect planId / PID / pidsHash drift for confirmed active clients when the Coach
+// activates a new routine, and plan targeted renewal ONLY for affected cohorts without
+// interrupting unaffected cohorts or expanding the commercial roster.
+async function detectPlanChangeDrift(opts) {
+  const { projectId, googleToken, coachId, outFile, expectedRuntimeSha, fetcher = globalThis.fetch, commercialRosterPath } = opts;
+  const reg = loadCommercialRoster(commercialRosterPath);
+  const manifest = await loadLiveRoster(projectId, googleToken, { fetcher, commercialRegistry: reg });
+
+  const driftedClients = [];
+  const blockedNewPlans = [];
+  const affectedCohortSet = new Set();
+  const unaffectedCohortIds = [];
+
+  for (const ex of manifest.excluded || []) {
+    if (reg.activeSet.has(ex.uid)) {
+      blockedNewPlans.push({
+        uid: ex.uid,
+        planId: ex.planId || null,
+        reason: ex.reason || 'NEW_PLAN_INVALID',
+      });
+    }
+  }
+
+  for (const co of manifest.cohorts) {
+    const f = await fetchCohortFences(projectId, googleToken, co.cohortId, coachId, fetcher);
+    const v = _verifyCohortAuthorizationExact(co, f, reg.activeSet, expectedRuntimeSha);
+    const winMap = (f.numericFence && f.numericFence.windows && typeof f.numericFence.windows === 'object')
+      ? f.numericFence.windows
+      : {};
+    let cohortHasDrift = false;
+
+    for (const client of co.clients) {
+      const w = winMap[client.uid] || null;
+      const reasons = [];
+      if (!w || w.enabled !== true) {
+        reasons.push('WINDOW_MISSING_OR_DISABLED');
+      } else {
+        if (w.planId !== client.planId) reasons.push('PLAN_ID_CHANGED');
+        if (w.pidsHash !== client.pidsHash) reasons.push('PIDS_HASH_CHANGED');
+        if (w.pidCount !== client.pidCount) reasons.push('PID_COUNT_CHANGED');
+        if (!_sameSortedArray(w.pids, client.pids)) reasons.push('PIDS_LIST_CHANGED');
+      }
+      const hasValidUpdatedAt = typeof client.updatedAt === 'string' && Number.isFinite(Date.parse(client.updatedAt));
+      if (!hasValidUpdatedAt) {
+        reasons.push('NEW_PLAN_MISSING_UPDATED_AT');
+        blockedNewPlans.push({ uid: client.uid, cohortId: co.cohortId, planId: client.planId, reason: 'NEW_PLAN_MISSING_UPDATED_AT' });
+      }
+      if (reasons.length > 0) {
+        cohortHasDrift = true;
+        affectedCohortSet.add(co.cohortId);
+        driftedClients.push({
+          uid: client.uid,
+          cohortId: co.cohortId,
+          armedPlanId: w ? (w.planId || null) : null,
+          livePlanId: client.planId,
+          armedPidsHash: w ? (w.pidsHash || null) : null,
+          livePidsHash: client.pidsHash,
+          armedPidCount: w && Number.isFinite(w.pidCount) ? w.pidCount : 0,
+          livePidCount: client.pidCount,
+          reasons,
+          readyForRenewal: hasValidUpdatedAt && client.pidCount >= 1,
+        });
+      }
+    }
+    if (!cohortHasDrift && v.exactMatch) {
+      unaffectedCohortIds.push(co.cohortId);
+    } else if (!cohortHasDrift && !v.exactMatch) {
+      affectedCohortSet.add(co.cohortId);
+    }
+  }
+
+  const affectedCohortIds = [...affectedCohortSet].sort();
+  unaffectedCohortIds.sort();
+  const status = blockedNewPlans.length > 0
+    ? 'BLOCKED_NEW_PLAN_INVALID'
+    : (driftedClients.length > 0 || affectedCohortIds.length > 0 ? 'DRIFT_DETECTED' : 'NO_DRIFT');
+
+  const report = {
+    schema: 'vdsen-plan-drift-v1',
+    status,
+    commercialActiveCount: reg.activeSet.size,
+    driftedClients,
+    blockedNewPlans,
+    affectedCohortIds,
+    unaffectedCohortIds,
+    numericApplyBlockedUntilVerified: driftedClients.length > 0 || blockedNewPlans.length > 0,
+    checkedAt: new Date().toISOString(),
+  };
+  if (outFile) {
+    fs.mkdirSync(path.dirname(outFile), { recursive: true });
+    fs.writeFileSync(outFile, JSON.stringify(report, null, 2) + '\n');
+  }
+  return report;
+}
+
+async function renewDriftedCohort(opts) {
+  const {
+    projectId, googleToken, vercelToken, cohortId, deploymentId, runtimeSha,
+    operationId, startsAt, expiresAt, coachId, runId, outFile,
+    fetcher = globalThis.fetch, commercialRosterPath, force = false,
+  } = opts;
+  assert.ok(cohortId, 'COHORT_ID_REQUIRED');
+
+  const drift = await detectPlanChangeDrift({
+    projectId, googleToken, coachId, expectedRuntimeSha: runtimeSha, fetcher, commercialRosterPath,
+  });
+  const cohortBlocked = drift.blockedNewPlans.filter(b => !b.cohortId || b.cohortId === cohortId);
+  assert.equal(cohortBlocked.length, 0, 'COHORT_RENEWAL_BLOCKED_INVALID_PLAN: ' + cohortBlocked.map(b => b.uid + ':' + b.reason).join(','));
+  if (!force) {
+    assert.ok(drift.affectedCohortIds.includes(cohortId), 'COHORT_NOT_AFFECTED_BY_DRIFT: ' + cohortId);
+  }
+
+  // Step 1: Invalidate incompatible prior authorization ONLY for the affected cohort
+  // (blocks numeric apply for this cohort while leaving unaffected cohorts 100% uninterrupted).
+  const stopped = await stopCohorts({
+    projectId, googleToken, coachId,
+    targetCohortId: cohortId,
+    reason: 'PLAN_CHANGE_RENEWAL:' + (operationId || cohortId),
+    fetcher, commercialRosterPath,
+  });
+  assert.equal(stopped.status, 'STOPPED_VERIFIED', 'COHORT_RENEWAL_STOP_INCOMPLETE: ' + JSON.stringify(stopped.incompleteReasons || []));
+
+  // Step 2: Re-authorize ONLY the affected cohort via official preflightCohort -> armCohort.
+  // Unaffected cohorts are never written and the 25-client commercial roster is never expanded.
+  const armed = await armCohort({
+    projectId, googleToken, vercelToken, cohortId, deploymentId, runtimeSha,
+    operationId, startsAt, expiresAt, coachId, runId, fetcher, commercialRosterPath,
+  });
+
+  // Post-renewal exact verification for this cohort
+  const reg = loadCommercialRoster(commercialRosterPath);
+  const manifest = await loadLiveRoster(projectId, googleToken, { fetcher, commercialRegistry: reg });
+  const co = manifest.cohorts.find(c => c.cohortId === cohortId);
+  assert.ok(co, 'RENEWED_COHORT_NOT_FOUND_IN_MANIFEST: ' + cohortId);
+  const f = await fetchCohortFences(projectId, googleToken, cohortId, coachId, fetcher);
+  const v = _verifyCohortAuthorizationExact(co, f, reg.activeSet, runtimeSha);
+  assert.equal(v.exactMatch, true, 'COHORT_RENEWAL_POST_VERIFY_FAILED: ' + v.mismatches.join(','));
+
+  const report = {
+    schema: 'vdsen-cohort-renewal-v1',
+    status: 'COHORT_RENEWED_VERIFIED',
+    cohortId,
+    operationId,
+    runtimeSha,
+    deploymentId,
+    renewedClients: drift.driftedClients.filter(d => d.cohortId === cohortId).map(d => ({
+      uid: d.uid,
+      previousPlanId: d.armedPlanId,
+      newPlanId: d.livePlanId,
+      previousPidsHash: d.armedPidsHash,
+      newPidsHash: d.livePidsHash,
+    })),
+    unaffectedCohortIds: drift.unaffectedCohortIds,
+    exactMatch: v.exactMatch,
+    armed,
+    verifiedAt: new Date().toISOString(),
+  };
+  if (outFile) {
+    fs.mkdirSync(path.dirname(outFile), { recursive: true });
+    fs.writeFileSync(outFile, JSON.stringify(report, null, 2) + '\n');
+  }
+  return report;
 }
 
 if (require.main === module) {
@@ -1078,6 +1265,8 @@ module.exports = {
   armCohort,
   auditFleet,
   stopCohorts,
+  detectPlanChangeDrift,
+  renewDriftedCohort,
   extractPlanPids,
   toFsFields,
   MAX_COHORT_CLIENTS,

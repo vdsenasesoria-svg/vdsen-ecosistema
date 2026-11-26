@@ -2,6 +2,7 @@
 
 var executor = require('./_autonomousProgression');
 var sweepLib = require('./_autonomousProgressionSweep');
+var planSyncLib = require('./_planActivationSync');
 var randomUUID = require('node:crypto').randomUUID;
 var PILOT_UID_HASH = 'fb6c056b17d798c07d06878a857c359aa70828ea44debb1bcab5eb644701fe12';
 var GH_OIDC_ISSUER = 'https://token.actions.githubusercontent.com';
@@ -133,12 +134,33 @@ function makeHandler(deps) {
         runtimeSha: deps.runtimeSha || process.env.VERCEL_GIT_COMMIT_SHA || null,
       });
     }
+    if (req.method === 'GET' && req.query && req.query.check === 'cohort-shard') {
+      // T878: Read-only non-secret probe reporting SHA-256 digest of the cohort shard ACTUALLY served by this deployment.
+      if (typeof res.setHeader === 'function') res.setHeader('Cache-Control', 'no-store');
+      var csToken = /^Bearer\s+(\S+)$/.exec(String(req.headers && req.headers.authorization || '').trim());
+      if (!csToken) return res.status(401).json({ error: 'AUTH_MISSING' });
+      try { await deps.verifyIdToken(csToken[1]); } catch (_) { return res.status(401).json({ error: 'AUTH_INVALID' }); }
+      var cid = typeof req.query.cohortId === 'string' ? req.query.cohortId.trim() : '';
+      if (!/^cohort-\d{2}$/.test(cid)) return res.status(400).json({ error: 'COHORT_ID_INVALID' });
+      return res.status(200).json(planSyncLib.buildServedCohortProbePayload(deps.runtimeEnv || process.env, cid));
+    }
     if (req.method === 'GET' && (deps.pilotWindow !== undefined || deps.numericPilotWindow !== undefined)) return res.status(403).json({ error: 'PILOT_CRON_DISABLED' });
     if (req.method === 'GET') return sweepLib.makeHandler({ db: deps.db, cronSecret: deps.cronSecret, enabled: deps.enabled === true,
       numericApplyEnabled: deps.numericApplyEnabled === true })(req, res);
     var trace = { requestId: randomUUID(), authentication: 'NOT_CHECKED' };
     var send = function(code, body) { return reply(res, code, body, trace, deps); };
     if (req.method !== 'POST') return send(405, { error: 'METHOD_NOT_ALLOWED' });
+    if ((req.query && req.query.action === 'plan-activation-sync') || (req.body && req.body.action === 'plan-activation-sync')) {
+      return planSyncLib.makeHandler({
+        db: deps.db,
+        verifyIdToken: deps.verifyIdToken,
+        commercialRoster: deps.commercialRoster,
+        autoRenewalEnabled: deps.autoRenewalEnabled,
+        runtimeSha: deps.runtimeSha,
+        clock: deps.clock,
+        syncCohortRuntimeEnv: deps.syncCohortRuntimeEnv,
+      })(req, res);
+    }
     var header = req.headers && req.headers.authorization;
     var token = typeof header === 'string' && /^Bearer\s+(\S+)$/.exec(header.trim());
     if (!token) { trace.authentication = 'MISSING'; return send(401, { error: 'AUTH_MISSING' }); }
@@ -184,7 +206,11 @@ async function defaultHandler(req, res) {
     numericPilotWindow: process.env.VDSEN_NUMERIC_PILOT_WINDOW,
     allowProbe: admin.isFederatedMode(process.env, req.headers && req.headers['x-vercel-oidc-token']),
     enabled: process.env.AUTONOMOUS_PROGRESSION_ENABLED === 'true',
-    numericApplyEnabled: process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED === 'true' })(req, res);
+    numericApplyEnabled: process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED === 'true',
+    commercialRoster: function() { return planSyncLib.loadBundledCommercialRoster(); },
+    autoRenewalEnabled: process.env.VDSEN_AUTO_COHORT_RENEWAL_ENABLED === 'true',
+    runtimeSha: process.env.VDSEN_NUMERIC_PILOT_RUNTIME_SHA || process.env.VERCEL_GIT_COMMIT_SHA || null,
+    syncCohortRuntimeEnv: planSyncLib.createVercelCohortShardSyncer(process.env) })(req, res);
 }
 
 module.exports = defaultHandler;
