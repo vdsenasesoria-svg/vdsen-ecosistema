@@ -7179,7 +7179,17 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   function _journalFresh(j) { const now = Date.now(); Object.keys(j).forEach((k) => { if (!j[k] || now - j[k].at > 86400000 || j[k].coach !== (currentCoach && currentCoach.uid)) delete j[k]; }); return j; }
   function _assignOpKey(kind, sourceKey, clientId) { return kind + ':' + clientId + ':' + _fnv(String(sourceKey)); }
   function _assignPeekPlanId(opKey) { const e = _journalFresh(_journalRead())[opKey]; return e ? e.planId : null; }
-  function _assignPlanId(opKey) { const j = _journalFresh(_journalRead()); let e = j[opKey]; if (!e) { e = { planId: doc(collection(db, 'plans')).id, at: Date.now(), coach: currentCoach.uid }; j[opKey] = e; } _journalWrite(j); return e.planId; }
+  function _assignPlanId(opKey, explicitPlanId) {
+    const j = _journalFresh(_journalRead());
+    let e = j[opKey];
+    if (!e) {
+      const safeExplicit = (typeof explicitPlanId === 'string' && /^t883-[a-z0-9-]{8,32}$/.test(explicitPlanId)) ? explicitPlanId : null;
+      e = { planId: safeExplicit || doc(collection(db, 'plans')).id, at: Date.now(), coach: currentCoach.uid };
+      j[opKey] = e;
+    }
+    _journalWrite(j);
+    return e.planId;
+  }
   function _assignJournalClear(opKey) { const j = _journalRead(); if (opKey in j) { delete j[opKey]; _journalWrite(j); } }
   function _importSourceKey(planObj) { return JSON.stringify([planObj.weeks || null, planObj.rirByWeek || null, planObj.days]); }
   // Strict read of the client's active plan (an error propagates: it is the "expected previous plan" of the operation).
@@ -7221,7 +7231,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   async function _assignPlanTxn(o) {
     if (!currentCoach) throw _assignErr('NOT_OWNER', 'Sin sesión de coach');
     const opKey = _assignOpKey(o.kind, o.sourceKey, o.clientId), reused = !!_assignPeekPlanId(opKey);
-    let planId = _assignPlanId(opKey);
+    let planId = _assignPlanId(opKey, o.explicitPlanId);
     if (reused) {
       // A reused id may belong to an attempt that DID commit and was replaced afterwards: never overwrite that historical plan, mint a fresh id.
       // (A plan that does not exist reads as denied by the rules, so absence is the .catch.)
@@ -7340,23 +7350,31 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     }
   }
 
-  // T878: Truthful rendering of real server-confirmed progression engine integration status.
+  // T878/T882: Truthful rendering of real server-confirmed progression engine integration status.
   // Never displays "Motor integrado y autorizado" unless the server confirmed AUTHORIZED_VERIFIED or RENEWED_VERIFIED.
   function _renderPlanEngineSyncStatus(syncRes) {
     var st = syncRes && syncRes.engineState;
+    var rawStatus = syncRes && syncRes.status;
     var okAuth = !!(syncRes && syncRes.numericApplyAuthorized === true &&
-      (syncRes.status === 'AUTHORIZED_VERIFIED' || syncRes.status === 'RENEWED_VERIFIED'));
+      (rawStatus === 'AUTHORIZED_VERIFIED' || rawStatus === 'RENEWED_VERIFIED'));
     if (okAuth && st === 'MOTOR_INTEGRATED_AUTHORIZED') {
       return { code: 'MOTOR_INTEGRATED_AUTHORIZED', label: 'Motor integrado y autorizado', color: '#44BB88' };
+    }
+    var inProgressStatuses = { REQUESTED: 1, QUEUED: 1, VALIDATING: 1, PREPARING_RUNTIME: 1, DEPLOYING: 1, VERIFYING_RUNTIME: 1, PROMOTING: 1, REARMING: 1 };
+    if (rawStatus && inProgressStatuses[rawStatus]) {
+      return { code: 'AUTHORIZATION_PREPARING', label: 'Renovación en proceso', color: '#C4FF00' };
     }
     if (st === 'AUTHORIZATION_PREPARING') {
       return { code: 'AUTHORIZATION_PREPARING', label: 'Autorización en preparación', color: '#C4FF00' };
     }
-    if (st === 'AUTHORIZATION_PENDING') {
-      return { code: 'AUTHORIZATION_PENDING', label: 'Autorización pendiente', color: '#e8a040' };
+    if (st === 'AUTHORIZATION_PENDING' || rawStatus === 'RENEWAL_STOPPED') {
+      return { code: 'AUTHORIZATION_PENDING', label: rawStatus === 'RENEWAL_STOPPED' ? 'Integración detenida (STOP)' : 'Autorización pendiente', color: '#e8a040' };
     }
     if (st === 'BLOCKED_INCOMPATIBLE' || st === 'BLOCKED_COMMERCIAL') {
       return { code: st, label: 'Bloqueado por incompatibilidad o seguridad', color: '#ff6060' };
+    }
+    if (syncRes && syncRes.retryable === true) {
+      return { code: 'COACH_INTERVENTION_REQUIRED', label: 'Error recuperable · reintentar', color: '#ff9040' };
     }
     return { code: 'COACH_INTERVENTION_REQUIRED', label: 'Requiere intervención del Coach', color: '#ff6060' };
   }
@@ -7400,6 +7418,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       var view = _renderPlanEngineSyncStatus(data);
       var detail = data.cohortId ? ('Cohorte ' + data.cohortId + (data.pidCount ? ' · ' + data.pidCount + ' PID' : '')) : (data.errorCode || '');
       _setStatusUi(view, detail);
+      if (resp.status === 202 && data.operationId && typeof _pollPlanEngineSyncStatus === 'function') {
+        _pollPlanEngineSyncStatus(clientId, data.operationId, _setStatusUi);
+      }
       return data;
     } catch (e) {
       var errObj = { status: 'RENEWAL_FAILED', engineState: 'COACH_INTERVENTION_REQUIRED', numericApplyAuthorized: false, errorCode: 'SYNC_REQUEST_FAILED' };
@@ -7408,6 +7429,67 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       return errObj;
     }
   }
+
+  // T883-B4: Bounded authenticated status polling after HTTP 202 QUEUED (isolated by Coach + client).
+  async function _pollPlanEngineSyncStatus(clientId, operationId, setUiFn, opts) {
+    if (!clientId || !operationId || typeof fetch !== 'function') return null;
+    var maxAttempts = (opts && opts.maxAttempts) || 24;
+    var intervalMs = (opts && opts.intervalMs) || 10000;
+    var terminal = { RENEWED_VERIFIED: 1, FAILED: 1, ROLLBACK_REQUIRED: 1, ROLLED_BACK_VERIFIED: 1 };
+    for (var i = 0; i < maxAttempts; i++) {
+      await new Promise(function(r) { setTimeout(r, intervalMs); });
+      try {
+        var user = (typeof auth !== 'undefined' && auth && auth.currentUser) || null;
+        if (!user || typeof user.getIdToken !== 'function') return null;
+        var tok = await user.getIdToken();
+        var url = '/api/autonomous-progression-trigger?check=plan-activation-status&operationId=' +
+          encodeURIComponent(operationId) + '&clientId=' + encodeURIComponent(clientId);
+        var resp = await fetch(url, { headers: { Authorization: 'Bearer ' + tok }, cache: 'no-store' });
+        if (!resp.ok) continue;
+        var st = await resp.json().catch(function() { return null; });
+        if (!st || typeof st !== 'object') continue;
+        if (typeof window !== 'undefined') window._lastPlanEngineSync = st;
+        if (typeof setUiFn === 'function') {
+          var v = _renderPlanEngineSyncStatus(st);
+          var d = st.cohortId ? ('Cohorte ' + st.cohortId + (st.status ? ' · ' + st.status : '')) : (st.errorCode || '');
+          setUiFn(v, d);
+        }
+        if (st.status && terminal[st.status]) return st;
+      } catch (_) { /* transient network error; continue bounded poll */ }
+    }
+    return null;
+  }
+
+  // T883-B6: Built-in authenticated read-only diagnostic check for cohort-shard (no tokens logged or exposed).
+  async function _vdsenCheckCohortShards(cohorts) {
+    var list = Array.isArray(cohorts) && cohorts.length ? cohorts : ['cohort-01', 'cohort-02', 'cohort-03'];
+    var user = (typeof auth !== 'undefined' && auth && auth.currentUser) || null;
+    if (!user || typeof user.getIdToken !== 'function') {
+      return { ok: false, error: 'AUTH_SESSION_REQUIRED', results: [] };
+    }
+    var tok = await user.getIdToken();
+    var results = [];
+    for (var i = 0; i < list.length; i++) {
+      var cid = list[i];
+      var r = await fetch('/api/autonomous-progression-trigger?check=cohort-shard&cohortId=' + encodeURIComponent(cid), {
+        headers: { Authorization: 'Bearer ' + tok },
+        cache: 'no-store'
+      });
+      var body = await r.json().catch(function() { return null; });
+      results.push({
+        cohortId: cid,
+        httpStatus: r.status,
+        deploymentId: body && body.deploymentId || null,
+        runtimeSha: body && body.runtimeSha || null,
+        windowCount: body && body.windowCount != null ? body.windowCount : null,
+        windowsDigest: body && body.windowsDigest || null
+      });
+    }
+    var summary = { ok: results.every(function(x) { return x.httpStatus === 200; }), checkedAt: new Date().toISOString(), results: results };
+    if (typeof window !== 'undefined') window._lastCohortShardDiagnostic = summary;
+    return summary;
+  }
+  if (typeof window !== 'undefined') window._vdsenCheckCohortShards = _vdsenCheckCohortShards;
   async function saveImportedPlan(clientIdArg) {
     if (_savingImportedPlan) return false;
     if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return false; }
@@ -7454,13 +7536,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       }
       // T591-C: plan + activePlanId + backup + historical retirement in ONE transaction (see _assignPlanTxn); the Generator's explicit rirByWeek is kept, the Coach default only when it is absent/invalid.
       const _isForeignSource = !!(planObj._sourceClientId && planObj._sourceClientId !== clientId);
+      const _explicitPilotPlanId = (typeof planObj.pilotTargetPlanId === 'string' && /^t883-[a-z0-9-]{8,32}$/.test(planObj.pilotTargetPlanId)) ? planObj.pilotTargetPlanId : null;
       delete planObj._sourceClientId;
+      delete planObj.pilotTargetPlanId;
       if (typeof _stampImportPrescriptionIds === 'function') {
         planObj.days = _stampImportPrescriptionIds(planObj.days, prevPlanDays, _isForeignSource);
       }
       let _txOutcome = null;
       try {
-        const _res = await _assignPlanTxn({ kind: 'import', sourceKey: _importKey, clientId, expectedPrevPlanId: prevPlanId, buildPlanDoc: function(_planId, _nowIso) {
+        const _res = await _assignPlanTxn({ kind: 'import', sourceKey: _importKey, clientId, expectedPrevPlanId: prevPlanId, explicitPlanId: _explicitPilotPlanId, buildPlanDoc: function(_planId, _nowIso) {
           const _rirImp = _normRirByWeek(planObj.rirByWeek, planObj.weeks || 6);
           return {
             ...planObj,

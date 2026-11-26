@@ -483,8 +483,8 @@ test('T864D.1 Concurrency coordinates prepare-runtime/restore-off-runtime with v
   const appWf = fs.readFileSync(path.join(ROOT, '.github/workflows/vdsen-app-release-prod.yml'), 'utf8');
   assert.ok(appWf.includes('group: vdsen-production'), 'APP-ONLY release must use vdsen-production');
   assert.ok(
-    pilotWf.includes("(inputs.action == 'prepare-runtime' || inputs.action == 'restore-off-runtime') && 'vdsen-production'"),
-    'prepare-runtime and restore-off-runtime must share vdsen-production concurrency group with APP-ONLY'
+    pilotWf.includes("(inputs.action == 'prepare-runtime' || inputs.action == 'restore-off-runtime' || inputs.action == 'renew-cohort') && 'vdsen-production'"),
+    'prepare-runtime, restore-off-runtime, and renew-cohort must share vdsen-production concurrency group with APP-ONLY'
   );
   assert.ok(
     pilotWf.includes("inputs.action == 'stop' && 'vdsen-numeric-pilot-stop'"),

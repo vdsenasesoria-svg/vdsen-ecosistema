@@ -702,146 +702,77 @@ test('T878-PROD-01 — Real production defaultHandler() wires bundled T876 roste
     assert.equal(rOff.payload.status, 'AUTHORIZATION_PENDING');
     assert.equal(rOff.payload.numericApplyAuthorized, false);
 
-    // 3. Sincronizador de shards ausente (VERCEL_TOKEN missing) -> fail-closed BEFORE STOP (503)
+    // 3. Orquestador GitHub Actions ausente -> fail-closed BEFORE STOP (503), sin usar VERCEL_TOKEN en Vercel
     process.env.VDSEN_AUTO_COHORT_RENEWAL_ENABLED = 'true';
+    process.env.VDSEN_AUTO_COHORT_RENEWAL_MODE = 'general';
+    delete process.env.VDSEN_GH_RENEWAL_APP_ID;
+    delete process.env.VDSEN_GH_RENEWAL_APP_INSTALLATION_ID;
+    delete process.env.VDSEN_GH_RENEWAL_APP_PRIVATE_KEY;
+    // Incluso si VERCEL_TOKEN existiera en env, defaultHandler() NO lo usa (T882 Option 1 credential isolation)
+    process.env.VERCEL_TOKEN = 'must-never-be-used-in-vercel-runtime';
     const rNoSync = await invokeDefault({ action: 'plan-activation-sync', clientId: ACTIVE_UID, planId: 'plan-new-json-1' });
     assert.equal(rNoSync.statusCode, 503);
     assert.equal(rNoSync.payload.status, 'RENEWAL_BLOCKED_NO_SHARD_SYNC');
     assert.equal(rNoSync.payload.errorCode, 'RUNTIME_SHARD_SYNC_UNAVAILABLE');
-    assert.equal(store.get('releaseControl/numericPilot_cohort_cohort-01').enabled, true, 'Missing syncer must fail closed BEFORE touching cohort-01');
+    assert.equal(store.get('releaseControl/numericPilot_cohort_cohort-01').enabled, true, 'Missing orchestrator must fail closed BEFORE touching cohort-01');
 
-    // 4. T878-A03: Fallo de deployment Vercel -> rollback del shard en proyecto + cohorte STOPPED + ledger FAILED
-    process.env.VERCEL_TOKEN = 'vtok';
-    process.env.VERCEL_PROJECT_ID = 'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN';
-    process.env.VERCEL_ORG_ID = 'team_VZc5H7Q1DBIJ3g0mwrSBz1o8';
-    const projectEnvState = new Map([['VDSEN_NUMERIC_COHORT_1', '[{"old":"shard"}]']]);
-    globalThis.fetch = async (url, init = {}) => {
+    // 4. T882 Option 1: GitHub App configurada -> fallo de dispatch devuelve 502 retryable y libera el lock global
+    const { privateKey } = require('node:crypto').generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs1', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
+    process.env.VDSEN_GH_RENEWAL_APP_ID = '123456';
+    process.env.VDSEN_GH_RENEWAL_APP_INSTALLATION_ID = '987654';
+    process.env.VDSEN_GH_RENEWAL_APP_PRIVATE_KEY = privateKey;
+    globalThis.fetch = async (url) => {
       const u = String(url);
-      if (u.includes('/v10/projects/') && u.includes('/env')) {
-        if (init.method === 'POST') {
-          const b = JSON.parse(init.body);
-          projectEnvState.set(b.key, b.value);
-          return { ok: true, status: 200, json: async () => ({ created: { id: 'env_1', key: b.key } }) };
-        }
-        return { ok: true, status: 200, json: async () => ({ envs: [...projectEnvState.entries()].map(([key, value]) => ({ key, value, target: ['production'] })) }) };
+      if (u.includes('/app/installations/987654/access_tokens')) {
+        return { ok: true, status: 201, json: async () => ({ token: 'ghs_short_lived_test' }) };
       }
-      if (u.includes('/v13/deployments')) {
-        return { ok: false, status: 500, json: async () => ({ error: 'deploy_failed' }) };
+      if (u.includes('/actions/workflows/vdsen-numeric-pilot.yml/dispatches')) {
+        return { ok: false, status: 500, json: async () => ({ message: 'dispatch failed' }) };
       }
       return { ok: false, status: 404, json: async () => ({}) };
     };
     const rFail = await invokeDefault({ action: 'plan-activation-sync', clientId: ACTIVE_UID, planId: 'plan-new-json-1' });
-    assert.equal(rFail.statusCode, 500);
-    assert.equal(rFail.payload.status, 'RENEWAL_FAILED');
-    assert.equal(rFail.payload.errorCode, 'VERCEL_DEPLOYMENT_CREATE_FAILED');
-    assert.equal(rFail.payload.stoppedVerified, true);
-    assert.equal(rFail.payload.servedDeploymentVerified, false);
-    assert.equal(projectEnvState.get('VDSEN_NUMERIC_COHORT_1'), '[{"old":"shard"}]', 'T878-A03: failed deployment must roll back project env shard');
-    assert.equal(store.get('releaseControl/numericPilot_cohort_cohort-01').enabled, false, 'Failed deployment must keep cohort STOPPED');
+    assert.equal(rFail.statusCode, 502);
+    assert.equal(rFail.payload.status, 'FAILED');
+    assert.equal(rFail.payload.errorCode, 'GITHUB_DISPATCH_FAILED');
+    assert.equal(rFail.payload.retryable, true);
+    assert.equal(store.get('releaseControl/numericPilotGlobalLock').activeOperationId, null, 'Failed dispatch must release global lock');
     assert.equal(store.get('releaseControl/numericPilot_cohort_cohort-02').operationId, 'op-c2-keep', 'Unaffected cohort-02 untouched');
 
-    // 5. T878-A01: Upsert de variables sin que el deployment servido incorpore el shard -> SERVED_DEPLOYMENT_SHARD_MISMATCH + rollback
+    // 5. T882 Option 1: Reintento exitoso despacha renew-cohort en GitHub Actions y devuelve 202 QUEUED (nunca declara activo antes de verificar)
+    let dispatchedBody = null;
     globalThis.fetch = async (url, init = {}) => {
       const u = String(url);
-      if (u.includes('/v10/projects/') && u.includes('/env')) {
-        if (init.method === 'POST') {
-          const b = JSON.parse(init.body);
-          projectEnvState.set(b.key, b.value);
-          return { ok: true, status: 200, json: async () => ({ created: { id: 'env_1', key: b.key } }) };
-        }
-        return { ok: true, status: 200, json: async () => ({ envs: [...projectEnvState.entries()].map(([key, value]) => ({ key, value, target: ['production'] })) }) };
+      if (u.includes('/app/installations/987654/access_tokens')) {
+        return { ok: true, status: 201, json: async () => ({ token: 'ghs_short_lived_test_2' }) };
       }
-      if (u.includes('/v13/deployments')) {
-        return { ok: true, status: 200, json: async () => ({ id: 'dpl_stale_01', url: 'stale-preview.vercel.app', readyState: 'READY' }) };
-      }
-      if (u.includes('/v2/aliases/')) {
-        return { ok: true, status: 200, json: async () => ({ deploymentId: 'dpl_stale_01' }) };
-      }
-      if (u.includes('check=cohort-shard')) {
-        // Served deployment STILL has stale digest (not matching new plan!)
-        return { ok: true, status: 200, json: async () => ({ schema: 'vdsen-served-cohort-probe-v1', cohortId: 'cohort-01', runtimeSha: SHA, windowCount: 1, windowsDigest: '0'.repeat(64) }) };
+      if (u.includes('/actions/workflows/vdsen-numeric-pilot.yml/dispatches')) {
+        dispatchedBody = JSON.parse(init.body);
+        return { ok: true, status: 204, json: async () => ({}) };
       }
       return { ok: false, status: 404, json: async () => ({}) };
     };
-    const rStale = await invokeDefault({ action: 'plan-activation-sync', clientId: ACTIVE_UID, planId: 'plan-new-json-1' });
-    assert.equal(rStale.statusCode, 500);
-    assert.equal(rStale.payload.errorCode, 'SERVED_DEPLOYMENT_SHARD_MISMATCH');
-    assert.equal(rStale.payload.servedDeploymentVerified, false);
-    assert.equal(projectEnvState.get('VDSEN_NUMERIC_COHORT_1'), '[{"old":"shard"}]', 'T878-A01: stale served deployment must roll back project env shard');
-
-    // 5b. T879-E: READY deployment that does NOT serve production alias -> DEPLOYMENT_NOT_SERVING_PRODUCTION_ALIAS + rollback
-    globalThis.fetch = async (url, init = {}) => {
-      const u = String(url);
-      if (u.includes('/v10/projects/') && u.includes('/env')) {
-        if (init.method === 'POST') {
-          const b = JSON.parse(init.body);
-          projectEnvState.set(b.key, b.value);
-          return { ok: true, status: 200, json: async () => ({ created: { id: 'env_1', key: b.key } }) };
-        }
-        return { ok: true, status: 200, json: async () => ({ envs: [...projectEnvState.entries()].map(([key, value]) => ({ key, value, target: ['production'] })) }) };
-      }
-      if (u.includes('/v13/deployments')) {
-        return { ok: true, status: 200, json: async () => ({ id: 'dpl_unaliased_01', url: 'unaliased.vercel.app', readyState: 'READY' }) };
-      }
-      if (u.includes('/v2/aliases/')) {
-        return { ok: true, status: 200, json: async () => ({ deploymentId: 'dpl_older_live_00' }) };
-      }
-      return { ok: false, status: 404, json: async () => ({}) };
-    };
-    const rUnaliased = await invokeDefault({ action: 'plan-activation-sync', clientId: ACTIVE_UID, planId: 'plan-new-json-1' });
-    assert.equal(rUnaliased.statusCode, 500);
-    assert.equal(rUnaliased.payload.errorCode, 'DEPLOYMENT_NOT_SERVING_PRODUCTION_ALIAS');
-    assert.equal(projectEnvState.get('VDSEN_NUMERIC_COHORT_1'), '[{"old":"shard"}]', 'T879-E: unaliased READY deployment must roll back project env shard');
-
-    // 6. T878-A02: Reintento exitoso cuando el nuevo deployment servido reporta el digest exacto vía GET ?check=cohort-shard
-    const planSyncMod = require(path.join(ROOT, 'api/_planActivationSync.js'));
-    globalThis.fetch = async (url, init = {}) => {
-      const u = String(url);
-      if (u.includes('/v10/projects/') && u.includes('/env')) {
-        if (init.method === 'POST') {
-          const b = JSON.parse(init.body);
-          projectEnvState.set(b.key, b.value);
-          return { ok: true, status: 200, json: async () => ({ created: { id: 'env_1', key: b.key } }) };
-        }
-        return { ok: true, status: 200, json: async () => ({ envs: [...projectEnvState.entries()].map(([key, value]) => ({ key, value, target: ['production'] })) }) };
-      }
-      if (u.includes('/v13/deployments')) {
-        return { ok: true, status: 200, json: async () => ({ id: 'dpl_new_verified_01', url: 'vdsen-new.vercel.app', readyState: 'READY' }) };
-      }
-      if (u.includes('/v2/aliases/')) {
-        return { ok: true, status: 200, json: async () => ({ deploymentId: 'dpl_new_verified_01' }) };
-      }
-      if (u.includes('check=cohort-shard')) {
-        // Real probe payload built from the newly deployed shard env!
-        const servedProbe = planSyncMod.buildServedCohortProbePayload({
-          VDSEN_NUMERIC_COHORT_1: projectEnvState.get('VDSEN_NUMERIC_COHORT_1'),
-          VDSEN_NUMERIC_PILOT_RUNTIME_SHA: SHA,
-        }, 'cohort-01');
-        return { ok: true, status: 200, json: async () => servedProbe };
-      }
-      return { ok: false, status: 404, json: async () => ({}) };
-    };
-    const rOk = await invokeDefault({ action: 'plan-activation-sync', clientId: ACTIVE_UID, planId: 'plan-new-json-1' });
-    assert.equal(rOk.statusCode, 200, JSON.stringify(rOk.payload));
-    assert.equal(rOk.payload.status, 'RENEWED_VERIFIED');
-    assert.equal(rOk.payload.shardSyncedVerified, true);
-    assert.equal(rOk.payload.servedDeploymentVerified, true);
-    assert.equal(rOk.payload.deploymentId, 'dpl_new_verified_01');
-    assert.equal(rOk.payload.engineState, 'MOTOR_INTEGRATED_AUTHORIZED');
-    assert.equal(rOk.payload.numericApplyAuthorized, true);
+    const rQueued = await invokeDefault({ action: 'plan-activation-sync', clientId: ACTIVE_UID, planId: 'plan-new-json-1' });
+    assert.equal(rQueued.statusCode, 202, JSON.stringify(rQueued.payload));
+    assert.equal(rQueued.payload.status, 'QUEUED');
+    assert.equal(rQueued.payload.engineState, 'AUTHORIZATION_PREPARING');
+    assert.equal(rQueued.payload.numericApplyAuthorized, false);
+    assert.equal(rQueued.payload.workflowDispatched, true);
+    assert.equal(dispatchedBody.ref, 'codex/client-app-next');
+    assert.equal(dispatchedBody.inputs.action, 'renew-cohort');
+    assert.equal(dispatchedBody.inputs.pilot_uid, 'COHORT:cohort-01');
     assert.equal(store.get('releaseControl/numericPilot_cohort_cohort-02').operationId, 'op-c2-keep', 'Unaffected cohort-02 untouched');
 
-    // 7. T878-A06: Idempotencia en repetición
-    const rIdem = await invokeDefault({ action: 'plan-activation-sync', clientId: ACTIVE_UID, planId: 'plan-new-json-1' });
-    assert.equal(rIdem.statusCode, 200);
-    assert.equal(rIdem.payload.status, 'AUTHORIZED_VERIFIED');
-    assert.equal(rIdem.payload.idempotent, true);
+    // 6. Repetición mientras está en curso devuelve 202 alreadyInProgress sin despachar duplicado
+    const rDup = await invokeDefault({ action: 'plan-activation-sync', clientId: ACTIVE_UID, planId: 'plan-new-json-1' });
+    assert.equal(rDup.statusCode, 202);
+    assert.equal(rDup.payload.alreadyInProgress, true);
   } finally {
     if (savedEnv.__restoreLoad) savedEnv.__restoreLoad();
     globalThis.fetch = origFetch;
     if (origAdminCache) require.cache[adminPath] = origAdminCache; else delete require.cache[adminPath];
     if (fbAdminPath) { if (origFbCache) require.cache[fbAdminPath] = origFbCache; else delete require.cache[fbAdminPath]; }
-    for (const k of ['VDSEN_AUTO_COHORT_RENEWAL_ENABLED', 'VDSEN_NUMERIC_PILOT_RUNTIME_SHA', 'VERCEL_TOKEN', 'VERCEL_PROJECT_ID', 'VERCEL_ORG_ID']) {
+    for (const k of ['VDSEN_AUTO_COHORT_RENEWAL_ENABLED', 'VDSEN_AUTO_COHORT_RENEWAL_MODE', 'VDSEN_NUMERIC_PILOT_RUNTIME_SHA', 'VERCEL_TOKEN', 'VERCEL_PROJECT_ID', 'VERCEL_ORG_ID', 'VDSEN_GH_RENEWAL_APP_ID', 'VDSEN_GH_RENEWAL_APP_INSTALLATION_ID', 'VDSEN_GH_RENEWAL_APP_PRIVATE_KEY']) {
       if (savedEnv[k] === undefined) delete process.env[k]; else process.env[k] = savedEnv[k];
     }
   }

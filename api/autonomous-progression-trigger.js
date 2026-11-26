@@ -144,6 +144,9 @@ function makeHandler(deps) {
       if (!/^cohort-\d{2}$/.test(cid)) return res.status(400).json({ error: 'COHORT_ID_INVALID' });
       return res.status(200).json(planSyncLib.buildServedCohortProbePayload(deps.runtimeEnv || process.env, cid));
     }
+    if (req.method === 'GET' && req.query && req.query.check === 'plan-activation-status') {
+      return planSyncLib.makeStatusHandler({ db: deps.db, verifyIdToken: deps.verifyIdToken })(req, res);
+    }
     if (req.method === 'GET' && (deps.pilotWindow !== undefined || deps.numericPilotWindow !== undefined)) return res.status(403).json({ error: 'PILOT_CRON_DISABLED' });
     if (req.method === 'GET') return sweepLib.makeHandler({ db: deps.db, cronSecret: deps.cronSecret, enabled: deps.enabled === true,
       numericApplyEnabled: deps.numericApplyEnabled === true })(req, res);
@@ -156,8 +159,11 @@ function makeHandler(deps) {
         verifyIdToken: deps.verifyIdToken,
         commercialRoster: deps.commercialRoster,
         autoRenewalEnabled: deps.autoRenewalEnabled,
+        autoRenewalMode: deps.autoRenewalMode,
+        pilotScope: deps.pilotScope,
         runtimeSha: deps.runtimeSha,
         clock: deps.clock,
+        dispatchRenewalWorkflow: deps.dispatchRenewalWorkflow,
         syncCohortRuntimeEnv: deps.syncCohortRuntimeEnv,
       })(req, res);
     }
@@ -209,8 +215,10 @@ async function defaultHandler(req, res) {
     numericApplyEnabled: process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED === 'true',
     commercialRoster: function() { return planSyncLib.loadBundledCommercialRoster(); },
     autoRenewalEnabled: process.env.VDSEN_AUTO_COHORT_RENEWAL_ENABLED === 'true',
+    autoRenewalMode: process.env.VDSEN_AUTO_COHORT_RENEWAL_MODE,
+    pilotScope: process.env.VDSEN_AUTO_COHORT_RENEWAL_PILOT_SCOPE,
     runtimeSha: process.env.VDSEN_NUMERIC_PILOT_RUNTIME_SHA || process.env.VERCEL_GIT_COMMIT_SHA || null,
-    syncCohortRuntimeEnv: planSyncLib.createVercelCohortShardSyncer(process.env) })(req, res);
+    dispatchRenewalWorkflow: planSyncLib.createGitHubActionsRenewalDispatcher(process.env) })(req, res);
 }
 
 module.exports = defaultHandler;

@@ -46,6 +46,13 @@ function invocation(env, action) {
     return { authorized: true, action };
   }
 
+  if (action === 'renew-cohort') {
+    if (env.VDSEN_NUMERIC_PILOT_RELEASE_ENABLED !== 'true' && env.VDSEN_AUTO_COHORT_RENEWAL_WORKFLOW_ENABLED !== 'true') {
+      throw new Error('NUMERIC_PILOT_RENEW_DISABLED: VDSEN_AUTO_COHORT_RENEWAL_WORKFLOW_ENABLED or VDSEN_NUMERIC_PILOT_RELEASE_ENABLED must be explicitly true for renew-cohort.');
+    }
+    return { authorized: true, action };
+  }
+
   // Read-only actions (preflight-check, audit-status)
   return { authorized: true, action: action };
 }
