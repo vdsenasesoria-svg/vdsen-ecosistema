@@ -144,6 +144,9 @@ function makeHandler(deps) {
       if (!/^cohort-\d{2}$/.test(cid)) return res.status(400).json({ error: 'COHORT_ID_INVALID' });
       return res.status(200).json(planSyncLib.buildServedCohortProbePayload(deps.runtimeEnv || process.env, cid));
     }
+    if (req.method === 'GET' && req.query && req.query.check === 'plan-activation-status') {
+      return planSyncLib.makeStatusHandler({ db: deps.db, verifyIdToken: deps.verifyIdToken })(req, res);
+    }
     if (req.method === 'GET' && (deps.pilotWindow !== undefined || deps.numericPilotWindow !== undefined)) return res.status(403).json({ error: 'PILOT_CRON_DISABLED' });
     if (req.method === 'GET') return sweepLib.makeHandler({ db: deps.db, cronSecret: deps.cronSecret, enabled: deps.enabled === true,
       numericApplyEnabled: deps.numericApplyEnabled === true })(req, res);

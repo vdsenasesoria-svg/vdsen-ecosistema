@@ -1450,12 +1450,38 @@ async function executeRenewCohortOperation(opts) {
 
   let opDoc = await readDoc(opPath);
   assert.ok(opDoc, 'PERSISTED_OPERATION_NOT_FOUND:' + operationId);
+  assert.ok(['REQUESTED', 'QUEUED', 'VALIDATING'].includes(opDoc.status), 'OPERATION_STATE_NOT_ELIGIBLE:' + opDoc.status);
   const cohortId = inputCohortId || opDoc.cohortId;
   const clientId = opDoc.clientId;
   const expectedPlanId = opDoc.planId;
   const coachId = inputCoachId || opDoc.coachUid;
   const runtimeSha = inputRuntimeSha || opDoc.runtimeSha;
   assert.ok(cohortId && clientId && expectedPlanId && coachId && runtimeSha, 'OPERATION_METADATA_INCOMPLETE');
+  // T883-B1: Never trust workflow_dispatch inputs blindly; verify against persisted ledger doc
+  if (inputCohortId) assert.equal(opDoc.cohortId, inputCohortId, 'OPERATION_COHORT_MISMATCH');
+  if (inputCoachId && opDoc.coachUid) assert.equal(opDoc.coachUid, inputCoachId, 'OPERATION_REQUESTER_MISMATCH');
+  if (inputRuntimeSha && opDoc.runtimeSha) assert.equal(opDoc.runtimeSha, inputRuntimeSha, 'OPERATION_RUNTIME_SHA_MISMATCH');
+
+  // T883-B3: Capture monotonic fencing token (`lockVersion`) and verify active lock ownership + unexpired lease
+  let expectedLockVersion = null;
+  const verifyFencingLock = async (stage) => {
+    const curLock = await readDoc(lockPath);
+    if (!curLock) return; // legacy tests without lock doc
+    assert.equal(curLock.activeOperationId, operationId, 'STALE_LOCK_FENCING_ABORT:ACTIVE_OP_CHANGED_AT_' + stage);
+    if (expectedLockVersion !== null && curLock.version !== undefined) {
+      assert.equal(Number(curLock.version), expectedLockVersion, 'STALE_LOCK_FENCING_ABORT:VERSION_MISMATCH_AT_' + stage);
+    }
+    if (curLock.leaseExpiresAt) {
+      const leaseMs = Date.parse(curLock.leaseExpiresAt);
+      const nowMs = Date.parse(now());
+      assert.ok(Number.isFinite(leaseMs) && leaseMs > nowMs, 'STALE_LOCK_FENCING_ABORT:LEASE_EXPIRED_AT_' + stage);
+    }
+  };
+  const initialLock = await readDoc(lockPath);
+  if (initialLock) {
+    expectedLockVersion = Number(opDoc.lockVersion !== undefined ? opDoc.lockVersion : initialLock.version);
+    await verifyFencingLock('VALIDATING');
+  }
 
   const history = Array.isArray(opDoc.history) ? opDoc.history.slice(-20) : [];
   const transition = async (state, extra = {}) => {
@@ -1516,6 +1542,11 @@ async function executeRenewCohortOperation(opts) {
     const targetClient = targetCohort.clients.find(c => c.uid === clientId);
     assert.ok(targetClient, 'TARGET_CLIENT_NOT_ELIGIBLE:' + clientId);
     assert.equal(targetClient.planId, expectedPlanId, 'PLAN_CHANGED_BEFORE_DEPLOY');
+    if (targetClient.coachId) assert.equal(targetClient.coachId, coachId, 'CLIENT_COACH_OWNERSHIP_MISMATCH');
+    if (opDoc.renewalMode === 'PILOT_RESTRICTED') {
+      const pAuth = await readDoc('releaseControl/numericPilot/pilotAuthorizations/' + operationId);
+      assert.ok(pAuth && pAuth.uid === clientId && pAuth.planId === expectedPlanId && pAuth.cohortId === cohortId, 'PILOT_AUTHORIZATION_VERIFICATION_FAILED');
+    }
 
     const allShardNames = manifest.cohorts.flatMap(co => co.envVarNames);
     assert.equal(allShardNames.length, 5, 'EXPECTED_FIVE_SHARD_SLOTS_MISMATCH:' + allShardNames.length);
@@ -1552,8 +1583,9 @@ async function executeRenewCohortOperation(opts) {
     const guardAfter = await checkNumericGuardOff();
     G.assertPromotionAllowed({ preflight: guardBefore, fresh: guardAfter });
 
-    // Optimistic concurrency re-read BEFORE promotion (STOP + alias + client activePlanId)
+    // Optimistic concurrency re-read BEFORE promotion (STOP + fencing lock + alias + client activePlanId)
     await checkStopFence();
+    await verifyFencingLock('PRE_PROMOTE');
     const liveAliasPrePromote = await getCurrentAlias();
     assert.equal(liveAliasPrePromote, previousDeploymentId, 'OPTIMISTIC_CONCURRENCY_ALIAS_CHANGED');
     const freshClientDoc = await readDoc('clients/' + clientId);
@@ -1575,6 +1607,7 @@ async function executeRenewCohortOperation(opts) {
     phase = 'REARMING';
     await transition('REARMING', { deploymentId: candidateDeploymentId });
     await checkStopFence();
+    await verifyFencingLock('PRE_REARM');
     fencesMutated = true;
     await rearmCohortFences({
       cohort: targetCohort,

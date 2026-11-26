@@ -469,3 +469,102 @@ test('T882.7: Workflow contract & invocation authorization for renew-cohort + Ap
   assert.equal(render({ status: 'FAILED', retryable: true, numericApplyAuthorized: false }).label.includes('reintentar'), true);
   assert.equal(render({ status: 'RENEWED_VERIFIED', engineState: 'MOTOR_INTEGRATED_AUTHORIZED', numericApplyAuthorized: true }).code, 'MOTOR_INTEGRATED_AUTHORIZED');
 });
+
+test('T883-B.1 & B.3: Stale lock fencing token (expired lease / higher version) blocks promotion + independent workflow verification rejects spoofed requester', async () => {
+  // B1: Spoofed requester coachId mismatch against persisted operation fails before any build
+  const store1 = new Map(Object.entries(makeMultiCohortDocs()));
+  store1.set('releaseControl/numericPilot/operations/T883-OP-B1', {
+    operationId: 'T883-OP-B1', cohortId: 'cohort-01', clientId: 'client-c1', coachUid: 'coach-1',
+    planId: 'plan-c1-new', runtimeSha: SHA, startsAt: '2026-11-26T05:15:00Z', expiresAt: EXP_ISO, status: 'QUEUED', lockVersion: 2, history: [],
+  });
+  store1.set('releaseControl/numericPilotGlobalLock', { activeOperationId: 'T883-OP-B1', version: 2, leaseExpiresAt: '2026-11-26T12:30:00Z', pendingQueue: [] });
+  await assert.rejects(() => cohortOps.executeRenewCohortOperation({
+    operationId: 'T883-OP-B1',
+    cohortId: 'cohort-01',
+    coachId: 'coach-intruder',
+    io: {
+      now: () => NOW_ISO,
+      readDoc: async (p) => store1.has(p) ? JSON.parse(JSON.stringify(store1.get(p))) : null,
+      writeDoc: async (p, d) => { store1.set(p, JSON.parse(JSON.stringify(d))); },
+    },
+  }), /OPERATION_REQUESTER_MISMATCH/);
+
+  // B3: Another operation acquired higher fencing version while build ran -> STALE_LOCK_FENCING_ABORT before promotion!
+  const store2 = new Map(Object.entries(makeMultiCohortDocs()));
+  store2.set('releaseControl/numericPilot/operations/T883-OP-STALE', {
+    operationId: 'T883-OP-STALE', cohortId: 'cohort-01', clientId: 'client-c1', coachUid: 'coach-1',
+    planId: 'plan-c1-new', runtimeSha: SHA, startsAt: '2026-11-26T05:15:00Z', expiresAt: EXP_ISO, status: 'QUEUED', lockVersion: 5, history: [],
+  });
+  store2.set('releaseControl/numericPilotGlobalLock', { activeOperationId: 'T883-OP-STALE', version: 5, leaseExpiresAt: '2026-11-26T12:30:00Z', pendingQueue: [] });
+  let promotedCalled = false;
+  const repStale = await cohortOps.executeRenewCohortOperation({
+    operationId: 'T883-OP-STALE',
+    io: {
+      now: () => NOW_ISO,
+      readDoc: async (p) => store2.has(p) ? JSON.parse(JSON.stringify(store2.get(p))) : null,
+      writeDoc: async (p, d) => { store2.set(p, JSON.parse(JSON.stringify(d))); },
+      loadLiveRoster: async () => makeManifestWithFiveShards('client-c1', 'plan-c1-new', 'cohort-01'),
+      currentApp: async () => 'dpl_prev_live',
+      checkNumericGuardOff: async () => makeDisarmedGuardEvidence(),
+      baselineState: { production_deployment: 'dpl_off_base' },
+      buildDeployment: async () => {
+        // Simulate lease expiry & another operation taking version 6!
+        store2.set('releaseControl/numericPilotGlobalLock', { activeOperationId: 'T883-OP-NEWER', version: 6, leaseExpiresAt: '2026-11-26T12:45:00Z', pendingQueue: [] });
+        return { deploymentId: 'dpl_cand_stale_fence', url: 'cand.vercel.app', readyState: 'READY' };
+      },
+      verifyCandidate: async () => ({ verified: true }),
+      promoteDeployment: async () => { promotedCalled = true; return { promoted: true }; },
+    },
+  });
+  assert.equal(promotedCalled, false, 'Stale operation must NEVER promote after losing fencing lock');
+  assert.equal(repStale.status, 'FAILED');
+  assert.equal(repStale.errorCode, 'STALE_LOCK_FENCING_ABORT');
+});
+
+test('T883-B.4 & B.5 & B.6: Authenticated status polling endpoint enforces Coach+client isolation + Coach HTML exposes B4/B5/B6 safely', async () => {
+  const docs = makeMultiCohortDocs();
+  docs['releaseControl/numericPilot/operations/T883-OP-POLL'] = {
+    operationId: 'T883-OP-POLL',
+    status: 'RENEWED_VERIFIED',
+    cohortId: 'cohort-01',
+    clientId: 'client-c1',
+    coachUid: 'coach-1',
+    planId: 'plan-c1-new',
+    pidCount: 1,
+    deploymentId: 'dpl_verified_99',
+    workflowRunId: '777888',
+    updatedAt: NOW_ISO,
+  };
+  const db = makeFakeDb(docs);
+  const statusHandler = planSync.makeStatusHandler({
+    db,
+    verifyIdToken: async (tok) => ({ uid: tok === 'tok-coach-1' ? 'coach-1' : 'coach-other' }),
+  });
+
+  // Unauthenticated -> 401
+  const rUnauth = makeRes();
+  await statusHandler({ method: 'GET', headers: {}, query: { operationId: 'T883-OP-POLL', clientId: 'client-c1' } }, rUnauth);
+  assert.equal(rUnauth.statusCode, 401);
+
+  // Another Coach -> 403 CLIENT_NOT_OWNED
+  const rOther = makeRes();
+  await statusHandler({ method: 'GET', headers: { authorization: 'Bearer tok-coach-other' }, query: { operationId: 'T883-OP-POLL', clientId: 'client-c1' } }, rOther);
+  assert.equal(rOther.statusCode, 403);
+
+  // Owner Coach -> 200 with verified status
+  const rOwner = makeRes();
+  await statusHandler({ method: 'GET', headers: { authorization: 'Bearer tok-coach-1' }, query: { operationId: 'T883-OP-POLL', clientId: 'client-c1' } }, rOwner);
+  assert.equal(rOwner.statusCode, 200);
+  assert.equal(rOwner.body.schema, 'vdsen-plan-activation-status-v1');
+  assert.equal(rOwner.body.status, 'RENEWED_VERIFIED');
+  assert.equal(rOwner.body.engineState, 'MOTOR_INTEGRATED_AUTHORIZED');
+  assert.equal(rOwner.body.numericApplyAuthorized, true);
+  assert.equal(rOwner.body.deploymentId, 'dpl_verified_99');
+
+  // Coach HTML static checks for B4/B5/B6
+  const coachHtml = fs.readFileSync('vdsen-coach.html', 'utf8');
+  assert.ok(coachHtml.includes('function _pollPlanEngineSyncStatus('), 'B4 polling function must exist');
+  assert.ok(coachHtml.includes('check=plan-activation-status'), 'B4 polling must call authenticated status endpoint');
+  assert.ok(coachHtml.includes('pilotTargetPlanId'), 'B5 deterministic pilot planId support must exist');
+  assert.ok(coachHtml.includes('function _vdsenCheckCohortShards('), 'B6 built-in cohort-shard diagnostic must exist');
+});

@@ -1003,11 +1003,13 @@ function makeHandler(deps) {
 
         const nextQueue = (Array.isArray(lockDoc.pendingQueue) ? lockDoc.pendingQueue : [])
           .filter((q) => q && q.operationId !== renewalOpId);
+        const nextLockVersion = (Number(lockDoc.version) || 0) + 1;
         tx.set(opRef, Object.assign({}, baseOpRecord, {
           status: RENEWAL_STATES.REQUESTED,
           queuedBehindOperationId: null,
           recoveredExpiredLock,
-          history: prevHistory.concat([{ state: RENEWAL_STATES.REQUESTED, at: nowIso, attempt: attemptCount }]),
+          lockVersion: nextLockVersion,
+          history: prevHistory.concat([{ state: RENEWAL_STATES.REQUESTED, at: nowIso, attempt: attemptCount, lockVersion: nextLockVersion }]),
         }));
         tx.set(globalLockRef, {
           schema: 'vdsen-numeric-global-lock-v1',
@@ -1020,7 +1022,7 @@ function makeHandler(deps) {
           updatedAt: nowIso,
           leaseExpiresAt,
           pendingQueue: nextQueue,
-          version: (Number(lockDoc.version) || 0) + 1,
+          version: nextLockVersion,
         });
         if (pilotAuthRef) {
           tx.set(pilotAuthRef, {
@@ -1541,6 +1543,77 @@ function makeHandler(deps) {
   };
 }
 
+// T883-B4: Authenticated, Coach+client-isolated read-only status endpoint for async renewal operations.
+function makeStatusHandler(deps) {
+  deps = deps || {};
+  return async function statusHandler(req, res) {
+    if (typeof res.setHeader === 'function') res.setHeader('Cache-Control', 'no-store');
+    if (req.method !== 'GET') return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
+    const authHeader = (req.headers && req.headers.authorization) || '';
+    const tokenMatch = typeof authHeader === 'string' && /^Bearer\s+(\S+)$/.exec(authHeader.trim());
+    if (!tokenMatch) return res.status(401).json({ error: 'AUTH_MISSING' });
+    if (typeof deps.verifyIdToken !== 'function') return res.status(503).json({ error: 'AUTH_UNAVAILABLE' });
+    let identity;
+    try { identity = await deps.verifyIdToken(tokenMatch[1]); } catch (_) { return res.status(401).json({ error: 'AUTH_INVALID' }); }
+    const coachUid = identity && typeof identity.uid === 'string' ? identity.uid : '';
+    if (!coachUid) return res.status(401).json({ error: 'AUTH_INVALID' });
+
+    const q = (req.query && typeof req.query === 'object') ? req.query : {};
+    const operationId = typeof q.operationId === 'string' ? q.operationId.trim() : '';
+    const clientId = typeof q.clientId === 'string' ? q.clientId.trim() : '';
+    if (!operationId || !/^[a-zA-Z0-9_-]{8,80}$/.test(operationId) || !clientId) {
+      return res.status(400).json({ error: 'OPERATION_AND_CLIENT_REQUIRED' });
+    }
+    const db = deps.db;
+    if (!db) return res.status(503).json({ error: 'ADMIN_DB_UNAVAILABLE' });
+
+    const [clientSnap, opSnap] = await Promise.all([
+      db.collection('clients').doc(clientId).get(),
+      db.collection('releaseControl').doc('numericPilot').collection('operations').doc(operationId).get(),
+    ]);
+    const clientDoc = _data(clientSnap);
+    if (!clientDoc || clientDoc.coachId !== coachUid) {
+      return res.status(403).json({ error: 'CLIENT_NOT_OWNED' });
+    }
+    const opDoc = _data(opSnap);
+    if (!opDoc) return res.status(404).json({ error: 'OPERATION_NOT_FOUND' });
+    if (opDoc.clientId !== clientId || (opDoc.coachUid && opDoc.coachUid !== coachUid)) {
+      return res.status(403).json({ error: 'OPERATION_NOT_OWNED' });
+    }
+
+    const st = opDoc.status || RENEWAL_STATES.AUTHORIZATION_PENDING;
+    let engineState = 'AUTHORIZATION_PENDING';
+    let numericApplyAuthorized = false;
+    let retryable = false;
+    if (st === RENEWAL_STATES.RENEWED_VERIFIED) {
+      engineState = 'MOTOR_INTEGRATED_AUTHORIZED';
+      numericApplyAuthorized = true;
+    } else if (IN_FLIGHT_RENEWAL_STATES.has(st)) {
+      engineState = 'AUTHORIZATION_PREPARING';
+    } else if (st === RENEWAL_STATES.FAILED || st === RENEWAL_STATES.ROLLED_BACK_VERIFIED || st === RENEWAL_STATES.ROLLBACK_REQUIRED) {
+      engineState = 'COACH_INTERVENTION_REQUIRED';
+      retryable = st !== RENEWAL_STATES.ROLLBACK_REQUIRED;
+    }
+
+    return res.status(200).json({
+      schema: 'vdsen-plan-activation-status-v1',
+      operationId: opDoc.operationId || operationId,
+      status: st,
+      engineState,
+      numericApplyAuthorized,
+      retryable,
+      cohortId: opDoc.cohortId || null,
+      clientId,
+      planId: opDoc.planId || null,
+      pidCount: opDoc.pidCount || null,
+      deploymentId: opDoc.deploymentId || null,
+      workflowRunId: opDoc.workflowRunId || null,
+      errorCode: opDoc.errorCode || null,
+      updatedAt: opDoc.updatedAt || null,
+    });
+  };
+}
+
 let _defaultHandler = null;
 function defaultHandler(req, res) {
   if (!_defaultHandler) {
@@ -1560,6 +1633,7 @@ function defaultHandler(req, res) {
 }
 
 defaultHandler.makeHandler = makeHandler;
+defaultHandler.makeStatusHandler = makeStatusHandler;
 defaultHandler.RENEWAL_STATES = RENEWAL_STATES;
 defaultHandler.resolveAutoRenewalMode = resolveAutoRenewalMode;
 defaultHandler.parseAndEvaluatePilotScope = parseAndEvaluatePilotScope;
