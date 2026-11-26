@@ -305,17 +305,88 @@ function createVercelCohortShardSyncer(env, fetcher) {
 
 const PILOT_SCOPE_SCHEMA = 'vdsen-auto-renewal-pilot-scope-v1';
 const PILOT_SCOPE_MAX_DURATION_MS = 168 * 3600 * 1000;
+const GLOBAL_LOCK_LEASE_MS = 15 * 60 * 1000;
+const GITHUB_OWNER = 'vdsenasesoria-svg';
+const GITHUB_REPO = 'vdsen-ecosistema';
+const GITHUB_REF = 'codex/client-app-next';
+const GITHUB_WORKFLOW_FILE = 'vdsen-numeric-pilot.yml';
+
+const RENEWAL_STATES = Object.freeze({
+  REQUESTED: 'REQUESTED',
+  AUTHORIZATION_PENDING: 'AUTHORIZATION_PENDING',
+  QUEUED: 'QUEUED',
+  VALIDATING: 'VALIDATING',
+  PREPARING_RUNTIME: 'PREPARING_RUNTIME',
+  DEPLOYING: 'DEPLOYING',
+  VERIFYING_RUNTIME: 'VERIFYING_RUNTIME',
+  PROMOTING: 'PROMOTING',
+  REARMING: 'REARMING',
+  RENEWED_VERIFIED: 'RENEWED_VERIFIED',
+  FAILED: 'FAILED',
+  ROLLBACK_REQUIRED: 'ROLLBACK_REQUIRED',
+  ROLLED_BACK_VERIFIED: 'ROLLED_BACK_VERIFIED',
+});
+
+const IN_FLIGHT_RENEWAL_STATES = new Set([
+  RENEWAL_STATES.REQUESTED,
+  RENEWAL_STATES.QUEUED,
+  RENEWAL_STATES.VALIDATING,
+  RENEWAL_STATES.PREPARING_RUNTIME,
+  RENEWAL_STATES.DEPLOYING,
+  RENEWAL_STATES.VERIFYING_RUNTIME,
+  RENEWAL_STATES.PROMOTING,
+  RENEWAL_STATES.REARMING,
+]);
 
 /**
- * T881-B fail-closed pilot scope guard.
- * When VDSEN_AUTO_COHORT_RENEWAL_PILOT_SCOPE is absent/empty, returns { active: false, allowed: true }.
- * When configured, restricts auto-renewal exclusively to ONE authorized client (and optional planId)
- * inside a bounded [startsAt, expiresAt) UTC window. Any malformed, expired, or non-matching scope
- * fails closed without touching Firestore fences or runtime shards.
+ * Explicitly distinguishes DISABLED, PILOT_RESTRICTED, and GENERAL_AUTHORIZED.
+ * Fail-closed on incomplete or unrecognized configuration so partial pilot config
+ * can never escalate into accidental global activation.
+ */
+function resolveAutoRenewalMode(env, deps) {
+  env = env || process.env;
+  deps = deps || {};
+  const enabled = deps.autoRenewalEnabled !== undefined
+    ? deps.autoRenewalEnabled === true
+    : env.VDSEN_AUTO_COHORT_RENEWAL_ENABLED === 'true';
+  if (!enabled) return 'DISABLED';
+
+  const rawMode = deps.autoRenewalMode !== undefined
+    ? deps.autoRenewalMode
+    : env.VDSEN_AUTO_COHORT_RENEWAL_MODE;
+  const rawScope = deps.pilotScope !== undefined
+    ? deps.pilotScope
+    : env.VDSEN_AUTO_COHORT_RENEWAL_PILOT_SCOPE;
+  const hasScope = rawScope !== undefined && rawScope !== null && String(rawScope).trim() !== '';
+  const modeStr = typeof rawMode === 'string' ? rawMode.trim().toLowerCase() : '';
+
+  if (modeStr === 'pilot') return 'PILOT_RESTRICTED';
+  if (modeStr === 'general') {
+    // If a pilot scope is still present, stay restricted fail-closed
+    return hasScope ? 'PILOT_RESTRICTED' : 'GENERAL_AUTHORIZED';
+  }
+  if (modeStr === '') {
+    if (hasScope) return 'PILOT_RESTRICTED';
+    // Backward compatibility only for explicit unit/emulator test injection (deps.autoRenewalEnabled === true)
+    if (deps.autoRenewalEnabled === true && deps.autoRenewalMode === undefined) return 'GENERAL_AUTHORIZED';
+    return 'DISABLED';
+  }
+  return 'DISABLED';
+}
+
+/**
+ * T882 hardened fail-closed pilot scope guard.
+ * During PILOT_RESTRICTED mode, requires ALL of:
+ *   schema, uid, planId (mandatory — never optional in pilot), cohortId, operationId,
+ *   startsAt, expiresAt (<=168h), matching requestedOperationId (if provided), and non-consumed auth.
  */
 function parseAndEvaluatePilotScope(rawScope, ctx) {
   ctx = ctx || {};
+  const requireScope = ctx.requireScope === true;
   if (rawScope === undefined || rawScope === null || (typeof rawScope === 'string' && rawScope.trim() === '')) {
+    if (requireScope) {
+      return { active: true, allowed: false, reason: 'PILOT_SCOPE_MISSING', scope: null };
+    }
     return { active: false, allowed: true, reason: null, scope: null };
   }
   let scope = null;
@@ -332,18 +403,20 @@ function parseAndEvaluatePilotScope(rawScope, ctx) {
     return { active: true, allowed: false, reason: 'PILOT_SCOPE_INVALID_SCHEMA', scope: null };
   }
   const uid = typeof scope.uid === 'string' ? scope.uid.trim() : '';
+  const scopedPlanId = typeof scope.planId === 'string' ? scope.planId.trim() : '';
+  const scopedCohortId = typeof scope.cohortId === 'string' ? scope.cohortId.trim() : '';
   const opId = typeof scope.operationId === 'string' ? scope.operationId.trim() : '';
   const startsAt = typeof scope.startsAt === 'string' ? scope.startsAt.trim() : '';
   const expiresAt = typeof scope.expiresAt === 'string' ? scope.expiresAt.trim() : '';
-  const scopedPlanId = scope.planId === undefined || scope.planId === null || scope.planId === ''
-    ? null
-    : (typeof scope.planId === 'string' ? scope.planId.trim() : null);
 
   if (!uid || !/^[a-zA-Z0-9-]{8,80}$/.test(opId)) {
     return { active: true, allowed: false, reason: 'PILOT_SCOPE_INVALID_IDENTITY', scope: null };
   }
-  if (scope.planId !== undefined && scope.planId !== null && scope.planId !== '' && !scopedPlanId) {
-    return { active: true, allowed: false, reason: 'PILOT_SCOPE_INVALID_PLAN_ID', scope: null };
+  if (!scopedPlanId) {
+    return { active: true, allowed: false, reason: 'PILOT_SCOPE_PLAN_ID_REQUIRED', scope: null };
+  }
+  if (!/^cohort-\d{2}$/.test(scopedCohortId)) {
+    return { active: true, allowed: false, reason: 'PILOT_SCOPE_COHORT_ID_REQUIRED', scope: null };
   }
   const isoRe = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
   if (!isoRe.test(startsAt) || !isoRe.test(expiresAt)) {
@@ -364,14 +437,132 @@ function parseAndEvaluatePilotScope(rawScope, ctx) {
   if (ctx.clientId !== uid) {
     return { active: true, allowed: false, reason: 'PILOT_SCOPE_UID_MISMATCH', scope: null };
   }
-  if (scopedPlanId && ctx.planId !== scopedPlanId) {
+  if (ctx.planId !== scopedPlanId) {
     return { active: true, allowed: false, reason: 'PILOT_SCOPE_PLAN_MISMATCH', scope: null };
+  }
+  if (ctx.cohortId && ctx.cohortId !== scopedCohortId) {
+    return { active: true, allowed: false, reason: 'PILOT_SCOPE_COHORT_MISMATCH', scope: null };
+  }
+  if (ctx.requestedOperationId && String(ctx.requestedOperationId).trim() !== opId) {
+    return { active: true, allowed: false, reason: 'PILOT_SCOPE_OPERATION_ID_MISMATCH', scope: null };
+  }
+  if (ctx.consumedAuth && typeof ctx.consumedAuth === 'object') {
+    const sameBinding = ctx.consumedAuth.uid === uid && ctx.consumedAuth.planId === scopedPlanId && ctx.consumedAuth.cohortId === scopedCohortId;
+    if (!sameBinding || ctx.consumedAuth.consumed === true) {
+      return { active: true, allowed: false, reason: 'PILOT_SCOPE_ALREADY_CONSUMED', scope: null };
+    }
   }
   return {
     active: true,
     allowed: true,
     reason: null,
-    scope: { schema: PILOT_SCOPE_SCHEMA, uid, planId: scopedPlanId, operationId: opId, startsAt, expiresAt },
+    scope: { schema: PILOT_SCOPE_SCHEMA, uid, planId: scopedPlanId, cohortId: scopedCohortId, operationId: opId, startsAt, expiresAt },
+  };
+}
+
+function _b64url(buf) {
+  return Buffer.from(buf).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function createGitHubAppJwt(appId, privateKeyPem, nowSec) {
+  const iat = (Number.isFinite(nowSec) ? nowSec : Math.floor(Date.now() / 1000)) - 60;
+  const exp = iat + 540; // 9 min (< 10 min GitHub max)
+  const header = _b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const payload = _b64url(JSON.stringify({ iat, exp, iss: String(appId) }));
+  const signingInput = header + '.' + payload;
+  const sig = crypto.sign('RSA-SHA256', Buffer.from(signingInput), privateKeyPem);
+  return signingInput + '.' + _b64url(sig);
+}
+
+/**
+ * T882 Option 1 Credential Isolation:
+ * Dispatches ONLY `vdsen-numeric-pilot.yml` (`action: renew-cohort`) on canonical repo/branch
+ * using a short-lived GitHub App installation token (`actions:write` only on this repo).
+ * NEVER reads or uses VERCEL_TOKEN.
+ */
+function createGitHubActionsRenewalDispatcher(env, fetcher) {
+  env = env || process.env;
+  const appId = typeof env.VDSEN_GH_RENEWAL_APP_ID === 'string' ? env.VDSEN_GH_RENEWAL_APP_ID.trim() : '';
+  const installationId = typeof env.VDSEN_GH_RENEWAL_APP_INSTALLATION_ID === 'string' ? env.VDSEN_GH_RENEWAL_APP_INSTALLATION_ID.trim() : '';
+  const rawKey = typeof env.VDSEN_GH_RENEWAL_APP_PRIVATE_KEY === 'string' ? env.VDSEN_GH_RENEWAL_APP_PRIVATE_KEY.trim() : '';
+  if (!appId || !installationId || !rawKey) return null;
+  const privateKey = rawKey.replace(/\\n/g, '\n');
+  const doFetch = fetcher || globalThis.fetch;
+  if (typeof doFetch !== 'function') return null;
+
+  return async function dispatchRenewalWorkflow(payload) {
+    try {
+      if (!payload || !payload.operationId || !payload.cohortId || !payload.clientId || !payload.planId || !payload.coachUid || !payload.runtimeSha) {
+        return { ok: false, errorCode: 'DISPATCH_PAYLOAD_INVALID' };
+      }
+      if (!/^cohort-\d{2}$/.test(payload.cohortId) || !/^[0-9a-f]{40}$/.test(payload.runtimeSha)) {
+        return { ok: false, errorCode: 'DISPATCH_PAYLOAD_INVALID' };
+      }
+      const jwt = createGitHubAppJwt(appId, privateKey);
+      const tokResp = await doFetch(
+        'https://api.github.com/app/installations/' + encodeURIComponent(installationId) + '/access_tokens',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + jwt,
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            repositories: [GITHUB_REPO],
+            permissions: { actions: 'write' },
+          }),
+          signal: AbortSignal.timeout(10000),
+        }
+      );
+      if (!tokResp || !tokResp.ok) {
+        return { ok: false, errorCode: 'GITHUB_APP_TOKEN_FAILED' };
+      }
+      const tokData = await tokResp.json().catch(() => null);
+      const instToken = tokData && typeof tokData.token === 'string' ? tokData.token : '';
+      if (!instToken) {
+        return { ok: false, errorCode: 'GITHUB_APP_TOKEN_MISSING' };
+      }
+      const dispatchUrl = 'https://api.github.com/repos/' + GITHUB_OWNER + '/' + GITHUB_REPO +
+        '/actions/workflows/' + GITHUB_WORKFLOW_FILE + '/dispatches';
+      const dispResp = await doFetch(dispatchUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + instToken,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ref: GITHUB_REF,
+          inputs: {
+            action: 'renew-cohort',
+            operation_id: payload.operationId,
+            runtime_sha: payload.runtimeSha,
+            pilot_uid: 'COHORT:' + payload.cohortId,
+            plan_id: payload.planId,
+            coach_id: payload.coachUid,
+            prescription_exercise_id: payload.clientId,
+            starts_at: payload.startsAt || '',
+            expires_at: payload.expiresAt || '',
+          },
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!dispResp || (dispResp.status !== 204 && !dispResp.ok)) {
+        return { ok: false, errorCode: 'GITHUB_DISPATCH_FAILED' };
+      }
+      return {
+        ok: true,
+        dispatched: true,
+        workflow: GITHUB_WORKFLOW_FILE,
+        ref: GITHUB_REF,
+        operationId: payload.operationId,
+      };
+    } catch (_) {
+      return { ok: false, errorCode: 'GITHUB_DISPATCH_EXCEPTION' };
+    }
   };
 }
 
@@ -613,19 +804,24 @@ function makeHandler(deps) {
       });
     }
 
-    // 6. Drift detected -> Controlled server-side renewal ONLY if explicitly enabled
-    const autoRenewalEnabled = deps.autoRenewalEnabled !== undefined
-      ? deps.autoRenewalEnabled === true
-      : process.env.VDSEN_AUTO_COHORT_RENEWAL_ENABLED === 'true';
+    // 6. Drift detected -> Controlled renewal ONLY if explicitly enabled & not stopped in Firestore
+    const renewalMode = resolveAutoRenewalMode(process.env, deps);
 
-    if (!autoRenewalEnabled || !unexpired || !runtimeSha || !/^[0-9a-f]{40}$/.test(runtimeSha)) {
+    // T882 Section 8: Effective STOP fence in Firestore (blocks renewals immediately without needing redeployment)
+    const stopControlRef = db.collection('releaseControl').doc('autoCohortRenewalControl');
+    const stopControlSnap = await stopControlRef.get();
+    const stopControlDoc = _data(stopControlSnap);
+    if (stopControlDoc && (stopControlDoc.stopped === true || stopControlDoc.enabled === false)) {
       return res.status(200).json({
         schema: 'vdsen-plan-activation-sync-v1',
-        status: 'AUTHORIZATION_PENDING',
+        status: 'RENEWAL_STOPPED',
         engineState: 'AUTHORIZATION_PENDING',
         commercialAuthorized: true,
         numericApplyAuthorized: false,
         renewed: false,
+        stoppedEffective: true,
+        stopReason: stopControlDoc.reason || 'AUTO_RENEWAL_STOPPED',
+        renewalMode,
         cohortId,
         clientId,
         previousPlanId,
@@ -637,19 +833,67 @@ function makeHandler(deps) {
       });
     }
 
-    // T881-B: Single-client / bounded-window pilot scope isolation guard (fail-closed when configured).
-    const rawPilotScope = deps.pilotScope !== undefined
-      ? deps.pilotScope
-      : process.env.VDSEN_AUTO_COHORT_RENEWAL_PILOT_SCOPE;
-    const pilotCheck = parseAndEvaluatePilotScope(rawPilotScope, { clientId, planId, nowMs });
-    if (pilotCheck.active && !pilotCheck.allowed) {
+    if (renewalMode === 'DISABLED' || !unexpired || !runtimeSha || !/^[0-9a-f]{40}$/.test(runtimeSha)) {
       return res.status(200).json({
         schema: 'vdsen-plan-activation-sync-v1',
-        status: 'AUTHORIZATION_PENDING',
+        status: RENEWAL_STATES.AUTHORIZATION_PENDING,
         engineState: 'AUTHORIZATION_PENDING',
         commercialAuthorized: true,
         numericApplyAuthorized: false,
         renewed: false,
+        renewalMode,
+        cohortId,
+        clientId,
+        previousPlanId,
+        planId,
+        pidsHash: planCheck.pidsHash,
+        pidCount: planCheck.pidCount,
+        planUpdatedAt: planDoc.updatedAt,
+        expiresAt: expiresAt || null,
+      });
+    }
+
+    // T882 Section 7: Hardened pilot scope guard (fail-closed in PILOT_RESTRICTED mode)
+    const rawPilotScope = deps.pilotScope !== undefined
+      ? deps.pilotScope
+      : process.env.VDSEN_AUTO_COHORT_RENEWAL_PILOT_SCOPE;
+    const requestedOperationId = typeof body.operationId === 'string' && body.operationId.trim()
+      ? body.operationId.trim()
+      : null;
+    let consumedAuth = null;
+    if (renewalMode === 'PILOT_RESTRICTED' && rawPilotScope) {
+      const preCheck = parseAndEvaluatePilotScope(rawPilotScope, {
+        requireScope: true,
+        clientId,
+        planId,
+        cohortId,
+        requestedOperationId,
+        nowMs,
+      });
+      if (preCheck.allowed && preCheck.scope) {
+        const pilotAuthSnap = await db.collection('releaseControl').doc('numericPilot')
+          .collection('pilotAuthorizations').doc(preCheck.scope.operationId).get();
+        consumedAuth = _data(pilotAuthSnap);
+      }
+    }
+    const pilotCheck = parseAndEvaluatePilotScope(rawPilotScope, {
+      requireScope: renewalMode === 'PILOT_RESTRICTED',
+      clientId,
+      planId,
+      cohortId,
+      requestedOperationId,
+      consumedAuth,
+      nowMs,
+    });
+    if (pilotCheck.active && !pilotCheck.allowed) {
+      return res.status(200).json({
+        schema: 'vdsen-plan-activation-sync-v1',
+        status: RENEWAL_STATES.AUTHORIZATION_PENDING,
+        engineState: 'AUTHORIZATION_PENDING',
+        commercialAuthorized: true,
+        numericApplyAuthorized: false,
+        renewed: false,
+        renewalMode,
         pilotScopeBlocked: true,
         pilotScopeReason: pilotCheck.reason,
         cohortId,
@@ -663,8 +907,318 @@ function makeHandler(deps) {
       });
     }
 
+    const renewalOpId = (renewalMode === 'PILOT_RESTRICTED' && pilotCheck.scope)
+      ? pilotCheck.scope.operationId
+      : buildRenewalOperationId(cohortId, clientId, planId, planCheck.pidsHash);
+    const opRef = db.collection('releaseControl').doc('numericPilot').collection('operations').doc(renewalOpId);
+
+    // T882 Option 1: Asynchronous GitHub Actions orchestration (preferred production path).
+    // Never waits for a Vercel build inside a serverless request and never holds VERCEL_TOKEN.
+    if (typeof deps.dispatchRenewalWorkflow === 'function') {
+      const globalLockRef = db.collection('releaseControl').doc('numericPilotGlobalLock');
+      const leaseMs = Number.isFinite(deps.globalLockLeaseMs) ? deps.globalLockLeaseMs : GLOBAL_LOCK_LEASE_MS;
+      const leaseExpiresAt = new Date(nowMs + leaseMs).toISOString();
+      const pilotAuthRef = (renewalMode === 'PILOT_RESTRICTED' && pilotCheck.scope)
+        ? db.collection('releaseControl').doc('numericPilot').collection('pilotAuthorizations').doc(pilotCheck.scope.operationId)
+        : null;
+
+      const enqueueOutcome = await db.runTransaction(async (tx) => {
+        const [opSnap, lockSnap, pAuthSnap] = await Promise.all([
+          tx.get(opRef),
+          tx.get(globalLockRef),
+          pilotAuthRef ? tx.get(pilotAuthRef) : Promise.resolve(null),
+        ]);
+        const existingOp = _data(opSnap);
+        const lockDoc = _data(lockSnap) || { version: 0, activeOperationId: null, pendingQueue: [] };
+        const pAuth = pAuthSnap ? _data(pAuthSnap) : null;
+
+        if (pilotAuthRef && pAuth && pAuth.consumed === true) {
+          return { action: 'PILOT_CONSUMED' };
+        }
+        if (existingOp && existingOp.status === RENEWAL_STATES.RENEWED_VERIFIED) {
+          return { action: 'ALREADY_VERIFIED', op: existingOp };
+        }
+        if (existingOp && IN_FLIGHT_RENEWAL_STATES.has(existingOp.status)) {
+          const opLeaseMs = Date.parse(existingOp.leaseExpiresAt || '');
+          if (Number.isFinite(opLeaseMs) && opLeaseMs > nowMs) {
+            return { action: 'ALREADY_IN_FLIGHT', op: existingOp };
+          }
+        }
+
+        const activeOpId = lockDoc.activeOperationId || null;
+        const activeLeaseMs = Date.parse(lockDoc.leaseExpiresAt || '');
+        const lockHeldByOther = Boolean(
+          activeOpId &&
+          activeOpId !== renewalOpId &&
+          Number.isFinite(activeLeaseMs) &&
+          activeLeaseMs > nowMs
+        );
+        const recoveredExpiredLock = Boolean(
+          activeOpId &&
+          activeOpId !== renewalOpId &&
+          (!Number.isFinite(activeLeaseMs) || activeLeaseMs <= nowMs)
+        );
+        const attemptCount = ((existingOp && Number(existingOp.attemptCount)) || 0) + 1;
+        const prevHistory = Array.isArray(existingOp && existingOp.history) ? existingOp.history.slice(-20) : [];
+        const baseOpRecord = {
+          schema: LEDGER_SCHEMA,
+          operationId: renewalOpId,
+          renewalMode,
+          cohortId,
+          clientId,
+          coachUid,
+          previousPlanId,
+          planId,
+          pids: planCheck.pids,
+          pidCount: planCheck.pidCount,
+          pidsHash: planCheck.pidsHash,
+          runtimeSha,
+          startsAt,
+          expiresAt,
+          attemptCount,
+          requestedAt: (existingOp && existingOp.requestedAt) || nowIso,
+          updatedAt: nowIso,
+          leaseExpiresAt,
+          workflowRunId: (existingOp && existingOp.workflowRunId) || null,
+          deploymentId: (existingOp && existingOp.deploymentId) || null,
+        };
+
+        if (lockHeldByOther) {
+          const queue = Array.isArray(lockDoc.pendingQueue) ? lockDoc.pendingQueue.slice() : [];
+          if (!queue.some((q) => q && q.operationId === renewalOpId)) {
+            queue.push({ operationId: renewalOpId, cohortId, clientId, planId, coachUid, requestedAt: nowIso });
+          }
+          tx.set(opRef, Object.assign({}, baseOpRecord, {
+            status: RENEWAL_STATES.QUEUED,
+            queuedBehindOperationId: activeOpId,
+            history: prevHistory.concat([{ state: RENEWAL_STATES.QUEUED, at: nowIso, queuedBehind: activeOpId }]),
+          }));
+          tx.set(globalLockRef, Object.assign({}, lockDoc, {
+            pendingQueue: queue,
+            updatedAt: nowIso,
+            version: (Number(lockDoc.version) || 0) + 1,
+          }));
+          return { action: 'QUEUED_BEHIND_LOCK', queuedBehindOperationId: activeOpId, attemptCount };
+        }
+
+        const nextQueue = (Array.isArray(lockDoc.pendingQueue) ? lockDoc.pendingQueue : [])
+          .filter((q) => q && q.operationId !== renewalOpId);
+        tx.set(opRef, Object.assign({}, baseOpRecord, {
+          status: RENEWAL_STATES.REQUESTED,
+          queuedBehindOperationId: null,
+          recoveredExpiredLock,
+          history: prevHistory.concat([{ state: RENEWAL_STATES.REQUESTED, at: nowIso, attempt: attemptCount }]),
+        }));
+        tx.set(globalLockRef, {
+          schema: 'vdsen-numeric-global-lock-v1',
+          activeOperationId: renewalOpId,
+          cohortId,
+          clientId,
+          planId,
+          status: RENEWAL_STATES.REQUESTED,
+          acquiredAt: nowIso,
+          updatedAt: nowIso,
+          leaseExpiresAt,
+          pendingQueue: nextQueue,
+          version: (Number(lockDoc.version) || 0) + 1,
+        });
+        if (pilotAuthRef) {
+          tx.set(pilotAuthRef, {
+            schema: PILOT_SCOPE_SCHEMA,
+            operationId: pilotCheck.scope.operationId,
+            uid: clientId,
+            planId,
+            cohortId,
+            consumed: true,
+            consumedAt: nowIso,
+          });
+        }
+        return { action: 'DISPATCH_NOW', recoveredExpiredLock, attemptCount };
+      });
+
+      if (enqueueOutcome.action === 'PILOT_CONSUMED') {
+        return res.status(200).json({
+          schema: 'vdsen-plan-activation-sync-v1',
+          status: RENEWAL_STATES.AUTHORIZATION_PENDING,
+          engineState: 'AUTHORIZATION_PENDING',
+          commercialAuthorized: true,
+          numericApplyAuthorized: false,
+          renewed: false,
+          renewalMode,
+          pilotScopeBlocked: true,
+          pilotScopeReason: 'PILOT_SCOPE_ALREADY_CONSUMED',
+          cohortId,
+          clientId,
+          previousPlanId,
+          planId,
+          pidsHash: planCheck.pidsHash,
+          pidCount: planCheck.pidCount,
+        });
+      }
+      if (enqueueOutcome.action === 'ALREADY_VERIFIED') {
+        return res.status(200).json({
+          schema: 'vdsen-plan-activation-sync-v1',
+          status: RENEWAL_STATES.RENEWED_VERIFIED,
+          engineState: 'MOTOR_INTEGRATED_AUTHORIZED',
+          commercialAuthorized: true,
+          numericApplyAuthorized: true,
+          renewed: false,
+          idempotent: true,
+          operationId: renewalOpId,
+          deploymentId: enqueueOutcome.op.deploymentId || null,
+          workflowRunId: enqueueOutcome.op.workflowRunId || null,
+          cohortId,
+          clientId,
+          previousPlanId,
+          planId,
+          pidsHash: planCheck.pidsHash,
+          pidCount: planCheck.pidCount,
+          expiresAt,
+        });
+      }
+      if (enqueueOutcome.action === 'ALREADY_IN_FLIGHT') {
+        return res.status(202).json({
+          schema: 'vdsen-plan-activation-sync-v1',
+          status: enqueueOutcome.op.status,
+          engineState: 'AUTHORIZATION_PREPARING',
+          commercialAuthorized: true,
+          numericApplyAuthorized: false,
+          renewed: false,
+          alreadyInProgress: true,
+          operationId: renewalOpId,
+          workflowRunId: enqueueOutcome.op.workflowRunId || null,
+          cohortId,
+          clientId,
+          previousPlanId,
+          planId,
+          pidsHash: planCheck.pidsHash,
+          pidCount: planCheck.pidCount,
+          expiresAt,
+        });
+      }
+      if (enqueueOutcome.action === 'QUEUED_BEHIND_LOCK') {
+        return res.status(202).json({
+          schema: 'vdsen-plan-activation-sync-v1',
+          status: RENEWAL_STATES.QUEUED,
+          engineState: 'AUTHORIZATION_PREPARING',
+          commercialAuthorized: true,
+          numericApplyAuthorized: false,
+          renewed: false,
+          workflowDispatched: false,
+          queuedBehindOperationId: enqueueOutcome.queuedBehindOperationId,
+          operationId: renewalOpId,
+          cohortId,
+          clientId,
+          previousPlanId,
+          planId,
+          pidsHash: planCheck.pidsHash,
+          pidCount: planCheck.pidCount,
+          expiresAt,
+        });
+      }
+
+      // Dispatch GitHub Actions `renew-cohort` workflow (short-lived token, zero VERCEL_TOKEN here)
+      const dispRes = await deps.dispatchRenewalWorkflow({
+        operationId: renewalOpId,
+        cohortId,
+        clientId,
+        planId,
+        coachUid,
+        runtimeSha,
+        startsAt,
+        expiresAt,
+      });
+      if (!dispRes || dispRes.ok !== true) {
+        const errCode = (dispRes && dispRes.errorCode) || 'GITHUB_DISPATCH_FAILED';
+        await db.runTransaction(async (tx) => {
+          const [curOpSnap, curLockSnap] = await Promise.all([tx.get(opRef), tx.get(globalLockRef)]);
+          const curOp = _data(curOpSnap) || {};
+          const curLock = _data(curLockSnap) || {};
+          const hist = Array.isArray(curOp.history) ? curOp.history.slice(-20) : [];
+          tx.set(opRef, Object.assign({}, curOp, {
+            status: RENEWAL_STATES.FAILED,
+            errorCode: errCode,
+            failedAt: nowIso,
+            updatedAt: nowIso,
+            history: hist.concat([{ state: RENEWAL_STATES.FAILED, at: nowIso, errorCode: errCode }]),
+          }));
+          if (curLock.activeOperationId === renewalOpId) {
+            tx.set(globalLockRef, Object.assign({}, curLock, {
+              activeOperationId: null,
+              status: 'IDLE',
+              updatedAt: nowIso,
+              leaseExpiresAt: null,
+              version: (Number(curLock.version) || 0) + 1,
+            }));
+          }
+          if (pilotAuthRef) {
+            tx.set(pilotAuthRef, { consumed: false, releasedOnDispatchFailureAt: nowIso }, { merge: true });
+          }
+        });
+        return res.status(502).json({
+          schema: 'vdsen-plan-activation-sync-v1',
+          status: RENEWAL_STATES.FAILED,
+          engineState: 'COACH_INTERVENTION_REQUIRED',
+          commercialAuthorized: true,
+          numericApplyAuthorized: false,
+          renewed: false,
+          retryable: true,
+          operationId: renewalOpId,
+          cohortId,
+          clientId,
+          previousPlanId,
+          planId,
+          pidsHash: planCheck.pidsHash,
+          pidCount: planCheck.pidCount,
+          errorCode: errCode,
+        });
+      }
+
+      await db.runTransaction(async (tx) => {
+        const [curOpSnap, curLockSnap] = await Promise.all([tx.get(opRef), tx.get(globalLockRef)]);
+        const curOp = _data(curOpSnap) || {};
+        const curLock = _data(curLockSnap) || {};
+        const hist = Array.isArray(curOp.history) ? curOp.history.slice(-20) : [];
+        tx.set(opRef, Object.assign({}, curOp, {
+          status: RENEWAL_STATES.QUEUED,
+          workflow: dispRes.workflow || GITHUB_WORKFLOW_FILE,
+          workflowRef: dispRes.ref || GITHUB_REF,
+          dispatchedAt: nowIso,
+          updatedAt: nowIso,
+          history: hist.concat([{ state: RENEWAL_STATES.QUEUED, at: nowIso, workflow: dispRes.workflow || GITHUB_WORKFLOW_FILE }]),
+        }));
+        if (curLock.activeOperationId === renewalOpId) {
+          tx.set(globalLockRef, Object.assign({}, curLock, {
+            status: RENEWAL_STATES.QUEUED,
+            updatedAt: nowIso,
+            version: (Number(curLock.version) || 0) + 1,
+          }));
+        }
+      });
+
+      return res.status(202).json({
+        schema: 'vdsen-plan-activation-sync-v1',
+        status: RENEWAL_STATES.QUEUED,
+        engineState: 'AUTHORIZATION_PREPARING',
+        commercialAuthorized: true,
+        numericApplyAuthorized: false,
+        renewed: false,
+        workflowDispatched: true,
+        recoveredExpiredLock: enqueueOutcome.recoveredExpiredLock === true,
+        operationId: renewalOpId,
+        cohortId,
+        clientId,
+        previousPlanId,
+        planId,
+        pidsHash: planCheck.pidsHash,
+        pidCount: planCheck.pidCount,
+        planUpdatedAt: planDoc.updatedAt,
+        expiresAt,
+      });
+    }
+
     // MANDATORY FAIL-CLOSED GUARD: Never STOP or re-arm Firestore fences without a verified
-    // runtime shard synchronizer. Prevents Firestore-vs-Vercel split-brain.
+    // orchestrator or runtime shard synchronizer. Prevents Firestore-vs-Vercel split-brain.
     if (typeof deps.syncCohortRuntimeEnv !== 'function') {
       return res.status(503).json({
         schema: 'vdsen-plan-activation-sync-v1',
@@ -683,9 +1237,6 @@ function makeHandler(deps) {
         errorCode: 'RUNTIME_SHARD_SYNC_UNAVAILABLE',
       });
     }
-
-    const renewalOpId = buildRenewalOperationId(cohortId, clientId, planId, planCheck.pidsHash);
-    const opRef = db.collection('releaseControl').doc('numericPilot').collection('operations').doc(renewalOpId);
 
     try {
       // Step 6A: Concurrency guard — reserve renewal lock atomically
@@ -999,16 +1550,21 @@ function defaultHandler(req, res) {
       verifyIdToken: (tok) => fbAdmin.getAuth().verifyIdToken(tok),
       commercialRoster: () => loadBundledCommercialRoster(),
       autoRenewalEnabled: process.env.VDSEN_AUTO_COHORT_RENEWAL_ENABLED === 'true',
+      autoRenewalMode: process.env.VDSEN_AUTO_COHORT_RENEWAL_MODE,
       pilotScope: process.env.VDSEN_AUTO_COHORT_RENEWAL_PILOT_SCOPE,
       runtimeSha: process.env.VDSEN_NUMERIC_PILOT_RUNTIME_SHA || process.env.VERCEL_GIT_COMMIT_SHA || null,
-      syncCohortRuntimeEnv: createVercelCohortShardSyncer(process.env),
+      dispatchRenewalWorkflow: createGitHubActionsRenewalDispatcher(process.env),
     });
   }
   return _defaultHandler(req, res);
 }
 
 defaultHandler.makeHandler = makeHandler;
+defaultHandler.RENEWAL_STATES = RENEWAL_STATES;
+defaultHandler.resolveAutoRenewalMode = resolveAutoRenewalMode;
 defaultHandler.parseAndEvaluatePilotScope = parseAndEvaluatePilotScope;
+defaultHandler.createGitHubAppJwt = createGitHubAppJwt;
+defaultHandler.createGitHubActionsRenewalDispatcher = createGitHubActionsRenewalDispatcher;
 defaultHandler.validateNewPlanForEngine = validateNewPlanForEngine;
 defaultHandler.buildRenewalOperationId = buildRenewalOperationId;
 defaultHandler.validateCommercialRoster = validateCommercialRoster;

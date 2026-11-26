@@ -1081,6 +1081,22 @@ async function main() {
     if (rep.status !== 'COHORT_RENEWED_VERIFIED') process.exitCode = 1;
     return;
   }
+  if (cmd === 'renew-cohort-op') {
+    const rep = await executeRenewCohortOperation({
+      projectId,
+      googleToken,
+      vercelToken,
+      operationId: env.INPUT_OPERATION,
+      cohortId,
+      runtimeSha: env.INPUT_RUNTIME,
+      coachId: env.INPUT_COACH,
+      runId: env.GITHUB_RUN_ID || '',
+      outFile: path.join(reportDir, 'cohort-renew-op-' + (env.INPUT_OPERATION || 'op') + '.json'),
+    });
+    console.log(JSON.stringify(rep, null, 2));
+    if (rep.status !== 'RENEWED_VERIFIED') process.exitCode = 1;
+    return;
+  }
   throw new Error('UNKNOWN_COHORT_CMD: ' + cmd);
 }
 
@@ -1248,6 +1264,456 @@ async function renewDriftedCohort(opts) {
   return report;
 }
 
+// T882 — Autonomous GitHub Actions cohort renewal orchestrator (`renew-cohort`).
+// Executes the full 19-step state machine with:
+//   - Persistent ledger updates (`VALIDATING` -> `PREPARING_RUNTIME` -> `DEPLOYING` ->
+//     `VERIFYING_RUNTIME` -> `PROMOTING` -> `REARMING` -> `RENEWED_VERIFIED`)
+//   - Effective STOP checks (`releaseControl/autoCohortRenewalControl`) at start, pre-build, pre-promote, and pre-rearm
+//   - Preservation of ALL 5 cohort shard slots and unaffected cohorts (zero permanent project-level shards)
+//   - Optimistic concurrency checks (live alias + live client activePlanId re-read before promotion)
+//   - Granular phase-aware rollback (never reverts a newer legitimate promotion, never deletes logbooks)
+async function executeRenewCohortOperation(opts) {
+  const {
+    projectId = 'vdsen-ecosistema',
+    googleToken,
+    vercelToken,
+    operationId,
+    cohortId: inputCohortId,
+    runtimeSha: inputRuntimeSha,
+    coachId: inputCoachId,
+    runId = '',
+    outFile,
+    io = {},
+  } = opts || {};
+
+  assert.ok(operationId && /^[a-zA-Z0-9_-]{8,80}$/.test(operationId), 'RENEW_OP_ID_INVALID');
+
+  const now = () => (typeof io.now === 'function' ? io.now() : new Date().toISOString());
+  const readDoc = io.readDoc || ((docPath) => fsGet(projectId, googleToken, docPath));
+  const writeDoc = io.writeDoc || (async (docPath, data) => {
+    const url = 'https://firestore.googleapis.com/v1/projects/' + projectId + '/databases/(default)/documents/' + docPath;
+    const r = await fetch(url, {
+      method: 'PATCH',
+      headers: { Authorization: 'Bearer ' + googleToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: toFsFields(data) }),
+      signal: AbortSignal.timeout(30000),
+    });
+    assert.ok(r.ok, 'FS_WRITE_FAILED_' + r.status + ':' + docPath);
+    return r.json();
+  });
+  const loadRoster = io.loadLiveRoster || ((p) => loadLiveRoster(projectId, googleToken, p));
+  const getCurrentAlias = io.currentApp || (async () => {
+    const s = JSON.parse(fs.readFileSync('.release/vdsen-client.json', 'utf8'));
+    return A.currentApp(s);
+  });
+  const checkNumericGuardOff = io.checkNumericGuardOff || (async () => {
+    const envData = await vget(vercelToken, '/v9/projects/' + DEFAULT_PROJECT_ID + '/env?decrypt=false');
+    const res = G.evaluateProductionEnv(envData.envs, { project: DEFAULT_PROJECT_ID, team: DEFAULT_TEAM_ID });
+    assert.equal(res.status, 'DISARMED', 'PROJECT_NUMERIC_GUARD_NOT_DISARMED');
+    return res;
+  });
+  const buildDeployment = io.buildDeployment || (async ({ runtimeSha, operationId: opId, baselineDeployment, cohorts }) => {
+    const tmpRoot = path.resolve(process.env.RUNNER_TEMP || require('node:os').tmpdir());
+    const dest = path.resolve(tmpRoot, 'vdsen-renew-' + (runId || Date.now()));
+    A.exportCandidateTree(runtimeSha, dest);
+    A.verifyExportedTree(runtimeSha, dest, A.servedSurface());
+    const args = [
+      'deploy', '--prod', '--skip-domain', '--yes',
+      '-e', 'AUTONOMOUS_PROGRESSION_ENABLED=true',
+      '-e', 'AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED=true',
+      '-e', 'VDSEN_NUMERIC_PILOT_ENABLED=true',
+      '-e', 'VDSEN_NUMERIC_PILOT_RUNTIME_SHA=' + runtimeSha,
+      '-m', 'githubCommitSha=' + runtimeSha,
+      '-m', 'vdsenPilotOperation=' + opId,
+      '-m', 'vdsenFleetCohorts=' + String(cohorts.length),
+      '-m', 'vdsenBaselineDeployment=' + baselineDeployment,
+    ];
+    for (const co of cohorts) {
+      for (const sh of co.envShards) {
+        args.push('-e', sh.name + '=' + JSON.stringify(sh.windows));
+      }
+    }
+    const s = JSON.parse(fs.readFileSync('.release/vdsen-client.json', 'utf8'));
+    const r = await A.runVercelCli(args, dest, { VERCEL_ORG_ID: DEFAULT_TEAM_ID, VERCEL_PROJECT_ID: DEFAULT_PROJECT_ID });
+    assert.equal(r.code, 0, 'RENEW_DEPLOY_FAILED: ' + String(r.err || r.out).slice(0, 300));
+    const match = (String(r.out) + '\n' + String(r.err)).match(/https:\/\/([A-Za-z0-9.-]+\.vercel\.app)/);
+    assert.ok(match, 'RENEW_DEPLOY_URL_MISSING');
+    const staged = await A.deployment(s, match[1]);
+    return { deploymentId: staged.id || staged.uid, url: staged.url, readyState: staged.readyState || staged.ready };
+  });
+  const verifyCandidate = io.verifyCandidate || (async ({ deploymentId, runtimeSha, shardNames }) => {
+    const d = await vget(vercelToken, '/v13/deployments/' + encodeURIComponent(deploymentId));
+    assert.equal(d.projectId, DEFAULT_PROJECT_ID, 'PROJECT_ID_MISMATCH');
+    assert.equal(d.teamId || d.ownerId, DEFAULT_TEAM_ID, 'TEAM_ID_MISMATCH');
+    assert.equal(d.readyState, 'READY', 'DEPLOYMENT_NOT_READY');
+    assert.equal(d.target, 'production', 'DEPLOYMENT_NOT_PRODUCTION');
+    assert.equal(d.meta && d.meta.githubCommitSha, runtimeSha, 'DEPLOYMENT_SHA_MISMATCH');
+    const envNames = (Array.isArray(d.env) ? d.env : []).map(e => typeof e === 'string' ? e : (e && e.key)).filter(Boolean);
+    assert.ok(!envNames.includes('CRON_SECRET'), 'CRON_SECRET_FORBIDDEN');
+    for (const req of ['AUTONOMOUS_PROGRESSION_ENABLED', 'AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED', 'VDSEN_NUMERIC_PILOT_ENABLED', 'VDSEN_NUMERIC_PILOT_RUNTIME_SHA']) {
+      assert.ok(envNames.includes(req), 'MISSING_REQUIRED_ENV_' + req);
+    }
+    for (const sh of shardNames) {
+      assert.ok(envNames.includes(sh), 'MISSING_COHORT_SHARD_' + sh);
+    }
+    return { verified: true, deploymentId, runtimeSha, envNames };
+  });
+  const promoteDeployment = io.promoteDeployment || (async ({ deploymentId, runtimeSha }) => {
+    const s = JSON.parse(fs.readFileSync('.release/vdsen-client.json', 'utf8'));
+    await A.promote(s, deploymentId);
+    const verifiedPaths = await A.verifyPublicBytes(s, runtimeSha, A.servedSurface());
+    return { promoted: true, deploymentId, verifiedPublicPaths: verifiedPaths.length };
+  });
+  const revertDeployment = io.revertDeployment || (async (targetDeploymentId) => {
+    const s = JSON.parse(fs.readFileSync('.release/vdsen-client.json', 'utf8'));
+    await A.revertApp(s, targetDeploymentId);
+    assert.equal(await A.currentApp(s), targetDeploymentId, 'ROLLBACK_ALIAS_MISMATCH');
+    return { restored: true, deploymentId: targetDeploymentId };
+  });
+  const rearmCohortFences = io.rearmCohortFences || (async ({ cohort, coachId, runtimeSha, operationId: opId, startsAt, expiresAt }) => {
+    const relPath = 'releaseControl/autonomousProgression_cohort_' + cohort.cohortId;
+    const numPath = 'releaseControl/numericPilot_cohort_' + cohort.cohortId;
+    const coachPath = 'coaches/' + coachId;
+    const windowsMap = {};
+    for (const cl of cohort.clients) {
+      windowsMap[cl.uid] = {
+        schema: C.COHORT_SCHEMA,
+        mode: 'NUMERIC_APPLY',
+        cohortId: cohort.cohortId,
+        enabled: true,
+        uid: cl.uid,
+        planId: cl.planId,
+        pids: cl.pids,
+        pidCount: cl.pidCount,
+        pidsHash: cl.pidsHash,
+        runtimeSha,
+        operationId: opId,
+        startsAt,
+        expiresAt,
+      };
+    }
+    const coachDoc = (await readDoc(coachPath)) || {};
+    const existingCohorts = (coachDoc.autoApplyCanary && coachDoc.autoApplyCanary.cohorts) || {};
+    const nextCohorts = Object.assign({}, existingCohorts, {
+      [cohort.cohortId]: {
+        enabled: true,
+        cohortId: cohort.cohortId,
+        operationId: opId,
+        startsAt,
+        expiresAt,
+        clientIds: cohort.clientIds,
+        prescriptionExerciseIds: cohort.allPids,
+      },
+    });
+    await writeDoc(relPath, {
+      schema: 'vdsen-autonomous-release-v1',
+      enabled: true,
+      cohortId: cohort.cohortId,
+      operationId: opId,
+      startsAt,
+      expiresAt,
+      clientIds: cohort.clientIds,
+    });
+    await writeDoc(numPath, {
+      schema: C.COHORT_SCHEMA,
+      mode: 'NUMERIC_APPLY',
+      enabled: true,
+      cohortId: cohort.cohortId,
+      operationId: opId,
+      runtimeSha,
+      startsAt,
+      expiresAt,
+      windows: windowsMap,
+    });
+    await writeDoc(coachPath, Object.assign({}, coachDoc, {
+      autoApplyCanary: Object.assign({}, coachDoc.autoApplyCanary || {}, {
+        enabled: true,
+        cohorts: nextCohorts,
+      }),
+    }));
+    return { rearmed: true, cohortId: cohort.cohortId };
+  });
+  const dispatchNextQueued = io.dispatchNextQueued || null;
+
+  const opPath = 'releaseControl/numericPilot/operations/' + operationId;
+  const lockPath = 'releaseControl/numericPilotGlobalLock';
+  const stopPath = 'releaseControl/autoCohortRenewalControl';
+
+  const checkStopFence = async () => {
+    const sc = await readDoc(stopPath);
+    if (sc && (sc.stopped === true || sc.enabled === false)) {
+      const err = new Error('STOP_ACTIVE_DURING_RENEWAL:' + (sc.reason || 'AUTO_RENEWAL_STOPPED'));
+      err.code = 'STOP_ACTIVE_DURING_RENEWAL';
+      throw err;
+    }
+  };
+
+  let opDoc = await readDoc(opPath);
+  assert.ok(opDoc, 'PERSISTED_OPERATION_NOT_FOUND:' + operationId);
+  const cohortId = inputCohortId || opDoc.cohortId;
+  const clientId = opDoc.clientId;
+  const expectedPlanId = opDoc.planId;
+  const coachId = inputCoachId || opDoc.coachUid;
+  const runtimeSha = inputRuntimeSha || opDoc.runtimeSha;
+  assert.ok(cohortId && clientId && expectedPlanId && coachId && runtimeSha, 'OPERATION_METADATA_INCOMPLETE');
+
+  const history = Array.isArray(opDoc.history) ? opDoc.history.slice(-20) : [];
+  const transition = async (state, extra = {}) => {
+    const at = now();
+    history.push(Object.assign({ state, at }, extra.errorCode ? { errorCode: extra.errorCode } : {}));
+    opDoc = Object.assign({}, opDoc, {
+      status: state,
+      workflowRunId: runId || opDoc.workflowRunId || null,
+      updatedAt: at,
+      history,
+    }, extra);
+    await writeDoc(opPath, opDoc);
+  };
+
+  const releaseGlobalLock = async (finalState) => {
+    const curLock = (await readDoc(lockPath)) || {};
+    const queue = Array.isArray(curLock.pendingQueue) ? curLock.pendingQueue.slice() : [];
+    const nextQueued = queue.length > 0 ? queue[0] : null;
+    if (curLock.activeOperationId === operationId) {
+      await writeDoc(lockPath, Object.assign({}, curLock, {
+        activeOperationId: null,
+        status: 'IDLE',
+        lastCompletedOperationId: operationId,
+        lastFinalState: finalState,
+        leaseExpiresAt: null,
+        updatedAt: now(),
+        version: (Number(curLock.version) || 0) + 1,
+      }));
+    }
+    if (nextQueued && typeof dispatchNextQueued === 'function') {
+      await dispatchNextQueued(nextQueued).catch(() => {});
+    }
+    return nextQueued;
+  };
+
+  let phase = 'VALIDATING';
+  let previousDeploymentId = null;
+  let candidateDeploymentId = null;
+  let promoted = false;
+  let fencesMutated = false;
+  let prevFenceSnapshot = null;
+
+  try {
+    // 1–7. VALIDATING
+    await transition('VALIDATING');
+    await checkStopFence();
+    const guardBefore = await checkNumericGuardOff();
+    previousDeploymentId = await getCurrentAlias();
+    assert.ok(previousDeploymentId, 'LIVE_ALIAS_UNAVAILABLE');
+
+    const startsAt = opDoc.startsAt || now().replace(/\.\d{3}Z$/, 'Z');
+    const expiresAt = opDoc.expiresAt;
+    assert.ok(expiresAt && Date.parse(expiresAt) > Date.now(), 'RENEWAL_WINDOW_EXPIRED');
+
+    const manifest = await loadRoster({ runtimeSha, operationId, startsAt, expiresAt });
+    const targetCohort = manifest.cohorts.find(c => c.cohortId === cohortId);
+    assert.ok(targetCohort, 'TARGET_COHORT_NOT_FOUND:' + cohortId);
+    const targetClient = targetCohort.clients.find(c => c.uid === clientId);
+    assert.ok(targetClient, 'TARGET_CLIENT_NOT_ELIGIBLE:' + clientId);
+    assert.equal(targetClient.planId, expectedPlanId, 'PLAN_CHANGED_BEFORE_DEPLOY');
+
+    const allShardNames = manifest.cohorts.flatMap(co => co.envVarNames);
+    assert.equal(allShardNames.length, 5, 'EXPECTED_FIVE_SHARD_SLOTS_MISMATCH:' + allShardNames.length);
+    const unaffectedCohortIds = manifest.cohorts.filter(c => c.cohortId !== cohortId).map(c => c.cohortId);
+
+    // Capture affected cohort fences BEFORE any mutation for granular rollback
+    prevFenceSnapshot = {
+      rel: await readDoc('releaseControl/autonomousProgression_cohort_' + cohortId),
+      num: await readDoc('releaseControl/numericPilot_cohort_' + cohortId),
+      coach: await readDoc('coaches/' + coachId),
+    };
+
+    // 8–12. PREPARING_RUNTIME & DEPLOYING
+    phase = 'PREPARING_RUNTIME';
+    await transition('PREPARING_RUNTIME', { previousDeploymentId, shardNames: allShardNames });
+    await checkStopFence();
+
+    phase = 'DEPLOYING';
+    await transition('DEPLOYING');
+    const baselineState = io.baselineState || JSON.parse(fs.readFileSync('.release/vdsen-client.json', 'utf8'));
+    const buildRes = await buildDeployment({
+      runtimeSha,
+      operationId,
+      baselineDeployment: baselineState.production_deployment,
+      cohorts: manifest.cohorts,
+    });
+    candidateDeploymentId = buildRes && buildRes.deploymentId;
+    assert.ok(candidateDeploymentId, 'CANDIDATE_DEPLOYMENT_ID_MISSING');
+
+    // 13. VERIFYING_RUNTIME
+    phase = 'VERIFYING_RUNTIME';
+    await transition('VERIFYING_RUNTIME', { candidateDeploymentId });
+    await verifyCandidate({ deploymentId: candidateDeploymentId, runtimeSha, shardNames: allShardNames });
+    const guardAfter = await checkNumericGuardOff();
+    G.assertPromotionAllowed({ preflight: guardBefore, fresh: guardAfter });
+
+    // Optimistic concurrency re-read BEFORE promotion (STOP + alias + client activePlanId)
+    await checkStopFence();
+    const liveAliasPrePromote = await getCurrentAlias();
+    assert.equal(liveAliasPrePromote, previousDeploymentId, 'OPTIMISTIC_CONCURRENCY_ALIAS_CHANGED');
+    const freshClientDoc = await readDoc('clients/' + clientId);
+    if (freshClientDoc && freshClientDoc.activePlanId && freshClientDoc.activePlanId !== expectedPlanId) {
+      const err = new Error('PLAN_CHANGED_DURING_DEPLOYMENT:' + freshClientDoc.activePlanId);
+      err.code = 'PLAN_CHANGED_DURING_DEPLOYMENT';
+      throw err;
+    }
+
+    // 14–15. PROMOTING
+    phase = 'PROMOTING';
+    await transition('PROMOTING');
+    await promoteDeployment({ deploymentId: candidateDeploymentId, runtimeSha });
+    promoted = true;
+    const liveAliasPostPromote = await getCurrentAlias();
+    assert.equal(liveAliasPostPromote, candidateDeploymentId, 'POST_PROMOTE_ALIAS_MISMATCH');
+
+    // 16–17. REARMING (ONLY affected cohort; unaffected cohorts untouched)
+    phase = 'REARMING';
+    await transition('REARMING', { deploymentId: candidateDeploymentId });
+    await checkStopFence();
+    fencesMutated = true;
+    await rearmCohortFences({
+      cohort: targetCohort,
+      coachId,
+      runtimeSha,
+      operationId,
+      startsAt,
+      expiresAt,
+    });
+
+    // 18–19. RENEWED_VERIFIED
+    phase = 'RENEWED_VERIFIED';
+    await transition('RENEWED_VERIFIED', {
+      deploymentId: candidateDeploymentId,
+      previousDeploymentId,
+      pidsHash: targetClient.pidsHash,
+      pidCount: targetClient.pidCount,
+      unaffectedCohortIds,
+      verifiedAt: now(),
+    });
+    const nextQueued = await releaseGlobalLock('RENEWED_VERIFIED');
+    const report = {
+      schema: 'vdsen-renew-cohort-op-v1',
+      status: 'RENEWED_VERIFIED',
+      operationId,
+      cohortId,
+      clientId,
+      planId: expectedPlanId,
+      pidsHash: targetClient.pidsHash,
+      pidCount: targetClient.pidCount,
+      runtimeSha,
+      previousDeploymentId,
+      deploymentId: candidateDeploymentId,
+      shardNames: allShardNames,
+      unaffectedCohortIds,
+      nextQueuedOperationId: nextQueued ? nextQueued.operationId : null,
+      verifiedAt: now(),
+    };
+    if (outFile) {
+      fs.mkdirSync(path.dirname(outFile), { recursive: true });
+      fs.writeFileSync(outFile, JSON.stringify(report, null, 2) + '\n');
+    }
+    return report;
+  } catch (err) {
+    const errorCode = (err && err.code && err.code !== 'ERR_ASSERTION')
+      ? err.code
+      : String(err && err.message || 'RENEW_FAILED').split(':')[0].split('\n')[0].trim().slice(0, 64);
+    if (!promoted && !fencesMutated) {
+      // Pre-promotion failure: zero production traffic or fence impact
+      await transition('FAILED', { failedPhase: phase, errorCode, failedAt: now() });
+      await releaseGlobalLock('FAILED');
+      const report = {
+        schema: 'vdsen-renew-cohort-op-v1',
+        status: 'FAILED',
+        failedPhase: phase,
+        errorCode,
+        operationId,
+        cohortId,
+        clientId,
+        planId: expectedPlanId,
+        rollbackPerformed: false,
+        previousDeploymentId,
+        candidateDeploymentId,
+        failedAt: now(),
+      };
+      if (outFile) {
+        fs.mkdirSync(path.dirname(outFile), { recursive: true });
+        fs.writeFileSync(outFile, JSON.stringify(report, null, 2) + '\n');
+      }
+      return report;
+    }
+
+    // Post-promotion or re-arm failure: granular rollback without overwriting newer promotions
+    await transition('ROLLBACK_REQUIRED', { failedPhase: phase, errorCode });
+    let aliasRestored = false;
+    let fencesRestored = false;
+    let rollbackSkippedNewerPromotion = false;
+    let rollbackError = null;
+    try {
+      const currentLive = await getCurrentAlias();
+      if (promoted && previousDeploymentId) {
+        if (currentLive === candidateDeploymentId) {
+          await revertDeployment(previousDeploymentId);
+          aliasRestored = true;
+        } else if (currentLive === previousDeploymentId) {
+          aliasRestored = true;
+        } else {
+          // A newer legitimate promotion happened; do NOT revert it blindly
+          rollbackSkippedNewerPromotion = true;
+        }
+      }
+      if (fencesMutated && prevFenceSnapshot) {
+        if (prevFenceSnapshot.rel) await writeDoc('releaseControl/autonomousProgression_cohort_' + cohortId, prevFenceSnapshot.rel);
+        if (prevFenceSnapshot.num) await writeDoc('releaseControl/numericPilot_cohort_' + cohortId, prevFenceSnapshot.num);
+        if (prevFenceSnapshot.coach) await writeDoc('coaches/' + coachId, prevFenceSnapshot.coach);
+        fencesRestored = true;
+      }
+    } catch (rbErr) {
+      rollbackError = rbErr && rbErr.message ? rbErr.message : String(rbErr);
+    }
+
+    const rollbackVerified = !rollbackError && !rollbackSkippedNewerPromotion && (!promoted || aliasRestored) && (!fencesMutated || fencesRestored);
+    const finalStatus = rollbackVerified ? 'ROLLED_BACK_VERIFIED' : 'ROLLBACK_REQUIRED';
+    await transition(finalStatus, {
+      failedPhase: phase,
+      errorCode,
+      aliasRestored,
+      fencesRestored,
+      rollbackSkippedNewerPromotion,
+      rollbackError,
+      rolledBackAt: now(),
+    });
+    await releaseGlobalLock(finalStatus);
+    const report = {
+      schema: 'vdsen-renew-cohort-op-v1',
+      status: finalStatus,
+      failedPhase: phase,
+      errorCode,
+      operationId,
+      cohortId,
+      clientId,
+      planId: expectedPlanId,
+      rollbackPerformed: true,
+      aliasRestored,
+      fencesRestored,
+      rollbackSkippedNewerPromotion,
+      rollbackError,
+      previousDeploymentId,
+      candidateDeploymentId,
+      rolledBackAt: now(),
+    };
+    if (outFile) {
+      fs.mkdirSync(path.dirname(outFile), { recursive: true });
+      fs.writeFileSync(outFile, JSON.stringify(report, null, 2) + '\n');
+    }
+    return report;
+  }
+}
+
 if (require.main === module) {
   main().catch((err) => {
     console.error('COHORT_OPS_ERROR:', err && err.message ? err.message : String(err));
@@ -1267,6 +1733,7 @@ module.exports = {
   stopCohorts,
   detectPlanChangeDrift,
   renewDriftedCohort,
+  executeRenewCohortOperation,
   extractPlanPids,
   toFsFields,
   MAX_COHORT_CLIENTS,

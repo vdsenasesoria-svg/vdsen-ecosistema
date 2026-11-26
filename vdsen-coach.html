@@ -7340,23 +7340,31 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     }
   }
 
-  // T878: Truthful rendering of real server-confirmed progression engine integration status.
+  // T878/T882: Truthful rendering of real server-confirmed progression engine integration status.
   // Never displays "Motor integrado y autorizado" unless the server confirmed AUTHORIZED_VERIFIED or RENEWED_VERIFIED.
   function _renderPlanEngineSyncStatus(syncRes) {
     var st = syncRes && syncRes.engineState;
+    var rawStatus = syncRes && syncRes.status;
     var okAuth = !!(syncRes && syncRes.numericApplyAuthorized === true &&
-      (syncRes.status === 'AUTHORIZED_VERIFIED' || syncRes.status === 'RENEWED_VERIFIED'));
+      (rawStatus === 'AUTHORIZED_VERIFIED' || rawStatus === 'RENEWED_VERIFIED'));
     if (okAuth && st === 'MOTOR_INTEGRATED_AUTHORIZED') {
       return { code: 'MOTOR_INTEGRATED_AUTHORIZED', label: 'Motor integrado y autorizado', color: '#44BB88' };
+    }
+    var inProgressStatuses = { REQUESTED: 1, QUEUED: 1, VALIDATING: 1, PREPARING_RUNTIME: 1, DEPLOYING: 1, VERIFYING_RUNTIME: 1, PROMOTING: 1, REARMING: 1 };
+    if (rawStatus && inProgressStatuses[rawStatus]) {
+      return { code: 'AUTHORIZATION_PREPARING', label: 'Renovación en proceso', color: '#C4FF00' };
     }
     if (st === 'AUTHORIZATION_PREPARING') {
       return { code: 'AUTHORIZATION_PREPARING', label: 'Autorización en preparación', color: '#C4FF00' };
     }
-    if (st === 'AUTHORIZATION_PENDING') {
-      return { code: 'AUTHORIZATION_PENDING', label: 'Autorización pendiente', color: '#e8a040' };
+    if (st === 'AUTHORIZATION_PENDING' || rawStatus === 'RENEWAL_STOPPED') {
+      return { code: 'AUTHORIZATION_PENDING', label: rawStatus === 'RENEWAL_STOPPED' ? 'Integración detenida (STOP)' : 'Autorización pendiente', color: '#e8a040' };
     }
     if (st === 'BLOCKED_INCOMPATIBLE' || st === 'BLOCKED_COMMERCIAL') {
       return { code: st, label: 'Bloqueado por incompatibilidad o seguridad', color: '#ff6060' };
+    }
+    if (syncRes && syncRes.retryable === true) {
+      return { code: 'COACH_INTERVENTION_REQUIRED', label: 'Error recuperable · reintentar', color: '#ff9040' };
     }
     return { code: 'COACH_INTERVENTION_REQUIRED', label: 'Requiere intervención del Coach', color: '#ff6060' };
   }

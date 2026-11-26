@@ -13,6 +13,8 @@ function makeValidScope(overrides = {}) {
   return Object.assign({
     schema: 'vdsen-auto-renewal-pilot-scope-v1',
     uid: 'client-pilot-01',
+    planId: 'plan-new-json',
+    cohortId: 'cohort-01',
     operationId: 'T881-PILOT-20261126',
     startsAt: '2026-11-26T10:00:00Z',
     expiresAt: '2026-11-27T10:00:00Z',
@@ -129,24 +131,39 @@ test('T881-B.1: parseAndEvaluatePilotScope allows pass-through when unconfigured
   }
 });
 
-test('T881-B.2: parseAndEvaluatePilotScope enforces single UID, optional planId, and bounded window fail-closed', () => {
+test('T881-B.2: parseAndEvaluatePilotScope enforces single UID, mandatory planId, cohortId, operationId, and bounded window fail-closed', () => {
   const validJson = JSON.stringify(makeValidScope());
-  const ok = parseAndEvaluatePilotScope(validJson, { clientId: 'client-pilot-01', planId: 'any-new-json-plan', nowMs: NOW });
+  const ok = parseAndEvaluatePilotScope(validJson, { clientId: 'client-pilot-01', planId: 'plan-new-json', cohortId: 'cohort-01', requestedOperationId: 'T881-PILOT-20261126', nowMs: NOW });
   assert.equal(ok.active, true);
   assert.equal(ok.allowed, true);
   assert.equal(ok.reason, null);
 
-  const otherUid = parseAndEvaluatePilotScope(validJson, { clientId: 'client-other-02', planId: 'any-new-json-plan', nowMs: NOW });
+  const missingPlan = parseAndEvaluatePilotScope(JSON.stringify(makeValidScope({ planId: '' })), { clientId: 'client-pilot-01', planId: 'plan-new-json', cohortId: 'cohort-01', nowMs: NOW });
+  assert.equal(missingPlan.allowed, false);
+  assert.equal(missingPlan.reason, 'PILOT_SCOPE_PLAN_ID_REQUIRED');
+
+  const otherUid = parseAndEvaluatePilotScope(validJson, { clientId: 'client-other-02', planId: 'plan-new-json', cohortId: 'cohort-01', nowMs: NOW });
   assert.equal(otherUid.active, true);
   assert.equal(otherUid.allowed, false);
   assert.equal(otherUid.reason, 'PILOT_SCOPE_UID_MISMATCH');
 
-  const pinnedPlan = JSON.stringify(makeValidScope({ planId: 'plan-new-json' }));
-  assert.equal(parseAndEvaluatePilotScope(pinnedPlan, { clientId: 'client-pilot-01', planId: 'plan-new-json', nowMs: NOW }).allowed, true);
-  const wrongPlan = parseAndEvaluatePilotScope(pinnedPlan, { clientId: 'client-pilot-01', planId: 'plan-different', nowMs: NOW });
+  const wrongPlan = parseAndEvaluatePilotScope(validJson, { clientId: 'client-pilot-01', planId: 'plan-different', cohortId: 'cohort-01', nowMs: NOW });
   assert.equal(wrongPlan.allowed, false);
   assert.equal(wrongPlan.reason, 'PILOT_SCOPE_PLAN_MISMATCH');
 
+  const wrongCohort = parseAndEvaluatePilotScope(validJson, { clientId: 'client-pilot-01', planId: 'plan-new-json', cohortId: 'cohort-02', nowMs: NOW });
+  assert.equal(wrongCohort.allowed, false);
+  assert.equal(wrongCohort.reason, 'PILOT_SCOPE_COHORT_MISMATCH');
+
+  const wrongOp = parseAndEvaluatePilotScope(validJson, { clientId: 'client-pilot-01', planId: 'plan-new-json', cohortId: 'cohort-01', requestedOperationId: 'OTHER-OP-9999', nowMs: NOW });
+  assert.equal(wrongOp.allowed, false);
+  assert.equal(wrongOp.reason, 'PILOT_SCOPE_OPERATION_ID_MISMATCH');
+
+  const consumed = parseAndEvaluatePilotScope(validJson, { clientId: 'client-pilot-01', planId: 'plan-new-json', cohortId: 'cohort-01', consumedAuth: { uid: 'client-pilot-01', planId: 'plan-new-json', cohortId: 'cohort-01', consumed: true }, nowMs: NOW });
+  assert.equal(consumed.allowed, false);
+  assert.equal(consumed.reason, 'PILOT_SCOPE_ALREADY_CONSUMED');
+
+  assert.equal(parseAndEvaluatePilotScope('', { requireScope: true, clientId: 'client-pilot-01', nowMs: NOW }).reason, 'PILOT_SCOPE_MISSING');
   assert.equal(parseAndEvaluatePilotScope('{broken', { clientId: 'client-pilot-01', nowMs: NOW }).reason, 'PILOT_SCOPE_INVALID_JSON');
   assert.equal(parseAndEvaluatePilotScope(JSON.stringify(makeValidScope({ schema: 'wrong' })), { clientId: 'client-pilot-01', nowMs: NOW }).reason, 'PILOT_SCOPE_INVALID_SCHEMA');
   assert.equal(parseAndEvaluatePilotScope(JSON.stringify(makeValidScope({ startsAt: '2026-11-26T13:00:00Z' })), { clientId: 'client-pilot-01', nowMs: NOW }).reason, 'PILOT_SCOPE_NOT_STARTED');

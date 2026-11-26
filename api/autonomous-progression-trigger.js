@@ -156,9 +156,11 @@ function makeHandler(deps) {
         verifyIdToken: deps.verifyIdToken,
         commercialRoster: deps.commercialRoster,
         autoRenewalEnabled: deps.autoRenewalEnabled,
+        autoRenewalMode: deps.autoRenewalMode,
         pilotScope: deps.pilotScope,
         runtimeSha: deps.runtimeSha,
         clock: deps.clock,
+        dispatchRenewalWorkflow: deps.dispatchRenewalWorkflow,
         syncCohortRuntimeEnv: deps.syncCohortRuntimeEnv,
       })(req, res);
     }
@@ -210,9 +212,10 @@ async function defaultHandler(req, res) {
     numericApplyEnabled: process.env.AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED === 'true',
     commercialRoster: function() { return planSyncLib.loadBundledCommercialRoster(); },
     autoRenewalEnabled: process.env.VDSEN_AUTO_COHORT_RENEWAL_ENABLED === 'true',
+    autoRenewalMode: process.env.VDSEN_AUTO_COHORT_RENEWAL_MODE,
     pilotScope: process.env.VDSEN_AUTO_COHORT_RENEWAL_PILOT_SCOPE,
     runtimeSha: process.env.VDSEN_NUMERIC_PILOT_RUNTIME_SHA || process.env.VERCEL_GIT_COMMIT_SHA || null,
-    syncCohortRuntimeEnv: planSyncLib.createVercelCohortShardSyncer(process.env) })(req, res);
+    dispatchRenewalWorkflow: planSyncLib.createGitHubActionsRenewalDispatcher(process.env) })(req, res);
 }
 
 module.exports = defaultHandler;

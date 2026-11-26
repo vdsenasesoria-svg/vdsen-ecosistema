@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: Operational action to perform (preflight-check | prepare-runtime | arm-fences | stop | restore-off-runtime | audit-status)
+        description: Operational action to perform (preflight-check | prepare-runtime | arm-fences | stop | restore-off-runtime | audit-status | renew-cohort)
         default: 'preflight-check'
         type: choice
         options:
@@ -13,6 +13,7 @@ on:
           - stop
           - restore-off-runtime
           - audit-status
+          - renew-cohort
       operation_id:
         description: Unique approved numeric operation ID (8-80 chars)
         required: true
@@ -66,7 +67,7 @@ permissions:
 # (shared with APP-ONLY release) so concurrent alias promotions/restorations are impossible.
 # Keep STOP in its own independent priority group so emergency fence disarming is never queued behind runtime/release jobs.
 concurrency:
-  group: ${{ (inputs.action == 'prepare-runtime' || inputs.action == 'restore-off-runtime') && 'vdsen-production' || (inputs.action == 'stop' && 'vdsen-numeric-pilot-stop' || 'vdsen-production-numeric-pilot') }}
+  group: ${{ (inputs.action == 'prepare-runtime' || inputs.action == 'restore-off-runtime' || inputs.action == 'renew-cohort') && 'vdsen-production' || (inputs.action == 'stop' && 'vdsen-numeric-pilot-stop' || 'vdsen-production-numeric-pilot') }}
   cancel-in-progress: false
 
 jobs:
@@ -81,6 +82,7 @@ jobs:
       id-token: write
     env:
       VDSEN_NUMERIC_PILOT_RELEASE_ENABLED: ${{ vars.VDSEN_NUMERIC_PILOT_RELEASE_ENABLED }}
+      VDSEN_AUTO_COHORT_RENEWAL_WORKFLOW_ENABLED: ${{ vars.VDSEN_AUTO_COHORT_RENEWAL_WORKFLOW_ENABLED }}
       VDSEN_NUMERIC_PILOT_STOP_ENABLED: ${{ vars.VDSEN_NUMERIC_PILOT_STOP_ENABLED }}
       GCP_PROJECT_ID: vdsen-ecosistema
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -190,6 +192,12 @@ jobs:
         env:
           GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
         run: node scripts/pilot/numeric-cohort-ops.cjs stop-cohort
+
+      - name: Renew isolated cohort asynchronously from persisted ledger (T882)
+        if: inputs.action == 'renew-cohort' && startsWith(inputs.pilot_uid, 'COHORT:')
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: node scripts/pilot/numeric-cohort-ops.cjs renew-cohort-op
 
       # --- ROUTE: PREPARE DEPLOYMENT-SCOPED NUMERIC RUNTIME (PROTECTED, FENCES CLOSED) ---
       - name: Prepare deployment-scoped numeric pilot runtime (fences closed, project Numeric Guard OFF)
