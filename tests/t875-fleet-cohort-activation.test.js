@@ -85,6 +85,31 @@ test('staged recovery attestation binds the seal and refuses unverified or alrea
   alias = expectedLive;
   deployment.env.pop();
   await assert.rejects(verify(), /MISSING_COHORT_SHARD/);
+  const shard = {name:'VDSEN_NUMERIC_COHORT_1',windows:[{runtimeSha:SHA,planId:'test_plan'}]};
+  const verifyValues = () => cohortOps.verifyFleetDeploymentLive(
+    'test-token', deployment.id, SHA, shard.name, fetcher, {expectedLive,digest}, [shard]);
+  deployment.env.push(shard.name);
+  await assert.rejects(verifyValues(), /RECOVERY_SHARD_VALUE_UNAVAILABLE/);
+  deployment.env.pop();
+  deployment.env.push({key:shard.name,value:'[]'});
+  await assert.rejects(verifyValues(), /RECOVERY_SHARD_VALUE_MISMATCH/);
+  deployment.env.at(-1).value = JSON.stringify(shard.windows);
+  assert.equal((await verifyValues()).attested, true);
+  deployment.env.push('VDSEN_NUMERIC_COHORT_2');
+  await assert.rejects(verifyValues(), /RECOVERY_SHARD_SET_MISMATCH/);
+});
+
+test('updated APP-ONLY provenance preserves the prior seal baseline without changing the current baseline', () => {
+  const next = 'a'.repeat(40);
+  const state = {runtime_sha:next, production_deployment:'dpl_new', app_release:{
+    runtime_sha:next, deployment:'dpl_new', previous_runtime_sha:SHA,
+    previous_deployment:'dpl_old', source_release_run:'123',
+  }};
+  assert.equal(cohortOps.recoverySealBaseline(state,SHA), 'dpl_old');
+  assert.equal(cohortOps.recoverySealBaseline(state,next), 'dpl_new');
+  assert.throws(() => cohortOps.recoverySealBaseline(state,'b'.repeat(40)), /NOT_ACCREDITED/);
+  state.app_release.deployment = 'dpl_other';
+  assert.throws(() => cohortOps.recoverySealBaseline(state,SHA), /NOT_ACCREDITED/);
 });
 
 test('T875.1 Roster partitioning: 29 eligible clients -> 3 isolated cohorts (10+10+9), excludes inactive/no-plan/no-PID, each env shard < 4 KB', () => {
