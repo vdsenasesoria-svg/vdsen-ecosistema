@@ -488,7 +488,8 @@ function validateRecoveryScope(manifest, co, fences, runtimeSha, expiresAt, now)
 
 async function prepareFleetRuntime(opts) {
   const { projectId, googleToken, vercelToken, runtimeSha, operationId, startsAt, expiresAt, coachId, outFile,
-    stageOnly = false, expectedDeploymentId = '', stagedRecoveryId = '', probeIdToken = '' } = opts;
+    stageOnly = false, expectedDeploymentId = '', stagedRecoveryId = '' } = opts;
+  const probeIdToken = stageOnly || stagedRecoveryId ? await opts.acquireProbeIdentity?.() : null;
   if (stageOnly || stagedRecoveryId) assert.ok(/^\S+$/.test(probeIdToken), 'RECOVERY_PROBE_AUTH_UNAVAILABLE');
   const s = JSON.parse(fs.readFileSync('.release/vdsen-client.json', 'utf8'));
   if (!stagedRecoveryId) assert.equal(s.runtime_sha, runtimeSha, 'BASELINE_SHA_MISMATCH');
@@ -665,8 +666,9 @@ async function preflightCohort(opts) {
     const digest = sealRecoveryShards(manifest, baseline, runtimeSha, expiresAt, coachId);
     assert.equal(att.recoverySeal, digest,
       'RECOVERY_ARM_SCOPE_CHANGED');
+    const probeIdToken = await opts.acquireProbeIdentity?.();
     att = await verifyFleetDeploymentLive(vercelToken, deploymentId, runtimeSha, shards.map(shard => shard.name),
-      fetcher, null, shards, opts.probeIdToken);
+      fetcher, null, shards, probeIdToken);
     assert.equal(att.recoverySeal, digest, 'RECOVERY_ARM_SEAL_CHANGED');
   }
   const fences = await fetchCohortFences(projectId, googleToken, cohortId, coachId, fetcher);
@@ -1183,6 +1185,7 @@ async function main() {
   const reportDir = env.REPORT_DIR || 'release-output/numeric-pilot';
   const uidInput = String(env.INPUT_UID || '');
   const cohortId = uidInput.startsWith('COHORT:') ? uidInput.slice('COHORT:'.length) : null;
+  const acquireProbeIdentity = () => require('./recovery-probe-identity.cjs').acquireRecoveryProbeIdentity(env);
 
   if (cmd === 'audit-fleet') {
     const rep = await auditFleet({ projectId, googleToken, coachId: env.INPUT_COACH, outFile: path.join(reportDir, 'fleet-audit.json') });
@@ -1198,7 +1201,7 @@ async function main() {
       coachId: env.INPUT_COACH, outFile: path.join(reportDir, 'fleet-runtime-prep.json'),
       stageOnly: uidInput === 'FLEET:RECOVERY-STAGE', expectedDeploymentId: env.INPUT_DEPLOYMENT,
       stagedRecoveryId: uidInput === 'FLEET:RECOVERY-PROMOTE' ? env.INPUT_DEPLOYMENT : '',
-      probeIdToken: env.VDSEN_RECOVERY_PROBE_ID_TOKEN,
+      acquireProbeIdentity,
     });
     console.log(JSON.stringify(rep, null, 2));
     return;
@@ -1211,7 +1214,7 @@ async function main() {
       operationId: env.INPUT_OPERATION, startsAt: env.INPUT_STARTS,
       expiresAt: env.INPUT_EXPIRES, coachId: env.INPUT_COACH,
       outFile: path.join(reportDir, 'cohort-preflight-' + cohortId + '.json'),
-      probeIdToken: env.VDSEN_RECOVERY_PROBE_ID_TOKEN,
+      acquireProbeIdentity,
     });
     console.log(JSON.stringify(result, null, 2));
     if (result.decision !== 'GO') process.exitCode = 1;
@@ -1226,7 +1229,7 @@ async function main() {
       expiresAt: env.INPUT_EXPIRES, coachId: env.INPUT_COACH,
       runId: env.GITHUB_RUN_ID,
       outFile: path.join(reportDir, 'cohort-arm-' + cohortId + '.json'),
-      probeIdToken: env.VDSEN_RECOVERY_PROBE_ID_TOKEN,
+      acquireProbeIdentity,
     });
     console.log(JSON.stringify(rep, null, 2));
     return;
