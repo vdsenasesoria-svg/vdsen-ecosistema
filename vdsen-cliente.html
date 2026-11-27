@@ -9483,6 +9483,104 @@ window.addEventListener('hashchange', function () {
   if (panelHost && panelHost.style.display !== 'none') _renderOriginalSessionsPanel(panelHost);
 });
 
+function _savedTrainingRows(entries) {
+  return Object.entries(entries || {}).flatMap(function ([key, entry]) {
+    const match = /^log_(\d+)_(\d+)_(\d+)_s(\d+)$/.exec(key);
+    if (!match || !entry || entry.done !== true || entry.autoFilled) return [];
+    const [, week, day, exercise, set] = match.map(Number);
+    return [{week, day, exercise, set, entry}];
+  }).sort((a,b) => a.week-b.week || a.day-b.day || a.exercise-b.exercise || a.set-b.set);
+}
+
+function _renderSavedTrainingHistory(container) {
+  if (!USER || !FB.auth.currentUser || FB.auth.currentUser.uid !== USER.uid) return;
+  const uid = USER.uid;
+  const panel = document.createElement('details');
+  const title = document.createElement('summary');
+  title.textContent = 'Entrenamientos guardados';
+  const content = document.createElement('div');
+  panel.append(title, content);
+  container.append(panel);
+  function current() {
+    return panel.isConnected && USER && USER.uid === uid &&
+      FB.auth.currentUser && FB.auth.currentUser.uid === uid;
+  }
+  async function load() {
+    if (!current() || content.getAttribute('aria-busy') === 'true') return;
+    content.setAttribute('aria-busy', 'true');
+    content.textContent = 'Cargando entrenamientos…';
+    try {
+      const [mesoRead, rootRead] = await Promise.allSettled([
+        FB.getDocs(FB.collection(FB.db, 'logs', uid, 'mesos')),
+        FB.getDoc(FB.doc(FB.db, 'logs', uid)),
+      ]);
+      if (!current()) return;
+      if (mesoRead.status === 'rejected' && rootRead.status === 'rejected') throw mesoRead.reason;
+      content.replaceChildren();
+      const snapshots = mesoRead.value;
+      const rootSnap = rootRead.value;
+      const root = rootSnap && rootSnap.exists() ? rootSnap.data() : null;
+      const byPlan = new Map();
+      if (root && typeof root.planId === 'string' && root.planId.trim()) {
+        byPlan.set(root.planId, root.entries || {});
+      }
+      for (const snap of snapshots ? snapshots.docs : []) {
+        const meso = snap.data();
+        if (meso.planId && meso.planId !== snap.id) continue;
+        byPlan.set(snap.id, {...byPlan.get(snap.id), ...meso.entries});
+      }
+      let count = 0;
+      for (const [planId, entries] of byPlan) {
+        const rows = _savedTrainingRows(entries);
+        if (!rows.length) continue;
+        count++;
+        const group = document.createElement('details');
+        const label = document.createElement('summary');
+        label.textContent = (planId === ACTIVE_PLAN_ID ? 'Plan activo' : 'Mesociclo anterior') + ' · ' + planId;
+        group.append(label);
+        group.addEventListener('toggle', function () {
+          if (!group.open || group.childElementCount > 1 || !current()) return;
+          const list = document.createElement('ul');
+          for (const {week, day, exercise, set, entry} of rows) {
+            const li = document.createElement('li');
+            const facts = [];
+            if (entry.carga != null) facts.push(String(entry.carga) + (entry.unit ? ' ' + entry.unit : ''));
+            if (entry.reps != null) facts.push(entry.reps + ' reps');
+            if (entry.rir_real != null) facts.push('RIR ' + entry.rir_real);
+            li.textContent = 'Semana ' + week + ' · Día ' + (day + 1) + ' · ' +
+              (entry.exerciseNameSnapshot || 'Ejercicio ' + (exercise + 1)) + ' · Serie ' + (set + 1) +
+              (facts.length ? ' · ' + facts.join(' · ') : '');
+            list.append(li);
+          }
+          group.append(list);
+        });
+        content.append(group);
+      }
+      const incomplete = !snapshots || !rootSnap ||
+        snapshots.metadata.fromCache || (rootSnap.metadata && rootSnap.metadata.fromCache);
+      if (incomplete) {
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.textContent = 'Volver a consultar el historial completo';
+        retry.addEventListener('click', load);
+        content.append(retry);
+      } else if (!count) {
+        content.textContent = 'Sin series guardadas.';
+      }
+    } catch (err) {
+      if (!current()) return;
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.textContent = 'Reintentar carga del historial';
+      retry.addEventListener('click', load);
+      content.replaceChildren(retry);
+    } finally {
+      content.removeAttribute('aria-busy');
+    }
+  }
+  panel.addEventListener('toggle', function () { if (panel.open) return load(); });
+}
+
 function renderEntrenamiento() {
   if (!PLAN || !PLAN.entrenamiento) return;
   // Clear session timer before re-render
@@ -9906,6 +10004,7 @@ function renderEntrenamiento() {
       '<span class="rt-ptxt">Toca para ver</span>'+
     '</div>';
   _renderOriginalSessionsPanel(cont);
+  _renderSavedTrainingHistory(cont);
   // T566 — al ENTRAR a la pestaña de entrenamiento, dejar el set activo a la vista. Se consume
   // el marcador que pone goTab, no un temporizador ni un bucle: el re-render que disparan el
   // descanso o un snapshot no debe mover la pantalla bajo los dedos del cliente. Un intento
