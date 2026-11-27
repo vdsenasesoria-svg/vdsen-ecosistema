@@ -19378,9 +19378,20 @@ El esfuerzo no es negociable.
     const c = _detailClientData;
     const p = _detailPlanData;
 
-    let logsSnap;
-    try { logsSnap = await getDoc(doc(db, 'logs', clientId)); }
-    catch(e) {
+    const activePlanId = c && c.activePlanId;
+    const [rootRead, mesoRead] = await Promise.allSettled([
+      getDoc(doc(db, 'logs', clientId)),
+      activePlanId ? getDoc(doc(db, 'logs', clientId, 'mesos', activePlanId)) : Promise.resolve(null),
+    ]);
+    if (_detailClientId !== clientId || _detailActiveTab !== 'monitor' ||
+        (_detailClientData && _detailClientData.activePlanId) !== activePlanId) return;
+    const logsSnap = rootRead.value;
+    const mesoSnap = mesoRead.value;
+    const _rawLogsData = logsSnap && logsSnap.exists() ? logsSnap.data() : null;
+    const activeMesoData = mesoSnap && mesoSnap.exists() && mesoSnap.data().planId === activePlanId
+      ? mesoSnap.data() : null;
+    if ((rootRead.status === 'rejected' || mesoRead.status === 'rejected') &&
+        !activeMesoData && !(_rawLogsData && _rawLogsData.planId === activePlanId)) {
       if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;
       cont.innerHTML = '<p role="alert" class="text-sm mt-2" style="color:#c94a3a">Error al cargar Monitor.</p>'
         + '<button type="button" id="retryMonitorLoad" class="text-xs underline mt-2">Reintentar</button>';
@@ -19394,18 +19405,13 @@ El esfuerzo no es negociable.
     // while this getDoc was in flight, a stale response must never
     // overwrite the NEW client's already-rendered Monitor tab.
     if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;
-    if (!logsSnap || !logsSnap.exists()) {
+    if (!_rawLogsData && !activeMesoData) {
       _shadowMonitorContext = null;
       cont.innerHTML = (c && c.activePlanId
         ? _renderShadowAutoFeed(window.VDSEN_AUTO_APPLY_SHADOW.summarize({}, c.activePlanId)) : '')
         + `<p class="text-[#888] text-sm mt-2">Sin datos de entrenamiento registrados aún.</p>`; return;
     }
-    const _rawLogsData = logsSnap.data();
-    const logsData  = (typeof window._selectCoachLogForActivePlan === 'function')
-      ? window._selectCoachLogForActivePlan(_rawLogsData, c && c.activePlanId, null)
-      : ((c && c.activePlanId && _rawLogsData.planId && _rawLogsData.planId !== c.activePlanId)
-          ? { planId: c.activePlanId, currentWeek: 1, entries: {} }
-          : _rawLogsData);
+    const logsData = window._selectCoachLogForActivePlan(_rawLogsData, activePlanId, activeMesoData);
     const entries   = logsData.entries || {};
     const currentWeek = logsData.currentWeek || 1;
     const ci = entries['ci_sem_' + currentWeek] || {};
@@ -19454,15 +19460,8 @@ El esfuerzo no es negociable.
     }
 
     // Full canonical shadow records (Modulo D consumer); the compact summary is the fallback.
-    let _canonicalRecords = null, _existingOverlays = null;
-    if (c && c.activePlanId) {
-      try {
-        const _mesoCanon = await getDoc(doc(db, 'logs', clientId, 'mesos', c.activePlanId));
-        if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;
-        if (_mesoCanon.exists() && _mesoCanon.data().planId === c.activePlanId)
-          { _canonicalRecords = _mesoCanon.data().progressionApplications || null; _existingOverlays = _mesoCanon.data().nextExposureOverlays || null; }
-      } catch(e) { console.warn('Canonical shadow records unavailable:', e); }
-    }
+    const _canonicalRecords = activeMesoData && activeMesoData.progressionApplications || null;
+    const _existingOverlays = activeMesoData && activeMesoData.nextExposureOverlays || null;
 
     let html = '';
 
