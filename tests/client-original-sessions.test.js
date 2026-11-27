@@ -39,7 +39,7 @@ function scope(data,{hash='#historial-vdsen='+payload,uid='owner', planId=active
   return {ctx,calls,kids,host,readStarted,release:()=>release?.()};
 }
 function content(x){return (x.textContent||'')+' '+x.children.map(content).join(' ');}
-test('saved mesocycles are read on a fresh device independently of active plan', async () => {
+test('history includes root-only sets without duplicating mirrored sets after a plan change', async () => {
   const stored = fixture().meso;
   const before = JSON.stringify(stored);
   for (const planId of [old, active]) {
@@ -55,6 +55,13 @@ test('saved mesocycles are read on a fresh device independently of active plan',
         removeAttribute(key){delete this.attrs[key];}};
     };
     x.ctx.FB.collection = (_, ...path) => path;
+    x.ctx.FB.getDoc = async path => {
+      assert.deepEqual(path, ['logs','owner']);
+      return {exists:()=>true, data:()=>({planId:old, entries:{
+        log_1_0_0_s0:{done:true,carga:'999'},
+        log_2_0_0_s0:{done:true,carga:'35',unit:'KG'},
+      }})};
+    };
     x.ctx.FB.getDocs = async path => {
       assert.deepEqual(path, ['logs','owner','mesos']);
       return {docs:[{id:old, data:()=>stored}], metadata:{fromCache:false}};
@@ -66,7 +73,9 @@ test('saved mesocycles are read on a fresh device independently of active plan',
     const group = panel.children[1].children[0];
     group.open = true;
     group.events.toggle();
-    assert.equal(group.children[1].children.length, 30);
+    assert.equal(group.children[1].children.length, 31);
+    assert.match(content(group), /35 KG/);
+    assert.doesNotMatch(content(group), /999/);
     assert.match(content(group), /30 KG · 8 reps · RIR 0/);
     assert.equal(x.ctx.LOGS.done_1_0, false);
   }

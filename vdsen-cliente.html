@@ -9510,19 +9510,33 @@ function _renderSavedTrainingHistory(container) {
     content.setAttribute('aria-busy', 'true');
     content.textContent = 'Cargando entrenamientos…';
     try {
-      const snapshots = await FB.getDocs(FB.collection(FB.db, 'logs', uid, 'mesos'));
+      const [mesoRead, rootRead] = await Promise.allSettled([
+        FB.getDocs(FB.collection(FB.db, 'logs', uid, 'mesos')),
+        FB.getDoc(FB.doc(FB.db, 'logs', uid)),
+      ]);
       if (!current()) return;
+      if (mesoRead.status === 'rejected' && rootRead.status === 'rejected') throw mesoRead.reason;
       content.replaceChildren();
-      let count = 0;
-      for (const snap of snapshots.docs) {
+      const snapshots = mesoRead.value;
+      const rootSnap = rootRead.value;
+      const root = rootSnap && rootSnap.exists() ? rootSnap.data() : null;
+      const byPlan = new Map();
+      if (root && typeof root.planId === 'string' && root.planId.trim()) {
+        byPlan.set(root.planId, root.entries || {});
+      }
+      for (const snap of snapshots ? snapshots.docs : []) {
         const meso = snap.data();
         if (meso.planId && meso.planId !== snap.id) continue;
-        const rows = _savedTrainingRows(meso.entries);
+        byPlan.set(snap.id, {...byPlan.get(snap.id), ...meso.entries});
+      }
+      let count = 0;
+      for (const [planId, entries] of byPlan) {
+        const rows = _savedTrainingRows(entries);
         if (!rows.length) continue;
         count++;
         const group = document.createElement('details');
         const label = document.createElement('summary');
-        label.textContent = (snap.id === ACTIVE_PLAN_ID ? 'Plan activo' : 'Mesociclo anterior') + ' · ' + snap.id;
+        label.textContent = (planId === ACTIVE_PLAN_ID ? 'Plan activo' : 'Mesociclo anterior') + ' · ' + planId;
         group.append(label);
         group.addEventListener('toggle', function () {
           if (!group.open || group.childElementCount > 1 || !current()) return;
@@ -9542,8 +9556,17 @@ function _renderSavedTrainingHistory(container) {
         });
         content.append(group);
       }
-      if (!count) content.textContent = snapshots.metadata.fromCache
-        ? 'Sin historial disponible en este dispositivo.' : 'Sin series guardadas en mesociclos.';
+      const incomplete = !snapshots || !rootSnap ||
+        snapshots.metadata.fromCache || (rootSnap.metadata && rootSnap.metadata.fromCache);
+      if (incomplete) {
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.textContent = 'Volver a consultar el historial completo';
+        retry.addEventListener('click', load);
+        content.append(retry);
+      } else if (!count) {
+        content.textContent = 'Sin series guardadas.';
+      }
     } catch (err) {
       if (!current()) return;
       const retry = document.createElement('button');
