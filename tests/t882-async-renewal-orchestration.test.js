@@ -466,6 +466,45 @@ test('T882.6: executeRenewCohortOperation — granular rollback on build fail, p
   assert.equal(versioned.rep.status, 'ROLLBACK_REQUIRED');
   assert.equal(versioned.rep.fencesRestored, false);
 
+  for (const restoreConflict of [false, true]) {
+    const r = await runScenario((store) => {
+      const lock = 'releaseControl/numericPilotGlobalLock';
+      const name = p => 'projects/vdsen-ecosistema/databases/(default)/documents/' + p;
+      const lockFields = cohortOps.toFsFields({...store.get(lock), status:'REQUESTED'});
+      let version = 1;
+      let releaseAttempts = 0;
+      return {
+        readVersion: async p => p === lock
+          ? {name:name(p), updateTime:String(version), fields:{...lockFields}}
+          : {name:name(p), updateTime:'before', fields:cohortOps.toFsFields(store.get(p) || {})},
+        writeDoc: async (p,d) => {
+          if (d.status === 'RENEWED_VERIFIED') throw new Error('LEDGER_FINALIZATION_FAILED');
+          store.set(p, d);
+        },
+        commitVersion: async writes => {
+          const lockWrite = writes.find(w => w.update.name === name(lock));
+          assert.equal(lockWrite.currentDocument.updateTime, String(version));
+          if (writes.length === 4) {
+            const restoring = writes[0].currentDocument.updateTime === 'rearmed-0';
+            assert.deepEqual(writes.slice(0,3).map(w => w.currentDocument.updateTime),
+              restoring ? ['rearmed-0','rearmed-1','rearmed-2'] : ['before','before','before']);
+            if (restoring && restoreConflict) throw new Error('LATER_FENCE_WRITE');
+          }
+          if (writes.length === 1) {
+            releaseAttempts++;
+            assert.equal(releaseAttempts, 1);
+            assert.ok(!lockWrite.updateMask.fieldPaths.includes('pendingQueue'));
+          }
+          Object.assign(lockFields, lockWrite.update.fields);
+          version++;
+          return {writeResults:writes.map((_, i)=>({updateTime:'rearmed-'+i}))};
+        },
+      };
+    });
+    assert.equal(r.rep.status, restoreConflict ? 'ROLLBACK_REQUIRED' : 'ROLLED_BACK_VERIFIED');
+    assert.equal(r.rep.fencesRestored, !restoreConflict);
+  }
+
   // Ambiguous promotion outcomes are resolved from the alias, not the return value.
   for (const message of ['VERIFY_PUBLIC_BYTES_FAILED', 'PROMOTION_TIMEOUT']) {
     const r = await runScenario((_store, _get, setAlias) => ({

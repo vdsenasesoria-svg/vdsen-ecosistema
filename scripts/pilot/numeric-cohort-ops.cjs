@@ -1645,8 +1645,13 @@ async function executeRenewCohortOperation(opts) {
         updatedAt: now(),
         version: (Number(curLock.version) || 0) + 1,
     });
-    if (raw) await commitVersion([{ update: { name: raw.name, fields: toFsFields(next) },
-      currentDocument: { updateTime: raw.updateTime } }]);
+    if (raw) {
+      const fieldPaths = ['activeOperationId', 'status', 'lastCompletedOperationId',
+        'lastFinalState', 'leaseExpiresAt', 'updatedAt', 'version'];
+      const fields = toFsFields(Object.fromEntries(fieldPaths.map(key => [key, next[key]])));
+      await commitVersion([{ update: { name: raw.name, fields },
+        updateMask: { fieldPaths }, currentDocument: { updateTime: raw.updateTime } }]);
+    }
     else await writeDoc(lockPath, next);
     if (nextQueued && typeof dispatchNextQueued === 'function') {
       await dispatchNextQueued(nextQueued).catch(() => {});
@@ -1887,6 +1892,7 @@ async function executeRenewCohortOperation(opts) {
         assert.ok(rearmedVersions && rearmedVersions.length === 3 && rearmedVersions.every(Boolean),
           'FENCE_COMMIT_OUTCOME_UNVERIFIED');
         const lock = await readOwnedLockVersion('RESTORE_FENCES');
+        assert.equal(await getCurrentAlias(), previousDeploymentId, 'ROLLBACK_ALIAS_CHANGED_BEFORE_FENCE_RESTORE');
         const writes = fenceBase.map((base, i) => ({
           update: { name: base.name, fields: i === 2
             ? (base.fields.autoApplyCanary ? { autoApplyCanary: base.fields.autoApplyCanary } : {})
