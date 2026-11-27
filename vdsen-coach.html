@@ -6925,6 +6925,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const _srcClientId = (typeof obj.clientId === 'string' && obj.clientId.trim()) ? obj.clientId.trim()
       : ((typeof trainingBlock.clientId === 'string' && trainingBlock.clientId.trim()) ? trainingBlock.clientId.trim() : null);
     if (_srcClientId) planObj._sourceClientId = _srcClientId;
+    if (typeof obj.pilotTargetPlanId === 'string' && /^t883-[a-z0-9-]{8,32}$/.test(obj.pilotTargetPlanId)) planObj.pilotTargetPlanId = obj.pilotTargetPlanId;
     statusEl.innerHTML = `<span class="text-green-400">✅ JSON válido: ${planObj.weeks} semanas, ${days.length} día(s)</span>`;
     showParsedPreview(planObj, _importWarnings);
     window._importedPlan = planObj;
@@ -18269,6 +18270,9 @@ El esfuerzo no es negociable.
         console.log('3. CLASSIFIED:', { training: classified.training ? 'PRESENT (days=' + (classified.training.days && classified.training.days.length) + ')' : 'NULL', nutrition: classified.nutrition ? 'PRESENT' : 'NULL', supplements: classified.supplements ? 'PRESENT' : 'NULL' });
 
         planObj = classified.training ? _normalizeTrainingPlan(classified.training) : null;
+        if (planObj && classified.training && typeof classified.training.pilotTargetPlanId === 'string' && /^t883-[a-z0-9-]{8,32}$/.test(classified.training.pilotTargetPlanId)) {
+          planObj.pilotTargetPlanId = classified.training.pilotTargetPlanId;
+        }
         console.log('4. NORMALIZED PLAN:', planObj ? ('OK — ' + planObj.days.length + ' días, weeks=' + planObj.weeks) : 'NULL (training block was null)');
         if (planObj) console.log('   days[0] ejercicios:', planObj.days[0] && planObj.days[0].exercises && planObj.days[0].exercises.length);
         console.groupEnd();
