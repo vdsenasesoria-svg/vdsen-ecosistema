@@ -238,7 +238,8 @@ test('24/25. competitive, enhanced and PED labels do not change the displayed ma
 });
 
 test('wiring: Monitor loads the full canonical records and falls back to the compact summary only', () => {
-  assert.ok(coach.includes("getDoc(doc(db, 'logs', clientId, 'mesos', c.activePlanId))"));
+  assert.ok(coach.includes("getDoc(doc(db, 'logs', clientId, 'mesos', activePlanId))"));
+  assert.ok(coach.includes('activeMesoData && activeMesoData.progressionApplications'));
   assert.ok(coach.includes('_canonicalRecords || (autoSummary && autoSummary.items) || []'));
   const compactRec = record('pid-A', A_LOAD);
   const asSummary = shadow.summarize({ [compactRec.key]: compactRec }, 'plan-A').items;

@@ -104,6 +104,8 @@ test('T858.2 App Coach _selectCoachLogForActivePlan isolates Dashboard & Monitor
   assert.equal(live, newRoot);
   assert.equal(live.currentWeek, 1);
   assert.equal(live.entries.log_1_0_0_s0.carga, 4.5);
+  assert.equal(ctx._selectCoachLogForActivePlan(oldRoot, NEW_PLAN, newRoot), newRoot);
+  assert.equal(ctx._selectCoachLogForActivePlan(null, NEW_PLAN, newRoot), newRoot);
 });
 
 test('T858.3 App Cliente & App Coach wire cross-plan isolation into loadPlan, Dashboard, Monitor, and plan activation', () => {
@@ -113,7 +115,7 @@ test('T858.3 App Cliente & App Coach wire cross-plan isolation into loadPlan, Da
   // App Coach Dashboard, Standalone Monitor, and Modal Monitor use _selectCoachLogForActivePlan
   assert.ok(COACH_HTML.includes('const logData = _selectCoachLogForActivePlan(_rawLogData, c.activePlanId, null);'));
   assert.ok(COACH_HTML.includes('window._selectCoachLogForActivePlan(logsSnap.data(), _monitorActivePlanId, null)'));
-  assert.ok(COACH_HTML.includes('window._selectCoachLogForActivePlan(_rawLogsData, c && c.activePlanId, null)'));
+  assert.ok(COACH_HTML.includes('window._selectCoachLogForActivePlan(_rawLogsData, activePlanId, activeMesoData)'));
   // Plan activation invokes _initNewPlanWeekOne
   assert.ok(COACH_HTML.includes("if (outcome === 'COMMITTED' && typeof _initNewPlanWeekOne === 'function') await _initNewPlanWeekOne(o.clientId, planId, prevId);"));
   assert.ok(COACH_HTML.includes('await _initNewPlanWeekOne(clientId, planId, _prevActivePlanId);'));
