@@ -568,3 +568,74 @@ test('T883-B.4 & B.5 & B.6: Authenticated status polling endpoint enforces Coach
   assert.ok(coachHtml.includes('pilotTargetPlanId'), 'B5 deterministic pilot planId support must exist');
   assert.ok(coachHtml.includes('function _vdsenCheckCohortShards('), 'B6 built-in cohort-shard diagnostic must exist');
 });
+
+test('T883-RO.1 Read-only Vercel Firestore IAM (7 PERMISSION_DENIED) dispatches renew-cohort cleanly without writing', async () => {
+  const db = makeFakeDb(makeMultiCohortDocs());
+  db.runTransaction = async () => {
+    const err = new Error('7 PERMISSION_DENIED: Missing or insufficient permissions.');
+    err.code = 7;
+    throw err;
+  };
+  const dispatched = [];
+  const handler = makeHandler({
+    db,
+    verifyIdToken: async () => ({ uid: 'coach-1' }),
+    autoRenewalEnabled: true,
+    autoRenewalMode: 'pilot',
+    pilotScope: {
+      schema: 'vdsen-auto-renewal-pilot-scope-v1',
+      uid: 'client-c1',
+      planId: 'plan-c1-new',
+      cohortId: 'cohort-01',
+      operationId: 'T883-RO-PILOT-20261126',
+      startsAt: '2026-11-26T00:00:00Z',
+      expiresAt: '2026-11-28T00:00:00Z',
+    },
+    commercialRoster: () => ({ schema: 'vdsen-commercial-roster-v1', firebaseProject: 'vdsen-ecosistema', activeUids: ['client-c1', 'client-c2'], inactiveUids: [] }),
+    nowMs: Date.parse('2026-11-26T12:00:00Z'),
+    dispatchRenewalWorkflow: async (p) => { dispatched.push(p); return { ok: true, workflow: 'vdsen-numeric-pilot.yml', ref: 'codex/client-app-next' }; },
+  });
+  const res = makeRes();
+  await handler({ method: 'POST', headers: { authorization: 'Bearer tok' }, body: { action: 'plan-activation-sync', clientId: 'client-c1', planId: 'plan-c1-new' } }, res);
+  assert.equal(res.statusCode, 202);
+  assert.equal(res.body.status, 'QUEUED');
+  assert.equal(res.body.workflowDispatched, true);
+  assert.equal(res.body.readOnlyFirestoreMode, true);
+  assert.equal(dispatched.length, 1);
+  assert.equal(dispatched[0].operationId, 'T883-RO-PILOT-20261126');
+  assert.equal(dispatched[0].renewalMode, 'PILOT_RESTRICTED');
+});
+
+test('T883-RO.2 executeRenewCohortOperation bootstraps ledger, lock, and single-use pilotAuth under WIF when Vercel was read-only', async () => {
+  const store = new Map(Object.entries(makeMultiCohortDocs()));
+  let liveAlias = 'dpl_prev_ro';
+  const res = await cohortOps.executeRenewCohortOperation({
+    operationId: 'T883-RO-PILOT-20261126',
+    cohortId: 'cohort-01',
+    runtimeSha: SHA,
+    coachId: 'coach-1',
+    clientId: 'client-c1',
+    planId: 'plan-c1-new',
+    startsAt: '2026-11-26T00:00:00Z',
+    expiresAt: EXP_ISO,
+    renewalMode: 'PILOT_RESTRICTED',
+    runId: '99887766',
+    io: {
+      now: () => NOW_ISO,
+      readDoc: async (p) => store.has(p) ? JSON.parse(JSON.stringify(store.get(p))) : null,
+      writeDoc: async (p, d) => { store.set(p, JSON.parse(JSON.stringify(d))); },
+      checkNumericGuardOff: async () => makeDisarmedGuardEvidence(),
+      baselineState: { production_deployment: 'dpl_off_base' },
+      currentApp: async () => liveAlias,
+      loadLiveRoster: async () => makeManifestWithFiveShards('client-c1', 'plan-c1-new', 'cohort-01'),
+      buildDeployment: async () => ({ deploymentId: 'dpl_new_ro', url: 'x.vercel.app', readyState: 'READY' }),
+      verifyCandidate: async () => ({ verified: true }),
+      promoteDeployment: async ({ deploymentId }) => { liveAlias = deploymentId; return { promoted: true, verifiedPublicPaths: 46 }; },
+      rearmCohortFences: async () => ({ rearmed: true }),
+    },
+  });
+  assert.equal(res.status, 'RENEWED_VERIFIED');
+  assert.equal(store.get('releaseControl/numericPilot/pilotAuthorizations/T883-RO-PILOT-20261126').consumed, true);
+  assert.equal(store.get('releaseControl/numericPilot/operations/T883-RO-PILOT-20261126').bootstrappedByWorkflow, true);
+  assert.equal(store.get('releaseControl/numericPilotGlobalLock').activeOperationId, null);
+});

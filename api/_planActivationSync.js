@@ -546,6 +546,7 @@ function createGitHubActionsRenewalDispatcher(env, fetcher) {
             prescription_exercise_id: payload.clientId,
             starts_at: payload.startsAt || '',
             expires_at: payload.expiresAt || '',
+            stop_reason: payload.renewalMode || '',
           },
         }),
         signal: AbortSignal.timeout(10000),
@@ -914,7 +915,11 @@ function makeHandler(deps) {
 
     // T882 Option 1: Asynchronous GitHub Actions orchestration (preferred production path).
     // Never waits for a Vercel build inside a serverless request and never holds VERCEL_TOKEN.
+    // T883: Supports strictly read-only Vercel Firestore IAM (roles/datastore.viewer):
+    // if db.runTransaction fails with 7 PERMISSION_DENIED, validates state read-only and
+    // delegates ledger/lock/pilotAuth writes to GitHub Actions (vdsen-release-bot WIF).
     if (typeof deps.dispatchRenewalWorkflow === 'function') {
+      const isPermDenied = (err) => Boolean(err && (err.code === 7 || /PERMISSION_DENIED/i.test(String(err.message || ''))));
       const globalLockRef = db.collection('releaseControl').doc('numericPilotGlobalLock');
       const leaseMs = Number.isFinite(deps.globalLockLeaseMs) ? deps.globalLockLeaseMs : GLOBAL_LOCK_LEASE_MS;
       const leaseExpiresAt = new Date(nowMs + leaseMs).toISOString();
@@ -922,7 +927,10 @@ function makeHandler(deps) {
         ? db.collection('releaseControl').doc('numericPilot').collection('pilotAuthorizations').doc(pilotCheck.scope.operationId)
         : null;
 
-      const enqueueOutcome = await db.runTransaction(async (tx) => {
+      let readOnlyFirestoreMode = false;
+      let enqueueOutcome;
+      try {
+        enqueueOutcome = await db.runTransaction(async (tx) => {
         const [opSnap, lockSnap, pAuthSnap] = await Promise.all([
           tx.get(opRef),
           tx.get(globalLockRef),
@@ -1036,7 +1044,36 @@ function makeHandler(deps) {
           });
         }
         return { action: 'DISPATCH_NOW', recoveredExpiredLock, attemptCount };
-      });
+        });
+      } catch (txErr) {
+        if (!isPermDenied(txErr)) throw txErr;
+        readOnlyFirestoreMode = true;
+        const [opSnap, lockSnap, pAuthSnap] = await Promise.all([
+          opRef.get(),
+          globalLockRef.get(),
+          pilotAuthRef ? pilotAuthRef.get() : Promise.resolve(null),
+        ]);
+        const existingOp = _data(opSnap);
+        const lockDoc = _data(lockSnap) || { version: 0, activeOperationId: null, pendingQueue: [] };
+        const pAuth = pAuthSnap ? _data(pAuthSnap) : null;
+        if (pilotAuthRef && pAuth && pAuth.consumed === true) {
+          enqueueOutcome = { action: 'PILOT_CONSUMED' };
+        } else if (existingOp && existingOp.status === RENEWAL_STATES.RENEWED_VERIFIED) {
+          enqueueOutcome = { action: 'ALREADY_VERIFIED', op: existingOp };
+        } else if (existingOp && IN_FLIGHT_RENEWAL_STATES.has(existingOp.status) && Number.isFinite(Date.parse(existingOp.leaseExpiresAt || '')) && Date.parse(existingOp.leaseExpiresAt || '') > nowMs) {
+          enqueueOutcome = { action: 'ALREADY_IN_FLIGHT', op: existingOp };
+        } else {
+          const activeOpId = lockDoc.activeOperationId || null;
+          const activeLeaseMs = Date.parse(lockDoc.leaseExpiresAt || '');
+          const lockHeldByOther = Boolean(activeOpId && activeOpId !== renewalOpId && Number.isFinite(activeLeaseMs) && activeLeaseMs > nowMs);
+          if (lockHeldByOther) {
+            enqueueOutcome = { action: 'QUEUED_BEHIND_LOCK', queuedBehindOperationId: activeOpId, attemptCount: 1 };
+          } else {
+            const recoveredExpiredLock = Boolean(activeOpId && activeOpId !== renewalOpId && (!Number.isFinite(activeLeaseMs) || activeLeaseMs <= nowMs));
+            enqueueOutcome = { action: 'DISPATCH_NOW', recoveredExpiredLock, attemptCount: 1 };
+          }
+        }
+      }
 
       if (enqueueOutcome.action === 'PILOT_CONSUMED') {
         return res.status(200).json({
@@ -1129,34 +1166,37 @@ function makeHandler(deps) {
         runtimeSha,
         startsAt,
         expiresAt,
+        renewalMode,
       });
       if (!dispRes || dispRes.ok !== true) {
         const errCode = (dispRes && dispRes.errorCode) || 'GITHUB_DISPATCH_FAILED';
-        await db.runTransaction(async (tx) => {
-          const [curOpSnap, curLockSnap] = await Promise.all([tx.get(opRef), tx.get(globalLockRef)]);
-          const curOp = _data(curOpSnap) || {};
-          const curLock = _data(curLockSnap) || {};
-          const hist = Array.isArray(curOp.history) ? curOp.history.slice(-20) : [];
-          tx.set(opRef, Object.assign({}, curOp, {
-            status: RENEWAL_STATES.FAILED,
-            errorCode: errCode,
-            failedAt: nowIso,
-            updatedAt: nowIso,
-            history: hist.concat([{ state: RENEWAL_STATES.FAILED, at: nowIso, errorCode: errCode }]),
-          }));
-          if (curLock.activeOperationId === renewalOpId) {
-            tx.set(globalLockRef, Object.assign({}, curLock, {
-              activeOperationId: null,
-              status: 'IDLE',
+        if (!readOnlyFirestoreMode) {
+          await db.runTransaction(async (tx) => {
+            const [curOpSnap, curLockSnap] = await Promise.all([tx.get(opRef), tx.get(globalLockRef)]);
+            const curOp = _data(curOpSnap) || {};
+            const curLock = _data(curLockSnap) || {};
+            const hist = Array.isArray(curOp.history) ? curOp.history.slice(-20) : [];
+            tx.set(opRef, Object.assign({}, curOp, {
+              status: RENEWAL_STATES.FAILED,
+              errorCode: errCode,
+              failedAt: nowIso,
               updatedAt: nowIso,
-              leaseExpiresAt: null,
-              version: (Number(curLock.version) || 0) + 1,
+              history: hist.concat([{ state: RENEWAL_STATES.FAILED, at: nowIso, errorCode: errCode }]),
             }));
-          }
-          if (pilotAuthRef) {
-            tx.set(pilotAuthRef, { consumed: false, releasedOnDispatchFailureAt: nowIso }, { merge: true });
-          }
-        });
+            if (curLock.activeOperationId === renewalOpId) {
+              tx.set(globalLockRef, Object.assign({}, curLock, {
+                activeOperationId: null,
+                status: 'IDLE',
+                updatedAt: nowIso,
+                leaseExpiresAt: null,
+                version: (Number(curLock.version) || 0) + 1,
+              }));
+            }
+            if (pilotAuthRef) {
+              tx.set(pilotAuthRef, { consumed: false, releasedOnDispatchFailureAt: nowIso }, { merge: true });
+            }
+          });
+        }
         return res.status(502).json({
           schema: 'vdsen-plan-activation-sync-v1',
           status: RENEWAL_STATES.FAILED,
@@ -1176,27 +1216,29 @@ function makeHandler(deps) {
         });
       }
 
-      await db.runTransaction(async (tx) => {
-        const [curOpSnap, curLockSnap] = await Promise.all([tx.get(opRef), tx.get(globalLockRef)]);
-        const curOp = _data(curOpSnap) || {};
-        const curLock = _data(curLockSnap) || {};
-        const hist = Array.isArray(curOp.history) ? curOp.history.slice(-20) : [];
-        tx.set(opRef, Object.assign({}, curOp, {
-          status: RENEWAL_STATES.QUEUED,
-          workflow: dispRes.workflow || GITHUB_WORKFLOW_FILE,
-          workflowRef: dispRes.ref || GITHUB_REF,
-          dispatchedAt: nowIso,
-          updatedAt: nowIso,
-          history: hist.concat([{ state: RENEWAL_STATES.QUEUED, at: nowIso, workflow: dispRes.workflow || GITHUB_WORKFLOW_FILE }]),
-        }));
-        if (curLock.activeOperationId === renewalOpId) {
-          tx.set(globalLockRef, Object.assign({}, curLock, {
+      if (!readOnlyFirestoreMode) {
+        await db.runTransaction(async (tx) => {
+          const [curOpSnap, curLockSnap] = await Promise.all([tx.get(opRef), tx.get(globalLockRef)]);
+          const curOp = _data(curOpSnap) || {};
+          const curLock = _data(curLockSnap) || {};
+          const hist = Array.isArray(curOp.history) ? curOp.history.slice(-20) : [];
+          tx.set(opRef, Object.assign({}, curOp, {
             status: RENEWAL_STATES.QUEUED,
+            workflow: dispRes.workflow || GITHUB_WORKFLOW_FILE,
+            workflowRef: dispRes.ref || GITHUB_REF,
+            dispatchedAt: nowIso,
             updatedAt: nowIso,
-            version: (Number(curLock.version) || 0) + 1,
+            history: hist.concat([{ state: RENEWAL_STATES.QUEUED, at: nowIso, workflow: dispRes.workflow || GITHUB_WORKFLOW_FILE }]),
           }));
-        }
-      });
+          if (curLock.activeOperationId === renewalOpId) {
+            tx.set(globalLockRef, Object.assign({}, curLock, {
+              status: RENEWAL_STATES.QUEUED,
+              updatedAt: nowIso,
+              version: (Number(curLock.version) || 0) + 1,
+            }));
+          }
+        });
+      }
 
       return res.status(202).json({
         schema: 'vdsen-plan-activation-sync-v1',
@@ -1206,6 +1248,7 @@ function makeHandler(deps) {
         numericApplyAuthorized: false,
         renewed: false,
         workflowDispatched: true,
+        readOnlyFirestoreMode,
         recoveredExpiredLock: enqueueOutcome.recoveredExpiredLock === true,
         operationId: renewalOpId,
         cohortId,

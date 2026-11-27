@@ -1090,6 +1090,11 @@ async function main() {
       cohortId,
       runtimeSha: env.INPUT_RUNTIME,
       coachId: env.INPUT_COACH,
+      clientId: env.INPUT_PID || '',
+      planId: env.INPUT_PLAN || '',
+      startsAt: env.INPUT_STARTS || '',
+      expiresAt: env.INPUT_EXPIRES || '',
+      renewalMode: env.INPUT_STOP_REASON || '',
       runId: env.GITHUB_RUN_ID || '',
       outFile: path.join(reportDir, 'cohort-renew-op-' + (env.INPUT_OPERATION || 'op') + '.json'),
     });
@@ -1281,6 +1286,11 @@ async function executeRenewCohortOperation(opts) {
     cohortId: inputCohortId,
     runtimeSha: inputRuntimeSha,
     coachId: inputCoachId,
+    clientId: inputClientId = '',
+    planId: inputPlanId = '',
+    startsAt: inputStartsAt = '',
+    expiresAt: inputExpiresAt = '',
+    renewalMode: inputRenewalMode = '',
     runId = '',
     outFile,
     io = {},
@@ -1449,6 +1459,76 @@ async function executeRenewCohortOperation(opts) {
   };
 
   let opDoc = await readDoc(opPath);
+  // T883: When Vercel runs with strictly read-only Firestore IAM (roles/datastore.viewer),
+  // GitHub Actions (vdsen-release-bot WIF) bootstraps the persisted ledger, global lock,
+  // and single-use pilotAuthorization atomically after independently validating inputs.
+  if (!opDoc && inputClientId && inputPlanId && inputCohortId && inputCoachId && inputRuntimeSha && inputExpiresAt) {
+    await checkStopFence();
+    const curLock = (await readDoc(lockPath)) || { version: 0, activeOperationId: null, pendingQueue: [] };
+    const activeOpId = curLock.activeOperationId || null;
+    const activeLeaseMs = Date.parse(curLock.leaseExpiresAt || '');
+    const nowIsoBoot = now();
+    const nowMsBoot = Date.parse(nowIsoBoot);
+    if (activeOpId && activeOpId !== operationId && Number.isFinite(activeLeaseMs) && activeLeaseMs > nowMsBoot) {
+      throw new Error('GLOBAL_LOCK_HELD_BY_OTHER:' + activeOpId);
+    }
+    const resolvedMode = (inputRenewalMode === 'PILOT_RESTRICTED' || inputRenewalMode === 'GENERAL_AUTHORIZED')
+      ? inputRenewalMode
+      : 'GENERAL_AUTHORIZED';
+    if (resolvedMode === 'PILOT_RESTRICTED') {
+      const pAuthPath = 'releaseControl/numericPilot/pilotAuthorizations/' + operationId;
+      const existingAuth = await readDoc(pAuthPath);
+      if (existingAuth && existingAuth.consumed === true) {
+        throw new Error('PILOT_AUTHORIZATION_ALREADY_CONSUMED:' + operationId);
+      }
+      await writeDoc(pAuthPath, {
+        schema: 'vdsen-auto-renewal-pilot-scope-v1',
+        operationId,
+        uid: inputClientId,
+        planId: inputPlanId,
+        cohortId: inputCohortId,
+        consumed: true,
+        consumedAt: nowIsoBoot,
+        bootstrappedByWorkflow: true,
+      });
+    }
+    const nextLockVersion = (Number(curLock.version) || 0) + 1;
+    const leaseExpiresAt = new Date(nowMsBoot + 15 * 60 * 1000).toISOString();
+    opDoc = {
+      schema: 'vdsen-plan-activation-sync-ledger-v1',
+      operationId,
+      renewalMode: resolvedMode,
+      cohortId: inputCohortId,
+      clientId: inputClientId,
+      coachUid: inputCoachId,
+      planId: inputPlanId,
+      runtimeSha: inputRuntimeSha,
+      startsAt: inputStartsAt || nowIsoBoot,
+      expiresAt: inputExpiresAt,
+      status: 'REQUESTED',
+      lockVersion: nextLockVersion,
+      workflowRunId: runId || null,
+      bootstrappedByWorkflow: true,
+      requestedAt: nowIsoBoot,
+      updatedAt: nowIsoBoot,
+      leaseExpiresAt,
+      history: [{ state: 'REQUESTED', at: nowIsoBoot, lockVersion: nextLockVersion, bootstrappedByWorkflow: true }],
+    };
+    await writeDoc(opPath, opDoc);
+    await writeDoc(lockPath, {
+      schema: 'vdsen-numeric-global-lock-v1',
+      activeOperationId: operationId,
+      cohortId: inputCohortId,
+      clientId: inputClientId,
+      planId: inputPlanId,
+      status: 'REQUESTED',
+      acquiredAt: nowIsoBoot,
+      updatedAt: nowIsoBoot,
+      leaseExpiresAt,
+      pendingQueue: Array.isArray(curLock.pendingQueue) ? curLock.pendingQueue.filter(q => q && q.operationId !== operationId) : [],
+      version: nextLockVersion,
+    });
+  }
   assert.ok(opDoc, 'PERSISTED_OPERATION_NOT_FOUND:' + operationId);
   assert.ok(['REQUESTED', 'QUEUED', 'VALIDATING'].includes(opDoc.status), 'OPERATION_STATE_NOT_ELIGIBLE:' + opDoc.status);
   const cohortId = inputCohortId || opDoc.cohortId;
