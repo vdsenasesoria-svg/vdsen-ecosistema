@@ -7,6 +7,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
 const C = require('../../api/_numericPilotContract.js');
 const eligibility = require('../../api/_clientEligibility.js');
 const A = require('../release/app-live.cjs');
@@ -389,7 +390,7 @@ async function vget(vercelToken, p, fetcher = globalThis.fetch) {
   return r.json();
 }
 
-async function verifyFleetDeploymentLive(vercelToken, deploymentId, expectedSha, expectedCohortEnvName, fetcher = globalThis.fetch) {
+async function verifyFleetDeploymentLive(vercelToken, deploymentId, expectedSha, expectedCohortEnvName, fetcher = globalThis.fetch, stagedSeal = null) {
   const d = await vget(vercelToken, '/v13/deployments/' + encodeURIComponent(deploymentId), fetcher);
   assert.equal(d.id || d.uid, deploymentId, 'DEPLOYMENT_ID_MISMATCH');
   assert.equal(d.projectId, DEFAULT_PROJECT_ID, 'PROJECT_ID_MISMATCH');
@@ -410,16 +411,42 @@ async function verifyFleetDeploymentLive(vercelToken, deploymentId, expectedSha,
   }
   const aliasData = await vget(vercelToken, '/v2/aliases/' + encodeURIComponent(EXPECTED_ALIAS), fetcher);
   const liveId = aliasData.deploymentId || (aliasData.deployment && aliasData.deployment.id);
-  assert.equal(liveId, deploymentId, 'LIVE_ALIAS_TARGET_MISMATCH: expected=' + deploymentId + ' actual=' + liveId);
+  if (stagedSeal) {
+    assert.equal(d.meta.vdsenRecoverySeal, stagedSeal.digest, 'RECOVERY_SEAL_MISMATCH');
+    assert.equal(liveId, stagedSeal.expectedLive, 'RECOVERY_STAGE_ALIAS_CHANGED');
+    assert.notEqual(liveId, deploymentId, 'RECOVERY_CANDIDATE_ALREADY_LIVE');
+  } else {
+    assert.equal(liveId, deploymentId, 'LIVE_ALIAS_TARGET_MISMATCH: expected=' + deploymentId + ' actual=' + liveId);
+  }
   return { attested: true, deploymentId, runtimeSha: expectedSha, alias: EXPECTED_ALIAS, envNames };
 }
 
+function validateRecoveryScope(manifest, co, fences, runtimeSha, expiresAt, now) {
+  assert.equal(manifest.eligibleCount, 25, 'RECOVERY_ROSTER_COUNT_CHANGED');
+  assert.equal(manifest.totalEligiblePids, 836, 'RECOVERY_PID_COUNT_CHANGED');
+  assert.deepEqual(manifest.cohorts.map(c => c.cohortId), ['cohort-01', 'cohort-02', 'cohort-03']);
+  assert.equal(manifest.cohorts.flatMap(c => c.envShards).length, 5, 'RECOVERY_SHARD_COUNT_CHANGED');
+  assert.ok(co.compactWindows.every(w => C.windowValid(w, now)), 'RECOVERY_WINDOW_INVALID');
+  const v = _verifyCohortAuthorizationExact(co, fences, new Set(manifest.cohorts.flatMap(c => c.clientIds)), runtimeSha);
+  const pilotMismatch = 'PLAN_ID_MISMATCH_z82EDPvsCaabfMN3eGAP3rpxeMt1';
+  assert.ok(v.outOfRosterClients.length === 0 && v.mismatches.every(m =>
+    co.cohortId === 'cohort-03' && m === pilotMismatch), 'RECOVERY_AUTHORIZATION_DRIFT');
+  assert.equal(v.expiresAt, expiresAt, 'RECOVERY_EXPIRY_CHANGED');
+}
+
 async function prepareFleetRuntime(opts) {
-  const { projectId, googleToken, vercelToken, runtimeSha, operationId, startsAt, expiresAt, coachId, outFile } = opts;
+  const { projectId, googleToken, vercelToken, runtimeSha, operationId, startsAt, expiresAt, coachId, outFile,
+    stageOnly = false, expectedDeploymentId = '', stagedRecoveryId = '' } = opts;
   const s = JSON.parse(fs.readFileSync('.release/vdsen-client.json', 'utf8'));
   assert.equal(s.runtime_sha, runtimeSha, 'BASELINE_SHA_MISMATCH');
   const baselineDeployment = s.production_deployment;
-  assert.equal(await A.currentApp(s), baselineDeployment, 'LIVE_ALIAS_NOT_ON_BASELINE');
+  const expectedLive = stageOnly ? expectedDeploymentId : baselineDeployment;
+  if (stagedRecoveryId) assert.match(stagedRecoveryId, /^dpl_[A-Za-z0-9]+$/, 'RECOVERY_DEPLOYMENT_REQUIRED');
+  if (stageOnly) {
+    assert.match(expectedLive, /^dpl_[A-Za-z0-9]+$/, 'RECOVERY_DEPLOYMENT_REQUIRED');
+    assert.notEqual(expectedLive, baselineDeployment, 'RECOVERY_STAGE_REQUIRES_ACTIVE_FLEET');
+  }
+  assert.equal(await A.currentApp(s), expectedLive, 'LIVE_ALIAS_NOT_ON_BASELINE');
 
   // Verify project-level Numeric Guard is OFF
   const envBefore = await vget(vercelToken, '/v9/projects/' + DEFAULT_PROJECT_ID + '/env?decrypt=false');
@@ -429,52 +456,100 @@ async function prepareFleetRuntime(opts) {
   // Load live roster and build isolated cohorts (<= 10 clients each)
   const manifest = await loadLiveRoster(projectId, googleToken, { runtimeSha, operationId, startsAt, expiresAt });
   assert.ok(manifest.cohortCount >= 1 && manifest.cohortCount <= 20, 'INVALID_COHORT_COUNT_' + manifest.cohortCount);
+  const allShardNames = manifest.cohorts.flatMap(co => co.envVarNames);
+  const digest = stageOnly || stagedRecoveryId ? createHash('sha256').update(JSON.stringify({
+    baselineDeployment, runtimeSha, expiresAt, coachId,
+    shards: manifest.cohorts.flatMap(co => co.envShards),
+  })).digest('hex') : null;
+  const assertRecoveryIdle = async () => {
+    const lock = await fsGet(projectId, googleToken, 'releaseControl/numericPilotGlobalLock');
+    assert.ok(lock && lock.status === 'IDLE' && !lock.activeOperationId &&
+      Array.isArray(lock.pendingQueue) && lock.pendingQueue.length === 0, 'RECOVERY_LOCK_NOT_IDLE');
+  };
+  if (digest) await assertRecoveryIdle();
+  if (stageOnly) {
+    await verifyFleetDeploymentLive(vercelToken, expectedLive, runtimeSha, allShardNames);
+  }
 
   // Confirm all cohort fences are CLOSED before promotion
   for (const co of manifest.cohorts) {
     const f = await fetchCohortFences(projectId, googleToken, co.cohortId, coachId);
+    if (stageOnly) {
+      validateRecoveryScope(manifest, co, f, runtimeSha, expiresAt, Date.now());
+      assert.ok(!await fsGet(projectId, googleToken, 'releaseControl/numericPilot/operations/' + co.operationId),
+        'RECOVERY_OPERATION_ALREADY_USED');
+      continue;
+    }
     assert.ok(!(f.releaseFence && f.releaseFence.enabled === true), 'COHORT_RELEASE_FENCE_ALREADY_OPEN_' + co.cohortId);
     assert.ok(!(f.numericFence && f.numericFence.enabled === true), 'COHORT_NUMERIC_FENCE_ALREADY_OPEN_' + co.cohortId);
+    if (stagedRecoveryId) assert.ok(!(f.coachCanaryCohort && f.coachCanaryCohort.enabled === true),
+      'COHORT_COACH_FENCE_ALREADY_OPEN_' + co.cohortId);
   }
 
-  const tmpRoot = path.resolve(process.env.RUNNER_TEMP || require('node:os').tmpdir());
-  const dest = path.resolve(tmpRoot, 'vdsen-fleet-' + (process.env.GITHUB_RUN_ID || Date.now()));
-  A.exportCandidateTree(runtimeSha, dest);
-  A.verifyExportedTree(runtimeSha, dest, A.servedSurface());
-
-  const args = [
-    'deploy', '--prod', '--skip-domain', '--yes',
-    '-e', 'AUTONOMOUS_PROGRESSION_ENABLED=true',
-    '-e', 'AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED=true',
-    '-e', 'VDSEN_NUMERIC_PILOT_ENABLED=true',
-    '-e', 'VDSEN_NUMERIC_PILOT_RUNTIME_SHA=' + runtimeSha,
-    '-m', 'githubCommitSha=' + runtimeSha,
-    '-m', 'vdsenPilotOperation=' + operationId,
-    '-m', 'vdsenFleetCohorts=' + String(manifest.cohortCount),
-    '-m', 'vdsenBaselineDeployment=' + baselineDeployment,
-  ];
-  for (const co of manifest.cohorts) {
-    for (const sh of co.envShards) {
-      args.push('-e', sh.name + '=' + JSON.stringify(sh.windows));
+  let stagedId = stagedRecoveryId;
+  let staged;
+  if (stagedRecoveryId) {
+    for (const co of manifest.cohorts) {
+      assert.ok(co.compactWindows.every(w => C.windowValid(w, Date.now())), 'RECOVERY_WINDOW_INVALID');
+      assert.ok(!await fsGet(projectId, googleToken, 'releaseControl/numericPilot/operations/' + co.operationId),
+        'RECOVERY_OPERATION_ALREADY_USED');
     }
-  }
+    await verifyFleetDeploymentLive(vercelToken, stagedId, runtimeSha, allShardNames, globalThis.fetch, { expectedLive, digest });
+    staged = await A.deployment(s, stagedId);
+  } else {
+    const tmpRoot = path.resolve(process.env.RUNNER_TEMP || require('node:os').tmpdir());
+    const dest = path.resolve(tmpRoot, 'vdsen-fleet-' + (process.env.GITHUB_RUN_ID || Date.now()));
+    A.exportCandidateTree(runtimeSha, dest);
+    A.verifyExportedTree(runtimeSha, dest, A.servedSurface());
 
-  const r = await A.runVercelCli(args, dest, { VERCEL_ORG_ID: DEFAULT_TEAM_ID, VERCEL_PROJECT_ID: DEFAULT_PROJECT_ID });
-  assert.equal(r.code, 0, 'FLEET_DEPLOY_FAILED: ' + String(r.err || r.out).slice(0, 400));
-  const match = (String(r.out) + '\n' + String(r.err)).match(/https:\/\/([A-Za-z0-9.-]+\.vercel\.app)/);
-  assert.ok(match, 'FLEET_DEPLOY_URL_MISSING');
-  const staged = await A.deployment(s, match[1]);
-  const stagedId = staged.id || staged.uid;
+    const args = [
+      'deploy', '--prod', '--skip-domain', '--yes',
+      '-e', 'AUTONOMOUS_PROGRESSION_ENABLED=true',
+      '-e', 'AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED=true',
+      '-e', 'VDSEN_NUMERIC_PILOT_ENABLED=true',
+      '-e', 'VDSEN_NUMERIC_PILOT_RUNTIME_SHA=' + runtimeSha,
+      '-m', 'githubCommitSha=' + runtimeSha,
+      '-m', 'vdsenPilotOperation=' + operationId,
+      '-m', 'vdsenFleetCohorts=' + String(manifest.cohortCount),
+      '-m', 'vdsenBaselineDeployment=' + baselineDeployment,
+    ];
+    if (stageOnly) args.push('-m', 'vdsenRecoverySeal=' + digest);
+    for (const co of manifest.cohorts) {
+      for (const sh of co.envShards) {
+        args.push('-e', sh.name + '=' + JSON.stringify(sh.windows));
+      }
+    }
+
+    const r = await A.runVercelCli(args, dest, { VERCEL_ORG_ID: DEFAULT_TEAM_ID, VERCEL_PROJECT_ID: DEFAULT_PROJECT_ID });
+    assert.equal(r.code, 0, 'FLEET_DEPLOY_FAILED: ' + String(r.err || r.out).slice(0, 400));
+    const match = (String(r.out) + '\n' + String(r.err)).match(/https:\/\/([A-Za-z0-9.-]+\.vercel\.app)/);
+    assert.ok(match, 'FLEET_DEPLOY_URL_MISSING');
+    staged = await A.deployment(s, match[1]);
+    stagedId = staged.id || staged.uid;
+  }
 
   // Confirm project Numeric Guard stayed DISARMED
   const envAfter = await vget(vercelToken, '/v9/projects/' + DEFAULT_PROJECT_ID + '/env?decrypt=false');
   const offAfter = G.evaluateProductionEnv(envAfter.envs, { project: DEFAULT_PROJECT_ID, team: DEFAULT_TEAM_ID });
   G.assertPromotionAllowed({ preflight: offBefore, fresh: offAfter });
 
+  if (stageOnly) {
+    await verifyFleetDeploymentLive(vercelToken, stagedId, runtimeSha, allShardNames, globalThis.fetch, { expectedLive, digest });
+    const report = {
+      schema: 'vdsen-fleet-recovery-stage-v1', status: 'STAGED_NOT_PROMOTED',
+      expectedLive, baselineDeployment, stagedId, runtimeSha, operationId, startsAt, expiresAt,
+      digest, clientCount: manifest.eligibleCount, pidCount: manifest.totalEligiblePids, shardCount: allShardNames.length,
+    };
+    fs.mkdirSync(path.dirname(outFile), { recursive: true });
+    fs.writeFileSync(outFile, JSON.stringify(report, null, 2) + '\n');
+    return report;
+  }
+
+  if (stagedRecoveryId) await assertRecoveryIdle();
+  assert.equal(await A.currentApp(s), baselineDeployment, 'FLEET_ALIAS_CHANGED_BEFORE_PROMOTION');
   try {
     await A.promote(s, stagedId);
     const verifiedPaths = await A.verifyPublicBytes(s, runtimeSha, A.servedSurface());
-    const allShardNames = manifest.cohorts.flatMap(co => co.envVarNames);
     const att = await verifyFleetDeploymentLive(vercelToken, stagedId, runtimeSha, allShardNames);
     const report = {
       schema: 'vdsen-fleet-runtime-prep-v1',
@@ -512,7 +587,13 @@ async function prepareFleetRuntime(opts) {
     fs.writeFileSync(outFile, JSON.stringify(report, null, 2) + '\n');
     return report;
   } catch (err) {
-    await A.revertApp(s, baselineDeployment).catch(() => {});
+    const live = await A.currentApp(s).catch(() => null);
+    if (live === stagedId) {
+      await A.revertApp(s, baselineDeployment);
+      assert.equal(await A.currentApp(s), baselineDeployment, 'FLEET_ROLLBACK_ALIAS_MISMATCH');
+    } else if (live !== baselineDeployment) {
+      throw new Error('FLEET_ROLLBACK_REQUIRED_ALIAS_UNVERIFIED', { cause: err });
+    }
     throw err;
   }
 }
@@ -1021,6 +1102,8 @@ async function main() {
       runtimeSha: env.INPUT_RUNTIME, operationId: env.INPUT_OPERATION,
       startsAt: env.INPUT_STARTS, expiresAt: env.INPUT_EXPIRES,
       coachId: env.INPUT_COACH, outFile: path.join(reportDir, 'fleet-runtime-prep.json'),
+      stageOnly: uidInput === 'FLEET:RECOVERY-STAGE', expectedDeploymentId: env.INPUT_DEPLOYMENT,
+      stagedRecoveryId: uidInput === 'FLEET:RECOVERY-PROMOTE' ? env.INPUT_DEPLOYMENT : '',
     });
     console.log(JSON.stringify(rep, null, 2));
     return;
@@ -1963,6 +2046,8 @@ module.exports = {
   loadLiveRoster,
   discoverOpenCohortIds,
   prepareFleetRuntime,
+  validateRecoveryScope,
+  verifyFleetDeploymentLive,
   preflightCohort,
   armCohort,
   auditFleet,

@@ -31,6 +31,62 @@ function makePlan(uid, planId, pidCount, opts = {}) {
   }, opts);
 }
 
+test('recovery preserves the roster, PIDs and existing expiry; only pilot plan drift is admissible', () => {
+  const clients = Array.from({length:25}, (_, i) => ({
+    _id: i === 24 ? COACH : 'client_' + String(i).padStart(2, '0'),
+    coachId:COACH, status:'activo', activePlanId:'plan_' + i,
+  }));
+  const plans = Object.fromEntries(clients.map((c, i) =>
+    [c.activePlanId, makePlan(c._id,c.activePlanId,i < 11 ? 34 : 33)]));
+  const manifest = cohortOps.buildCohortsFromRoster(clients, plans, {
+    runtimeSha:SHA, operationId:'T875-RECOVERY-NEW', startsAt:STARTS, expiresAt:EXPIRES,
+  });
+  const co = manifest.cohorts[2];
+  const windows = Object.fromEntries(co.clients.map(c => [c.uid, {
+    enabled:true, planId:c.planId, pids:c.pids, pidCount:c.pidCount, pidsHash:c.pidsHash,
+    runtimeSha:SHA, operationId:'PREVIOUS-OP', expiresAt:EXPIRES,
+  }]));
+  windows[COACH].planId = 'superseded_plan';
+  const common = {enabled:true, operationId:'PREVIOUS-OP', expiresAt:EXPIRES};
+  const fences = {
+    releaseFence:{...common, clientIds:co.clientIds},
+    numericFence:{...common, runtimeSha:SHA, windows},
+    coachCanaryCohort:{...common, clientIds:co.clientIds, prescriptionExerciseIds:co.allPids},
+    coachCanaryEnabled:true,
+  };
+  const validate = (candidate = manifest, expires = EXPIRES) =>
+    cohortOps.validateRecoveryScope(candidate, co, fences, SHA, expires, NOW);
+  assert.doesNotThrow(() => validate());
+  assert.throws(() => validate({...manifest, eligibleCount:26}), /RECOVERY_ROSTER_COUNT_CHANGED/);
+  assert.throws(() => validate(manifest, STARTS), /RECOVERY_EXPIRY_CHANGED/);
+  windows[COACH].pidsHash = 'changed-hash';
+  assert.throws(() => validate(), /RECOVERY_AUTHORIZATION_DRIFT/);
+});
+
+test('staged recovery attestation binds the seal and refuses unverified or already live candidates', async () => {
+  const expectedLive = 'dpl_live';
+  const digest = 'a'.repeat(64);
+  const deployment = {
+    id:'dpl_stage', projectId:'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN', teamId:'team_VZc5H7Q1DBIJ3g0mwrSBz1o8',
+    readyState:'READY', target:'production', meta:{githubCommitSha:SHA, vdsenRecoverySeal:digest},
+    env:['AUTONOMOUS_PROGRESSION_ENABLED','AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED',
+      'VDSEN_NUMERIC_PILOT_ENABLED','VDSEN_NUMERIC_PILOT_RUNTIME_SHA','VDSEN_NUMERIC_COHORT_1'],
+  };
+  let alias = expectedLive;
+  const fetcher = async url => ({
+    status:200, json:async () => url.includes('/deployments/') ? deployment : {deploymentId:alias},
+  });
+  const verify = (seal = digest) => cohortOps.verifyFleetDeploymentLive(
+    'test-token', deployment.id, SHA, 'VDSEN_NUMERIC_COHORT_1', fetcher, {expectedLive,digest:seal});
+  assert.equal((await verify()).attested, true);
+  await assert.rejects(verify('b'.repeat(64)), /RECOVERY_SEAL_MISMATCH/);
+  alias = deployment.id;
+  await assert.rejects(verify(), /RECOVERY_STAGE_ALIAS_CHANGED/);
+  alias = expectedLive;
+  deployment.env.pop();
+  await assert.rejects(verify(), /MISSING_COHORT_SHARD/);
+});
+
 test('T875.1 Roster partitioning: 29 eligible clients -> 3 isolated cohorts (10+10+9), excludes inactive/no-plan/no-PID, each env shard < 4 KB', () => {
   const clients = [];
   const plans = {};
