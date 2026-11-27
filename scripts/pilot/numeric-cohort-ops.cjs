@@ -757,11 +757,41 @@ async function armCohort(opts) {
   ];
 
   const fetcher = opts.fetcher || globalThis.fetch;
+  if (pf.attestation.recoverySeal) {
+    const lockPath = 'releaseControl/numericPilotGlobalLock';
+    const raw = await Promise.all([
+      fsGetRaw(projectId, googleToken, 'releaseControl/autonomousProgression_cohort_' + co.cohortId, fetcher),
+      fsGetRaw(projectId, googleToken, 'releaseControl/numericPilot_cohort_' + co.cohortId, fetcher),
+      fsGetRaw(projectId, googleToken, 'coaches/' + coachId, fetcher),
+      fsGetRaw(projectId, googleToken, lockPath, fetcher),
+    ]);
+    assert.ok(raw.every(d => d && d.updateTime), 'RECOVERY_ARM_VERSION_REQUIRED');
+    const [release, numeric, coach, lock] = raw.map(fromFsDoc);
+    const coachFence = coach.autoApplyCanary && coach.autoApplyCanary.cohorts &&
+      coach.autoApplyCanary.cohorts[co.cohortId];
+    assert.ok(release.enabled === false && numeric.enabled === false &&
+      coachFence && coachFence.enabled === false, 'RECOVERY_ARM_FENCES_NOT_CLOSED');
+    assert.ok(lock.status === 'IDLE' && !lock.activeOperationId &&
+      Array.isArray(lock.pendingQueue) && lock.pendingQueue.length === 0, 'RECOVERY_LOCK_NOT_IDLE');
+    for (let i = 0; i < 3; i++) writes[i + 1].currentDocument = { updateTime: raw[i].updateTime };
+    writes.push({
+      update: { name: docName(projectId, lockPath), fields: { status: { stringValue: 'IDLE' } } },
+      updateMask: { fieldPaths: ['status'] },
+      currentDocument: { updateTime: raw[3].updateTime },
+    });
+    const live = await verifyFleetDeploymentLive(opts.vercelToken, opts.deploymentId, opts.runtimeSha, co.envVarNames, fetcher);
+    assert.equal(live.recoverySeal, pf.attestation.recoverySeal, 'RECOVERY_ARM_SEAL_CHANGED');
+  }
   await fsCommit(projectId, googleToken, writes, fetcher);
   const verifiedFences = await fetchCohortFences(projectId, googleToken, co.cohortId, coachId, fetcher);
   assert.equal(verifiedFences.releaseFence && verifiedFences.releaseFence.enabled, true, 'VERIFY_RELEASE_FENCE_FAILED');
   assert.equal(verifiedFences.numericFence && verifiedFences.numericFence.enabled, true, 'VERIFY_NUMERIC_FENCE_FAILED');
   assert.equal(verifiedFences.coachCanaryCohort && verifiedFences.coachCanaryCohort.enabled, true, 'VERIFY_COACH_COHORT_FAILED');
+  if (pf.attestation.recoverySeal) {
+    const coverage = _verifyCohortAuthorizationExact(co, verifiedFences, new Set(co.clientIds), opts.runtimeSha);
+    assert.equal(coverage.exactMatch, true, 'RECOVERY_ARM_POST_VERIFY_MISMATCH');
+    assert.equal(coverage.operationId, co.operationId, 'RECOVERY_ARM_OPERATION_CHANGED');
+  }
 
   const out = {
     schema: 'vdsen-cohort-arm-result-v1',
