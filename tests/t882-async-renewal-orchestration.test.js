@@ -327,12 +327,17 @@ test('T882.5: executeRenewCohortOperation — happy path preserves 5 shard slots
         return { deploymentId: 'dpl_new_cand', url: 'cand.vercel.app', readyState: 'READY' };
       },
       verifyCandidate: async () => ({ verified: true }),
-      promoteDeployment: async ({ deploymentId }) => { liveAlias = deploymentId; return { promoted: true }; },
+      promoteDeployment: async ({ deploymentId }) => { liveAlias = deploymentId; return { promoted: true, deploymentId, verifiedPublicPaths: 46 }; },
       dispatchNextQueued: async (q) => { nextDispatched = q; },
     },
   });
   assert.equal(rep.status, 'RENEWED_VERIFIED');
   assert.equal(rep.deploymentId, 'dpl_new_cand');
+  assert.equal(rep.effectiveDeploymentProvenance.baselineOffDeployment, 'dpl_off_base');
+  assert.equal(rep.effectiveDeploymentProvenance.effectiveDeploymentId, 'dpl_new_cand');
+  assert.equal(rep.effectiveDeploymentProvenance.productionAliasDeploymentId, 'dpl_new_cand');
+  assert.equal(rep.effectiveDeploymentProvenance.promotionEvidence.verifiedPublicPaths, 46);
+  assert.deepEqual(store.get('releaseControl/numericPilot/operations/T882-OP-HAPPY').effectiveDeploymentProvenance, rep.effectiveDeploymentProvenance);
   assert.equal(rep.shardNames.length, 5);
   assert.deepEqual(rep.unaffectedCohortIds, ['cohort-02', 'cohort-03']);
   assert.equal(store.get('releaseControl/numericPilot_cohort_cohort-02').windows['client-c2'].planId, 'plan-c2-old', 'cohort-02 untouched');
@@ -347,10 +352,12 @@ test('T882.6: executeRenewCohortOperation — granular rollback on build fail, p
       operationId: 'T882-OP-FAIL', cohortId: 'cohort-01', clientId: 'client-c1', coachUid: 'coach-1',
       planId: 'plan-c1-new', runtimeSha: SHA, startsAt: '2026-11-26T05:15:00Z', expiresAt: EXP_ISO, status: 'QUEUED', history: [],
     });
-    store.set('releaseControl/numericPilotGlobalLock', { activeOperationId: 'T882-OP-FAIL', version: 1, pendingQueue: [] });
+    store.set('releaseControl/numericPilotGlobalLock', { activeOperationId: 'T882-OP-FAIL', version: 1,
+      leaseExpiresAt: '2026-11-26T13:00:00Z', pendingQueue: [{operationId:'T882-OP-NEXT'}] });
     let liveAlias = 'dpl_prev_live';
     let revertedTo = null;
     const baseIo = {
+      now: () => NOW_ISO,
       readDoc: async (p) => store.has(p) ? JSON.parse(JSON.stringify(store.get(p))) : null,
       writeDoc: async (p, d) => { store.set(p, JSON.parse(JSON.stringify(d))); },
       loadLiveRoster: async () => makeManifestWithFiveShards('client-c1', 'plan-c1-new', 'cohort-01'),
@@ -359,7 +366,7 @@ test('T882.6: executeRenewCohortOperation — granular rollback on build fail, p
       baselineState: { production_deployment: 'dpl_off_base' },
       buildDeployment: async () => ({ deploymentId: 'dpl_cand_fail', url: 'cand.vercel.app', readyState: 'READY' }),
       verifyCandidate: async () => ({ verified: true }),
-      promoteDeployment: async ({ deploymentId }) => { liveAlias = deploymentId; return { promoted: true }; },
+      promoteDeployment: async ({ deploymentId }) => { liveAlias = deploymentId; return { promoted: true, deploymentId, verifiedPublicPaths: 46 }; },
       revertDeployment: async (id) => { revertedTo = id; liveAlias = id; return { restored: true }; },
     };
     const rep = await cohortOps.executeRenewCohortOperation({
@@ -431,6 +438,109 @@ test('T882.6: executeRenewCohortOperation — granular rollback on build fail, p
   assert.equal(rNewerProm.rep.rollbackSkippedNewerPromotion, true);
   assert.equal(rNewerProm.getRevertedTo(), null);
   assert.equal(rNewerProm.getAlias(), 'dpl_newer_legit_prod');
+  assert.equal(rNewerProm.store.get('releaseControl/numericPilotGlobalLock').status, 'ROLLBACK_REQUIRED');
+  assert.deepEqual(rNewerProm.store.get('releaseControl/numericPilotGlobalLock').pendingQueue, [{operationId:'T882-OP-NEXT'}]);
+
+  const versioned = await runScenario((store) => {
+    const lockPath = 'releaseControl/numericPilotGlobalLock';
+    const name = p => 'projects/vdsen-ecosistema/databases/(default)/documents/' + p;
+    const lockFields = cohortOps.toFsFields({...store.get(lockPath), status: 'REQUESTED'});
+    let lockTime = 'v1';
+    return {
+      readVersion: async p => p === lockPath
+        ? {name:name(p), updateTime:lockTime, fields:{...lockFields}}
+        : {name:name(p), updateTime:'fence-v1', fields:cohortOps.toFsFields(store.get(p) || {})},
+      commitVersion: async writes => {
+        const lockWrite = writes.find(w => w.update.name === name(lockPath));
+        assert.equal(lockWrite.currentDocument.updateTime, lockTime);
+        if (writes.length === 4) {
+          assert.ok(writes.slice(0,3).every(w => w.currentDocument.updateTime === 'fence-v1'));
+          throw new Error('STALE_FENCE_VERSION');
+        }
+        Object.assign(lockFields, lockWrite.update.fields);
+        lockTime += '-next';
+      },
+      dispatchNextQueued: async () => assert.fail('Queue must stay blocked'),
+    };
+  });
+  assert.equal(versioned.rep.status, 'ROLLBACK_REQUIRED');
+  assert.equal(versioned.rep.fencesRestored, false);
+
+  for (const restoreConflict of [false, true]) {
+    const r = await runScenario((store) => {
+      const lock = 'releaseControl/numericPilotGlobalLock';
+      const name = p => 'projects/vdsen-ecosistema/databases/(default)/documents/' + p;
+      const lockFields = cohortOps.toFsFields({...store.get(lock), status:'REQUESTED'});
+      let version = 1;
+      let releaseAttempts = 0;
+      return {
+        readVersion: async p => p === lock
+          ? {name:name(p), updateTime:String(version), fields:{...lockFields}}
+          : {name:name(p), updateTime:'before', fields:cohortOps.toFsFields(store.get(p) || {})},
+        writeDoc: async (p,d) => {
+          if (d.status === 'RENEWED_VERIFIED') throw new Error('LEDGER_FINALIZATION_FAILED');
+          store.set(p, d);
+        },
+        commitVersion: async writes => {
+          const lockWrite = writes.find(w => w.update.name === name(lock));
+          assert.equal(lockWrite.currentDocument.updateTime, String(version));
+          if (writes.length === 4) {
+            const restoring = writes[0].currentDocument.updateTime === 'rearmed-0';
+            assert.deepEqual(writes.slice(0,3).map(w => w.currentDocument.updateTime),
+              restoring ? ['rearmed-0','rearmed-1','rearmed-2'] : ['before','before','before']);
+            if (restoring && restoreConflict) throw new Error('LATER_FENCE_WRITE');
+          }
+          if (writes.length === 1) {
+            releaseAttempts++;
+            assert.equal(releaseAttempts, 1);
+            assert.ok(!lockWrite.updateMask.fieldPaths.includes('pendingQueue'));
+          }
+          Object.assign(lockFields, lockWrite.update.fields);
+          version++;
+          return {writeResults:writes.map((_, i)=>({updateTime:'rearmed-'+i}))};
+        },
+      };
+    });
+    assert.equal(r.rep.status, restoreConflict ? 'ROLLBACK_REQUIRED' : 'ROLLED_BACK_VERIFIED');
+    assert.equal(r.rep.fencesRestored, !restoreConflict);
+  }
+
+  // Ambiguous promotion outcomes are resolved from the alias, not the return value.
+  for (const message of ['VERIFY_PUBLIC_BYTES_FAILED', 'PROMOTION_TIMEOUT']) {
+    const r = await runScenario((_store, _get, setAlias) => ({
+      promoteDeployment: async ({ deploymentId }) => { setAlias(deploymentId); throw new Error(message); },
+    }));
+    assert.equal(r.rep.status, 'ROLLED_BACK_VERIFIED');
+    assert.equal(r.getAlias(), 'dpl_prev_live');
+  }
+  const incomplete = await runScenario((_store, _get, setAlias) => ({
+    promoteDeployment: async ({ deploymentId }) => { setAlias(deploymentId); return {}; },
+  }));
+  assert.equal(incomplete.rep.status, 'ROLLED_BACK_VERIFIED');
+  const unexpected = await runScenario((_store, _get, setAlias) => ({
+    promoteDeployment: async () => { setAlias('dpl_foreign'); throw new Error('TIMEOUT'); },
+  }));
+  assert.equal(unexpected.rep.status, 'ROLLBACK_REQUIRED');
+  assert.equal(unexpected.getRevertedTo(), null);
+  const noChange = await runScenario((_store, _get, setAlias) => ({
+    promoteDeployment: async ({ deploymentId }) => { setAlias(deploymentId); throw new Error('TIMEOUT'); },
+    revertDeployment: async () => ({ restored: true }),
+  }));
+  assert.equal(noChange.rep.status, 'ROLLBACK_REQUIRED');
+  const lostLock = await runScenario((store, _get, setAlias) => ({
+    promoteDeployment: async ({ deploymentId }) => {
+      setAlias(deploymentId);
+      store.set('releaseControl/numericPilotGlobalLock', { activeOperationId: 'other-op', version: 2 });
+      throw new Error('TIMEOUT');
+    },
+  }));
+  assert.equal(lostLock.rep.status, 'ROLLBACK_REQUIRED');
+  assert.equal(lostLock.getRevertedTo(), null);
+  const denied = await runScenario((_store, _get, setAlias) => ({
+    promoteDeployment: async ({ deploymentId }) => { setAlias(deploymentId); throw new Error('TIMEOUT'); },
+    revertDeployment: async () => { throw new Error('PERMISSION_DENIED'); },
+  }));
+  assert.equal(denied.rep.status, 'ROLLBACK_REQUIRED');
 });
 
 test('T882.7: Workflow contract & invocation authorization for renew-cohort + App Coach truthful states', () => {
@@ -638,4 +748,33 @@ test('T883-RO.2 executeRenewCohortOperation bootstraps ledger, lock, and single-
   assert.equal(store.get('releaseControl/numericPilot/pilotAuthorizations/T883-RO-PILOT-20261126').consumed, true);
   assert.equal(store.get('releaseControl/numericPilot/operations/T883-RO-PILOT-20261126').bootstrappedByWorkflow, true);
   assert.equal(store.get('releaseControl/numericPilotGlobalLock').activeOperationId, null);
+});
+
+test('T883-A: renewal fails closed and rolls back when promotion lacks effective-deployment surface evidence', async () => {
+  const store = new Map(Object.entries(makeMultiCohortDocs()));
+  store.set('releaseControl/numericPilot/operations/T883-PROVENANCE', {
+    operationId: 'T883-PROVENANCE', cohortId: 'cohort-01', clientId: 'client-c1', coachUid: 'coach-1',
+    planId: 'plan-c1-new', runtimeSha: SHA, startsAt: '2026-11-26T05:15:00Z', expiresAt: EXP_ISO, status: 'QUEUED', history: [],
+  });
+  store.set('releaseControl/numericPilotGlobalLock', { activeOperationId: 'T883-PROVENANCE', version: 1, pendingQueue: [] });
+  let liveAlias = 'dpl_previous_effective';
+  const rep = await cohortOps.executeRenewCohortOperation({
+    operationId: 'T883-PROVENANCE',
+    io: {
+      readDoc: async (p) => store.has(p) ? JSON.parse(JSON.stringify(store.get(p))) : null,
+      writeDoc: async (p, d) => { store.set(p, JSON.parse(JSON.stringify(d))); },
+      loadLiveRoster: async () => makeManifestWithFiveShards('client-c1', 'plan-c1-new', 'cohort-01'),
+      currentApp: async () => liveAlias,
+      checkNumericGuardOff: async () => makeDisarmedGuardEvidence(),
+      baselineState: { production_deployment: 'dpl_off_baseline' },
+      buildDeployment: async () => ({ deploymentId: 'dpl_candidate_effective', url: 'cand.vercel.app', readyState: 'READY' }),
+      verifyCandidate: async () => ({ verified: true }),
+      promoteDeployment: async ({ deploymentId }) => { liveAlias = deploymentId; return { promoted: true, deploymentId }; },
+      revertDeployment: async (deploymentId) => { liveAlias = deploymentId; return { restored: true, deploymentId }; },
+    },
+  });
+  assert.equal(rep.status, 'ROLLED_BACK_VERIFIED');
+  assert.equal(rep.errorCode, 'PROMOTION_SURFACE_EVIDENCE_MISSING');
+  assert.equal(liveAlias, 'dpl_previous_effective');
+  assert.equal(store.get('releaseControl/numericPilot/operations/T883-PROVENANCE').effectiveDeploymentProvenance, undefined);
 });

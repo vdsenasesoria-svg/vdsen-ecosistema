@@ -957,9 +957,8 @@ function makeHandler(deps) {
         const activeLeaseMs = Date.parse(lockDoc.leaseExpiresAt || '');
         const lockHeldByOther = Boolean(
           activeOpId &&
-          activeOpId !== renewalOpId &&
-          Number.isFinite(activeLeaseMs) &&
-          activeLeaseMs > nowMs
+          (['PROMOTING', 'ROLLBACK_REQUIRED'].includes(lockDoc.status) ||
+            (activeOpId !== renewalOpId && Number.isFinite(activeLeaseMs) && activeLeaseMs > nowMs))
         );
         const recoveredExpiredLock = Boolean(
           activeOpId &&
@@ -1004,7 +1003,6 @@ function makeHandler(deps) {
           tx.set(globalLockRef, Object.assign({}, lockDoc, {
             pendingQueue: queue,
             updatedAt: nowIso,
-            version: (Number(lockDoc.version) || 0) + 1,
           }));
           return { action: 'QUEUED_BEHIND_LOCK', queuedBehindOperationId: activeOpId, attemptCount };
         }
@@ -1065,7 +1063,8 @@ function makeHandler(deps) {
         } else {
           const activeOpId = lockDoc.activeOperationId || null;
           const activeLeaseMs = Date.parse(lockDoc.leaseExpiresAt || '');
-          const lockHeldByOther = Boolean(activeOpId && activeOpId !== renewalOpId && Number.isFinite(activeLeaseMs) && activeLeaseMs > nowMs);
+          const lockHeldByOther = Boolean(activeOpId && (['PROMOTING', 'ROLLBACK_REQUIRED'].includes(lockDoc.status) ||
+            (activeOpId !== renewalOpId && Number.isFinite(activeLeaseMs) && activeLeaseMs > nowMs)));
           if (lockHeldByOther) {
             enqueueOutcome = { action: 'QUEUED_BEHIND_LOCK', queuedBehindOperationId: activeOpId, attemptCount: 1 };
           } else {
@@ -1175,6 +1174,8 @@ function makeHandler(deps) {
             const [curOpSnap, curLockSnap] = await Promise.all([tx.get(opRef), tx.get(globalLockRef)]);
             const curOp = _data(curOpSnap) || {};
             const curLock = _data(curLockSnap) || {};
+            if (curOp.status !== RENEWAL_STATES.REQUESTED || curLock.activeOperationId !== renewalOpId ||
+                curLock.version !== curOp.lockVersion) return;
             const hist = Array.isArray(curOp.history) ? curOp.history.slice(-20) : [];
             tx.set(opRef, Object.assign({}, curOp, {
               status: RENEWAL_STATES.FAILED,
@@ -1221,6 +1222,8 @@ function makeHandler(deps) {
           const [curOpSnap, curLockSnap] = await Promise.all([tx.get(opRef), tx.get(globalLockRef)]);
           const curOp = _data(curOpSnap) || {};
           const curLock = _data(curLockSnap) || {};
+          if (curOp.status !== RENEWAL_STATES.REQUESTED || curLock.activeOperationId !== renewalOpId ||
+              curLock.version !== curOp.lockVersion) return;
           const hist = Array.isArray(curOp.history) ? curOp.history.slice(-20) : [];
           tx.set(opRef, Object.assign({}, curOp, {
             status: RENEWAL_STATES.QUEUED,
@@ -1234,7 +1237,6 @@ function makeHandler(deps) {
             tx.set(globalLockRef, Object.assign({}, curLock, {
               status: RENEWAL_STATES.QUEUED,
               updatedAt: nowIso,
-              version: (Number(curLock.version) || 0) + 1,
             }));
           }
         });
