@@ -436,6 +436,43 @@ test('T882.6: executeRenewCohortOperation — granular rollback on build fail, p
   assert.equal(rNewerProm.rep.rollbackSkippedNewerPromotion, true);
   assert.equal(rNewerProm.getRevertedTo(), null);
   assert.equal(rNewerProm.getAlias(), 'dpl_newer_legit_prod');
+
+  // Ambiguous promotion outcomes are resolved from the alias, not the return value.
+  for (const message of ['VERIFY_PUBLIC_BYTES_FAILED', 'PROMOTION_TIMEOUT']) {
+    const r = await runScenario((_store, _get, setAlias) => ({
+      promoteDeployment: async ({ deploymentId }) => { setAlias(deploymentId); throw new Error(message); },
+    }));
+    assert.equal(r.rep.status, 'ROLLED_BACK_VERIFIED');
+    assert.equal(r.getAlias(), 'dpl_prev_live');
+  }
+  const incomplete = await runScenario((_store, _get, setAlias) => ({
+    promoteDeployment: async ({ deploymentId }) => { setAlias(deploymentId); return {}; },
+  }));
+  assert.equal(incomplete.rep.status, 'ROLLED_BACK_VERIFIED');
+  const unexpected = await runScenario((_store, _get, setAlias) => ({
+    promoteDeployment: async () => { setAlias('dpl_foreign'); throw new Error('TIMEOUT'); },
+  }));
+  assert.equal(unexpected.rep.status, 'ROLLBACK_REQUIRED');
+  assert.equal(unexpected.getRevertedTo(), null);
+  const noChange = await runScenario((_store, _get, setAlias) => ({
+    promoteDeployment: async ({ deploymentId }) => { setAlias(deploymentId); throw new Error('TIMEOUT'); },
+    revertDeployment: async () => ({ restored: true }),
+  }));
+  assert.equal(noChange.rep.status, 'ROLLBACK_REQUIRED');
+  const lostLock = await runScenario((store, _get, setAlias) => ({
+    promoteDeployment: async ({ deploymentId }) => {
+      setAlias(deploymentId);
+      store.set('releaseControl/numericPilotGlobalLock', { activeOperationId: 'other-op', version: 2 });
+      throw new Error('TIMEOUT');
+    },
+  }));
+  assert.equal(lostLock.rep.status, 'ROLLBACK_REQUIRED');
+  assert.equal(lostLock.getRevertedTo(), null);
+  const denied = await runScenario((_store, _get, setAlias) => ({
+    promoteDeployment: async ({ deploymentId }) => { setAlias(deploymentId); throw new Error('TIMEOUT'); },
+    revertDeployment: async () => { throw new Error('PERMISSION_DENIED'); },
+  }));
+  assert.equal(denied.rep.status, 'ROLLBACK_REQUIRED');
 });
 
 test('T882.7: Workflow contract & invocation authorization for renew-cohort + App Coach truthful states', () => {

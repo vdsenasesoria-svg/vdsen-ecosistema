@@ -1761,7 +1761,7 @@ async function executeRenewCohortOperation(opts) {
     const errorCode = (err && err.code && err.code !== 'ERR_ASSERTION')
       ? err.code
       : String(err && err.message || 'RENEW_FAILED').split(':')[0].split('\n')[0].trim().slice(0, 64);
-    if (!promoted && !fencesMutated) {
+    if (!promoted && !fencesMutated && phase !== 'PROMOTING') {
       // Pre-promotion failure: zero production traffic or fence impact
       await transition('FAILED', { failedPhase: phase, errorCode, failedAt: now() });
       await releaseGlobalLock('FAILED');
@@ -1794,10 +1794,13 @@ async function executeRenewCohortOperation(opts) {
     let rollbackError = null;
     try {
       const currentLive = await getCurrentAlias();
-      if (promoted && previousDeploymentId) {
+      if ((promoted || phase === 'PROMOTING') && previousDeploymentId) {
         if (currentLive === candidateDeploymentId) {
+          assert.ok(await readDoc(lockPath), 'ROLLBACK_LOCK_REQUIRED');
+          await verifyFencingLock('ROLLBACK');
+          assert.equal(await getCurrentAlias(), candidateDeploymentId, 'ROLLBACK_ALIAS_CHANGED');
           await revertDeployment(previousDeploymentId);
-          aliasRestored = true;
+          aliasRestored = (await getCurrentAlias()) === previousDeploymentId;
         } else if (currentLive === previousDeploymentId) {
           aliasRestored = true;
         } else {
@@ -1815,7 +1818,7 @@ async function executeRenewCohortOperation(opts) {
       rollbackError = rbErr && rbErr.message ? rbErr.message : String(rbErr);
     }
 
-    const rollbackVerified = !rollbackError && !rollbackSkippedNewerPromotion && (!promoted || aliasRestored) && (!fencesMutated || fencesRestored);
+    const rollbackVerified = !rollbackError && !rollbackSkippedNewerPromotion && (!(promoted || phase === 'PROMOTING') || aliasRestored) && (!fencesMutated || fencesRestored);
     const finalStatus = rollbackVerified ? 'ROLLED_BACK_VERIFIED' : 'ROLLBACK_REQUIRED';
     await transition(finalStatus, {
       failedPhase: phase,
