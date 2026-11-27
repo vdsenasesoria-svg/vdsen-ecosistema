@@ -418,7 +418,15 @@ async function verifyFleetDeploymentLive(vercelToken, deploymentId, expectedSha,
   } else {
     assert.equal(liveId, deploymentId, 'LIVE_ALIAS_TARGET_MISMATCH: expected=' + deploymentId + ' actual=' + liveId);
   }
-  return { attested: true, deploymentId, runtimeSha: expectedSha, alias: EXPECTED_ALIAS, envNames };
+  return { attested: true, deploymentId, runtimeSha: expectedSha, alias: EXPECTED_ALIAS, envNames,
+    recoverySeal: d.meta.vdsenRecoverySeal || null };
+}
+
+function sealRecoveryShards(manifest, baselineDeployment, runtimeSha, expiresAt, coachId) {
+  return createHash('sha256').update(JSON.stringify({
+    baselineDeployment, runtimeSha, expiresAt, coachId,
+    shards: manifest.cohorts.flatMap(co => co.envShards),
+  })).digest('hex');
 }
 
 function validateRecoveryScope(manifest, co, fences, runtimeSha, expiresAt, now) {
@@ -457,10 +465,8 @@ async function prepareFleetRuntime(opts) {
   const manifest = await loadLiveRoster(projectId, googleToken, { runtimeSha, operationId, startsAt, expiresAt });
   assert.ok(manifest.cohortCount >= 1 && manifest.cohortCount <= 20, 'INVALID_COHORT_COUNT_' + manifest.cohortCount);
   const allShardNames = manifest.cohorts.flatMap(co => co.envVarNames);
-  const digest = stageOnly || stagedRecoveryId ? createHash('sha256').update(JSON.stringify({
-    baselineDeployment, runtimeSha, expiresAt, coachId,
-    shards: manifest.cohorts.flatMap(co => co.envShards),
-  })).digest('hex') : null;
+  const digest = stageOnly || stagedRecoveryId
+    ? sealRecoveryShards(manifest, baselineDeployment, runtimeSha, expiresAt, coachId) : null;
   const assertRecoveryIdle = async () => {
     const lock = await fsGet(projectId, googleToken, 'releaseControl/numericPilotGlobalLock');
     assert.ok(lock && lock.status === 'IDLE' && !lock.activeOperationId &&
@@ -605,6 +611,12 @@ async function preflightCohort(opts) {
   assert.ok(co, 'COHORT_NOT_FOUND_' + cohortId);
 
   const att = await verifyFleetDeploymentLive(vercelToken, deploymentId, runtimeSha, co.envVarNames, fetcher);
+  if (att.recoverySeal) {
+    const state = JSON.parse(fs.readFileSync('.release/vdsen-client.json', 'utf8'));
+    assert.equal(state.runtime_sha, runtimeSha, 'RECOVERY_ARM_BASELINE_SHA_CHANGED');
+    assert.equal(att.recoverySeal, sealRecoveryShards(manifest, state.production_deployment, runtimeSha, expiresAt, coachId),
+      'RECOVERY_ARM_SCOPE_CHANGED');
+  }
   const fences = await fetchCohortFences(projectId, googleToken, cohortId, coachId, fetcher);
   const priorLedger = await fsGet(projectId, googleToken, 'releaseControl/numericPilot/operations/' + co.operationId, fetcher);
 
