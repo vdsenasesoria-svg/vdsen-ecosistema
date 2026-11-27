@@ -120,10 +120,12 @@ for (let i = braceStart; i < COACH.length; i++) {
 }
 const monitorFnBody = COACH.slice(idx, end + 1);
 
-ok(monitorFnBody.includes('const clientId = _detailClientId;') && monitorFnBody.includes('await getDoc(doc(db, \'logs\', clientId))'),
+ok(monitorFnBody.includes('const clientId = _detailClientId;') &&
+   monitorFnBody.includes('await Promise.allSettled([') &&
+   monitorFnBody.includes("getDoc(doc(db, 'logs', clientId))"),
   'prerequisite: _renderClientTabMonitor captures clientId then awaits a client-scoped getDoc, exactly the shape T127-H guards elsewhere');
 ok((monitorFnBody.match(/_detailClientId/g) || []).length >= 3 &&
-   monitorFnBody.includes("if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;"),
+   monitorFnBody.includes("if (_detailClientId !== clientId || _detailActiveTab !== 'monitor' ||"),
   'Monitor captures client identity and re-checks client/tab context after asynchronous reads');
 ok(COACH.includes("else if (tab === 'monitor') _renderClientTabMonitor(cont);") && COACH.includes("const cont = document.getElementById('clientDetailTabContent');"),
   'confirmed: cont (#clientDetailTabContent) is ONE shared, persistent DOM element across every client\'s detail view, not recreated per client -- a stale write here is not harmlessly orphaned, it overwrites whatever client is currently displayed');
