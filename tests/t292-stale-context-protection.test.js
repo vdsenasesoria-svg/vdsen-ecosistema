@@ -27,10 +27,12 @@ for (let i = braceStart; i < COACH.length; i++) {
 }
 const monitorFnBody = COACH.slice(idx, end + 1);
 
-ok(monitorFnBody.includes("try { logsSnap = await getDoc(doc(db, 'logs', clientId)); }") &&
-   monitorFnBody.includes("if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;\n    if (!logsSnap"),
+const logRead = monitorFnBody.indexOf('await Promise.allSettled([');
+const staleGuard = monitorFnBody.indexOf("if (_detailClientId !== clientId || _detailActiveTab !== 'monitor' ||", logRead);
+const readResult = monitorFnBody.indexOf('const logsSnap = rootRead.value;', staleGuard);
+ok(logRead >= 0 && staleGuard > logRead && readResult > staleGuard,
    'the guard runs after the logs read, before its result can render into another client or tab');
-ok(monitorFnBody.includes("if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;"),
+ok(monitorFnBody.includes("(_detailClientData && _detailClientData.activePlanId) !== activePlanId) return;"),
   'the fix re-checks captured client and active tab after the read');
 ok((monitorFnBody.match(/_detailClientId/g) || []).length >= 3,
   'client identity is captured and checked after every Monitor await before rendering');
