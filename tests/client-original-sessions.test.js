@@ -39,6 +39,39 @@ function scope(data,{hash='#historial-vdsen='+payload,uid='owner', planId=active
   return {ctx,calls,kids,host,readStarted,release:()=>release?.()};
 }
 function content(x){return (x.textContent||'')+' '+x.children.map(content).join(' ');}
+test('saved mesocycles are read on a fresh device independently of active plan', async () => {
+  const stored = fixture().meso;
+  const before = JSON.stringify(stored);
+  for (const planId of [old, active]) {
+    const x = scope(fixture(), {planId, hash:''});
+    x.ctx.document.createElement = function(tag) {
+      return {tag, isConnected:true, children:[], attrs:{}, events:{},
+        get childElementCount(){return this.children.length;},
+        append(...nodes){this.children.push(...nodes);},
+        replaceChildren(...nodes){this.children = nodes;},
+        addEventListener(event, fn){this.events[event] = fn;},
+        getAttribute(key){return this.attrs[key];},
+        setAttribute(key, value){this.attrs[key] = value;},
+        removeAttribute(key){delete this.attrs[key];}};
+    };
+    x.ctx.FB.collection = (_, ...path) => path;
+    x.ctx.FB.getDocs = async path => {
+      assert.deepEqual(path, ['logs','owner','mesos']);
+      return {docs:[{id:old, data:()=>stored}], metadata:{fromCache:false}};
+    };
+    x.ctx._renderSavedTrainingHistory(x.host);
+    const panel = x.kids[0];
+    panel.open = true;
+    await panel.events.toggle();
+    const group = panel.children[1].children[0];
+    group.open = true;
+    group.events.toggle();
+    assert.equal(group.children[1].children.length, 30);
+    assert.match(content(group), /30 KG · 8 reps · RIR 0/);
+    assert.equal(x.ctx.LOGS.done_1_0, false);
+  }
+  assert.equal(JSON.stringify(stored), before);
+});
 test('only original 19/11 history is rendered; no mutating API or active completion effects',async()=>{
   const x=scope(fixture());
   await x.ctx._renderOriginalSessionsPanel(x.host);
