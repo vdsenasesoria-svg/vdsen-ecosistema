@@ -324,11 +324,16 @@ async function fsList(projectId, token, col, fetcher = globalThis.fetch) {
   return docs;
 }
 
-async function fsGet(projectId, token, docPath, fetcher = globalThis.fetch) {
+async function fsGetRaw(projectId, token, docPath, fetcher = globalThis.fetch) {
   const res = await fetcher(fsBase(projectId) + '/' + docPath, { headers: { authorization: 'Bearer ' + token } });
   if (res.status === 404) return null;
   assert.equal(res.status, 200, 'FS_GET_FAILED_' + docPath + '_' + res.status);
-  return fromFsDoc(await res.json());
+  return res.json();
+}
+
+async function fsGet(projectId, token, docPath, fetcher = globalThis.fetch) {
+  const raw = await fsGetRaw(projectId, token, docPath, fetcher);
+  return raw ? fromFsDoc(raw) : null;
 }
 
 async function fsCommit(projectId, token, writes, fetcher = globalThis.fetch) {
@@ -1300,6 +1305,9 @@ async function executeRenewCohortOperation(opts) {
 
   const now = () => (typeof io.now === 'function' ? io.now() : new Date().toISOString());
   const readDoc = io.readDoc || ((docPath) => fsGet(projectId, googleToken, docPath));
+  const readVersion = io.readVersion || ((docPath) => fsGetRaw(projectId, googleToken, docPath));
+  const commitVersion = io.commitVersion || ((writes) => fsCommit(projectId, googleToken, writes));
+  const injectedDocs = !!io.readDoc && !io.readVersion && !io.commitVersion;
   const writeDoc = io.writeDoc || (async (docPath, data) => {
     const url = 'https://firestore.googleapis.com/v1/projects/' + projectId + '/databases/(default)/documents/' + docPath;
     const r = await fetch(url, {
@@ -1402,7 +1410,7 @@ async function executeRenewCohortOperation(opts) {
         expiresAt,
       };
     }
-    const coachDoc = (await readDoc(coachPath)) || {};
+    const coachDoc = fenceBase ? fromFsDoc(fenceBase[2]) : ((await readDoc(coachPath)) || {});
     const existingCohorts = (coachDoc.autoApplyCanary && coachDoc.autoApplyCanary.cohorts) || {};
     const nextCohorts = Object.assign({}, existingCohorts, {
       [cohort.cohortId]: {
@@ -1415,7 +1423,7 @@ async function executeRenewCohortOperation(opts) {
         prescriptionExerciseIds: cohort.allPids,
       },
     });
-    await writeDoc(relPath, {
+    const rel = {
       schema: 'vdsen-autonomous-release-v1',
       enabled: true,
       cohortId: cohort.cohortId,
@@ -1423,8 +1431,8 @@ async function executeRenewCohortOperation(opts) {
       startsAt,
       expiresAt,
       clientIds: cohort.clientIds,
-    });
-    await writeDoc(numPath, {
+    };
+    const num = {
       schema: C.COHORT_SCHEMA,
       mode: 'NUMERIC_APPLY',
       enabled: true,
@@ -1434,13 +1442,28 @@ async function executeRenewCohortOperation(opts) {
       startsAt,
       expiresAt,
       windows: windowsMap,
-    });
-    await writeDoc(coachPath, Object.assign({}, coachDoc, {
+    };
+    const coach = Object.assign({}, coachDoc, {
       autoApplyCanary: Object.assign({}, coachDoc.autoApplyCanary || {}, {
         enabled: true,
         cohorts: nextCohorts,
       }),
-    }));
+    });
+    if (injectedDocs) {
+      for (const [path, data] of [[relPath, rel], [numPath, num], [coachPath, coach]]) await writeDoc(path, data);
+    } else {
+      const lock = await readOwnedLockVersion('REARM_COMMIT');
+      const writes = [rel, num, coach].map((data, i) => {
+        const base = fenceBase[i];
+        return {
+          update: { name: base.name, fields: i === 2 ? { autoApplyCanary: toFsFields(data).autoApplyCanary } : toFsFields(data) },
+          ...(i === 2 ? { updateMask: { fieldPaths: ['autoApplyCanary'] } } : {}),
+          currentDocument: { updateTime: base.updateTime },
+        };
+      });
+      const result = await commitVersion([...writes, verifyVersion(lock)]);
+      rearmedVersions = result.writeResults.slice(0, 3).map(w => w.updateTime);
+    }
     return { rearmed: true, cohortId: cohort.cohortId };
   });
   const dispatchNextQueued = io.dispatchNextQueued || null;
@@ -1448,6 +1471,13 @@ async function executeRenewCohortOperation(opts) {
   const opPath = 'releaseControl/numericPilot/operations/' + operationId;
   const lockPath = 'releaseControl/numericPilotGlobalLock';
   const stopPath = 'releaseControl/autoCohortRenewalControl';
+  let fenceBase = null;
+  let rearmedVersions = null;
+  const verifyVersion = (raw) => ({
+    update: { name: raw.name, fields: { status: raw.fields.status } },
+    updateMask: { fieldPaths: ['status'] },
+    currentDocument: { updateTime: raw.updateTime },
+  });
 
   const checkStopFence = async () => {
     const sc = await readDoc(stopPath);
@@ -1464,7 +1494,17 @@ async function executeRenewCohortOperation(opts) {
   // and single-use pilotAuthorization atomically after independently validating inputs.
   if (!opDoc && inputClientId && inputPlanId && inputCohortId && inputCoachId && inputRuntimeSha && inputExpiresAt) {
     await checkStopFence();
-    const curLock = (await readDoc(lockPath)) || { version: 0, activeOperationId: null, pendingQueue: [] };
+    const bootLock = injectedDocs ? null : await readVersion(lockPath);
+    const curLock = (injectedDocs ? await readDoc(lockPath) : bootLock && fromFsDoc(bootLock)) ||
+      { version: 0, activeOperationId: null, pendingQueue: [] };
+    assert.ok(!['PROMOTING', 'ROLLBACK_REQUIRED'].includes(curLock.status), 'UNRESOLVED_ROLLBACK');
+    const bootWrites = [];
+    const stageBootWrite = async (path, data, raw) => {
+      if (injectedDocs) return writeDoc(path, data);
+      assert.ok(!raw || raw.updateTime, 'BOOTSTRAP_VERSION_REQUIRED');
+      bootWrites.push({ update: { name: docName(projectId, path), fields: toFsFields(data) },
+        currentDocument: raw ? { updateTime: raw.updateTime } : { exists: false } });
+    };
     const activeOpId = curLock.activeOperationId || null;
     const activeLeaseMs = Date.parse(curLock.leaseExpiresAt || '');
     const nowIsoBoot = now();
@@ -1477,11 +1517,12 @@ async function executeRenewCohortOperation(opts) {
       : 'GENERAL_AUTHORIZED';
     if (resolvedMode === 'PILOT_RESTRICTED') {
       const pAuthPath = 'releaseControl/numericPilot/pilotAuthorizations/' + operationId;
-      const existingAuth = await readDoc(pAuthPath);
+      const rawAuth = injectedDocs ? null : await readVersion(pAuthPath);
+      const existingAuth = injectedDocs ? await readDoc(pAuthPath) : rawAuth && fromFsDoc(rawAuth);
       if (existingAuth && existingAuth.consumed === true) {
         throw new Error('PILOT_AUTHORIZATION_ALREADY_CONSUMED:' + operationId);
       }
-      await writeDoc(pAuthPath, {
+      await stageBootWrite(pAuthPath, {
         schema: 'vdsen-auto-renewal-pilot-scope-v1',
         operationId,
         uid: inputClientId,
@@ -1490,7 +1531,7 @@ async function executeRenewCohortOperation(opts) {
         consumed: true,
         consumedAt: nowIsoBoot,
         bootstrappedByWorkflow: true,
-      });
+      }, rawAuth);
     }
     const nextLockVersion = (Number(curLock.version) || 0) + 1;
     const leaseExpiresAt = new Date(nowMsBoot + 15 * 60 * 1000).toISOString();
@@ -1514,8 +1555,8 @@ async function executeRenewCohortOperation(opts) {
       leaseExpiresAt,
       history: [{ state: 'REQUESTED', at: nowIsoBoot, lockVersion: nextLockVersion, bootstrappedByWorkflow: true }],
     };
-    await writeDoc(opPath, opDoc);
-    await writeDoc(lockPath, {
+    await stageBootWrite(opPath, opDoc, null);
+    await stageBootWrite(lockPath, {
       schema: 'vdsen-numeric-global-lock-v1',
       activeOperationId: operationId,
       cohortId: inputCohortId,
@@ -1527,7 +1568,8 @@ async function executeRenewCohortOperation(opts) {
       leaseExpiresAt,
       pendingQueue: Array.isArray(curLock.pendingQueue) ? curLock.pendingQueue.filter(q => q && q.operationId !== operationId) : [],
       version: nextLockVersion,
-    });
+    }, bootLock);
+    if (!injectedDocs) await commitVersion(bootWrites);
   }
   assert.ok(opDoc, 'PERSISTED_OPERATION_NOT_FOUND:' + operationId);
   assert.ok(['REQUESTED', 'QUEUED', 'VALIDATING'].includes(opDoc.status), 'OPERATION_STATE_NOT_ELIGIBLE:' + opDoc.status);
@@ -1558,6 +1600,7 @@ async function executeRenewCohortOperation(opts) {
     }
   };
   const initialLock = await readDoc(lockPath);
+  assert.ok(!initialLock || !['PROMOTING', 'ROLLBACK_REQUIRED'].includes(initialLock.status), 'UNRESOLVED_ROLLBACK');
   if (initialLock) {
     expectedLockVersion = Number(opDoc.lockVersion !== undefined ? opDoc.lockVersion : initialLock.version);
     await verifyFencingLock('VALIDATING');
@@ -1573,29 +1616,53 @@ async function executeRenewCohortOperation(opts) {
       updatedAt: at,
       history,
     }, extra);
-    await writeDoc(opPath, opDoc);
+    if (!injectedDocs && (state === 'PROMOTING' || state === 'ROLLBACK_REQUIRED')) {
+      const lock = await readOwnedLockVersion(state, state === 'ROLLBACK_REQUIRED');
+      await commitVersion([
+        { update: { name: docName(projectId, opPath), fields: toFsFields(opDoc) } },
+        { update: { name: lock.name, fields: { status: { stringValue: state } } },
+          updateMask: { fieldPaths: ['status'] }, currentDocument: { updateTime: lock.updateTime } },
+      ]);
+    } else {
+      await writeDoc(opPath, opDoc);
+    }
   };
 
   const releaseGlobalLock = async (finalState) => {
-    const curLock = (await readDoc(lockPath)) || {};
+    const raw = injectedDocs ? null : await readOwnedLockVersion('FINALIZE_LOCK', true);
+    const curLock = raw ? fromFsDoc(raw) : ((await readDoc(lockPath)) || {});
+    if (curLock.activeOperationId !== operationId ||
+        (expectedLockVersion !== null && Number(curLock.version) !== expectedLockVersion)) return null;
     const queue = Array.isArray(curLock.pendingQueue) ? curLock.pendingQueue.slice() : [];
-    const nextQueued = queue.length > 0 ? queue[0] : null;
-    if (curLock.activeOperationId === operationId) {
-      await writeDoc(lockPath, Object.assign({}, curLock, {
-        activeOperationId: null,
-        status: 'IDLE',
+    const blocked = finalState === 'ROLLBACK_REQUIRED';
+    const nextQueued = blocked ? null : (queue[0] || null);
+    const next = Object.assign({}, curLock, {
+        activeOperationId: blocked ? operationId : null,
+        status: blocked ? finalState : 'IDLE',
         lastCompletedOperationId: operationId,
         lastFinalState: finalState,
         leaseExpiresAt: null,
         updatedAt: now(),
         version: (Number(curLock.version) || 0) + 1,
-      }));
-    }
+    });
+    if (raw) await commitVersion([{ update: { name: raw.name, fields: toFsFields(next) },
+      currentDocument: { updateTime: raw.updateTime } }]);
+    else await writeDoc(lockPath, next);
     if (nextQueued && typeof dispatchNextQueued === 'function') {
       await dispatchNextQueued(nextQueued).catch(() => {});
     }
     return nextQueued;
   };
+
+  async function readOwnedLockVersion(stage, allowExpired = false) {
+    const raw = await readVersion(lockPath);
+    const lock = raw && fromFsDoc(raw);
+    assert.ok(raw && raw.name && raw.updateTime && lock.activeOperationId === operationId &&
+      expectedLockVersion !== null && Number(lock.version) === expectedLockVersion,
+    'STALE_LOCK_FENCING_ABORT:' + stage);
+    if (!allowExpired) assert.ok(Date.parse(lock.leaseExpiresAt) > Date.parse(now()), 'LOCK_LEASE_EXPIRED:' + stage);
+    return raw;
+  }
 
   let phase = 'VALIDATING';
   let previousDeploymentId = null;
@@ -1639,6 +1706,14 @@ async function executeRenewCohortOperation(opts) {
       num: await readDoc('releaseControl/numericPilot_cohort_' + cohortId),
       coach: await readDoc('coaches/' + coachId),
     };
+    if (!injectedDocs) {
+      fenceBase = await Promise.all([
+        readVersion('releaseControl/autonomousProgression_cohort_' + cohortId),
+        readVersion('releaseControl/numericPilot_cohort_' + cohortId),
+        readVersion('coaches/' + coachId),
+      ]);
+      assert.ok(fenceBase.every(raw => raw && raw.name && raw.updateTime), 'FENCE_VERSION_REQUIRED');
+    }
 
     // 8–12. PREPARING_RUNTIME & DEPLOYING
     phase = 'PREPARING_RUNTIME';
@@ -1808,7 +1883,20 @@ async function executeRenewCohortOperation(opts) {
           rollbackSkippedNewerPromotion = true;
         }
       }
-      if (fencesMutated && prevFenceSnapshot) {
+      if (fencesMutated && !rollbackSkippedNewerPromotion && !injectedDocs) {
+        assert.ok(rearmedVersions && rearmedVersions.length === 3 && rearmedVersions.every(Boolean),
+          'FENCE_COMMIT_OUTCOME_UNVERIFIED');
+        const lock = await readOwnedLockVersion('RESTORE_FENCES');
+        const writes = fenceBase.map((base, i) => ({
+          update: { name: base.name, fields: i === 2
+            ? (base.fields.autoApplyCanary ? { autoApplyCanary: base.fields.autoApplyCanary } : {})
+            : base.fields },
+          ...(i === 2 ? { updateMask: { fieldPaths: ['autoApplyCanary'] } } : {}),
+          currentDocument: { updateTime: rearmedVersions[i] },
+        }));
+        await commitVersion([...writes, verifyVersion(lock)]);
+        fencesRestored = true;
+      } else if (fencesMutated && !rollbackSkippedNewerPromotion && prevFenceSnapshot) {
         if (prevFenceSnapshot.rel) await writeDoc('releaseControl/autonomousProgression_cohort_' + cohortId, prevFenceSnapshot.rel);
         if (prevFenceSnapshot.num) await writeDoc('releaseControl/numericPilot_cohort_' + cohortId, prevFenceSnapshot.num);
         if (prevFenceSnapshot.coach) await writeDoc('coaches/' + coachId, prevFenceSnapshot.coach);

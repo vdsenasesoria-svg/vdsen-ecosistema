@@ -352,10 +352,12 @@ test('T882.6: executeRenewCohortOperation — granular rollback on build fail, p
       operationId: 'T882-OP-FAIL', cohortId: 'cohort-01', clientId: 'client-c1', coachUid: 'coach-1',
       planId: 'plan-c1-new', runtimeSha: SHA, startsAt: '2026-11-26T05:15:00Z', expiresAt: EXP_ISO, status: 'QUEUED', history: [],
     });
-    store.set('releaseControl/numericPilotGlobalLock', { activeOperationId: 'T882-OP-FAIL', version: 1, pendingQueue: [] });
+    store.set('releaseControl/numericPilotGlobalLock', { activeOperationId: 'T882-OP-FAIL', version: 1,
+      leaseExpiresAt: '2026-11-26T13:00:00Z', pendingQueue: [{operationId:'T882-OP-NEXT'}] });
     let liveAlias = 'dpl_prev_live';
     let revertedTo = null;
     const baseIo = {
+      now: () => NOW_ISO,
       readDoc: async (p) => store.has(p) ? JSON.parse(JSON.stringify(store.get(p))) : null,
       writeDoc: async (p, d) => { store.set(p, JSON.parse(JSON.stringify(d))); },
       loadLiveRoster: async () => makeManifestWithFiveShards('client-c1', 'plan-c1-new', 'cohort-01'),
@@ -436,6 +438,33 @@ test('T882.6: executeRenewCohortOperation — granular rollback on build fail, p
   assert.equal(rNewerProm.rep.rollbackSkippedNewerPromotion, true);
   assert.equal(rNewerProm.getRevertedTo(), null);
   assert.equal(rNewerProm.getAlias(), 'dpl_newer_legit_prod');
+  assert.equal(rNewerProm.store.get('releaseControl/numericPilotGlobalLock').status, 'ROLLBACK_REQUIRED');
+  assert.deepEqual(rNewerProm.store.get('releaseControl/numericPilotGlobalLock').pendingQueue, [{operationId:'T882-OP-NEXT'}]);
+
+  const versioned = await runScenario((store) => {
+    const lockPath = 'releaseControl/numericPilotGlobalLock';
+    const name = p => 'projects/vdsen-ecosistema/databases/(default)/documents/' + p;
+    const lockFields = cohortOps.toFsFields({...store.get(lockPath), status: 'REQUESTED'});
+    let lockTime = 'v1';
+    return {
+      readVersion: async p => p === lockPath
+        ? {name:name(p), updateTime:lockTime, fields:{...lockFields}}
+        : {name:name(p), updateTime:'fence-v1', fields:cohortOps.toFsFields(store.get(p) || {})},
+      commitVersion: async writes => {
+        const lockWrite = writes.find(w => w.update.name === name(lockPath));
+        assert.equal(lockWrite.currentDocument.updateTime, lockTime);
+        if (writes.length === 4) {
+          assert.ok(writes.slice(0,3).every(w => w.currentDocument.updateTime === 'fence-v1'));
+          throw new Error('STALE_FENCE_VERSION');
+        }
+        Object.assign(lockFields, lockWrite.update.fields);
+        lockTime += '-next';
+      },
+      dispatchNextQueued: async () => assert.fail('Queue must stay blocked'),
+    };
+  });
+  assert.equal(versioned.rep.status, 'ROLLBACK_REQUIRED');
+  assert.equal(versioned.rep.fencesRestored, false);
 
   // Ambiguous promotion outcomes are resolved from the alias, not the return value.
   for (const message of ['VERIFY_PUBLIC_BYTES_FAILED', 'PROMOTION_TIMEOUT']) {
