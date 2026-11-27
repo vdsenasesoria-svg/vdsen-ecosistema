@@ -327,12 +327,17 @@ test('T882.5: executeRenewCohortOperation — happy path preserves 5 shard slots
         return { deploymentId: 'dpl_new_cand', url: 'cand.vercel.app', readyState: 'READY' };
       },
       verifyCandidate: async () => ({ verified: true }),
-      promoteDeployment: async ({ deploymentId }) => { liveAlias = deploymentId; return { promoted: true }; },
+      promoteDeployment: async ({ deploymentId }) => { liveAlias = deploymentId; return { promoted: true, deploymentId, verifiedPublicPaths: 46 }; },
       dispatchNextQueued: async (q) => { nextDispatched = q; },
     },
   });
   assert.equal(rep.status, 'RENEWED_VERIFIED');
   assert.equal(rep.deploymentId, 'dpl_new_cand');
+  assert.equal(rep.effectiveDeploymentProvenance.baselineOffDeployment, 'dpl_off_base');
+  assert.equal(rep.effectiveDeploymentProvenance.effectiveDeploymentId, 'dpl_new_cand');
+  assert.equal(rep.effectiveDeploymentProvenance.productionAliasDeploymentId, 'dpl_new_cand');
+  assert.equal(rep.effectiveDeploymentProvenance.promotionEvidence.verifiedPublicPaths, 46);
+  assert.deepEqual(store.get('releaseControl/numericPilot/operations/T882-OP-HAPPY').effectiveDeploymentProvenance, rep.effectiveDeploymentProvenance);
   assert.equal(rep.shardNames.length, 5);
   assert.deepEqual(rep.unaffectedCohortIds, ['cohort-02', 'cohort-03']);
   assert.equal(store.get('releaseControl/numericPilot_cohort_cohort-02').windows['client-c2'].planId, 'plan-c2-old', 'cohort-02 untouched');
@@ -359,7 +364,7 @@ test('T882.6: executeRenewCohortOperation — granular rollback on build fail, p
       baselineState: { production_deployment: 'dpl_off_base' },
       buildDeployment: async () => ({ deploymentId: 'dpl_cand_fail', url: 'cand.vercel.app', readyState: 'READY' }),
       verifyCandidate: async () => ({ verified: true }),
-      promoteDeployment: async ({ deploymentId }) => { liveAlias = deploymentId; return { promoted: true }; },
+      promoteDeployment: async ({ deploymentId }) => { liveAlias = deploymentId; return { promoted: true, deploymentId, verifiedPublicPaths: 46 }; },
       revertDeployment: async (id) => { revertedTo = id; liveAlias = id; return { restored: true }; },
     };
     const rep = await cohortOps.executeRenewCohortOperation({
@@ -638,4 +643,33 @@ test('T883-RO.2 executeRenewCohortOperation bootstraps ledger, lock, and single-
   assert.equal(store.get('releaseControl/numericPilot/pilotAuthorizations/T883-RO-PILOT-20261126').consumed, true);
   assert.equal(store.get('releaseControl/numericPilot/operations/T883-RO-PILOT-20261126').bootstrappedByWorkflow, true);
   assert.equal(store.get('releaseControl/numericPilotGlobalLock').activeOperationId, null);
+});
+
+test('T883-A: renewal fails closed and rolls back when promotion lacks effective-deployment surface evidence', async () => {
+  const store = new Map(Object.entries(makeMultiCohortDocs()));
+  store.set('releaseControl/numericPilot/operations/T883-PROVENANCE', {
+    operationId: 'T883-PROVENANCE', cohortId: 'cohort-01', clientId: 'client-c1', coachUid: 'coach-1',
+    planId: 'plan-c1-new', runtimeSha: SHA, startsAt: '2026-11-26T05:15:00Z', expiresAt: EXP_ISO, status: 'QUEUED', history: [],
+  });
+  store.set('releaseControl/numericPilotGlobalLock', { activeOperationId: 'T883-PROVENANCE', version: 1, pendingQueue: [] });
+  let liveAlias = 'dpl_previous_effective';
+  const rep = await cohortOps.executeRenewCohortOperation({
+    operationId: 'T883-PROVENANCE',
+    io: {
+      readDoc: async (p) => store.has(p) ? JSON.parse(JSON.stringify(store.get(p))) : null,
+      writeDoc: async (p, d) => { store.set(p, JSON.parse(JSON.stringify(d))); },
+      loadLiveRoster: async () => makeManifestWithFiveShards('client-c1', 'plan-c1-new', 'cohort-01'),
+      currentApp: async () => liveAlias,
+      checkNumericGuardOff: async () => makeDisarmedGuardEvidence(),
+      baselineState: { production_deployment: 'dpl_off_baseline' },
+      buildDeployment: async () => ({ deploymentId: 'dpl_candidate_effective', url: 'cand.vercel.app', readyState: 'READY' }),
+      verifyCandidate: async () => ({ verified: true }),
+      promoteDeployment: async ({ deploymentId }) => { liveAlias = deploymentId; return { promoted: true, deploymentId }; },
+      revertDeployment: async (deploymentId) => { liveAlias = deploymentId; return { restored: true, deploymentId }; },
+    },
+  });
+  assert.equal(rep.status, 'ROLLED_BACK_VERIFIED');
+  assert.equal(rep.errorCode, 'PROMOTION_SURFACE_EVIDENCE_MISSING');
+  assert.equal(liveAlias, 'dpl_previous_effective');
+  assert.equal(store.get('releaseControl/numericPilot/operations/T883-PROVENANCE').effectiveDeploymentProvenance, undefined);
 });

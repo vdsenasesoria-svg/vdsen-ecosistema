@@ -1603,6 +1603,7 @@ async function executeRenewCohortOperation(opts) {
   let promoted = false;
   let fencesMutated = false;
   let prevFenceSnapshot = null;
+  let effectiveDeploymentProvenance = null;
 
   try {
     // 1–7. VALIDATING
@@ -1678,14 +1679,37 @@ async function executeRenewCohortOperation(opts) {
     // 14–15. PROMOTING
     phase = 'PROMOTING';
     await transition('PROMOTING');
-    await promoteDeployment({ deploymentId: candidateDeploymentId, runtimeSha });
+    const promotionResult = await promoteDeployment({ deploymentId: candidateDeploymentId, runtimeSha });
+    assert.ok(promotionResult && promotionResult.promoted === true, 'PROMOTION_EVIDENCE_MISSING');
     promoted = true;
     const liveAliasPostPromote = await getCurrentAlias();
     assert.equal(liveAliasPostPromote, candidateDeploymentId, 'POST_PROMOTE_ALIAS_MISMATCH');
+    // T883-A: production_deployment remains the immutable OFF baseline supplied to
+    // the build. Record the numerically-effective deployment separately and only
+    // after both the promotion evidence and the live alias bind to the candidate.
+    assert.ok(Number.isInteger(promotionResult.verifiedPublicPaths) && promotionResult.verifiedPublicPaths > 0,
+      'PROMOTION_SURFACE_EVIDENCE_MISSING');
+    if (promotionResult.deploymentId !== undefined && promotionResult.deploymentId !== candidateDeploymentId) {
+      throw new Error('PROMOTION_EVIDENCE_DEPLOYMENT_MISMATCH');
+    }
+    effectiveDeploymentProvenance = {
+      schema: 'vdsen-effective-numeric-deployment-provenance-v1',
+      operationId,
+      runtimeSha,
+      baselineOffDeployment: baselineState.production_deployment,
+      previousDeploymentId,
+      effectiveDeploymentId: candidateDeploymentId,
+      productionAliasDeploymentId: liveAliasPostPromote,
+      promotionEvidence: {
+        promoted: true,
+        verifiedPublicPaths: promotionResult.verifiedPublicPaths,
+      },
+      attestedAt: now(),
+    };
 
     // 16–17. REARMING (ONLY affected cohort; unaffected cohorts untouched)
     phase = 'REARMING';
-    await transition('REARMING', { deploymentId: candidateDeploymentId });
+    await transition('REARMING', { deploymentId: candidateDeploymentId, effectiveDeploymentProvenance });
     await checkStopFence();
     await verifyFencingLock('PRE_REARM');
     fencesMutated = true;
@@ -1706,6 +1730,7 @@ async function executeRenewCohortOperation(opts) {
       pidsHash: targetClient.pidsHash,
       pidCount: targetClient.pidCount,
       unaffectedCohortIds,
+      effectiveDeploymentProvenance,
       verifiedAt: now(),
     });
     const nextQueued = await releaseGlobalLock('RENEWED_VERIFIED');
@@ -1721,6 +1746,7 @@ async function executeRenewCohortOperation(opts) {
       runtimeSha,
       previousDeploymentId,
       deploymentId: candidateDeploymentId,
+      effectiveDeploymentProvenance,
       shardNames: allShardNames,
       unaffectedCohortIds,
       nextQueuedOperationId: nextQueued ? nextQueued.operationId : null,
