@@ -2149,6 +2149,7 @@ module.exports = {
   validateRecoveryScope,
   verifyFleetDeploymentLive,
   recoverySealBaseline,
+  sealRecoveryShards,
   preflightCohort,
   armCohort,
   auditFleet,
