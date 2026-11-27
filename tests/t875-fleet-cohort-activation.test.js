@@ -67,7 +67,7 @@ test('staged recovery attestation binds the seal and refuses unverified or alrea
   const expectedLive = 'dpl_live';
   const digest = 'a'.repeat(64);
   const deployment = {
-    id:'dpl_stage', projectId:'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN', teamId:'team_VZc5H7Q1DBIJ3g0mwrSBz1o8',
+    id:'dpl_stage', url:'staged-fixture.vercel.app', projectId:'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN', teamId:'team_VZc5H7Q1DBIJ3g0mwrSBz1o8',
     readyState:'READY', target:'production', meta:{githubCommitSha:SHA, vdsenRecoverySeal:digest},
     env:['AUTONOMOUS_PROGRESSION_ENABLED','AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED',
       'VDSEN_NUMERIC_PILOT_ENABLED','VDSEN_NUMERIC_PILOT_RUNTIME_SHA','VDSEN_NUMERIC_COHORT_1'],
@@ -85,17 +85,40 @@ test('staged recovery attestation binds the seal and refuses unverified or alrea
   alias = expectedLive;
   deployment.env.pop();
   await assert.rejects(verify(), /MISSING_COHORT_SHARD/);
-  const shard = {name:'VDSEN_NUMERIC_COHORT_1',windows:[{runtimeSha:SHA,planId:'test_plan'}]};
-  const verifyValues = () => cohortOps.verifyFleetDeploymentLive(
-    'test-token', deployment.id, SHA, shard.name, fetcher, {expectedLive,digest}, [shard]);
-  deployment.env.push(shard.name);
-  await assert.rejects(verifyValues(), /RECOVERY_SHARD_VALUE_UNAVAILABLE/);
-  deployment.env.pop();
-  deployment.env.push({key:shard.name,value:'[]'});
-  await assert.rejects(verifyValues(), /RECOVERY_SHARD_VALUE_MISMATCH/);
-  deployment.env.at(-1).value = JSON.stringify(shard.windows);
+  const shards = [1,1,2,2,3].map((cohort, i) => ({
+    name:'VDSEN_NUMERIC_COHORT_' + (i+1),
+    windows:[{runtimeSha:SHA,planId:'test_plan_'+i,uid:'client_'+i,cohortId:'cohort-0'+cohort}],
+  }));
+  deployment.env.push(...shards.map(shard => shard.name));
+  const runtimeEnv = Object.fromEntries(shards.map(shard => [shard.name,JSON.stringify(shard.windows)]));
+  runtimeEnv.VERCEL_DEPLOYMENT_ID = deployment.id;
+  runtimeEnv.VDSEN_NUMERIC_PILOT_RUNTIME_SHA = SHA;
+  const {makeHandler} = require('../api/autonomous-progression-trigger.js');
+  const handler = makeHandler({runtimeEnv, verifyIdToken:async token => {
+    assert.equal(token,'fixture-firebase-token');
+    return {uid:'operator-fixture'};
+  }});
+  const probeFetcher = async (url, opts) => {
+    const parsed = new URL(url);
+    if (parsed.hostname !== deployment.url) return fetcher(url);
+    assert.equal(opts.redirect,'error');
+    let status, body;
+    await handler({method:'GET',query:Object.fromEntries(parsed.searchParams),headers:opts.headers},
+      {status(code){status=code;return this;},json(data){body=data;return this;}});
+    return {status,json:async () => body};
+  };
+  const verifyValues = (token = 'fixture-firebase-token') => cohortOps.verifyFleetDeploymentLive(
+    'test-token', deployment.id, SHA, shards.map(shard => shard.name), probeFetcher, {expectedLive,digest}, shards, token);
+  await assert.rejects(verifyValues(''), /RECOVERY_PROBE_AUTH_UNAVAILABLE/);
+  await assert.rejects(verifyValues('wrong-token'), /RECOVERY_RUNTIME_PROBE_MISMATCH/);
+  runtimeEnv[shards[0].name] = '[]';
+  await assert.rejects(verifyValues(), /RECOVERY_RUNTIME_PROBE_MISMATCH/);
+  runtimeEnv[shards[0].name] = JSON.stringify(shards[0].windows);
+  runtimeEnv.VERCEL_DEPLOYMENT_ID = 'dpl_wrong';
+  await assert.rejects(verifyValues(), /RECOVERY_RUNTIME_PROBE_MISMATCH/);
+  runtimeEnv.VERCEL_DEPLOYMENT_ID = deployment.id;
   assert.equal((await verifyValues()).attested, true);
-  deployment.env.push('VDSEN_NUMERIC_COHORT_2');
+  deployment.env.push('VDSEN_NUMERIC_COHORT_6');
   await assert.rejects(verifyValues(), /RECOVERY_SHARD_SET_MISMATCH/);
 });
 

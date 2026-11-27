@@ -390,25 +390,33 @@ async function vget(vercelToken, p, fetcher = globalThis.fetch) {
   return r.json();
 }
 
-function assertRecoveryShardValues(deployment, expectedShards, runtimeSha) {
-  const values = new Map();
-  const shardNames = new Set(expectedShards.map(shard => shard.name));
-  for (const item of Array.isArray(deployment.env) ? deployment.env : []) {
-    const key = typeof item === 'string' ? item : item?.key;
-    if (!/^VDSEN_NUMERIC_COHORT_\d+$/.test(key || '')) continue;
-    assert.ok(shardNames.has(key) && !values.has(key), 'RECOVERY_SHARD_SET_MISMATCH');
-    assert.ok(typeof item?.value === 'string', 'RECOVERY_SHARD_VALUE_UNAVAILABLE');
-    values.set(key, item.value);
-  }
-  assert.equal(values.size, expectedShards.length, 'RECOVERY_SHARD_SET_MISMATCH');
-  for (const shard of expectedShards) {
-    // Use boolean assertions so a failed comparison cannot print private values.
-    assert.ok(values.get(shard.name) === JSON.stringify(shard.windows), 'RECOVERY_SHARD_VALUE_MISMATCH');
-    assert.ok(shard.windows.every(window => window.runtimeSha === runtimeSha), 'RECOVERY_SHARD_RUNTIME_MISMATCH');
+async function attestRecoveryShards(deployment, expectedShards, runtimeSha, idToken, fetcher) {
+  assert.ok(typeof idToken === 'string' && /^\S+$/.test(idToken), 'RECOVERY_PROBE_AUTH_UNAVAILABLE');
+  assert.ok(/^[a-z0-9-]+\.vercel\.app$/i.test(deployment.url || '') &&
+    deployment.url.toLowerCase() !== EXPECTED_ALIAS, 'RECOVERY_PROBE_DEPLOYMENT_HOST_INVALID');
+  const { computeServedCohortDigest } = require('../../api/_planActivationSync.js');
+  const windows = expectedShards.flatMap(shard => shard.windows);
+  const ids = [...new Set(windows.map(window => window.cohortId))];
+  for (const cohortId of ids) {
+    const expected = windows.filter(window => window.cohortId === cohortId);
+    const url = new URL('https://' + deployment.url + '/api/autonomous-progression-trigger');
+    url.search = new URLSearchParams({check:'cohort-shard', cohortId});
+    let probe;
+    try {
+      const response = await fetcher(url.toString(), {
+        headers:{authorization:'Bearer ' + idToken},
+        redirect:'error', cache:'no-store', signal:AbortSignal.timeout(10000),
+      });
+      if (response.status === 200) probe = await response.json();
+    } catch { /* Fail closed with a redacted diagnostic. */ }
+    assert.ok(probe && probe.schema === 'vdsen-served-cohort-probe-v1' &&
+      probe.deploymentId === (deployment.id || deployment.uid) && probe.cohortId === cohortId &&
+      probe.runtimeSha === runtimeSha && probe.windowCount === expected.length &&
+      probe.windowsDigest === computeServedCohortDigest(expected), 'RECOVERY_RUNTIME_PROBE_MISMATCH');
   }
 }
 
-async function verifyFleetDeploymentLive(vercelToken, deploymentId, expectedSha, expectedCohortEnvName, fetcher = globalThis.fetch, stagedSeal = null, expectedShards = null) {
+async function verifyFleetDeploymentLive(vercelToken, deploymentId, expectedSha, expectedCohortEnvName, fetcher = globalThis.fetch, stagedSeal = null, expectedShards = null, probeIdToken = null) {
   const d = await vget(vercelToken, '/v13/deployments/' + encodeURIComponent(deploymentId), fetcher);
   assert.equal(d.id || d.uid, deploymentId, 'DEPLOYMENT_ID_MISMATCH');
   assert.equal(d.projectId, DEFAULT_PROJECT_ID, 'PROJECT_ID_MISMATCH');
@@ -427,9 +435,14 @@ async function verifyFleetDeploymentLive(vercelToken, deploymentId, expectedSha,
       assert.ok(envNames.includes(shardName), 'MISSING_COHORT_SHARD_' + shardName);
     }
   }
+  if (expectedShards) {
+    const actualShardNames = envNames.filter(name => /^VDSEN_NUMERIC_COHORT_\d+$/.test(name));
+    assert.ok(_sameSortedArray(actualShardNames, expectedShards.map(shard => shard.name)), 'RECOVERY_SHARD_SET_MISMATCH');
+    if (stagedSeal) assert.ok(d.meta.vdsenRecoverySeal === stagedSeal.digest, 'RECOVERY_SEAL_MISMATCH');
+    await attestRecoveryShards(d, expectedShards, expectedSha, probeIdToken, fetcher);
+  }
   const aliasData = await vget(vercelToken, '/v2/aliases/' + encodeURIComponent(EXPECTED_ALIAS), fetcher);
   const liveId = aliasData.deploymentId || (aliasData.deployment && aliasData.deployment.id);
-  if (expectedShards) assertRecoveryShardValues(d, expectedShards, expectedSha);
   if (stagedSeal) {
     assert.equal(d.meta.vdsenRecoverySeal, stagedSeal.digest, 'RECOVERY_SEAL_MISMATCH');
     assert.equal(liveId, stagedSeal.expectedLive, 'RECOVERY_STAGE_ALIAS_CHANGED');
@@ -475,7 +488,8 @@ function validateRecoveryScope(manifest, co, fences, runtimeSha, expiresAt, now)
 
 async function prepareFleetRuntime(opts) {
   const { projectId, googleToken, vercelToken, runtimeSha, operationId, startsAt, expiresAt, coachId, outFile,
-    stageOnly = false, expectedDeploymentId = '', stagedRecoveryId = '' } = opts;
+    stageOnly = false, expectedDeploymentId = '', stagedRecoveryId = '', probeIdToken = '' } = opts;
+  if (stageOnly || stagedRecoveryId) assert.ok(/^\S+$/.test(probeIdToken), 'RECOVERY_PROBE_AUTH_UNAVAILABLE');
   const s = JSON.parse(fs.readFileSync('.release/vdsen-client.json', 'utf8'));
   if (!stagedRecoveryId) assert.equal(s.runtime_sha, runtimeSha, 'BASELINE_SHA_MISMATCH');
   const baselineDeployment = s.production_deployment;
@@ -533,7 +547,7 @@ async function prepareFleetRuntime(opts) {
       assert.ok(!await fsGet(projectId, googleToken, 'releaseControl/numericPilot/operations/' + co.operationId),
         'RECOVERY_OPERATION_ALREADY_USED');
     }
-    await verifyFleetDeploymentLive(vercelToken, stagedId, runtimeSha, allShardNames, globalThis.fetch, { expectedLive, digest }, expectedShards);
+    await verifyFleetDeploymentLive(vercelToken, stagedId, runtimeSha, allShardNames, globalThis.fetch, { expectedLive, digest }, expectedShards, probeIdToken);
     staged = await A.deployment(s, stagedId);
   } else {
     const tmpRoot = path.resolve(process.env.RUNNER_TEMP || require('node:os').tmpdir());
@@ -573,7 +587,7 @@ async function prepareFleetRuntime(opts) {
   G.assertPromotionAllowed({ preflight: offBefore, fresh: offAfter });
 
   if (stageOnly) {
-    await verifyFleetDeploymentLive(vercelToken, stagedId, runtimeSha, allShardNames, globalThis.fetch, { expectedLive, digest }, expectedShards);
+    await verifyFleetDeploymentLive(vercelToken, stagedId, runtimeSha, allShardNames, globalThis.fetch, { expectedLive, digest }, expectedShards, probeIdToken);
     const report = {
       schema: 'vdsen-fleet-recovery-stage-v1', status: 'STAGED_NOT_PROMOTED',
       expectedLive, baselineDeployment, stagedId, runtimeSha, operationId, startsAt, expiresAt,
@@ -589,7 +603,7 @@ async function prepareFleetRuntime(opts) {
   try {
     await A.promote(s, stagedId);
     const verifiedPaths = await A.verifyPublicBytes(s, runtimeSha, A.servedSurface());
-    const att = await verifyFleetDeploymentLive(vercelToken, stagedId, runtimeSha, allShardNames, globalThis.fetch, null, expectedShards);
+    const att = await verifyFleetDeploymentLive(vercelToken, stagedId, runtimeSha, allShardNames, globalThis.fetch, null, expectedShards, probeIdToken);
     const report = {
       schema: 'vdsen-fleet-runtime-prep-v1',
       status: 'FLEET_RUNTIME_READY_FENCES_CLOSED',
@@ -652,7 +666,7 @@ async function preflightCohort(opts) {
     assert.equal(att.recoverySeal, digest,
       'RECOVERY_ARM_SCOPE_CHANGED');
     att = await verifyFleetDeploymentLive(vercelToken, deploymentId, runtimeSha, shards.map(shard => shard.name),
-      fetcher, null, shards);
+      fetcher, null, shards, opts.probeIdToken);
     assert.equal(att.recoverySeal, digest, 'RECOVERY_ARM_SEAL_CHANGED');
   }
   const fences = await fetchCohortFences(projectId, googleToken, cohortId, coachId, fetcher);
@@ -1184,6 +1198,7 @@ async function main() {
       coachId: env.INPUT_COACH, outFile: path.join(reportDir, 'fleet-runtime-prep.json'),
       stageOnly: uidInput === 'FLEET:RECOVERY-STAGE', expectedDeploymentId: env.INPUT_DEPLOYMENT,
       stagedRecoveryId: uidInput === 'FLEET:RECOVERY-PROMOTE' ? env.INPUT_DEPLOYMENT : '',
+      probeIdToken: env.VDSEN_RECOVERY_PROBE_ID_TOKEN,
     });
     console.log(JSON.stringify(rep, null, 2));
     return;
@@ -1196,6 +1211,7 @@ async function main() {
       operationId: env.INPUT_OPERATION, startsAt: env.INPUT_STARTS,
       expiresAt: env.INPUT_EXPIRES, coachId: env.INPUT_COACH,
       outFile: path.join(reportDir, 'cohort-preflight-' + cohortId + '.json'),
+      probeIdToken: env.VDSEN_RECOVERY_PROBE_ID_TOKEN,
     });
     console.log(JSON.stringify(result, null, 2));
     if (result.decision !== 'GO') process.exitCode = 1;
@@ -1210,6 +1226,7 @@ async function main() {
       expiresAt: env.INPUT_EXPIRES, coachId: env.INPUT_COACH,
       runId: env.GITHUB_RUN_ID,
       outFile: path.join(reportDir, 'cohort-arm-' + cohortId + '.json'),
+      probeIdToken: env.VDSEN_RECOVERY_PROBE_ID_TOKEN,
     });
     console.log(JSON.stringify(rep, null, 2));
     return;
