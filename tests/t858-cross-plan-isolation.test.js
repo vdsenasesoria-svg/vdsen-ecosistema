@@ -112,8 +112,8 @@ test('T858.3 App Cliente & App Coach wire cross-plan isolation into loadPlan, Da
   // App Cliente handles !logData by preserving EXERCISE_HISTORY and resetting to Week 1
   assert.ok(CLIENT_HTML.includes('T858: virgin plan or cross-plan root rejected by _selectLogAuthority'));
   assert.ok(CLIENT_HTML.includes('if (_rootDataRaw && _rootDataRaw.exerciseHistory) EXERCISE_HISTORY = _rootDataRaw.exerciseHistory;'));
-  // App Coach Dashboard, Standalone Monitor, and Modal Monitor use _selectCoachLogForActivePlan
-  assert.ok(COACH_HTML.includes('const logData = _selectCoachLogForActivePlan(_rawLogData, c.activePlanId, null);'));
+  // App Coach Client List, Inicio, and Modal Monitor use _selectCoachLogForActivePlan + _resolveCoachClientLogAuthority (paridad PR #254)
+  assert.ok(COACH_HTML.includes('const logAuth = _resolveCoachClientLogAuthority(_settledLogs[0], _settledLogs[1], c.activePlanId);'));
   assert.ok(COACH_HTML.includes('window._selectCoachLogForActivePlan(logsSnap.data(), _monitorActivePlanId, null)'));
   assert.ok(COACH_HTML.includes('window._selectCoachLogForActivePlan(_rawLogsData, activePlanId, activeMesoData)'));
   // Plan activation invokes _initNewPlanWeekOne

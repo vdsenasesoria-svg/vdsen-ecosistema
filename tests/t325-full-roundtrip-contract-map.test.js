@@ -212,10 +212,12 @@ ok(COACH.includes('ctx.prescriptionTargets.muscles = _computeMuscleTargets('),
 ok(COACH.includes("targetType: 'CLIENT'") && COACH.includes('function _isInterventionActiveForScope('),
   'FINDING 6 documented: the scope-exact intervention supersession machinery exists but only CLIENT-wide interventions are ever constructed by the current UI -- not fixed (feature work, out of scope)');
 
-// ── FINDING 7 (documented, deferred to T332) ────────────────────────────────
+// ── FINDING 7 (parallel dual-read root + active meso mirror for parity with Monitor) ─
 const loadClientListSrc = extractFunction(COACH, 'async function loadClientList() {');
-ok(loadClientListSrc.includes("const _logPromises = _clientDocs.map(c => getDoc(doc(db, 'logs', c.id)).catch(() => null));"),
-  'FINDING 7 documented: loadClientList fetches a full logs doc per client row on every list load (parallelized, not fixed here -- deferred to T332)');
+ok(loadClientListSrc.includes("const _logPromises = _clientDocs.map(c => Promise.allSettled([") &&
+  loadClientListSrc.includes("getDoc(doc(db, 'logs', c.id))") &&
+  loadClientListSrc.includes("doc(db, 'logs', c.id, 'mesos', c.activePlanId)"),
+  'FINDING 7 verified: loadClientList parallelizes root logs + active meso mirror reads across all clients without sequential N+1 awaits');
 
 // ── FINDING 8 (confirmed not a gap -- security boundary already intact) ────
 ok(/coachId == request\.auth\.uid[\s\S]{0,50}request\.resource\.data\.coachId == resource\.data\.coachId/.test(RULES),
