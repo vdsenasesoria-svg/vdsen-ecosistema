@@ -702,7 +702,7 @@ test('T883-RO.1 Read-only Vercel Firestore IAM (7 PERMISSION_DENIED) dispatches 
       expiresAt: '2026-11-28T00:00:00Z',
     },
     commercialRoster: () => ({ schema: 'vdsen-commercial-roster-v1', firebaseProject: 'vdsen-ecosistema', activeUids: ['client-c1', 'client-c2'], inactiveUids: [] }),
-    nowMs: Date.parse('2026-11-26T12:00:00Z'),
+    clock: () => '2026-11-26T12:00:00Z',
     dispatchRenewalWorkflow: async (p) => { dispatched.push(p); return { ok: true, workflow: 'vdsen-numeric-pilot.yml', ref: 'codex/client-app-next' }; },
   });
   const res = makeRes();

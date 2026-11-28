@@ -400,7 +400,7 @@ async function attestRecoveryShards(deployment, expectedShards, runtimeSha, idTo
   for (const cohortId of ids) {
     const expected = windows.filter(window => window.cohortId === cohortId);
     const url = new URL('https://' + deployment.url + '/api/autonomous-progression-trigger');
-    url.search = new URLSearchParams({check:'cohort-shard', cohortId});
+    url.search = new URLSearchParams({check:'cohort-shard', auth:'workflow-oidc', cohortId});
     let probe;
     try {
       const response = await fetcher(url.toString(), {
@@ -466,6 +466,17 @@ function recoverySealBaseline(state, runtimeSha) {
   return release.previous_deployment;
 }
 
+function recoverySealCandidates(state, runtimeSha, approvedRecoverySha) {
+  const bases = [];
+  if (runtimeSha === state.runtime_sha || runtimeSha === approvedRecoverySha) bases.push(state.production_deployment);
+  if (state.app_release?.previous_runtime_sha) {
+    const prior = state.app_release.previous_runtime_sha;
+    if (runtimeSha === prior || runtimeSha === state.runtime_sha) bases.push(recoverySealBaseline(state, prior));
+  }
+  assert.ok(bases.length, 'RECOVERY_PRIOR_BASELINE_NOT_ACCREDITED');
+  return [...new Set(bases)];
+}
+
 function sealRecoveryShards(manifest, baselineDeployment, runtimeSha, expiresAt, coachId) {
   return createHash('sha256').update(JSON.stringify({
     baselineDeployment, runtimeSha, expiresAt, coachId,
@@ -488,13 +499,20 @@ function validateRecoveryScope(manifest, co, fences, runtimeSha, expiresAt, now)
 
 async function prepareFleetRuntime(opts) {
   const { projectId, googleToken, vercelToken, runtimeSha, operationId, startsAt, expiresAt, coachId, outFile,
-    stageOnly = false, expectedDeploymentId = '', stagedRecoveryId = '' } = opts;
-  const probeIdToken = stageOnly || stagedRecoveryId ? await opts.acquireProbeIdentity?.() : null;
-  if (stageOnly || stagedRecoveryId) assert.ok(/^\S+$/.test(probeIdToken), 'RECOVERY_PROBE_AUTH_UNAVAILABLE');
+    stageOnly = false, expectedDeploymentId = '', stagedRecoveryId = '', approvedRecoverySha = '' } = opts;
+  let probeIdToken = null;
+  if (stageOnly || stagedRecoveryId) {
+    assert.equal(typeof opts.acquireProbeIdentity, 'function', 'RECOVERY_PROBE_AUTH_UNAVAILABLE');
+    opts.validateProbeContext?.();
+  }
   const s = JSON.parse(fs.readFileSync('.release/vdsen-client.json', 'utf8'));
-  if (!stagedRecoveryId) assert.equal(s.runtime_sha, runtimeSha, 'BASELINE_SHA_MISMATCH');
+  if (stageOnly) {
+    assert.match(approvedRecoverySha, /^[a-f0-9]{40}$/, 'RECOVERY_CANONICAL_SHA_REQUIRED');
+    assert.equal(runtimeSha, approvedRecoverySha, 'RECOVERY_CANONICAL_SHA_MISMATCH');
+  } else if (!stagedRecoveryId) {
+    assert.equal(s.runtime_sha, runtimeSha, 'BASELINE_SHA_MISMATCH');
+  }
   const baselineDeployment = s.production_deployment;
-  const sealedBaseline = stagedRecoveryId ? recoverySealBaseline(s, runtimeSha) : baselineDeployment;
   const expectedLive = stageOnly ? expectedDeploymentId : baselineDeployment;
   if (stagedRecoveryId) assert.match(stagedRecoveryId, /^dpl_[A-Za-z0-9]+$/, 'RECOVERY_DEPLOYMENT_REQUIRED');
   if (stageOnly) {
@@ -513,23 +531,22 @@ async function prepareFleetRuntime(opts) {
   assert.ok(manifest.cohortCount >= 1 && manifest.cohortCount <= 20, 'INVALID_COHORT_COUNT_' + manifest.cohortCount);
   const allShardNames = manifest.cohorts.flatMap(co => co.envVarNames);
   const expectedShards = stageOnly || stagedRecoveryId ? manifest.cohorts.flatMap(co => co.envShards) : null;
-  const digest = expectedShards
-    ? sealRecoveryShards(manifest, sealedBaseline, runtimeSha, expiresAt, coachId) : null;
+  let digest = stageOnly ? sealRecoveryShards(manifest, baselineDeployment, runtimeSha, expiresAt, coachId) : null;
   const assertRecoveryIdle = async () => {
     const lock = await fsGet(projectId, googleToken, 'releaseControl/numericPilotGlobalLock');
     assert.ok(lock && lock.status === 'IDLE' && !lock.activeOperationId &&
       Array.isArray(lock.pendingQueue) && lock.pendingQueue.length === 0, 'RECOVERY_LOCK_NOT_IDLE');
   };
-  if (digest) await assertRecoveryIdle();
+  if (expectedShards) await assertRecoveryIdle();
   if (stageOnly) {
-    await verifyFleetDeploymentLive(vercelToken, expectedLive, runtimeSha, allShardNames);
+    await verifyFleetDeploymentLive(vercelToken, expectedLive, s.runtime_sha, allShardNames);
   }
 
   // Confirm all cohort fences are CLOSED before promotion
   for (const co of manifest.cohorts) {
     const f = await fetchCohortFences(projectId, googleToken, co.cohortId, coachId);
     if (stageOnly) {
-      validateRecoveryScope(manifest, co, f, runtimeSha, expiresAt, Date.now());
+      validateRecoveryScope(manifest, co, f, s.runtime_sha, expiresAt, Date.now());
       assert.ok(!await fsGet(projectId, googleToken, 'releaseControl/numericPilot/operations/' + co.operationId),
         'RECOVERY_OPERATION_ALREADY_USED');
       continue;
@@ -543,13 +560,18 @@ async function prepareFleetRuntime(opts) {
   let stagedId = stagedRecoveryId;
   let staged;
   if (stagedRecoveryId) {
+    probeIdToken = await opts.acquireProbeIdentity(stagedId);
+    staged = await A.deployment(s, stagedId);
+    digest = recoverySealCandidates(s, runtimeSha, approvedRecoverySha)
+      .map(base => sealRecoveryShards(manifest, base, runtimeSha, expiresAt, coachId))
+      .find(seal => seal === staged.meta?.vdsenRecoverySeal);
+    assert.ok(digest, 'RECOVERY_SEAL_MISMATCH');
     for (const co of manifest.cohorts) {
       assert.ok(co.compactWindows.every(w => C.windowValid(w, Date.now())), 'RECOVERY_WINDOW_INVALID');
       assert.ok(!await fsGet(projectId, googleToken, 'releaseControl/numericPilot/operations/' + co.operationId),
         'RECOVERY_OPERATION_ALREADY_USED');
     }
     await verifyFleetDeploymentLive(vercelToken, stagedId, runtimeSha, allShardNames, globalThis.fetch, { expectedLive, digest }, expectedShards, probeIdToken);
-    staged = await A.deployment(s, stagedId);
   } else {
     const tmpRoot = path.resolve(process.env.RUNNER_TEMP || require('node:os').tmpdir());
     const dest = path.resolve(tmpRoot, 'vdsen-fleet-' + (process.env.GITHUB_RUN_ID || Date.now()));
@@ -588,6 +610,7 @@ async function prepareFleetRuntime(opts) {
   G.assertPromotionAllowed({ preflight: offBefore, fresh: offAfter });
 
   if (stageOnly) {
+    probeIdToken = await opts.acquireProbeIdentity(stagedId);
     await verifyFleetDeploymentLive(vercelToken, stagedId, runtimeSha, allShardNames, globalThis.fetch, { expectedLive, digest }, expectedShards, probeIdToken);
     const report = {
       schema: 'vdsen-fleet-recovery-stage-v1', status: 'STAGED_NOT_PROMOTED',
@@ -661,12 +684,12 @@ async function preflightCohort(opts) {
   let att = await verifyFleetDeploymentLive(vercelToken, deploymentId, runtimeSha, co.envVarNames, fetcher);
   if (att.recoverySeal) {
     const state = JSON.parse(fs.readFileSync('.release/vdsen-client.json', 'utf8'));
-    const baseline = recoverySealBaseline(state, runtimeSha);
     const shards = manifest.cohorts.flatMap(c => c.envShards);
-    const digest = sealRecoveryShards(manifest, baseline, runtimeSha, expiresAt, coachId);
-    assert.equal(att.recoverySeal, digest,
-      'RECOVERY_ARM_SCOPE_CHANGED');
-    const probeIdToken = await opts.acquireProbeIdentity?.();
+    const digest = recoverySealCandidates(state, runtimeSha, opts.approvedRecoverySha)
+      .map(base => sealRecoveryShards(manifest, base, runtimeSha, expiresAt, coachId))
+      .find(seal => seal === att.recoverySeal);
+    assert.ok(digest, 'RECOVERY_ARM_SCOPE_CHANGED');
+    const probeIdToken = await opts.acquireProbeIdentity?.(deploymentId);
     att = await verifyFleetDeploymentLive(vercelToken, deploymentId, runtimeSha, shards.map(shard => shard.name),
       fetcher, null, shards, probeIdToken);
     assert.equal(att.recoverySeal, digest, 'RECOVERY_ARM_SEAL_CHANGED');
@@ -1185,7 +1208,8 @@ async function main() {
   const reportDir = env.REPORT_DIR || 'release-output/numeric-pilot';
   const uidInput = String(env.INPUT_UID || '');
   const cohortId = uidInput.startsWith('COHORT:') ? uidInput.slice('COHORT:'.length) : null;
-  const acquireProbeIdentity = () => require('./recovery-probe-identity.cjs').acquireRecoveryProbeIdentity(env);
+  const identity = require('./recovery-probe-identity.cjs');
+  const acquireProbeIdentity = (deploymentId) => identity.acquireRecoveryProbeIdentity(env, deploymentId);
 
   if (cmd === 'audit-fleet') {
     const rep = await auditFleet({ projectId, googleToken, coachId: env.INPUT_COACH, outFile: path.join(reportDir, 'fleet-audit.json') });
@@ -1202,6 +1226,8 @@ async function main() {
       stageOnly: uidInput === 'FLEET:RECOVERY-STAGE', expectedDeploymentId: env.INPUT_DEPLOYMENT,
       stagedRecoveryId: uidInput === 'FLEET:RECOVERY-PROMOTE' ? env.INPUT_DEPLOYMENT : '',
       acquireProbeIdentity,
+      validateProbeContext: () => identity.recoveryProbeRequest(env),
+      approvedRecoverySha: env.GITHUB_SHA,
     });
     console.log(JSON.stringify(rep, null, 2));
     return;
@@ -1215,6 +1241,7 @@ async function main() {
       expiresAt: env.INPUT_EXPIRES, coachId: env.INPUT_COACH,
       outFile: path.join(reportDir, 'cohort-preflight-' + cohortId + '.json'),
       acquireProbeIdentity,
+      approvedRecoverySha: env.GITHUB_SHA,
     });
     console.log(JSON.stringify(result, null, 2));
     if (result.decision !== 'GO') process.exitCode = 1;
@@ -1230,6 +1257,7 @@ async function main() {
       runId: env.GITHUB_RUN_ID,
       outFile: path.join(reportDir, 'cohort-arm-' + cohortId + '.json'),
       acquireProbeIdentity,
+      approvedRecoverySha: env.GITHUB_SHA,
     });
     console.log(JSON.stringify(rep, null, 2));
     return;

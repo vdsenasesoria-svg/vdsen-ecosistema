@@ -94,10 +94,26 @@ test('staged recovery attestation binds the seal and refuses unverified or alrea
   runtimeEnv.VERCEL_DEPLOYMENT_ID = deployment.id;
   runtimeEnv.VDSEN_NUMERIC_PILOT_RUNTIME_SHA = SHA;
   const {makeHandler} = require('../api/autonomous-progression-trigger.js');
-  const handler = makeHandler({runtimeEnv, verifyIdToken:async token => {
-    assert.equal(token,'fixture-firebase-token');
-    return {uid:'operator-fixture'};
-  }});
+  const crypto = require('node:crypto');
+  const {privateKey,publicKey} = crypto.generateKeyPairSync('rsa',{modulusLength:2048});
+  const kid = 'fixture-key';
+  const now = Math.floor(Date.now()/1000);
+  const repo = 'vdsenasesoria-svg/vdsen-ecosistema';
+  const ref = 'refs/heads/codex/client-app-next';
+  const issue = (overrides = {}) => {
+    const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
+    const claims = {
+      iss:'https://token.actions.githubusercontent.com', aud:'vdsen-recovery-shards:'+deployment.id,
+      sub:'repo:'+repo+':environment:Production', repository:repo, repository_owner:'vdsenasesoria-svg',
+      workflow_ref:repo+'/.github/workflows/vdsen-numeric-pilot.yml@'+ref, ref, environment:'Production',
+      event_name:'workflow_dispatch', run_attempt:'1', run_id:'123', iat:now, exp:now+300,
+      ...overrides,
+    };
+    const data = encode({alg:'RS256',kid})+'.'+encode(claims);
+    return data+'.'+crypto.sign('RSA-SHA256',Buffer.from(data),privateKey).toString('base64url');
+  };
+  const handler = makeHandler({runtimeEnv, githubJwks:async () => [{...publicKey.export({format:'jwk'}),kid}],
+    verifyIdToken:async () => assert.fail('OIDC request must not use Firebase authentication')});
   const probeFetcher = async (url, opts) => {
     const parsed = new URL(url);
     if (parsed.hostname !== deployment.url) return fetcher(url);
@@ -107,10 +123,14 @@ test('staged recovery attestation binds the seal and refuses unverified or alrea
       {status(code){status=code;return this;},json(data){body=data;return this;}});
     return {status,json:async () => body};
   };
-  const verifyValues = (token = 'fixture-firebase-token') => cohortOps.verifyFleetDeploymentLive(
+  const verifyValues = (token = issue()) => cohortOps.verifyFleetDeploymentLive(
     'test-token', deployment.id, SHA, shards.map(shard => shard.name), probeFetcher, {expectedLive,digest}, shards, token);
   await assert.rejects(verifyValues(''), /RECOVERY_PROBE_AUTH_UNAVAILABLE/);
   await assert.rejects(verifyValues('wrong-token'), /RECOVERY_RUNTIME_PROBE_MISMATCH/);
+  for (const claims of [{aud:'vdsen-recovery-shards:dpl_other'}, {environment:'Preview'}, {ref:'refs/heads/main'},
+    {workflow_ref:repo+'/.github/workflows/vdsen-ayrton-window.yml@'+ref}, {repository:'other/repo'}, {exp:now-1}]) {
+    await assert.rejects(verifyValues(issue(claims)), /RECOVERY_RUNTIME_PROBE_MISMATCH/);
+  }
   runtimeEnv[shards[0].name] = '[]';
   await assert.rejects(verifyValues(), /RECOVERY_RUNTIME_PROBE_MISMATCH/);
   runtimeEnv[shards[0].name] = JSON.stringify(shards[0].windows);

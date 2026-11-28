@@ -173,24 +173,18 @@ jobs:
         if: inputs.action == 'prepare-runtime' && startsWith(inputs.pilot_uid, 'FLEET:')
         env:
           GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
-          VDSEN_RECOVERY_IDENTITY_BROKER_URL: ${{ vars.VDSEN_RECOVERY_IDENTITY_BROKER_URL }}
-          VDSEN_RECOVERY_ATTESTOR_UID: ${{ vars.VDSEN_RECOVERY_ATTESTOR_UID }}
         run: node scripts/pilot/numeric-cohort-ops.cjs prepare-fleet-runtime
 
       - name: Per-cohort preflight verification (GO required)
         if: inputs.action == 'preflight-check' && startsWith(inputs.pilot_uid, 'COHORT:')
         env:
           GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
-          VDSEN_RECOVERY_IDENTITY_BROKER_URL: ${{ vars.VDSEN_RECOVERY_IDENTITY_BROKER_URL }}
-          VDSEN_RECOVERY_ATTESTOR_UID: ${{ vars.VDSEN_RECOVERY_ATTESTOR_UID }}
         run: node scripts/pilot/numeric-cohort-ops.cjs preflight-cohort
 
       - name: Arm isolated cohort fences (atomic ledger + <=10 clients)
         if: inputs.action == 'arm-fences' && startsWith(inputs.pilot_uid, 'COHORT:')
         env:
           GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
-          VDSEN_RECOVERY_IDENTITY_BROKER_URL: ${{ vars.VDSEN_RECOVERY_IDENTITY_BROKER_URL }}
-          VDSEN_RECOVERY_ATTESTOR_UID: ${{ vars.VDSEN_RECOVERY_ATTESTOR_UID }}
         run: node scripts/pilot/numeric-cohort-ops.cjs arm-cohort
 
       - name: Stop isolated cohort or full fleet (Safety Disarm)
