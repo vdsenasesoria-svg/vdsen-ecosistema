@@ -400,16 +400,6 @@
       /* Evitar zoom en inputs móviles */
       input, select, textarea { font-size: 16px !important; }
       .btn-primary, .btn-secondary, .btn-danger { min-height: 44px; }
-      /* Modales adaptados a pantalla móvil sin overflow */
-      .modal-overlay { padding: 0; align-items: flex-end; }
-      .modal-box {
-        border-radius: 6px 6px 0 0;
-        max-width: 100% !important;
-        width: 100%;
-        max-height: 94vh;
-        max-height: 94dvh;
-        padding: 14px 14px calc(18px + env(safe-area-inset-bottom, 8px));
-      }
       .section h2 { font-size: 20px !important; }
     }
 
@@ -493,7 +483,206 @@
     .warning { background: rgba(201,59,59,0.14); border-left: 3px solid var(--danger); padding: 10px; margin: 10px 0; }
     #toast-container { position: fixed; top: 16px; right: 16px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; max-width: calc(100vw - 32px); }
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.82); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
-    .modal-box { background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: 4px; width: 100%; max-width: 860px; max-height: 90vh; overflow-y: auto; padding: 22px 24px; }
+    .modal-box { background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: 4px; width: 100%; max-width: 860px; max-height: 90vh; max-height: 90dvh; overflow-y: auto; padding: 22px 24px; }
+    @media (max-width: 768px), (max-height: 520px) {
+      .modal-overlay { padding: 0; align-items: flex-end; }
+      .modal-box {
+        border-radius: 6px 6px 0 0;
+        max-width: 100% !important;
+        width: 100%;
+        max-height: 94vh;
+        max-height: calc(100dvh - env(safe-area-inset-top, 0px));
+        padding: 14px calc(14px + env(safe-area-inset-right, 0px)) calc(18px + env(safe-area-inset-bottom, 8px)) calc(14px + env(safe-area-inset-left, 0px));
+      }
+      #planMoreMenuBtn, #modalMoreMenuBtn, #importPlanMenuBtn, #intakeExportMoreBtn, .vdsen-plan-actions button {
+        min-height: 44px !important;
+      }
+    }
+    @media (max-height: 520px) {
+      .modal-box {
+        max-height: 98vh;
+        max-height: calc(100dvh - env(safe-area-inset-top, 0px));
+        padding-top: 10px;
+      }
+    }
+    /* ── Responsive menus (mobile bottom sheet + desktop viewport-clamped popover) ── */
+    #vdsenMenuHost {
+      position: fixed;
+      inset: 0;
+      z-index: 2500;
+      display: none;
+    }
+    #vdsenMenuBackdrop {
+      position: absolute;
+      inset: 0;
+      background: transparent;
+    }
+    .vdsen-menu-panel {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-strong);
+      border-top: 2px solid var(--accent);
+      color: var(--text-primary);
+      box-sizing: border-box;
+    }
+    .vdsen-menu-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+    }
+    .vdsen-menu-portaled {
+      display: block !important;
+      position: static !important;
+      top: auto !important;
+      right: auto !important;
+      bottom: auto !important;
+      left: auto !important;
+      width: 100% !important;
+      min-width: 0 !important;
+      max-width: none !important;
+      max-height: none !important;
+      overflow: visible !important;
+      border: none !important;
+      background: transparent !important;
+      padding: 0 !important;
+      box-shadow: none !important;
+    }
+    #vdsenMenuHost[data-mode="sheet"] {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      align-items: stretch;
+    }
+    #vdsenMenuHost[data-mode="sheet"] #vdsenMenuBackdrop {
+      background: rgba(0, 0, 0, 0.72);
+    }
+    #vdsenMenuHost[data-mode="sheet"] .vdsen-menu-panel {
+      width: 100%;
+      max-width: min(100%, 600px);
+      margin: 0 auto;
+      background: var(--bg-surface);
+      border-radius: 6px 6px 0 0;
+      border-bottom: none;
+      max-height: 84vh;
+      max-height: min(84dvh, calc(100dvh - env(safe-area-inset-top, 0px) - 32px));
+      padding-left: env(safe-area-inset-left, 0px);
+      padding-right: env(safe-area-inset-right, 0px);
+    }
+    @media (max-height: 520px) {
+      #vdsenMenuHost[data-mode="sheet"] .vdsen-menu-panel {
+        max-height: 88vh;
+        max-height: min(88dvh, calc(100dvh - env(safe-area-inset-top, 0px) - 20px));
+      }
+    }
+    .vdsen-menu-sheet-hdr {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 12px 10px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-surface);
+    }
+    .vdsen-menu-sheet-title {
+      font-family: 'Big Shoulders Display', 'Inter', sans-serif;
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--text-primary);
+      line-height: 1.1;
+    }
+    .vdsen-menu-sheet-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+      line-height: 1.3;
+    }
+    #vdsenMenuCloseBtn {
+      min-width: 44px;
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border-strong);
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      border-radius: 3px;
+      font-size: 16px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    #vdsenMenuHost[data-mode="sheet"] .vdsen-menu-body {
+      padding: 8px 12px calc(16px + env(safe-area-inset-bottom, 12px));
+    }
+    #vdsenMenuHost[data-mode="sheet"] .vdsen-menu-portaled button {
+      min-height: 44px !important;
+      width: 100% !important;
+      padding: 11px 12px !important;
+      font-size: 14px !important;
+      line-height: 1.3 !important;
+      text-align: left !important;
+      border-radius: 3px !important;
+      margin-bottom: 4px !important;
+      box-sizing: border-box;
+    }
+    #vdsenMenuHost[data-mode="sheet"] .vdsen-menu-portaled button:hover,
+    #vdsenMenuHost[data-mode="sheet"] .vdsen-menu-portaled button:focus-visible {
+      background: rgba(244, 244, 240, 0.08) !important;
+    }
+    #vdsenMenuHost[data-mode="sheet"] .vdsen-menu-portaled button:active {
+      background: rgba(198, 255, 0, 0.12) !important;
+    }
+    #vdsenMenuHost[data-mode="popover"] {
+      display: block;
+    }
+    #vdsenMenuHost[data-mode="popover"] .vdsen-menu-sheet-hdr {
+      display: none;
+    }
+    #vdsenMenuHost[data-mode="popover"] .vdsen-menu-panel {
+      position: fixed;
+      border-radius: 4px;
+      min-width: 240px;
+      max-width: min(320px, calc(100vw - 24px));
+    }
+    #vdsenMenuHost[data-mode="popover"] .vdsen-menu-body {
+      padding: 6px;
+    }
+    #vdsenMenuHost[data-mode="popover"] .vdsen-menu-portaled button {
+      min-height: 36px;
+      width: 100%;
+      padding: 8px 10px;
+      font-size: 12px;
+      line-height: 1.35;
+      text-align: left;
+      border-radius: 2px;
+      box-sizing: border-box;
+    }
+    #vdsenMenuHost[data-mode="popover"] .vdsen-menu-portaled button:hover,
+    #vdsenMenuHost[data-mode="popover"] .vdsen-menu-portaled button:focus-visible {
+      background: rgba(244, 244, 240, 0.07) !important;
+    }
+    .vdsen-ren-grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .vdsen-ren-grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+    @media (max-width: 480px) {
+      .vdsen-ren-grid-2 { grid-template-columns: 1fr; }
+      .vdsen-ren-grid-3 { grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); }
+    }
     .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .loading-row { display: flex; align-items: center; gap: 8px; color: var(--text-muted); padding: 12px 0; font-size: 13px; }
@@ -595,7 +784,7 @@
     </div>
     <div class="mb-4" style="position:relative">
       <input id="inicioQuickSearch" type="search" class="input-field" placeholder="Acceso rápido a cliente por nombre o contacto..." aria-label="Acceso rápido a cliente" oninput="window._renderInicioQuickSearch&&window._renderInicioQuickSearch(this.value)" onfocus="window._renderInicioQuickSearch&&window._renderInicioQuickSearch(this.value)">
-      <div id="inicioQuickResults" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--bg-elevated);border:1px solid var(--border-strong);border-radius:4px;z-index:60;max-height:280px;overflow-y:auto"></div>
+      <div id="inicioQuickResults" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--bg-elevated);border:1px solid var(--border-strong);border-radius:4px;z-index:60;max-height:280px;max-height:min(280px, 48dvh);overflow-y:auto"></div>
     </div>
     <div id="dashSummary" class="mb-4"></div>
   </div>
@@ -750,8 +939,8 @@
       <span style="width:1px;height:22px;background:var(--border);margin:0 2px"></span>
       <div style="position:relative">
         <button type="button" id="intakeCopyTxt" class="btn-secondary text-sm" title="Copiar ficha como texto (por defecto)">Copiar ficha</button>
-        <button type="button" onclick="document.getElementById('exportDropdown').style.display=document.getElementById('exportDropdown').style.display==='block'?'none':'block'" class="btn-secondary text-sm" style="padding:6px 8px;margin-left:2px">▾</button>
-        <div id="exportDropdown" style="display:none;position:absolute;left:0;top:calc(100%+4px);background:#1a1a18;border:1px solid var(--border);border-radius:4px;min-width:180px;z-index:50;overflow:hidden">
+        <button type="button" id="intakeExportMoreBtn" onclick="window._toggleExportDropdown&&window._toggleExportDropdown()" class="btn-secondary text-sm" style="padding:6px 10px;margin-left:2px" aria-haspopup="menu" aria-expanded="false" aria-label="Más formatos de exportación">▾</button>
+        <div id="exportDropdown" style="display:none;position:absolute;left:0;top:calc(100% + 4px);background:#1a1a18;border:1px solid var(--border);border-radius:4px;min-width:180px;z-index:50;overflow:hidden">
           <button type="button" id="intakeCopyMd" class="text-sm w-full text-left" style="padding:10px 14px;background:none;border:none;color:var(--text-muted);cursor:pointer;border-bottom:1px solid rgba(244,244,240,.06)">Copiar como Markdown</button>
           <button type="button" id="intakeCopyJson" class="text-sm w-full text-left" style="padding:10px 14px;background:none;border:none;color:var(--text-muted);cursor:pointer">Copiar como JSON (Motor)</button>
         </div>
@@ -784,7 +973,7 @@
       <button id="jsonModeBtn" type="button" class="btn-primary">Importar plan JSON</button>
       <button id="manualModeBtn" type="button" class="btn-secondary">Editar manualmente</button>
       <button id="planPdfBtn" type="button" onclick="downloadPlanPDF(document.getElementById('planClientSelect').value)" class="btn-secondary">Descargar PDF del plan</button>
-      <button type="button" onclick="toggleImportPlanMenu()" class="btn-secondary">Importación avanzada ▾</button>
+      <button type="button" id="importPlanMenuBtn" onclick="toggleImportPlanMenu()" class="btn-secondary" aria-haspopup="menu" aria-expanded="false">Importación avanzada ▾</button>
       <div id="importPlanMenu" style="display:none;position:absolute;left:0;top:calc(100% + 4px);background:var(--bg-elevated);border:1px solid var(--border-strong);border-radius:4px;padding:6px;min-width:240px;z-index:500">
         <button id="pdfPlanModeBtn" type="button" style="display:block;width:100%;text-align:left;padding:10px 12px;border:none;background:transparent;color:var(--text);font-size:13px;cursor:pointer;border-radius:2px" onmouseover="this.style.background='rgba(255,255,255,.06)'" onmouseout="this.style.background='transparent'">Importación de PDF</button>
         <button id="textModeBtn" type="button" style="display:block;width:100%;text-align:left;padding:10px 12px;border:none;background:transparent;color:var(--text);font-size:13px;cursor:pointer;border-radius:2px" onmouseover="this.style.background='rgba(255,255,255,.06)'" onmouseout="this.style.background='transparent'">Importación de texto libre</button>
@@ -1016,7 +1205,7 @@
         <button id="modalExpedienteTxtBtn" type="button" style="display:none;padding:5px 10px;min-height:34px;border-radius:2px;border:1px solid rgba(198,255,0,.55);background:rgba(198,255,0,.10);color:#C6FF00;font-size:12px;font-weight:700;cursor:pointer" title="Descargar un único TXT: Ficha 360, biomecánica, antropometría y rendimiento">Expediente TXT</button>
         <button id="modalExportClientBtn" type="button" style="display:none;padding:4px 8px;border-radius:2px;border:1px solid rgba(68,187,136,.5);background:rgba(68,187,136,.1);color:#44BB88;font-size:12px;cursor:pointer" title="Exportar toda la información de este cliente (ZIP)">Exportar cliente</button>
         <div id="modalMoreMenuWrap" style="position:relative">
-          <button id="modalMoreMenuBtn" type="button" onclick="window._toggleClientModalMoreMenu&&window._toggleClientModalMoreMenu()" class="btn-secondary" style="padding:4px 10px;min-height:34px" title="Acciones secundarias del cliente" aria-label="Más opciones del cliente" aria-expanded="false">⋯</button>
+          <button id="modalMoreMenuBtn" type="button" onclick="window._toggleClientModalMoreMenu&&window._toggleClientModalMoreMenu()" class="btn-secondary" style="padding:4px 10px;min-height:34px" title="Acciones secundarias del cliente" aria-label="Más opciones del cliente" aria-haspopup="menu" aria-expanded="false">⋯</button>
           <div id="modalMoreMenu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);min-width:210px;background:var(--bg-elevated);border:1px solid var(--border-strong);border-radius:4px;padding:6px;z-index:120">
             <button id="modalMergeClientBtn" type="button" style="display:none;width:100%;text-align:left;padding:9px 10px;border-radius:2px;border:none;background:transparent;color:var(--text-primary);font-size:12px;font-weight:600;cursor:pointer;margin-bottom:4px" title="Fusionar con cliente duplicado">Fusionar duplicado</button>
             <button id="modalDeleteClientBtn" type="button" style="display:none;width:100%;text-align:left;padding:9px 10px;border-radius:2px;border:1px solid rgba(201,59,59,.55);background:rgba(201,59,59,.10);color:#E05A5A;font-size:12px;font-weight:700;cursor:pointer" title="Eliminar cliente">Eliminar cliente</button>
@@ -3631,6 +3820,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     _vdsenPhotoExercise = null;
     _visualSeq++;
     if (window._vdsenShellStash || !document.getElementById('clientList')) return; // ya estacionado, o no es el shell del Coach
+    if (window._vdsenMenu) window._vdsenMenu.destroyHost();
     document.querySelectorAll('.modal-overlay').forEach(m => { m.style.display = 'none'; });
     // CN3 — La auditoría encontró datos privados del coach que sobrevivían en el shell estacionado.
     // Limpiar sólo los contenedores de la lista no alcanzaba, y el arnés lo localizó con precisión:
@@ -7139,7 +7329,15 @@ Reporte:
   var _importMenuClickOutHandler = null;
   function toggleImportPlanMenu() {
     var menu = document.getElementById('importPlanMenu');
+    var btn = document.getElementById('importPlanMenuBtn');
     if (!menu) return;
+    if (window._vdsenMenu) {
+      var sel = document.getElementById('planClientSelect');
+      var selOpt = sel && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex] : null;
+      var sub = (selOpt && selOpt.value && selOpt.textContent) ? selOpt.textContent.trim() : '';
+      window._vdsenMenu.toggle(menu, btn, { title: 'Importación avanzada', subtitle: sub, align: 'left' });
+      return;
+    }
     var open = menu.style.display !== 'none';
     if (_importMenuClickOutHandler) { document.removeEventListener('click', _importMenuClickOutHandler); _importMenuClickOutHandler = null; }
     menu.style.display = open ? 'none' : 'block';
@@ -7152,7 +7350,16 @@ Reporte:
   }
   window.toggleImportPlanMenu = toggleImportPlanMenu;
 
-  function _closeImportPlanMenu() { var m=document.getElementById('importPlanMenu'); if(m) m.style.display='none'; if (_importMenuClickOutHandler) { document.removeEventListener('click', _importMenuClickOutHandler); _importMenuClickOutHandler = null; } }
+  function _closeImportPlanMenu() {
+    var m = document.getElementById('importPlanMenu');
+    var btn = document.getElementById('importPlanMenuBtn');
+    if (window._vdsenMenu && m) {
+      window._vdsenMenu.toggle(m, btn, {}, true);
+    } else if (m) {
+      m.style.display = 'none';
+    }
+    if (_importMenuClickOutHandler) { document.removeEventListener('click', _importMenuClickOutHandler); _importMenuClickOutHandler = null; }
+  }
 
   // ========== MODO TEXTO ==========
   document.getElementById("textModeBtn")?.addEventListener("click", () => {
@@ -8379,10 +8586,288 @@ Técnicas soportadas: "straight", "drop", "sst", "myoreps", "rest-pause", "clust
   }
   window._setClientListFilter = _setClientListFilter;
 
+  function _computeResponsiveMenuLayout(viewport, triggerRect, menuSize, align) {
+    const vw = (viewport && Number(viewport.width)) || 0;
+    const vh = (viewport && Number(viewport.height)) || 0;
+    if (vw <= 768 || vh <= 520) return { mode: 'sheet' };
+    const margin = 12;
+    const gap = 6;
+    const tr = triggerRect || { top: 0, bottom: 40, left: 0, right: 120 };
+    const ms = menuSize || {};
+    const maxAllowedW = Math.max(200, vw - margin * 2);
+    const width = Math.min(Math.max(240, ms.width || 250), maxAllowedW);
+    const naturalH = Math.max(48, ms.height || 260);
+    const spaceBelow = vh - tr.bottom - margin - gap;
+    const spaceAbove = tr.top - margin - gap;
+    let placement = 'bottom';
+    let top;
+    let maxHeight;
+    if (spaceBelow >= Math.min(naturalH, 260) || spaceBelow >= spaceAbove) {
+      placement = 'bottom';
+      top = Math.max(margin, Math.min(tr.bottom + gap, vh - margin - 120));
+      maxHeight = Math.max(120, Math.floor(vh - top - margin));
+    } else {
+      placement = 'top';
+      maxHeight = Math.max(120, Math.floor(spaceAbove));
+      const renderedH = Math.min(naturalH, maxHeight);
+      top = Math.max(margin, Math.floor(tr.top - gap - renderedH));
+    }
+    const rawLeft = align === 'left' ? tr.left : (tr.right - width);
+    const left = Math.max(margin, Math.min(Math.round(rawLeft), Math.max(margin, vw - width - margin)));
+    return {
+      mode: 'popover',
+      placement,
+      top: Math.round(top),
+      left: Math.round(left),
+      maxHeight,
+      width: Math.round(width)
+    };
+  }
+  window._computeResponsiveMenuLayout = _computeResponsiveMenuLayout;
+
+  window._vdsenMenu = (function() {
+    let _active = null;
+    let _host = null;
+    let _panel = null;
+    let _body = null;
+    let _titleEl = null;
+    let _subEl = null;
+
+    function _viewportSize() {
+      const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+      const w = Math.min(
+        window.innerWidth || document.documentElement.clientWidth || 1024,
+        (vv && vv.width) || Infinity
+      );
+      const h = Math.min(
+        window.innerHeight || document.documentElement.clientHeight || 768,
+        (vv && vv.height) || Infinity
+      );
+      return { width: w, height: h };
+    }
+
+    function _ensureHost() {
+      if (_host && document.body && document.body.contains(_host)) return _host;
+      let existing = document.getElementById('vdsenMenuHost');
+      if (existing) existing.remove();
+      const host = document.createElement('div');
+      host.id = 'vdsenMenuHost';
+      host.innerHTML =
+        '<div id="vdsenMenuBackdrop"></div>' +
+        '<div class="vdsen-menu-panel" role="dialog" aria-modal="true" aria-labelledby="vdsenMenuTitle">' +
+          '<div class="vdsen-menu-sheet-hdr">' +
+            '<div style="min-width:0;flex:1">' +
+              '<div id="vdsenMenuTitle" class="vdsen-menu-sheet-title"></div>' +
+              '<div id="vdsenMenuSubtitle" class="vdsen-menu-sheet-sub"></div>' +
+            '</div>' +
+            '<button type="button" id="vdsenMenuCloseBtn" aria-label="Cerrar menú">✕</button>' +
+          '</div>' +
+          '<div class="vdsen-menu-body"></div>' +
+        '</div>';
+      document.body.appendChild(host);
+      _host = host;
+      _panel = host.querySelector('.vdsen-menu-panel');
+      _body = host.querySelector('.vdsen-menu-body');
+      _titleEl = host.querySelector('#vdsenMenuTitle');
+      _subEl = host.querySelector('#vdsenMenuSubtitle');
+      const backdrop = host.querySelector('#vdsenMenuBackdrop');
+      const closeBtn = host.querySelector('#vdsenMenuCloseBtn');
+      if (backdrop) {
+        backdrop.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          closeAll({ restoreFocus: true });
+        });
+      }
+      if (closeBtn) {
+        closeBtn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          closeAll({ restoreFocus: true });
+        });
+      }
+      return _host;
+    }
+
+    function _layout() {
+      if (!_active || !_host) return;
+      const { triggerEl, menuEl, align } = _active;
+      if (!triggerEl || !document.body.contains(triggerEl) || !document.body.contains(menuEl)) {
+        closeAll({ restoreFocus: false });
+        return;
+      }
+      const vp = _viewportSize();
+      const tr = triggerEl.getBoundingClientRect();
+      const quickMode = _computeResponsiveMenuLayout(vp, tr, { width: 250, height: 260 }, align).mode;
+      if (quickMode === 'sheet') {
+        _host.dataset.mode = 'sheet';
+        _host.style.display = 'flex';
+        _panel.style.top = '';
+        _panel.style.left = '';
+        _panel.style.width = '';
+        _panel.style.maxHeight = '';
+        _panel.style.visibility = '';
+        return;
+      }
+      if (tr.bottom < 0 || tr.top > vp.height) {
+        closeAll({ restoreFocus: false });
+        return;
+      }
+      _host.dataset.mode = 'popover';
+      _host.style.display = 'block';
+      _panel.style.visibility = 'hidden';
+      _panel.style.maxHeight = '';
+      _panel.style.width = '';
+      _panel.style.top = '0px';
+      _panel.style.left = '0px';
+      const panelWidth = Math.max(240, Math.min(320, _panel.offsetWidth || 256));
+      const naturalHeight = Math.max(48, (menuEl.scrollHeight || 0) + 14);
+      const layout = _computeResponsiveMenuLayout(vp, tr, { width: panelWidth, height: naturalHeight }, align);
+      _panel.style.top = layout.top + 'px';
+      _panel.style.left = layout.left + 'px';
+      _panel.style.width = layout.width + 'px';
+      _panel.style.maxHeight = layout.maxHeight + 'px';
+      _panel.style.visibility = '';
+    }
+
+    function _onViewportEvent(ev) {
+      if (!_active || !_host) return;
+      if (ev && ev.type === 'scroll' && ev.target && _host.contains(ev.target)) return;
+      _layout();
+    }
+
+    function open(menuEl, triggerEl, opts) {
+      if (!menuEl || !triggerEl) return false;
+      if (_active && _active.menuEl === menuEl) {
+        closeAll({ restoreFocus: true });
+        return false;
+      }
+      if (_active) closeAll({ restoreFocus: false });
+      const parent = menuEl.parentNode;
+      if (!parent) return false;
+      _ensureHost();
+      const placeholder = document.createComment('vdsen-menu-placeholder');
+      parent.insertBefore(placeholder, menuEl);
+      menuEl.classList.add('vdsen-menu-portaled');
+      menuEl.style.display = 'block';
+      menuEl.setAttribute('role', 'menu');
+      _body.innerHTML = '';
+      _body.appendChild(menuEl);
+      _body.scrollTop = 0;
+
+      const title = (opts && opts.title) || 'Acciones';
+      const subtitle = (opts && opts.subtitle) || '';
+      if (_titleEl) _titleEl.textContent = title;
+      if (_subEl) {
+        _subEl.textContent = subtitle;
+        _subEl.style.display = subtitle ? 'block' : 'none';
+      }
+      if (_panel) _panel.setAttribute('aria-label', title);
+      triggerEl.setAttribute('aria-haspopup', 'menu');
+      triggerEl.setAttribute('aria-expanded', 'true');
+
+      _active = {
+        menuEl,
+        triggerEl,
+        placeholder,
+        align: (opts && opts.align) || 'right'
+      };
+      _layout();
+      if (_body) _body.scrollTop = 0;
+      window.addEventListener('resize', _onViewportEvent);
+      window.addEventListener('scroll', _onViewportEvent, true);
+      if (window.visualViewport && typeof window.visualViewport.addEventListener === 'function') {
+        window.visualViewport.addEventListener('resize', _onViewportEvent);
+      }
+      return true;
+    }
+
+    function closeAll(opts) {
+      window.removeEventListener('resize', _onViewportEvent);
+      window.removeEventListener('scroll', _onViewportEvent, true);
+      if (window.visualViewport && typeof window.visualViewport.removeEventListener === 'function') {
+        window.visualViewport.removeEventListener('resize', _onViewportEvent);
+      }
+      const prev = _active;
+      _active = null;
+      if (prev) {
+        const { menuEl, triggerEl, placeholder } = prev;
+        if (menuEl) {
+          menuEl.classList.remove('vdsen-menu-portaled');
+          menuEl.style.display = 'none';
+          if (placeholder && placeholder.parentNode && document.body.contains(placeholder.parentNode)) {
+            placeholder.parentNode.insertBefore(menuEl, placeholder);
+          } else if (menuEl.parentNode) {
+            menuEl.parentNode.removeChild(menuEl);
+          }
+        }
+        if (placeholder && placeholder.parentNode) {
+          placeholder.parentNode.removeChild(placeholder);
+        }
+        if (triggerEl) {
+          triggerEl.setAttribute('aria-expanded', 'false');
+        }
+      }
+      if (_host) {
+        _host.style.display = 'none';
+        delete _host.dataset.mode;
+      }
+      if (_panel) {
+        _panel.style.top = '';
+        _panel.style.left = '';
+        _panel.style.width = '';
+        _panel.style.maxHeight = '';
+        _panel.style.visibility = '';
+      }
+      if (opts && opts.restoreFocus && prev && prev.triggerEl && document.body.contains(prev.triggerEl)) {
+        try { prev.triggerEl.focus({ preventScroll: true }); } catch (_) {}
+      }
+    }
+
+    function toggle(menuEl, triggerEl, opts, forceClose) {
+      if (!menuEl) return false;
+      if (forceClose === true) {
+        if (_active && _active.menuEl === menuEl) {
+          closeAll({ restoreFocus: false });
+        } else {
+          menuEl.classList.remove('vdsen-menu-portaled');
+          menuEl.style.display = 'none';
+          if (triggerEl) triggerEl.setAttribute('aria-expanded', 'false');
+        }
+        return false;
+      }
+      if (_active && _active.menuEl === menuEl) {
+        closeAll({ restoreFocus: true });
+        return false;
+      }
+      return open(menuEl, triggerEl, opts);
+    }
+
+    function isOpen(menuEl) {
+      if (!_active) return false;
+      return menuEl ? _active.menuEl === menuEl : true;
+    }
+
+    function destroyHost() {
+      closeAll({ restoreFocus: false });
+      if (_host && _host.parentNode) _host.parentNode.removeChild(_host);
+      _host = null;
+      _panel = null;
+      _body = null;
+      _titleEl = null;
+      _subEl = null;
+    }
+
+    return { open, closeAll, toggle, isOpen, destroyHost };
+  })();
+
   function _toggleClientModalMoreMenu(forceClose) {
     const menu = document.getElementById('modalMoreMenu');
     const btn = document.getElementById('modalMoreMenuBtn');
     if (!menu) return;
+    if (window._vdsenMenu) {
+      const sub = (_detailClientData && (_detailClientData.displayName || _detailClientData.email)) || '';
+      window._vdsenMenu.toggle(menu, btn, { title: 'Acciones del expediente', subtitle: sub, align: 'right' }, forceClose);
+      return;
+    }
     const open = forceClose ? false : (menu.style.display === 'none' || !menu.style.display);
     menu.style.display = open ? 'block' : 'none';
     if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -13697,6 +14182,7 @@ Técnicas soportadas: "straight", "drop", "sst", "myoreps", "rest-pause", "clust
     _detailClientId   = clientId;
     _detailActiveTab  = _initialTab;
     _lastSelectedClientId = clientId;
+    if (window._vdsenMenu) window._vdsenMenu.closeAll({ restoreFocus: false });
     if (typeof _toggleClientModalMoreMenu === 'function') _toggleClientModalMoreMenu(true);
     window._importedPlan = null; // R8-GAP-02: clear stale imported-plan state from a previous client
     _historicalMesoState = null; // T254: invalidate the previous client's historical-mesocycle context
@@ -13903,6 +14389,7 @@ Técnicas soportadas: "straight", "drop", "sst", "myoreps", "rest-pause", "clust
       _discardEditorChanges(); // FASE 23 FIX — restaura editor al estado guardado
       markEditorClean();
     }
+    if (window._vdsenMenu) window._vdsenMenu.closeAll({ restoreFocus: false });
     _detailActiveTab = targetTab;
     ['ficha','plan','seguimiento','monitor'].forEach(t => {
       const btn = document.getElementById('ctab_' + t);
@@ -14891,11 +15378,14 @@ El esfuerzo no es negociable.
       `<div style="font-size:10px;font-weight:700;color:${color};letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px">${icon} ${title}</div>`;
 
     const _grid2 = (a, b) =>
-      `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${a}${b}</div>`;
+      `<div class="vdsen-ren-grid-2">${a}${b}</div>`;
 
     cont.innerHTML = `
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#888;font-weight:700;margin-bottom:12px">
-        🔄 Ficha de renovación${renAt ? ' <span style="color:#555;font-size:10px;text-transform:none;font-weight:400">· guardada '+renAt+'</span>' : ''}
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#888;font-weight:700">
+          🔄 Ficha de renovación${renAt ? ' <span style="color:#555;font-size:10px;text-transform:none;font-weight:400">· guardada '+renAt+'</span>' : ''}
+        </div>
+        ${cont && cont.id === 'planRenewalDrawer' ? `<button type="button" onclick="window._togglePlanRenewalDrawer(false)" class="btn-secondary" style="min-height:36px;padding:4px 10px;font-size:11px" aria-label="Cerrar renovación">Cerrar ✕</button>` : ''}
       </div>
 
       ${!renAt ? `<div style="background:rgba(196,255,0,.05);border:1px solid rgba(196,255,0,.18);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:11px;color:#8aaa44;line-height:1.5">
@@ -14904,7 +15394,7 @@ El esfuerzo no es negociable.
 
       <div style="background:rgba(244,244,240,.025);border:1px solid rgba(244,244,240,.07);border-radius:8px;padding:14px;margin-bottom:12px">
         ${_sec('#C4FF00','📊','Biometría actual')}
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+        <div class="vdsen-ren-grid-3">
           ${_inp('peso','Peso (kg)','number',ren.peso,'80.5','step="0.1" min="30" max="250"')}
           ${_inp('pct_grasa','% Grasa','number',ren.pct_grasa,'18.0','step="0.1" min="3" max="60"')}
           ${_inp('smm','SMM (kg)','number',ren.smm,'35.0','step="0.1" min="10" max="80"')}
@@ -14984,8 +15474,8 @@ El esfuerzo no es negociable.
       </div>
 
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-        <button onclick="saveRenovacion('${clientId}')" id="renSaveBtn_${clientId}" style="flex:1;min-width:140px;padding:10px 16px;border-radius:6px;border:none;background:#C4FF00;color:#0A0A0A;font-size:13px;font-weight:800;cursor:pointer;letter-spacing:.02em">💾 Guardar ficha</button>
-        <button onclick="_copyRenovacionText('${clientId}')" style="flex:1;min-width:140px;padding:10px 16px;border-radius:6px;border:1px solid rgba(196,255,0,.4);background:rgba(196,255,0,.07);color:#C4FF00;font-size:13px;font-weight:700;cursor:pointer">📋 Copiar para Motor VDSEN</button>
+        <button onclick="saveRenovacion('${clientId}')" id="renSaveBtn_${clientId}" style="flex:1;min-width:140px;min-height:44px;padding:10px 16px;border-radius:6px;border:none;background:#C4FF00;color:#0A0A0A;font-size:13px;font-weight:800;cursor:pointer;letter-spacing:.02em">💾 Guardar ficha</button>
+        <button onclick="_copyRenovacionText('${clientId}')" style="flex:1;min-width:140px;min-height:44px;padding:10px 16px;border-radius:6px;border:1px solid rgba(196,255,0,.4);background:rgba(196,255,0,.07);color:#C4FF00;font-size:13px;font-weight:700;cursor:pointer">📋 Copiar para Motor VDSEN</button>
       </div>
       <div id="renStatus_${clientId}" style="font-size:11px;color:#555;min-height:18px"></div>`;
   }
@@ -17233,9 +17723,21 @@ El esfuerzo no es negociable.
 
   window._togglePlanMoreMenu = function(forceClose) {
     const m = document.getElementById('planMoreMenu');
+    const btn = document.getElementById('planMoreMenuBtn');
     if (!m) return;
+    if (window._vdsenMenu) {
+      const nameStr = (_detailClientData && (_detailClientData.displayName || _detailClientData.email)) || '';
+      const logsD = (_detailLogsData && _detailLogsData.clientId === _detailClientId && _detailLogsData.data) || {};
+      const planStr = (_detailClientData && _detailClientData.activePlanId && _detailPlanData)
+        ? ('Plan activo · Sem ' + (logsD.currentWeek || 1) + '/' + (_detailPlanData.weeks || 6))
+        : 'Sin plan activo';
+      const sub = [nameStr, planStr].filter(Boolean).join(' · ');
+      window._vdsenMenu.toggle(m, btn, { title: 'Más acciones del plan', subtitle: sub, align: 'right' }, forceClose);
+      return;
+    }
     const open = forceClose ? false : (m.style.display === 'none' || !m.style.display);
     m.style.display = open ? 'block' : 'none';
+    if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
   };
 
   window._togglePlanRenewalDrawer = function(forceOpen) {
@@ -17363,7 +17865,7 @@ El esfuerzo no es negociable.
         <p class="text-sm text-[#888] mb-2">${(p.days||[]).length} días/semana${p.rirByWeek ? ' · RIR: ' + Object.entries(p.rirByWeek).map(([w,r])=>`S${w}=${r}`).join(' · ') : ''}</p>
         <div class="mb-3">${dayList}</div>${zonaHtml}`;
       planEditorHtml = renderTrainingEditor(p.days || [], c.activePlanId);
-      const _mItem = (fn, label, color) => `<button type="button" onclick="window._togglePlanMoreMenu(true);${fn}" style="display:block;width:100%;text-align:left;padding:8px 10px;background:transparent;border:none;color:${color || 'var(--text-primary)'};font-size:12px;cursor:pointer;border-radius:2px">${label}</button>`;
+      const _mItem = (fn, label, color, divTop) => `<button type="button" onclick="window._togglePlanMoreMenu(true);${fn}" style="display:block;width:100%;text-align:left;padding:8px 10px;background:transparent;border:none;${divTop ? 'border-top:1px solid var(--border);margin-top:6px;padding-top:10px;' : ''}color:${color || 'var(--text-primary)'};font-size:12px;cursor:pointer;border-radius:2px">${label}</button>`;
       overflowItemsHtml = [
         _mItem(`if(window._ensureSecondaryLoaded)_ensureSecondaryLoaded('catalogo');showQuickAddExercise('${c.activePlanId}')`, 'Agregar ejercicio'),
         _mItem(`showUpdatePlanModal('${clientId}','${c.activePlanId}')`, 'Actualizar plan (mantener semana)', '#44BB88'),
@@ -17371,13 +17873,13 @@ El esfuerzo no es negociable.
         _mItem(`duplicatePlanToClient('${c.activePlanId}')`, 'Copiar a otro cliente'),
         _mItem(`_saveCurrentPlanAsTemplate('${c.activePlanId}')`, 'Guardar como template'),
         _mItem(`openPlanTemplateLibrary('${clientId}')`, 'Abrir biblioteca de templates'),
-        _mItem(`exportActivePlanJSON('${clientId}','${c.activePlanId}')`, 'Exportar plan JSON'),
+        _mItem(`exportActivePlanJSON('${clientId}','${c.activePlanId}')`, 'Exportar plan JSON', null, true),
         _mItem(`exportActivePlanTXT('${clientId}','${c.activePlanId}')`, 'Exportar plan TXT'),
         _mItem(`viewClientReportHTML('${clientId}')`, 'Reporte HTML'),
         _mItem(`generateFullClientReport('${clientId}')`, 'Reporte PDF completo'),
         _mItem(`exportClientReportForAI('${clientId}')`, 'Exportar contexto IA'),
         _mItem(`_openClientMirrorModal('${clientId}')`, 'Vista previa como cliente', '#C6FF00'),
-        _mItem(`setClientWeekManual('${clientId}')`, 'Cambiar semana actual'),
+        _mItem(`setClientWeekManual('${clientId}')`, 'Cambiar semana actual', null, true),
         _mItem(`resetClientWeekKeepSessions('${clientId}')`, 'Reiniciar a Sem 1 (conservar registros)', '#E0A020'),
         _mItem(`resetClientWeek('${clientId}')`, 'Reiniciar semana a 1 (borrar registros)', '#E05A5A'),
         _mItem(`deletePlan('${clientId}','${c.activePlanId}')`, 'Eliminar plan activo', '#E05A5A')
@@ -17394,14 +17896,14 @@ El esfuerzo no es negociable.
 
     cont.innerHTML = `
       ${planSummaryHeaderHtml}
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;position:relative">
+      <div class="vdsen-plan-actions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;position:relative">
         <button type="button" onclick="_modalImportPlan('json','${clientId}')" class="btn-primary" style="min-height:40px;font-size:12px">Importar plan JSON</button>
         ${c.activePlanId && p ? `<button type="button" onclick="if(window._ensureSecondaryLoaded)_ensureSecondaryLoaded('catalogo');toggleTrainingEditor()" class="btn-secondary" style="min-height:40px;font-size:12px">Editar manualmente</button>` : ''}
         ${c.activePlanId && p ? `<button type="button" onclick="window._validateActivePlanModal('${clientId}')" class="btn-secondary" style="min-height:40px;font-size:12px">Validar plan</button>` : ''}
         <button type="button" onclick="downloadPlanPDF('${clientId}')" class="btn-secondary" style="min-height:40px;font-size:12px">Descargar PDF</button>
         <button type="button" onclick="window._togglePlanRenewalDrawer()" class="btn-secondary" style="min-height:40px;font-size:12px;border-color:rgba(198,255,0,.45);color:#C6FF00">Renovar</button>
         <div style="position:relative">
-          <button type="button" id="planMoreMenuBtn" onclick="window._togglePlanMoreMenu()" class="btn-secondary" style="min-height:40px;font-size:12px">Más acciones ▾</button>
+          <button type="button" id="planMoreMenuBtn" onclick="window._togglePlanMoreMenu()" class="btn-secondary" style="min-height:40px;font-size:12px" aria-haspopup="menu" aria-expanded="false">Más acciones ▾</button>
           <div id="planMoreMenu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);min-width:250px;max-height:320px;overflow-y:auto;background:var(--bg-elevated);border:1px solid var(--border-strong);border-radius:4px;padding:6px;z-index:200">${overflowItemsHtml}</div>
         </div>
       </div>
@@ -23290,6 +23792,7 @@ El esfuerzo no es negociable.
       _discardEditorChanges();
       markEditorClean();
     }
+    if (window._vdsenMenu) window._vdsenMenu.closeAll({ restoreFocus: false });
     if (typeof _toggleClientModalMoreMenu === 'function') _toggleClientModalMoreMenu(true);
     if (typeof window._togglePlanMoreMenu === 'function') window._togglePlanMoreMenu(true);
     document.getElementById("clientModal").style.display = "none";
@@ -26741,12 +27244,26 @@ El esfuerzo no es negociable.
   }
   window.sendFichaClientePdf = sendFichaClientePdf;
 
+  window._toggleExportDropdown = function(forceClose) {
+    const dd = document.getElementById('exportDropdown');
+    const btn = document.getElementById('intakeExportMoreBtn');
+    if (!dd) return;
+    if (window._vdsenMenu) {
+      const sel = document.getElementById('intakeClientSelect');
+      const selOpt = sel && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex] : null;
+      const sub = (selOpt && selOpt.value && selOpt.textContent) ? selOpt.textContent.trim() : '';
+      window._vdsenMenu.toggle(dd, btn, { title: 'Exportar ficha 360°', subtitle: sub, align: 'left' }, forceClose);
+      return;
+    }
+    const open = forceClose ? false : (dd.style.display !== 'block');
+    dd.style.display = open ? 'block' : 'none';
+    if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
   document.getElementById('intakeClientSelect').addEventListener('change', e=> loadIntakeForClient(e.target.value));
   document.getElementById('intakeSaveBtn').addEventListener('click', saveIntake);
-  document.getElementById('intakeCopyTxt').addEventListener('click', ()=>{ intakeExport('txt'); document.getElementById('exportDropdown').style.display='none'; });
-  document.getElementById('intakeCopyMd').addEventListener('click', ()=>{ intakeExport('md'); document.getElementById('exportDropdown').style.display='none'; });
-  document.getElementById('intakeCopyJson').addEventListener('click', ()=>{ intakeExport('json'); document.getElementById('exportDropdown').style.display='none'; });
-  document.addEventListener('click', e=>{ var dd=document.getElementById('exportDropdown'); if(dd && !e.target.closest('#exportDropdown') && e.target.id!=='intakeCopyTxt') dd.style.display='none'; });
+  document.getElementById('intakeCopyTxt').addEventListener('click', ()=>{ intakeExport('txt'); window._toggleExportDropdown(true); });
+  document.getElementById('intakeCopyMd').addEventListener('click', ()=>{ intakeExport('md'); window._toggleExportDropdown(true); });
+  document.getElementById('intakeCopyJson').addEventListener('click', ()=>{ intakeExport('json'); window._toggleExportDropdown(true); });
   document.getElementById('intakeFotoClear').addEventListener('click', clearFotometria);
   document.getElementById('intakeNewClientBtn').addEventListener('click', ()=>{ if(typeof createClientModal==='function') createClientModal(); });
   document.getElementById('intakeForm').addEventListener('change', (e)=>{
@@ -26763,6 +27280,7 @@ El esfuerzo no es negociable.
   };
   async function showSection(sectionId, opts) {
     if (!sections.includes(sectionId)) return;
+    if (window._vdsenMenu) window._vdsenMenu.closeAll({ restoreFocus: false });
     // Guard: al salir de crearPlan con plan manual o JSON importado sin guardar
     if (sectionId !== 'crearPlan' && (manualPlan || window._importedPlan)) {
       const ok = await _askConfirm('Tienes un <strong>plan en edición o importado sin guardar</strong>.<br><span style="color:#888;font-size:12px">¿Salir sin guardar?</span>');
@@ -26837,6 +27355,12 @@ El esfuerzo no es negociable.
   });
   document.addEventListener('keydown', ev => {
     if (ev.key !== 'Escape') return;
+    if (window._vdsenMenu && window._vdsenMenu.isOpen()) {
+      window._vdsenMenu.closeAll({ restoreFocus: true });
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
     const mm = document.getElementById('modalMoreMenu');
     if (mm && mm.style.display === 'block') { _toggleClientModalMoreMenu(true); return; }
     const pm = document.getElementById('planMoreMenu');

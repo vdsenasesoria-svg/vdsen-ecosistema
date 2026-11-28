@@ -200,3 +200,79 @@ test('VM: _resolveCoachClientLogAuthority enforces active-meso parity, distingui
   assert.equal(res3.activityState, 'read_error');
   assert.equal(ctx._resolveLastActivityMeta(res3.logData, res3.readError, res3.hasActivity).label, 'Bitácora no disponible');
 });
+
+test('Responsive menu system: CSS contracts, mobile modal cascade order, and menu routing', () => {
+  const baseModalPos = COACH.indexOf('.modal-overlay { position: fixed; inset: 0;');
+  const mobileModalPos = COACH.indexOf('@media (max-width: 768px), (max-height: 520px)');
+  assert.ok(baseModalPos > -1 && mobileModalPos > baseModalPos,
+    'Mobile modal-overlay/modal-box rules must come AFTER base rules so desktop defaults do not shadow mobile bottom-sheet styles');
+
+  assert.ok(COACH.includes('#vdsenMenuHost {'), 'Responsive portal host CSS present');
+  assert.match(COACH, /#vdsenMenuHost\s*\{[\s\S]*?z-index:\s*2500;/, 'Portal host sits cleanly above modals and below confirm/toast layers');
+  assert.match(COACH, /#vdsenMenuHost\[data-mode="sheet"\]\s+\.vdsen-menu-panel[\s\S]*?84dvh/, 'Sheet height adapts via dynamic viewport units (dvh)');
+  assert.match(COACH, /#vdsenMenuHost\[data-mode="sheet"\]\s+\.vdsen-menu-body[\s\S]*?env\(safe-area-inset-bottom/, 'Sheet body respects device safe-area inset bottom');
+  assert.match(COACH, /#vdsenMenuHost\[data-mode="sheet"\]\s+\.vdsen-menu-portaled\s+button[\s\S]*?min-height:\s*44px\s*!important/, 'Sheet menu items enforce 44px minimum touch height');
+  assert.ok(!/#vdsenMenuHost\[data-mode="sheet"\]\s+\.vdsen-menu-portaled\s+button\s*\{[^}]*\bdisplay\s*:/.test(COACH),
+    'Sheet item CSS must not force display so conditionally hidden items (Merge/Delete) remain hidden when toggled');
+
+  // All 4 floating menus delegate to _vdsenMenu
+  const planMoreStart = COACH.indexOf('window._togglePlanMoreMenu = function');
+  const planMoreEnd = COACH.indexOf('window._togglePlanRenewalDrawer', planMoreStart);
+  assert.ok(COACH.slice(planMoreStart, planMoreEnd).includes('window._vdsenMenu.toggle'), '#planMoreMenu delegates to _vdsenMenu');
+  assert.ok(extractFn(COACH, 'function _toggleClientModalMoreMenu(forceClose)').includes('window._vdsenMenu.toggle'), '#modalMoreMenu delegates to _vdsenMenu');
+  assert.ok(extractFn(COACH, 'function toggleImportPlanMenu()').includes('window._vdsenMenu.toggle'), '#importPlanMenu delegates to _vdsenMenu');
+  const expStart = COACH.indexOf('window._toggleExportDropdown = function');
+  assert.ok(expStart > -1 && COACH.slice(expStart, expStart + 700).includes('window._vdsenMenu.toggle'), '#exportDropdown delegates to _vdsenMenu');
+
+  // Lifecycle cleanup and Escape priority
+  assert.ok(extractFn(COACH, 'function _parkCoachShell()').includes('window._vdsenMenu.destroyHost()'), 'Logout shell parking destroys menu host cleanly');
+  const escIdx = COACH.indexOf("if (ev.key !== 'Escape') return;");
+  const escBlock = COACH.slice(escIdx, escIdx + 800);
+  const vdsenEscPos = escBlock.indexOf('window._vdsenMenu.isOpen()');
+  const modalEscPos = escBlock.indexOf('closeClientModal()');
+  assert.ok(vdsenEscPos > -1 && modalEscPos > vdsenEscPos, 'Escape closes open responsive menu before closing #clientModal');
+});
+
+test('VM: _computeResponsiveMenuLayout handles mobile sheets, short landscape, edge clamping, and desktop upward flip', () => {
+  const layoutFn = extractFn(COACH, 'function _computeResponsiveMenuLayout(viewport, triggerRect, menuSize, align)');
+  const ctx = { window: {} };
+  vm.runInNewContext(layoutFn, ctx);
+  const compute = ctx._computeResponsiveMenuLayout;
+
+  // All 5 mobile/landscape test viewports resolve to bottom sheet mode
+  for (const vp of [
+    { width: 320, height: 568 },
+    { width: 360, height: 800 },
+    { width: 390, height: 844 },
+    { width: 412, height: 915 },
+    { width: 844, height: 390 }
+  ]) {
+    const out = compute(vp, { top: 220, bottom: 264, left: 200, right: 310 }, { width: 250, height: 520 }, 'right');
+    assert.equal(out.mode, 'sheet', `Viewport ${vp.width}x${vp.height} must use sheet mode`);
+  }
+
+  // Desktop 1440x900 with ample space below -> popover anchored downward & clamped inside viewport
+  const deskDown = compute(
+    { width: 1440, height: 900 },
+    { top: 180, bottom: 220, left: 1200, right: 1380 },
+    { width: 260, height: 480 },
+    'right'
+  );
+  assert.equal(deskDown.mode, 'popover');
+  assert.equal(deskDown.placement, 'bottom');
+  assert.ok(deskDown.top === 226);
+  assert.ok(deskDown.left >= 12 && deskDown.left + deskDown.width <= 1440 - 12);
+  assert.ok(deskDown.maxHeight <= 900 - deskDown.top - 12);
+
+  // Desktop near bottom edge -> popover automatically flips upward above trigger
+  const deskFlip = compute(
+    { width: 1440, height: 900 },
+    { top: 820, bottom: 860, left: 30, right: 160 },
+    { width: 260, height: 520 },
+    'right'
+  );
+  assert.equal(deskFlip.mode, 'popover');
+  assert.equal(deskFlip.placement, 'top');
+  assert.ok(deskFlip.left >= 12, 'Clamps right-aligned menu away from left viewport edge');
+  assert.ok(deskFlip.top >= 12 && deskFlip.top + Math.min(520, deskFlip.maxHeight) <= 820 - 6);
+});
