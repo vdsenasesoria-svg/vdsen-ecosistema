@@ -95,9 +95,14 @@ ok(COACH.includes('window._rankClientPriority = _rankClientPriority;'), '_rankCl
 ok(COACH.includes('function _computeWeeklyDecisionForRequest(entries, planDoc)'), 'confirmed _computeWeeklyDecisionForRequest exists, taking exactly (entries, planDoc) -- the same two values already computed per client in loadClientList\'s rowData');
 ok(COACH.includes('_computeWeeklyDecisionForRequest: _computeWeeklyDecisionForRequest'), 'now exposed on window.VDSEN_BUILD (T228) -- reachable from loadClientList\'s later script block');
 
-// Confirm loadClientList already loads `entries`/`planData` per client with
-// 0 new reads possible for weeklyStatus (same substrate _computeClientAttentionState uses).
-ok(COACH.includes("const _logPromises = _clientDocs.map(c => getDoc(doc(db, 'logs', c.id)).catch(() => null));"), 'confirmed logs (containing engine_state/ci_sem_/postsession_/progrec_) are already batch-fetched once per client for the list -- no new read needed for weeklyStatus');
+// Confirm loadClientList already loads `entries`/`planData` per client (root + active meso mirror)
+// with 0 new reads possible for weeklyStatus (same substrate _computeClientAttentionState uses).
+ok(
+  COACH.includes("const _logPromises = _clientDocs.map(c => Promise.allSettled([") &&
+  COACH.includes("getDoc(doc(db, 'logs', c.id))") &&
+  COACH.includes("doc(db, 'logs', c.id, 'mesos', c.activePlanId)"),
+  'confirmed logs (root + active meso mirror containing engine_state/ci_sem_/postsession_/progrec_) are already batch-fetched once per client for the list -- no new read needed for weeklyStatus'
+);
 
 console.log('');
 console.log('T225 — Intervention signal contract map: ' + pass + ' assertions PASSED');

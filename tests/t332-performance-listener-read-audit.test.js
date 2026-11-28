@@ -74,8 +74,10 @@ ok(clientOnSnapshotCount === 5, 'T294 baseline unchanged: exactly 5 real Client 
 // ── loadClientList: N+1-shaped but fully parallelized, 0 extra reads downstream. ──
 const listIdx = COACH.indexOf('async function loadClientList() {');
 const listSlice = COACH.slice(listIdx, listIdx + 3500);
-ok(listSlice.includes('const _logPromises = _clientDocs.map(c => getDoc(doc(db, \'logs\', c.id)).catch(() => null));'),
-  'loadClientList batches one logs getDoc per client into an array (N+1-shaped by document-id, unavoidable without a schema/query change)');
+ok(listSlice.includes('const _logPromises = _clientDocs.map(c => Promise.allSettled([') &&
+  listSlice.includes("getDoc(doc(db, 'logs', c.id))") &&
+  listSlice.includes("doc(db, 'logs', c.id, 'mesos', c.activePlanId)"),
+  'loadClientList batches root + active-meso log reads into parallel settled promises per client');
 ok(listSlice.includes('const [_logSnaps, _planSnaps] = await Promise.all([Promise.all(_logPromises), Promise.all(_planPromises)]);'),
   'all per-client reads are fully parallelized via Promise.all -- not sequential, not N round-trips in series');
 ok(listSlice.includes('PERFORMANCE RULE: no N+1'),
