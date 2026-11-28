@@ -390,33 +390,194 @@ async function vget(vercelToken, p, fetcher = globalThis.fetch) {
   return r.json();
 }
 
-async function attestRecoveryShards(deployment, expectedShards, runtimeSha, idToken, fetcher) {
+async function readVercelAutomationBypass(vercelToken, fetcher = globalThis.fetch) {
+  const envSecret = typeof process.env.VERCEL_AUTOMATION_BYPASS_SECRET === 'string' &&
+    /^\S+$/.test(process.env.VERCEL_AUTOMATION_BYPASS_SECRET.trim())
+    ? process.env.VERCEL_AUTOMATION_BYPASS_SECRET.trim()
+    : null;
+  try {
+    const project = await vget(vercelToken, '/v9/projects/' + DEFAULT_PROJECT_ID, fetcher);
+    const ssoProtectionType = project && project.ssoProtection && project.ssoProtection.deploymentType
+      ? String(project.ssoProtection.deploymentType)
+      : null;
+    let secret = envSecret;
+    if (!secret && project && project.protectionBypass && typeof project.protectionBypass === 'object') {
+      for (const [key, meta] of Object.entries(project.protectionBypass)) {
+        if (meta && meta.scope === 'automation-bypass' && typeof key === 'string' && /^\S+$/.test(key)) {
+          secret = key;
+          break;
+        }
+      }
+    }
+    return { secret: secret || null, ssoProtectionType, hasAutomationBypass: !!secret };
+  } catch {
+    return { secret: envSecret, ssoProtectionType: null, hasAutomationBypass: !!envSecret };
+  }
+}
+
+function summarizeOidcClaimsRedacted(idToken, nowSec = Math.floor(Date.now() / 1000)) {
+  try {
+    if (typeof idToken !== 'string') return null;
+    const parts = idToken.split('.');
+    if (parts.length !== 3) return null;
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+    return {
+      iss: payload.iss || null,
+      aud: payload.aud || null,
+      sub: payload.sub || null,
+      repository: payload.repository || null,
+      ref: payload.ref || null,
+      event_name: payload.event_name || null,
+      environment: payload.environment || null,
+      workflow_ref: payload.workflow_ref || null,
+      run_attempt: payload.run_attempt !== undefined ? String(payload.run_attempt) : null,
+      iat: typeof payload.iat === 'number' ? payload.iat : null,
+      exp: typeof payload.exp === 'number' ? payload.exp : null,
+      nowSkewSec: typeof payload.iat === 'number' ? nowSec - payload.iat : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function attestRecoveryShards(deployment, expectedShards, runtimeSha, idToken, fetcher, opts = {}) {
   assert.ok(typeof idToken === 'string' && /^\S+$/.test(idToken), 'RECOVERY_PROBE_AUTH_UNAVAILABLE');
   assert.ok(/^[a-z0-9-]+\.vercel\.app$/i.test(deployment.url || '') &&
     deployment.url.toLowerCase() !== EXPECTED_ALIAS, 'RECOVERY_PROBE_DEPLOYMENT_HOST_INVALID');
   const { computeServedCohortDigest } = require('../../api/_planActivationSync.js');
   const windows = expectedShards.flatMap(shard => shard.windows);
   const ids = [...new Set(windows.map(window => window.cohortId))];
+  const headers = { authorization: 'Bearer ' + idToken };
+  if (opts && typeof opts.protectionBypassSecret === 'string' && /^\S+$/.test(opts.protectionBypassSecret)) {
+    headers['x-vercel-protection-bypass'] = opts.protectionBypassSecret;
+  }
+  const attestedCohorts = [];
   for (const cohortId of ids) {
     const expected = windows.filter(window => window.cohortId === cohortId);
+    const expectedDigest = computeServedCohortDigest(expected);
     const url = new URL('https://' + deployment.url + '/api/autonomous-progression-trigger');
     url.search = new URLSearchParams({check:'cohort-shard', auth:'workflow-oidc', cohortId});
-    let probe;
+    const diag = {
+      cohortId,
+      deploymentId: deployment.id || deployment.uid || null,
+      deploymentHost: deployment.url || null,
+      expectedRuntimeSha: runtimeSha,
+      expectedWindowCount: expected.length,
+      automationBypassUsed: Boolean(opts && opts.protectionBypassSecret),
+      ssoProtectionType: (opts && opts.ssoProtectionType) || null,
+      oidcClaims: summarizeOidcClaimsRedacted(idToken),
+      httpStatus: null,
+      contentType: null,
+      apiError: null,
+      vercelProtectionDetected: false,
+      actualSchema: null,
+      actualDeploymentId: null,
+      actualCohortId: null,
+      actualRuntimeSha: null,
+      actualWindowCount: null,
+      digestMatched: null,
+    };
+    const fail = (code) => {
+      const err = new Error(code);
+      err.diagnostic = diag;
+      if (opts && typeof opts.onDiagnostic === 'function') opts.onDiagnostic(code, diag);
+      throw err;
+    };
+    let response;
     try {
-      const response = await fetcher(url.toString(), {
-        headers:{authorization:'Bearer ' + idToken},
+      response = await fetcher(url.toString(), {
+        headers,
         redirect:'error', cache:'no-store', signal:AbortSignal.timeout(10000),
       });
-      if (response.status === 200) probe = await response.json();
-    } catch { /* Fail closed with a redacted diagnostic. */ }
-    assert.ok(probe && probe.schema === 'vdsen-served-cohort-probe-v1' &&
-      probe.deploymentId === (deployment.id || deployment.uid) && probe.cohortId === cohortId &&
-      probe.runtimeSha === runtimeSha && probe.windowCount === expected.length &&
-      probe.windowsDigest === computeServedCohortDigest(expected), 'RECOVERY_RUNTIME_PROBE_MISMATCH');
+    } catch (err) {
+      if (err && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+        fail('RECOVERY_PROBE_TIMEOUT');
+      }
+      const msg = String((err && ((err.cause && err.cause.message) || err.message)) || '');
+      if (/redirect/i.test(msg)) {
+        diag.vercelProtectionDetected = true;
+        fail('RECOVERY_PROBE_DEPLOYMENT_PROTECTION');
+      }
+      fail('RECOVERY_PROBE_TRANSPORT_ERROR');
+    }
+    if (!response) fail('RECOVERY_PROBE_TRANSPORT_ERROR');
+    diag.httpStatus = typeof response.status === 'number' ? response.status : null;
+    const getHeader = (name) => (response.headers && typeof response.headers.get === 'function')
+      ? response.headers.get(name)
+      : null;
+    const contentType = getHeader('content-type') || null;
+    diag.contentType = contentType;
+    if (diag.httpStatus >= 300 && diag.httpStatus < 400) {
+      diag.vercelProtectionDetected = true;
+      fail('RECOVERY_PROBE_DEPLOYMENT_PROTECTION');
+    }
+    let bodyText = '';
+    let parsed = null;
+    if (typeof response.text === 'function') {
+      try {
+        bodyText = await response.text();
+      } catch {
+        bodyText = '';
+      }
+      try {
+        parsed = bodyText ? JSON.parse(bodyText) : null;
+      } catch {
+        parsed = null;
+      }
+    } else if (typeof response.json === 'function') {
+      try {
+        parsed = await response.json();
+        bodyText = parsed === undefined ? '' : JSON.stringify(parsed);
+      } catch {
+        parsed = null;
+      }
+    }
+    if (diag.httpStatus !== 200) {
+      if (parsed && typeof parsed.error === 'string') {
+        diag.apiError = parsed.error;
+        if ([401, 403, 503].includes(diag.httpStatus) &&
+          /^(AUTH_|OIDC_|DEPLOYMENT_ID_UNAVAILABLE|RUNTIME_NOT_CONFIGURED)/.test(parsed.error)) {
+          fail('RECOVERY_PROBE_OIDC_ERROR:' + parsed.error);
+        }
+      }
+      if ([401, 403].includes(diag.httpStatus) && (
+        !parsed ||
+        /text\/html/i.test(contentType || '') ||
+        getHeader('x-vercel-mitigated') ||
+        /vercel|sso/i.test(bodyText.slice(0, 400))
+      )) {
+        diag.vercelProtectionDetected = true;
+        fail('RECOVERY_PROBE_DEPLOYMENT_PROTECTION');
+      }
+      fail('RECOVERY_PROBE_HTTP_' + diag.httpStatus);
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      fail('RECOVERY_PROBE_INVALID_JSON');
+    }
+    diag.actualSchema = parsed.schema || null;
+    diag.actualDeploymentId = parsed.deploymentId || null;
+    diag.actualCohortId = parsed.cohortId || null;
+    diag.actualRuntimeSha = parsed.runtimeSha || null;
+    diag.actualWindowCount = parsed.windowCount !== undefined ? parsed.windowCount : null;
+    diag.digestMatched = parsed.windowsDigest === expectedDigest;
+    if (parsed.schema !== 'vdsen-served-cohort-probe-v1') fail('RECOVERY_PROBE_SCHEMA_MISMATCH');
+    if (parsed.deploymentId !== (deployment.id || deployment.uid)) fail('RECOVERY_PROBE_DEPLOYMENT_ID_MISMATCH');
+    if (parsed.cohortId !== cohortId) fail('RECOVERY_PROBE_COHORT_ID_MISMATCH');
+    if (parsed.runtimeSha !== runtimeSha) fail('RECOVERY_PROBE_RUNTIME_SHA_MISMATCH');
+    if (parsed.windowCount !== expected.length) fail('RECOVERY_PROBE_WINDOW_COUNT_MISMATCH');
+    if (parsed.windowsDigest !== expectedDigest) fail('RECOVERY_PROBE_DIGEST_MISMATCH');
+    attestedCohorts.push({
+      cohortId,
+      windowCount: parsed.windowCount,
+      windowsDigest: parsed.windowsDigest,
+    });
   }
+  return attestedCohorts;
 }
 
-async function verifyFleetDeploymentLive(vercelToken, deploymentId, expectedSha, expectedCohortEnvName, fetcher = globalThis.fetch, stagedSeal = null, expectedShards = null, probeIdToken = null) {
+async function verifyFleetDeploymentLive(vercelToken, deploymentId, expectedSha, expectedCohortEnvName, fetcher = globalThis.fetch, stagedSeal = null, expectedShards = null, probeIdToken = null, probeOpts = null) {
   const d = await vget(vercelToken, '/v13/deployments/' + encodeURIComponent(deploymentId), fetcher);
   assert.equal(d.id || d.uid, deploymentId, 'DEPLOYMENT_ID_MISMATCH');
   assert.equal(d.projectId, DEFAULT_PROJECT_ID, 'PROJECT_ID_MISMATCH');
@@ -435,11 +596,18 @@ async function verifyFleetDeploymentLive(vercelToken, deploymentId, expectedSha,
       assert.ok(envNames.includes(shardName), 'MISSING_COHORT_SHARD_' + shardName);
     }
   }
+  let attestedCohorts = null;
   if (expectedShards) {
     const actualShardNames = envNames.filter(name => /^VDSEN_NUMERIC_COHORT_\d+$/.test(name));
     assert.ok(_sameSortedArray(actualShardNames, expectedShards.map(shard => shard.name)), 'RECOVERY_SHARD_SET_MISMATCH');
     if (stagedSeal) assert.ok(d.meta.vdsenRecoverySeal === stagedSeal.digest, 'RECOVERY_SEAL_MISMATCH');
-    await attestRecoveryShards(d, expectedShards, expectedSha, probeIdToken, fetcher);
+    const effectiveProbeOpts = Object.assign({}, probeOpts || {});
+    if (effectiveProbeOpts.protectionBypassSecret === undefined && effectiveProbeOpts.skipProjectBypassLookup !== true) {
+      const bypass = await readVercelAutomationBypass(vercelToken, fetcher);
+      effectiveProbeOpts.protectionBypassSecret = bypass.secret;
+      if (!effectiveProbeOpts.ssoProtectionType) effectiveProbeOpts.ssoProtectionType = bypass.ssoProtectionType;
+    }
+    attestedCohorts = await attestRecoveryShards(d, expectedShards, expectedSha, probeIdToken, fetcher, effectiveProbeOpts);
   }
   const aliasData = await vget(vercelToken, '/v2/aliases/' + encodeURIComponent(EXPECTED_ALIAS), fetcher);
   const liveId = aliasData.deploymentId || (aliasData.deployment && aliasData.deployment.id);
@@ -451,7 +619,31 @@ async function verifyFleetDeploymentLive(vercelToken, deploymentId, expectedSha,
     assert.equal(liveId, deploymentId, 'LIVE_ALIAS_TARGET_MISMATCH: expected=' + deploymentId + ' actual=' + liveId);
   }
   return { attested: true, deploymentId, runtimeSha: expectedSha, alias: EXPECTED_ALIAS, envNames,
-    recoverySeal: d.meta.vdsenRecoverySeal || null };
+    recoverySeal: d.meta.vdsenRecoverySeal || null, attestedCohorts };
+}
+
+async function findReusableRecoveryCandidate(vercelToken, runtimeSha, digest, expectedLive, allShardNames, fetcher = globalThis.fetch) {
+  try {
+    const list = await vget(vercelToken, '/v6/deployments?projectId=' + DEFAULT_PROJECT_ID + '&target=production&limit=20', fetcher);
+    const deployments = Array.isArray(list && list.deployments) ? list.deployments : [];
+    const matches = deployments.filter((d) => {
+      const id = d && (d.uid || d.id);
+      const ready = d && (d.readyState === 'READY' || d.state === 'READY');
+      return !!(id && id !== expectedLive && ready && d.target === 'production' &&
+        d.meta && d.meta.githubCommitSha === runtimeSha && d.meta.vdsenRecoverySeal === digest);
+    }).sort((a, b) => Number((b && (b.createdAt || b.created)) || 0) - Number((a && (a.createdAt || a.created)) || 0));
+    if (!matches.length) return null;
+    const candId = matches[0].uid || matches[0].id;
+    const full = await vget(vercelToken, '/v13/deployments/' + encodeURIComponent(candId), fetcher);
+    if (!full || (full.id || full.uid) === expectedLive || full.readyState !== 'READY' || full.target !== 'production') return null;
+    if (!full.meta || full.meta.githubCommitSha !== runtimeSha || full.meta.vdsenRecoverySeal !== digest) return null;
+    const envNames = (Array.isArray(full.env) ? full.env : []).map(e => typeof e === 'string' ? e : (e && e.key)).filter(Boolean);
+    const actualShardNames = envNames.filter(name => /^VDSEN_NUMERIC_COHORT_\d+$/.test(name));
+    if (!_sameSortedArray(actualShardNames, allShardNames)) return null;
+    return full;
+  } catch {
+    return null;
+  }
 }
 
 function recoverySealBaseline(state, runtimeSha) {
@@ -562,6 +754,7 @@ async function prepareFleetRuntime(opts) {
 
   let stagedId = stagedRecoveryId;
   let staged;
+  let reusedCandidate = false;
   if (stagedRecoveryId) {
     probeIdToken = await opts.acquireProbeIdentity(stagedId);
     staged = await app.deployment(s, stagedId);
@@ -576,35 +769,44 @@ async function prepareFleetRuntime(opts) {
     }
     await verifyFleetDeploymentLive(vercelToken, stagedId, runtimeSha, allShardNames, fetcher, { expectedLive, digest }, expectedShards, probeIdToken);
   } else {
-    const tmpRoot = path.resolve(process.env.RUNNER_TEMP || require('node:os').tmpdir());
-    const dest = path.resolve(tmpRoot, 'vdsen-fleet-' + (process.env.GITHUB_RUN_ID || Date.now()));
-    app.exportCandidateTree(runtimeSha, dest);
-    app.verifyExportedTree(runtimeSha, dest, app.servedSurface());
+    const reusable = stageOnly
+      ? await findReusableRecoveryCandidate(vercelToken, runtimeSha, digest, expectedLive, allShardNames, fetcher)
+      : null;
+    if (reusable) {
+      staged = reusable;
+      stagedId = reusable.id || reusable.uid;
+      reusedCandidate = true;
+    } else {
+      const tmpRoot = path.resolve(process.env.RUNNER_TEMP || require('node:os').tmpdir());
+      const dest = path.resolve(tmpRoot, 'vdsen-fleet-' + (process.env.GITHUB_RUN_ID || Date.now()));
+      app.exportCandidateTree(runtimeSha, dest);
+      app.verifyExportedTree(runtimeSha, dest, app.servedSurface());
 
-    const args = [
-      'deploy', '--prod', '--skip-domain', '--yes',
-      '-e', 'AUTONOMOUS_PROGRESSION_ENABLED=true',
-      '-e', 'AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED=true',
-      '-e', 'VDSEN_NUMERIC_PILOT_ENABLED=true',
-      '-e', 'VDSEN_NUMERIC_PILOT_RUNTIME_SHA=' + runtimeSha,
-      '-m', 'githubCommitSha=' + runtimeSha,
-      '-m', 'vdsenPilotOperation=' + operationId,
-      '-m', 'vdsenFleetCohorts=' + String(manifest.cohortCount),
-      '-m', 'vdsenBaselineDeployment=' + baselineDeployment,
-    ];
-    if (stageOnly) args.push('-m', 'vdsenRecoverySeal=' + digest);
-    for (const co of manifest.cohorts) {
-      for (const sh of co.envShards) {
-        args.push('-e', sh.name + '=' + JSON.stringify(sh.windows));
+      const args = [
+        'deploy', '--prod', '--skip-domain', '--yes',
+        '-e', 'AUTONOMOUS_PROGRESSION_ENABLED=true',
+        '-e', 'AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED=true',
+        '-e', 'VDSEN_NUMERIC_PILOT_ENABLED=true',
+        '-e', 'VDSEN_NUMERIC_PILOT_RUNTIME_SHA=' + runtimeSha,
+        '-m', 'githubCommitSha=' + runtimeSha,
+        '-m', 'vdsenPilotOperation=' + operationId,
+        '-m', 'vdsenFleetCohorts=' + String(manifest.cohortCount),
+        '-m', 'vdsenBaselineDeployment=' + baselineDeployment,
+      ];
+      if (stageOnly) args.push('-m', 'vdsenRecoverySeal=' + digest);
+      for (const co of manifest.cohorts) {
+        for (const sh of co.envShards) {
+          args.push('-e', sh.name + '=' + JSON.stringify(sh.windows));
+        }
       }
-    }
 
-    const r = await app.runVercelCli(args, dest, { VERCEL_ORG_ID: DEFAULT_TEAM_ID, VERCEL_PROJECT_ID: DEFAULT_PROJECT_ID });
-    assert.equal(r.code, 0, 'FLEET_DEPLOY_FAILED: ' + String(r.err || r.out).slice(0, 400));
-    const match = (String(r.out) + '\n' + String(r.err)).match(/https:\/\/([A-Za-z0-9.-]+\.vercel\.app)/);
-    assert.ok(match, 'FLEET_DEPLOY_URL_MISSING');
-    staged = await app.deployment(s, match[1]);
-    stagedId = staged.id || staged.uid;
+      const r = await app.runVercelCli(args, dest, { VERCEL_ORG_ID: DEFAULT_TEAM_ID, VERCEL_PROJECT_ID: DEFAULT_PROJECT_ID });
+      assert.equal(r.code, 0, 'FLEET_DEPLOY_FAILED: ' + String(r.err || r.out).slice(0, 400));
+      const match = (String(r.out) + '\n' + String(r.err)).match(/https:\/\/([A-Za-z0-9.-]+\.vercel\.app)/);
+      assert.ok(match, 'FLEET_DEPLOY_URL_MISSING');
+      staged = await app.deployment(s, match[1]);
+      stagedId = staged.id || staged.uid;
+    }
   }
 
   // Confirm project Numeric Guard stayed DISARMED
@@ -614,14 +816,47 @@ async function prepareFleetRuntime(opts) {
 
   if (stageOnly) {
     probeIdToken = await opts.acquireProbeIdentity(stagedId);
-    await verifyFleetDeploymentLive(vercelToken, stagedId, runtimeSha, allShardNames, fetcher, { expectedLive, digest }, expectedShards, probeIdToken);
+    let live;
+    try {
+      live = await verifyFleetDeploymentLive(vercelToken, stagedId, runtimeSha, allShardNames, fetcher, { expectedLive, digest }, expectedShards, probeIdToken);
+    } catch (err) {
+      const failReport = {
+        schema: 'vdsen-fleet-recovery-stage-v1',
+        status: 'STAGE_ATTESTATION_FAILED',
+        errorCode: err && err.message ? err.message : String(err),
+        expectedLive,
+        baselineDeployment,
+        stagedId,
+        stagedHost: staged && staged.url ? staged.url : null,
+        runtimeSha,
+        operationId,
+        digest,
+        reusedCandidate,
+        diagnostic: (err && err.diagnostic) || null,
+      };
+      if (outFile) {
+        fs.mkdirSync(path.dirname(outFile), { recursive: true });
+        fs.writeFileSync(outFile, JSON.stringify(failReport, null, 2) + '\n');
+      }
+      console.error('RECOVERY_PROBE_DIAGNOSTIC:', JSON.stringify({
+        errorCode: failReport.errorCode,
+        stagedId,
+        reusedCandidate,
+        diagnostic: failReport.diagnostic,
+      }));
+      throw err;
+    }
     const report = {
       schema: 'vdsen-fleet-recovery-stage-v1', status: 'STAGED_NOT_PROMOTED',
-      expectedLive, baselineDeployment, stagedId, runtimeSha, operationId, startsAt, expiresAt,
+      expectedLive, baselineDeployment, stagedId, stagedHost: staged && staged.url ? staged.url : null,
+      reusedCandidate, runtimeSha, operationId, startsAt, expiresAt,
       digest, clientCount: manifest.eligibleCount, pidCount: manifest.totalEligiblePids, shardCount: allShardNames.length,
+      attestedCohorts: live.attestedCohorts || [],
     };
-    fs.mkdirSync(path.dirname(outFile), { recursive: true });
-    fs.writeFileSync(outFile, JSON.stringify(report, null, 2) + '\n');
+    if (outFile) {
+      fs.mkdirSync(path.dirname(outFile), { recursive: true });
+      fs.writeFileSync(outFile, JSON.stringify(report, null, 2) + '\n');
+    }
     return report;
   }
 
@@ -2179,6 +2414,9 @@ module.exports = {
   prepareFleetRuntime,
   validateRecoveryScope,
   verifyFleetDeploymentLive,
+  attestRecoveryShards,
+  readVercelAutomationBypass,
+  findReusableRecoveryCandidate,
   recoverySealBaseline,
   sealRecoveryShards,
   preflightCohort,
