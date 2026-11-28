@@ -31,6 +31,130 @@ function makePlan(uid, planId, pidCount, opts = {}) {
   }, opts);
 }
 
+test('recovery preserves the roster, PIDs and existing expiry; only pilot plan drift is admissible', () => {
+  const clients = Array.from({length:25}, (_, i) => ({
+    _id: i === 24 ? COACH : 'client_' + String(i).padStart(2, '0'),
+    coachId:COACH, status:'activo', activePlanId:'plan_' + i,
+  }));
+  const plans = Object.fromEntries(clients.map((c, i) =>
+    [c.activePlanId, makePlan(c._id,c.activePlanId,i < 11 ? 34 : 33)]));
+  const manifest = cohortOps.buildCohortsFromRoster(clients, plans, {
+    runtimeSha:SHA, operationId:'T875-RECOVERY-NEW', startsAt:STARTS, expiresAt:EXPIRES,
+  });
+  const co = manifest.cohorts[2];
+  const windows = Object.fromEntries(co.clients.map(c => [c.uid, {
+    enabled:true, planId:c.planId, pids:c.pids, pidCount:c.pidCount, pidsHash:c.pidsHash,
+    runtimeSha:SHA, operationId:'PREVIOUS-OP', expiresAt:EXPIRES,
+  }]));
+  windows[COACH].planId = 'superseded_plan';
+  const common = {enabled:true, operationId:'PREVIOUS-OP', expiresAt:EXPIRES};
+  const fences = {
+    releaseFence:{...common, clientIds:co.clientIds},
+    numericFence:{...common, runtimeSha:SHA, windows},
+    coachCanaryCohort:{...common, clientIds:co.clientIds, prescriptionExerciseIds:co.allPids},
+    coachCanaryEnabled:true,
+  };
+  const validate = (candidate = manifest, expires = EXPIRES) =>
+    cohortOps.validateRecoveryScope(candidate, co, fences, SHA, expires, NOW);
+  assert.doesNotThrow(() => validate());
+  assert.throws(() => validate({...manifest, eligibleCount:26}), /RECOVERY_ROSTER_COUNT_CHANGED/);
+  assert.throws(() => validate(manifest, STARTS), /RECOVERY_EXPIRY_CHANGED/);
+  windows[COACH].pidsHash = 'changed-hash';
+  assert.throws(() => validate(), /RECOVERY_AUTHORIZATION_DRIFT/);
+});
+
+test('staged recovery attestation binds the seal and refuses unverified or already live candidates', async () => {
+  const expectedLive = 'dpl_live';
+  const digest = 'a'.repeat(64);
+  const deployment = {
+    id:'dpl_stage', url:'staged-fixture.vercel.app', projectId:'prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN', teamId:'team_VZc5H7Q1DBIJ3g0mwrSBz1o8',
+    readyState:'READY', target:'production', meta:{githubCommitSha:SHA, vdsenRecoverySeal:digest},
+    env:['AUTONOMOUS_PROGRESSION_ENABLED','AUTONOMOUS_PROGRESSION_NUMERIC_APPLY_ENABLED',
+      'VDSEN_NUMERIC_PILOT_ENABLED','VDSEN_NUMERIC_PILOT_RUNTIME_SHA','VDSEN_NUMERIC_COHORT_1'],
+  };
+  let alias = expectedLive;
+  const fetcher = async url => ({
+    status:200, json:async () => url.includes('/deployments/') ? deployment : {deploymentId:alias},
+  });
+  const verify = (seal = digest) => cohortOps.verifyFleetDeploymentLive(
+    'test-token', deployment.id, SHA, 'VDSEN_NUMERIC_COHORT_1', fetcher, {expectedLive,digest:seal});
+  assert.equal((await verify()).attested, true);
+  await assert.rejects(verify('b'.repeat(64)), /RECOVERY_SEAL_MISMATCH/);
+  alias = deployment.id;
+  await assert.rejects(verify(), /RECOVERY_STAGE_ALIAS_CHANGED/);
+  alias = expectedLive;
+  deployment.env.pop();
+  await assert.rejects(verify(), /MISSING_COHORT_SHARD/);
+  const shards = [1,1,2,2,3].map((cohort, i) => ({
+    name:'VDSEN_NUMERIC_COHORT_' + (i+1),
+    windows:[{runtimeSha:SHA,planId:'test_plan_'+i,uid:'client_'+i,cohortId:'cohort-0'+cohort}],
+  }));
+  deployment.env.push(...shards.map(shard => shard.name));
+  const runtimeEnv = Object.fromEntries(shards.map(shard => [shard.name,JSON.stringify(shard.windows)]));
+  runtimeEnv.VERCEL_DEPLOYMENT_ID = deployment.id;
+  runtimeEnv.VDSEN_NUMERIC_PILOT_RUNTIME_SHA = SHA;
+  const {makeHandler} = require('../api/autonomous-progression-trigger.js');
+  const crypto = require('node:crypto');
+  const {privateKey,publicKey} = crypto.generateKeyPairSync('rsa',{modulusLength:2048});
+  const kid = 'fixture-key';
+  const now = Math.floor(Date.now()/1000);
+  const repo = 'vdsenasesoria-svg/vdsen-ecosistema';
+  const ref = 'refs/heads/codex/client-app-next';
+  const issue = (overrides = {}) => {
+    const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
+    const claims = {
+      iss:'https://token.actions.githubusercontent.com', aud:'vdsen-recovery-shards:'+deployment.id,
+      sub:'repo:'+repo+':environment:Production', repository:repo, repository_owner:'vdsenasesoria-svg',
+      workflow_ref:repo+'/.github/workflows/vdsen-numeric-pilot.yml@'+ref, ref, environment:'Production',
+      event_name:'workflow_dispatch', run_attempt:'1', run_id:'123', iat:now, exp:now+300,
+      ...overrides,
+    };
+    const data = encode({alg:'RS256',kid})+'.'+encode(claims);
+    return data+'.'+crypto.sign('RSA-SHA256',Buffer.from(data),privateKey).toString('base64url');
+  };
+  const handler = makeHandler({runtimeEnv, githubJwks:async () => [{...publicKey.export({format:'jwk'}),kid}],
+    verifyIdToken:async () => assert.fail('OIDC request must not use Firebase authentication')});
+  const probeFetcher = async (url, opts) => {
+    const parsed = new URL(url);
+    if (parsed.hostname !== deployment.url) return fetcher(url);
+    assert.equal(opts.redirect,'error');
+    let status, body;
+    await handler({method:'GET',query:Object.fromEntries(parsed.searchParams),headers:opts.headers},
+      {status(code){status=code;return this;},json(data){body=data;return this;}});
+    return {status,json:async () => body};
+  };
+  const verifyValues = (token = issue()) => cohortOps.verifyFleetDeploymentLive(
+    'test-token', deployment.id, SHA, shards.map(shard => shard.name), probeFetcher, {expectedLive,digest}, shards, token);
+  await assert.rejects(verifyValues(''), /RECOVERY_PROBE_AUTH_UNAVAILABLE/);
+  await assert.rejects(verifyValues('wrong-token'), /RECOVERY_RUNTIME_PROBE_MISMATCH/);
+  for (const claims of [{aud:'vdsen-recovery-shards:dpl_other'}, {environment:'Preview'}, {ref:'refs/heads/main'},
+    {workflow_ref:repo+'/.github/workflows/vdsen-ayrton-window.yml@'+ref}, {repository:'other/repo'}, {exp:now-1}]) {
+    await assert.rejects(verifyValues(issue(claims)), /RECOVERY_RUNTIME_PROBE_MISMATCH/);
+  }
+  runtimeEnv[shards[0].name] = '[]';
+  await assert.rejects(verifyValues(), /RECOVERY_RUNTIME_PROBE_MISMATCH/);
+  runtimeEnv[shards[0].name] = JSON.stringify(shards[0].windows);
+  runtimeEnv.VERCEL_DEPLOYMENT_ID = 'dpl_wrong';
+  await assert.rejects(verifyValues(), /RECOVERY_RUNTIME_PROBE_MISMATCH/);
+  runtimeEnv.VERCEL_DEPLOYMENT_ID = deployment.id;
+  assert.equal((await verifyValues()).attested, true);
+  deployment.env.push('VDSEN_NUMERIC_COHORT_6');
+  await assert.rejects(verifyValues(), /RECOVERY_SHARD_SET_MISMATCH/);
+});
+
+test('updated APP-ONLY provenance preserves the prior seal baseline without changing the current baseline', () => {
+  const next = 'a'.repeat(40);
+  const state = {runtime_sha:next, production_deployment:'dpl_new', app_release:{
+    runtime_sha:next, deployment:'dpl_new', previous_runtime_sha:SHA,
+    previous_deployment:'dpl_old', source_release_run:'123',
+  }};
+  assert.equal(cohortOps.recoverySealBaseline(state,SHA), 'dpl_old');
+  assert.equal(cohortOps.recoverySealBaseline(state,next), 'dpl_new');
+  assert.throws(() => cohortOps.recoverySealBaseline(state,'b'.repeat(40)), /NOT_ACCREDITED/);
+  state.app_release.deployment = 'dpl_other';
+  assert.throws(() => cohortOps.recoverySealBaseline(state,SHA), /NOT_ACCREDITED/);
+});
+
 test('T875.1 Roster partitioning: 29 eligible clients -> 3 isolated cohorts (10+10+9), excludes inactive/no-plan/no-PID, each env shard < 4 KB', () => {
   const clients = [];
   const plans = {};

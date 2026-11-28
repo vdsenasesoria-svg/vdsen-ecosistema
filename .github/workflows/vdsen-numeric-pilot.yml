@@ -24,12 +24,12 @@ on:
         default: ''
         type: string
       deployment_id:
-        description: Vercel deployment ID (dpl_...)
+        description: Vercel deployment ID. Recovery stage expects the current live ID, recovery promote expects the staged ID.
         required: false
         default: ''
         type: string
       pilot_uid:
-        description: Explicit Ayrton UID (z82EDPvsCaabfMN3eGAP3rpxeMt1)
+        description: Explicit pilot UID or fleet selector, including FLEET:RECOVERY-STAGE and FLEET:RECOVERY-PROMOTE.
         default: 'z82EDPvsCaabfMN3eGAP3rpxeMt1'
         type: string
       plan_id:

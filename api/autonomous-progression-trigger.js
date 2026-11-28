@@ -11,6 +11,7 @@ var GH_A4_REPO = 'vdsenasesoria-svg/vdsen-ecosistema';
 var GH_A4_OWNER = 'vdsenasesoria-svg';
 var GH_A4_REF = 'refs/heads/codex/client-app-next';
 var GH_A4_WORKFLOW_REF = 'vdsenasesoria-svg/vdsen-ecosistema/.github/workflows/vdsen-ayrton-window.yml@refs/heads/codex/client-app-next';
+var GH_RECOVERY_WORKFLOW_REF = GH_A4_REPO + '/.github/workflows/vdsen-numeric-pilot.yml@' + GH_A4_REF;
 var _ghJwksCache = { at: 0, keys: null };
 
 async function fetchGithubJwks() {
@@ -59,7 +60,12 @@ async function verifyGithubA4OidcToken(token, opts) {
   if (payload.aud !== opts.expectedAudience) return { ok: false, error: 'OIDC_FORBIDDEN' };
   if (payload.repository !== GH_A4_REPO || payload.repository_owner !== GH_A4_OWNER) return { ok: false, error: 'OIDC_FORBIDDEN' };
   if (payload.ref !== GH_A4_REF || payload.event_name !== 'workflow_dispatch' || payload.environment !== 'Production') return { ok: false, error: 'OIDC_FORBIDDEN' };
-  if (payload.workflow_ref !== GH_A4_WORKFLOW_REF) return { ok: false, error: 'OIDC_FORBIDDEN' };
+  var workflowRef = opts.recovery === true ? GH_RECOVERY_WORKFLOW_REF : GH_A4_WORKFLOW_REF;
+  if (payload.workflow_ref !== workflowRef) return { ok: false, error: 'OIDC_FORBIDDEN' };
+  if (opts.recovery === true &&
+      (payload.sub !== 'repo:' + GH_A4_REPO + ':environment:Production' ||
+       !Number.isInteger(payload.iat) || payload.iat > now + 5 || now - payload.iat > 300 ||
+       !Number.isInteger(payload.exp) || payload.exp - payload.iat > 600)) return { ok: false, error: 'OIDC_FORBIDDEN' };
   if (String(payload.run_attempt) !== '1' || !/^[1-9][0-9]+$/.test(String(payload.run_id || ''))) return { ok: false, error: 'OIDC_FORBIDDEN' };
   if (payload.head_ref || payload.base_ref) return { ok: false, error: 'OIDC_FORBIDDEN' };
 
@@ -139,8 +145,18 @@ function makeHandler(deps) {
       if (typeof res.setHeader === 'function') res.setHeader('Cache-Control', 'no-store');
       var csToken = /^Bearer\s+(\S+)$/.exec(String(req.headers && req.headers.authorization || '').trim());
       if (!csToken) return res.status(401).json({ error: 'AUTH_MISSING' });
-      try { await deps.verifyIdToken(csToken[1]); } catch (_) { return res.status(401).json({ error: 'AUTH_INVALID' }); }
       var cid = typeof req.query.cohortId === 'string' ? req.query.cohortId.trim() : '';
+      if (req.query.auth === 'workflow-oidc') {
+        var deploymentId = (deps.runtimeEnv || process.env).VERCEL_DEPLOYMENT_ID || '';
+        if (!/^dpl_[A-Za-z0-9]+$/.test(deploymentId)) return res.status(403).json({ error: 'DEPLOYMENT_ID_UNAVAILABLE' });
+        var receipt = await verifyGithubA4OidcToken(csToken[1], {
+          recovery: true, expectedAudience: 'vdsen-recovery-shards:' + deploymentId,
+          jwks: deps.githubJwks, now: deps.now,
+        });
+        if (!receipt.ok) return res.status(receipt.error === 'OIDC_JWKS_UNAVAILABLE' ? 503 : 403).json({ error: receipt.error });
+      } else {
+        try { await deps.verifyIdToken(csToken[1]); } catch (_) { return res.status(401).json({ error: 'AUTH_INVALID' }); }
+      }
       if (!/^cohort-\d{2}$/.test(cid)) return res.status(400).json({ error: 'COHORT_ID_INVALID' });
       return res.status(200).json(planSyncLib.buildServedCohortProbePayload(deps.runtimeEnv || process.env, cid));
     }
