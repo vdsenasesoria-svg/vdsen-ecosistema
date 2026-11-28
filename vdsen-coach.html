@@ -683,6 +683,69 @@
       .vdsen-ren-grid-2 { grid-template-columns: 1fr; }
       .vdsen-ren-grid-3 { grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); }
     }
+    .vdsen-plan-ex-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 10px;
+      border: 1px solid var(--border-soft);
+      border-radius: 3px;
+      background: rgba(244, 244, 240, 0.02);
+      margin-bottom: 6px;
+      flex-wrap: wrap;
+    }
+    .vdsen-plan-ex-main {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      flex: 1 1 200px;
+      flex-wrap: wrap;
+    }
+    .vdsen-ex-thumb {
+      width: 36px;
+      height: 36px;
+      flex-shrink: 0;
+      border-radius: 3px;
+      border: 1px solid var(--border-strong);
+      background: var(--bg-elevated);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      color: var(--text-muted);
+    }
+    .vdsen-ex-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .vdsen-ex-photo-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      min-height: 36px;
+      border-radius: 2px;
+      border: 1px solid var(--border-strong);
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .vdsen-ex-photo-btn.has-photo {
+      border-color: rgba(198, 255, 0, 0.55);
+      color: var(--accent);
+      background: rgba(198, 255, 0, 0.08);
+    }
+    @media (max-width: 768px), (max-height: 520px) {
+      .vdsen-ex-photo-btn { min-height: 44px; }
+    }
     .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .loading-row { display: flex; align-items: center; gap: 8px; color: var(--text-muted); padding: 12px 0; font-size: 13px; }
@@ -3790,6 +3853,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       } catch (_) {}
     }
     _coachSecondaryLoaded = { catalogo: false, templates: false, compendio: false };
+    _coachCatalogLoadPromise = null;
     loadClientList();
     loadClientsSelect();
     loadFichasRecibidas();
@@ -3818,6 +3882,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     try { if (_vdsenPhotoMount) _vdsenPhotoMount.destroy(); } catch (e) {}
     _vdsenPhotoMount = null;
     _vdsenPhotoExercise = null;
+    if (typeof _closePlanExercisePhoto === 'function') _closePlanExercisePhoto();
     _visualSeq++;
     if (window._vdsenShellStash || !document.getElementById('clientList')) return; // ya estacionado, o no es el shell del Coach
     if (window._vdsenMenu) window._vdsenMenu.destroyHost();
@@ -3938,6 +4003,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       _intakeCurrentClient = null; _historicalMesoState = null; _shadowMonitorContext = null;
       _lastSelectedClientId = null; _clientListFilter = 'all'; _pendientesFilter = 'all';
       _coachSecondaryLoaded = { catalogo: false, templates: false, compendio: false };
+      _coachCatalogLoadPromise = null;
       _lastCoachRowData = []; _lastDashboardSnapshot = null;
       _fichasPublicasCache = []; _fichasClientesCache = [];
       if (typeof window !== 'undefined') { window._clientCache = {}; window._lastPendientesItems = []; }
@@ -5010,23 +5076,6 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     // the editor save runs exactly as it always did.
     try {
       if (COACH_IMAGE_UPLOAD_ENABLED && window.VDSEN_COACH_IMAGE_MOUNT && window.VDSEN_COACH_IMAGE_UI && window.VDSEN_IMG_CONTROLLER) {
-        var _imgAdapter = _vdsenImageAdapter();
-        var _imgController = window.VDSEN_IMG_CONTROLLER.createController({
-          process: function (file) { return window.VDSEN_IMG_PROCESS.processImage(file, window.VDSEN_IMG_PROCESS.browserEnv(window)); },
-          upload: _imgAdapter.upload,
-          getDownloadUrl: _imgAdapter.getDownloadUrl,
-          deleteObject: _imgAdapter.deleteObject,
-          publish: function (exerciseId, patch) { return _imgAdapter.publishExerciseImage(exerciseId, patch); },
-          // BOTH conditions the controller needs: the token must be the ACTIVE generation, and the
-          // prepared image must carry that same token (checked inside savePrepared).
-          isCurrent: function (token) {
-            if (!currentCoach || !currentCoach.uid) return false;
-            if (!_visualEditorExercise) return false;
-            if (_visualEditorExercise.coachId !== currentCoach.uid) return false;
-            return String(token) === window.VDSEN_VISUAL_EDITOR_CTX.token();
-          },
-          onCleanupFailure: function () { /* orphan debt on the OLD object; the new state is correct */ },
-        });
         var _saveEl = document.getElementById(String.fromCharCode(118,105,115,117,97,108,77,101,116,97,83,97,118,101));
         var _statusEl = document.getElementById(String.fromCharCode(118,105,115,117,97,108,77,101,116,97,83,116,97,116,117,115));
         _vdsenPhotoMount = window.VDSEN_COACH_IMAGE_MOUNT.mount({
@@ -5035,7 +5084,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           saveBtn: _saveEl,
           statusEl: _statusEl,
           ctx: window.VDSEN_VISUAL_EDITOR_CTX,
-          controller: _imgController,
+          controller: _createCoachImageController(),
           paths: window.VDSEN_IMG_PATHS,
           read: function (id) { var el = document.getElementById(id); return el ? el.value : ''; },
           onDone: function () { _visualEditorClose(); loadExerciseCatalog(); },
@@ -5058,6 +5107,361 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     };
   }
   window.openVisualMetadataEditor = openVisualMetadataEditor;
+
+  function _createCoachImageController() {
+    var _imgAdapter = _vdsenImageAdapter();
+    return window.VDSEN_IMG_CONTROLLER.createController({
+      process: function (file) { return window.VDSEN_IMG_PROCESS.processImage(file, window.VDSEN_IMG_PROCESS.browserEnv(window)); },
+      upload: _imgAdapter.upload,
+      getDownloadUrl: _imgAdapter.getDownloadUrl,
+      deleteObject: _imgAdapter.deleteObject,
+      publish: function (exerciseId, patch) { return _imgAdapter.publishExerciseImage(exerciseId, patch); },
+      // BOTH conditions the controller needs: the token must be the ACTIVE generation, and the
+      // prepared image must carry that same token (checked inside savePrepared).
+      isCurrent: function (token) {
+        if (!currentCoach || !currentCoach.uid) return false;
+        if (!_visualEditorExercise) return false;
+        if (_visualEditorExercise.coachId !== currentCoach.uid) return false;
+        return String(token) === window.VDSEN_VISUAL_EDITOR_CTX.token();
+      },
+      onCleanupFailure: function () { /* orphan debt on the OLD object; the new state is correct */ },
+    });
+  }
+
+  function _normalizeCoachExKey(value) {
+    return String(value || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+  }
+
+  function _coachGymMatches(entryGym, clientGym) {
+    var eRaw = String(entryGym || '').trim();
+    var cRaw = String(clientGym || '').trim();
+    if (!eRaw) return true;
+    if (!cRaw) return false;
+    var ek = _normalizeCoachExKey(eRaw);
+    var ck = _normalizeCoachExKey(cRaw);
+    if (ek === ck) return true;
+    var sdKeys = ['san diego', 'smart fit san diego', 'smart-fit-san-diego'];
+    return sdKeys.indexOf(ek) !== -1 && sdKeys.indexOf(ck) !== -1;
+  }
+
+  function _safeCoachImgSrc(value) {
+    var raw = String(value || '').trim();
+    if (!raw) return '';
+    return (/^https:\/\//i.test(raw) || /^assets\//i.test(raw)) ? raw : '';
+  }
+
+  // Client-parity exercise catalog resolver: keeps document-ID authority, site-vs-generic precedence,
+  // and detects when static site catalog entries would otherwise shadow a generic Coach upload.
+  function _resolvePlanExerciseCatalogMatch(planExercise, allExercises, coachUid, clientGym, visualCatalog) {
+    var targetName = String((planExercise && (planExercise.exerciseName || planExercise.nombre)) || '').trim();
+    var nameKey = _normalizeCoachExKey(targetName);
+    var logicalId = planExercise && planExercise.exerciseId ? String(planExercise.exerciseId).trim() : '';
+    var gymStr = String(clientGym || '').trim();
+    var owned = Array.isArray(allExercises)
+      ? allExercises.filter(function (ex) { return ex && ex.id && ex.coachId === coachUid; })
+      : [];
+
+    if (logicalId) {
+      var idMatches = owned.filter(function (ex) {
+        return String(ex.id) === logicalId || String(ex.exerciseId || '') === logicalId;
+      });
+      var gymCompatibleId = idMatches.filter(function (ex) {
+        var eg = ex.gymId || ex.gym || ex.site || ex.sede || '';
+        return !eg || _coachGymMatches(eg, gymStr);
+      });
+      if (gymCompatibleId.length) {
+        var pickedById = gymCompatibleId[0];
+        return {
+          match: pickedById,
+          source: 'exerciseId',
+          ambiguous: gymCompatibleId.length > 1,
+          targetGym: pickedById.gym || pickedById.site || pickedById.sede || '',
+          needsCreate: false,
+          genericFallback: null,
+          createSpec: null,
+        };
+      }
+    }
+
+    var exact = !nameKey ? [] : owned.filter(function (ex) {
+      var names = [ex.name, ex.exerciseName].concat(Array.isArray(ex.aliases) ? ex.aliases : []);
+      return names.some(function (n) { return _normalizeCoachExKey(n) === nameKey; });
+    });
+
+    if (gymStr) {
+      var siteMatches = exact.filter(function (ex) {
+        var eg = ex.gymId || ex.gym || ex.site || ex.sede || '';
+        return !!eg && _coachGymMatches(eg, gymStr);
+      });
+      if (siteMatches.length) {
+        return {
+          match: siteMatches[0],
+          source: 'firestore_site',
+          ambiguous: siteMatches.length > 1,
+          targetGym: siteMatches[0].gym || siteMatches[0].site || siteMatches[0].sede || gymStr,
+          needsCreate: false,
+          genericFallback: null,
+          createSpec: null,
+        };
+      }
+    }
+
+    var genericMatches = exact.filter(function (ex) {
+      return !(ex.gymId || ex.gym || ex.site || ex.sede);
+    });
+
+    var collidesStaticSite = false;
+    if (gymStr && nameKey && visualCatalog && visualCatalog.gyms) {
+      var gymObj = null;
+      var gymKeys = Object.keys(visualCatalog.gyms);
+      for (var gi = 0; gi < gymKeys.length; gi++) {
+        var candidate = visualCatalog.gyms[gymKeys[gi]] || {};
+        var gNames = [gymKeys[gi], candidate.gym, candidate.gymId].concat(Array.isArray(candidate.aliases) ? candidate.aliases : []);
+        if (gNames.some(function (gn) { return _coachGymMatches(gn, gymStr); })) { gymObj = candidate; break; }
+      }
+      if (gymObj) {
+        var staticEntries = (Array.isArray(gymObj.entries) ? gymObj.entries : []).concat(Array.isArray(gymObj.legacyEntries) ? gymObj.legacyEntries : []);
+        var staticHits = staticEntries.filter(function (entry) {
+          var sNames = [entry.name, entry.exerciseName].concat(Array.isArray(entry.aliases) ? entry.aliases : []);
+          if (Array.isArray(entry.variants)) sNames = sNames.concat(entry.variants.map(function (v) { return v && v.name; }));
+          return sNames.some(function (sn) { return _normalizeCoachExKey(sn) === nameKey; });
+        });
+        collidesStaticSite = staticHits.length === 1;
+      }
+    }
+
+    if (!collidesStaticSite && genericMatches.length) {
+      return {
+        match: genericMatches[0],
+        source: 'firestore_coach',
+        ambiguous: genericMatches.length > 1,
+        targetGym: '',
+        needsCreate: false,
+        genericFallback: null,
+        createSpec: null,
+      };
+    }
+
+    var targetGymForNew = collidesStaticSite ? gymStr : '';
+    return {
+      match: null,
+      source: collidesStaticSite ? 'site_catalog_override' : 'missing',
+      ambiguous: false,
+      targetGym: targetGymForNew,
+      needsCreate: true,
+      genericFallback: genericMatches.length === 1 ? genericMatches[0] : null,
+      createSpec: {
+        name: targetName,
+        exerciseId: logicalId || null,
+        gym: targetGymForNew,
+      },
+    };
+  }
+  window._resolvePlanExerciseCatalogMatch = _resolvePlanExerciseCatalogMatch;
+
+  function _closePlanExercisePhoto() {
+    try { if (_vdsenPhotoMount) _vdsenPhotoMount.destroy(); } catch (e) {}
+    _vdsenPhotoMount = null;
+    _vdsenPhotoExercise = null;
+    _visualEditorExercise = null;
+    _visualSeq++;
+    var el = document.getElementById('planExercisePhotoModal');
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
+  window._closePlanExercisePhoto = _closePlanExercisePhoto;
+
+  async function _openPlanExercisePhoto(dayIdx, exIdx) {
+    if (!currentCoach || !_detailClientId || !_detailClientData || !_detailPlanData) return;
+    var days = Array.isArray(_detailPlanData.days) ? _detailPlanData.days : [];
+    var day = days[dayIdx];
+    var planEx = day && Array.isArray(day.exercises) ? day.exercises[exIdx] : null;
+    if (!planEx) return;
+
+    if (window._vdsenMenu) window._vdsenMenu.closeAll({ restoreFocus: false });
+    _visualEditorClose();
+    _closePlanExercisePhoto();
+
+    var openSeq = ++_visualSeq;
+    var uidAtStart = currentCoach.uid;
+    var cidAtStart = _detailClientId;
+    var clientName = _detailClientData.displayName || _detailClientData.email || cidAtStart;
+    var clientGym = ((_detailFichaData && _detailFichaData.data && (_detailFichaData.data.gimnasio || _detailFichaData.data.gym)) || _detailClientData.gimnasio || _detailClientData.gym || _detailPlanData.gym || _detailPlanData.sede || '');
+    var exTitle = planEx.exerciseName || planEx.nombre || 'Ejercicio';
+
+    var ov = document.createElement('div');
+    ov.id = 'planExercisePhotoModal';
+    ov.className = 'modal-overlay';
+    ov.style.zIndex = '100000';
+    ov.setAttribute('role', 'dialog');
+    ov.setAttribute('aria-modal', 'true');
+    ov.setAttribute('aria-labelledby', 'planPhotoModalTitle');
+    ov.innerHTML = [
+      '<div class="modal-box" style="max-width:520px">',
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding-bottom:10px;border-bottom:1px solid var(--border)">',
+          '<div style="min-width:0;flex:1">',
+            '<div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--accent);font-weight:800">Imagen del ejercicio</div>',
+            '<h3 id="planPhotoModalTitle" style="margin:2px 0 0;font-family:\'Big Shoulders Display\',\'Inter\',sans-serif;font-size:22px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:var(--text-primary)">' + _escH(exTitle) + '</h3>',
+            '<div style="font-size:11px;color:var(--text-muted);margin-top:2px">' + _escH(clientName) + ' · Plan activo (solo visual)</div>',
+          '</div>',
+          '<button type="button" id="planPhotoCloseBtn" class="btn-secondary" style="min-width:44px;min-height:44px;padding:6px 12px;font-size:16px" aria-label="Cerrar imagen del ejercicio">✕</button>',
+        '</div>',
+        '<div id="planPhotoModalBody" style="margin-top:12px">',
+          '<div class="loading-row"><span class="spinner"></span> Cargando catálogo del ejercicio...</div>',
+        '</div>',
+      '</div>'
+    ].join('');
+    document.body.appendChild(ov);
+    var closeBtn = ov.querySelector('#planPhotoCloseBtn');
+    if (closeBtn) closeBtn.onclick = _closePlanExercisePhoto;
+    ov.addEventListener('click', function (ev) { if (ev.target === ov) _closePlanExercisePhoto(); });
+
+    var stillAlive = function () {
+      return !!(currentCoach && currentCoach.uid === uidAtStart && _detailClientId === cidAtStart && _visualSeq === openSeq && document.getElementById('planExercisePhotoModal') === ov);
+    };
+    var bodyEl = ov.querySelector('#planPhotoModalBody');
+
+    try {
+      if (_coachSecondaryLoaded && !_coachSecondaryLoaded.catalogo && typeof _ensureSecondaryLoaded === 'function') {
+        await _ensureSecondaryLoaded('catalogo');
+      } else if (typeof _coachCatalogLoadPromise !== 'undefined' && _coachCatalogLoadPromise) {
+        await _coachCatalogLoadPromise;
+      }
+      if (!stillAlive()) return;
+
+      var resolved = _resolvePlanExerciseCatalogMatch(planEx, _allExercises, uidAtStart, clientGym, window.VDSEN_EXERCISE_VISUAL_CATALOG);
+      var match = resolved.match;
+      if (match && match.coachId !== uidAtStart) {
+        bodyEl.innerHTML = '<div style="padding:12px;border:1px solid rgba(201,59,59,.45);background:rgba(201,59,59,.10);color:#E05A5A;font-size:12px;border-radius:3px">Este ejercicio pertenece a otro coach y no puede modificarse.</div>';
+        return;
+      }
+
+      if (!match && COACH_IMAGE_UPLOAD_ENABLED) {
+        var spec = resolved.createSpec || { name: exTitle, exerciseId: null, gym: clientGym || '' };
+        var declaredCardio = typeof _perfEffType === 'function' && _perfEffType(planEx) === 'cardio';
+        var baseMeta = resolved.genericFallback || {};
+        var newDoc = {
+          name: spec.name || exTitle,
+          coachId: uidAtStart,
+          gym: spec.gym || '',
+          motorPattern: baseMeta.motorPattern || (declaredCardio ? 'Cardio' : ''),
+          equipment: baseMeta.equipment || '',
+          muscleType: baseMeta.muscleType || 'typeI',
+          fatigueCost: baseMeta.fatigueCost || 4,
+          resistanceCurve: baseMeta.resistanceCurve || 'mid',
+          source: 'plan_photo',
+          createdAt: new Date().toISOString(),
+        };
+        if (spec.exerciseId) newDoc.exerciseId = spec.exerciseId;
+        ['instructions', 'setup', 'execution', 'technicalObjective', 'commonErrors'].forEach(function (k) {
+          if (baseMeta[k]) newDoc[k] = baseMeta[k];
+        });
+        var newRef = await addDoc(collection(db, 'exercises'), newDoc);
+        match = Object.assign({ id: newRef.id }, newDoc);
+        _allExercises.push(match);
+        if (!stillAlive()) return;
+      }
+
+      var pidChip = planEx.prescriptionExerciseId ? '<span class="vdsen-chip" style="cursor:default;min-height:26px;font-size:10px">PID: ' + _escH(planEx.prescriptionExerciseId) + '</span>' : '';
+      var scopeLabel = (match && match.gym) ? ('Sede: ' + match.gym) : (resolved.targetGym ? ('Sede: ' + resolved.targetGym) : 'Catálogo general');
+      var scopeChip = '<span class="vdsen-chip" style="cursor:default;min-height:26px;font-size:10px">' + _escH(scopeLabel) + '</span>';
+      var ambigNote = resolved.ambiguous ? '<div style="margin-bottom:10px;padding:8px 10px;border:1px solid rgba(224,160,32,.4);background:rgba(224,160,32,.08);color:#E0A020;font-size:11px;border-radius:3px">Se detectó más de un ejercicio coincidente en tu catálogo; se actualiza el registro prioritario para la vista del cliente.</div>' : '';
+
+      bodyEl.innerHTML = [
+        '<div style="padding:8px 10px;border-left:2px solid var(--accent);background:rgba(198,255,0,.05);font-size:11px;color:var(--text-muted);line-height:1.45;margin-bottom:10px">',
+          'Cambio exclusivamente visual · No reinicia el plan ni modifica PID, bitácoras o autorizaciones del motor.',
+        '</div>',
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">', scopeChip, pidChip, '</div>',
+        ambigNote,
+        '<div id="planPhotoDisabledPreview"></div>',
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">',
+          '<button type="button" id="planPhotoSaveBtn" class="btn-primary" style="min-height:44px;display:none">Guardar fotografía</button>',
+          '<button type="button" id="planPhotoOpenMetaBtn" class="btn-secondary" style="min-height:44px;display:none">Abrir metadata visual</button>',
+          '<span id="planPhotoStatus" style="font-size:12px;color:#E05A5A" aria-live="polite"></span>',
+        '</div>'
+      ].join('');
+
+      var saveEl = bodyEl.querySelector('#planPhotoSaveBtn');
+      var openMetaBtn = bodyEl.querySelector('#planPhotoOpenMetaBtn');
+      var statusEl = bodyEl.querySelector('#planPhotoStatus');
+      var disabledPrev = bodyEl.querySelector('#planPhotoDisabledPreview');
+
+      if (COACH_IMAGE_UPLOAD_ENABLED && window.VDSEN_COACH_IMAGE_MOUNT && window.VDSEN_COACH_IMAGE_UI && window.VDSEN_IMG_CONTROLLER && match && match.id) {
+        saveEl.style.display = '';
+        _visualEditorExercise = {
+          documentId: match.id,
+          id: match.id,
+          coachId: uidAtStart,
+          logicalExerciseId: match.exerciseId || null,
+          prescriptionExerciseId: planEx.prescriptionExerciseId || null,
+        };
+        _vdsenPhotoExercise = match;
+        openSeq = ++_visualSeq;
+
+        var controller = _createCoachImageController();
+        _vdsenPhotoMount = window.VDSEN_COACH_IMAGE_MOUNT.mount({
+          env: window,
+          overlay: ov,
+          saveBtn: saveEl,
+          statusEl: statusEl,
+          ctx: window.VDSEN_VISUAL_EDITOR_CTX,
+          controller: controller,
+          paths: window.VDSEN_IMG_PATHS,
+          buildMetadata: function () { return {}; },
+          read: function () { return ''; },
+          onDone: async function (out) {
+            if (out && out.ok && match) {
+              if (out.removed) {
+                match.imageUrl = '';
+                match.assetRef = '';
+              } else if (out.url) {
+                match.imageUrl = out.url;
+                match.assetRef = out.path || '';
+              }
+            }
+            _closePlanExercisePhoto();
+            try { await loadExerciseCatalog(); } catch (_) {}
+            if (_detailClientId === cidAtStart && _detailActiveTab === 'plan') {
+              var tabCont = document.getElementById('clientDetailTabContent');
+              if (tabCont) _hydratePlanExercisePhotoThumbs(tabCont);
+            }
+          },
+        });
+        saveEl.onclick = function () {
+          if (_vdsenPhotoMount && _vdsenPhotoMount.hasPendingChange()) return;
+          if (statusEl) statusEl.textContent = 'Toma una foto, elige una de la galería o pulsa Eliminar foto antes de guardar.';
+        };
+      } else {
+        var existingSrc = _safeCoachImgSrc(match && match.imageUrl);
+        if (disabledPrev) {
+          var card = document.createElement('div');
+          card.style.cssText = 'padding:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg-elevated)';
+          if (existingSrc) {
+            var im = document.createElement('img');
+            im.alt = 'Foto actual del ejercicio';
+            im.style.cssText = 'max-width:100%;max-height:180px;border-radius:4px;border:1px solid var(--border-strong);display:block;margin-bottom:8px';
+            im.src = existingSrc;
+            card.appendChild(im);
+          }
+          var msg = document.createElement('div');
+          msg.style.cssText = 'font-size:12px;color:var(--text-muted);line-height:1.5';
+          msg.textContent = COACH_IMAGE_UPLOAD_ENABLED
+            ? 'El módulo de carga de imágenes no pudo inicializarse en esta sesión.'
+            : 'Carga de fotografías propias desactivada en esta compilación (COACH_IMAGE_UPLOAD_ENABLED=false) mientras las reglas de Firebase Storage en producción permanezcan en deny-all.';
+          card.appendChild(msg);
+          disabledPrev.appendChild(card);
+        }
+        if (match && match.id && openMetaBtn) {
+          openMetaBtn.style.display = '';
+          openMetaBtn.onclick = function () { _closePlanExercisePhoto(); openVisualMetadataEditor(match); };
+        }
+      }
+    } catch (err) {
+      if (stillAlive() && bodyEl) {
+        bodyEl.innerHTML = '<div style="padding:12px;border:1px solid rgba(201,59,59,.45);background:rgba(201,59,59,.10);color:#E05A5A;font-size:12px;border-radius:3px">No se pudo preparar la imagen del ejercicio.</div>';
+      }
+    }
+  }
+  window._openPlanExercisePhoto = _openPlanExercisePhoto;
 
   // T502: configuración del incremento de carga realizable (paso / discos / cargas disponibles). Es un DATO de
   // configuración del Coach, no una política de progresión: sin valor => UNRESOLVED_EQUIPMENT_INCREMENT.
@@ -8141,6 +8545,7 @@ Técnicas soportadas: "straight", "drop", "sst", "myoreps", "rest-pause", "clust
   let _clientListFilter = 'all';
   let _pendientesFilter = 'all';
   let _coachSecondaryLoaded = { catalogo: false, templates: false, compendio: false };
+  let _coachCatalogLoadPromise = null;
   let _lastCoachRowData = [];
   let _lastDashboardSnapshot = null;
 
@@ -8179,9 +8584,17 @@ Técnicas soportadas: "straight", "drop", "sst", "myoreps", "rest-pause", "clust
   async function _ensureSecondaryLoaded(sectionId) {
     if (!currentCoach) return;
     const coachUid = currentCoach.uid;
-    if ((sectionId === 'catalogo' || sectionId === 'crearPlan') && !_coachSecondaryLoaded.catalogo) {
-      _coachSecondaryLoaded.catalogo = true;
-      try { await loadExerciseCatalog(); } catch (_) { _coachSecondaryLoaded.catalogo = false; }
+    if (sectionId === 'catalogo' || sectionId === 'crearPlan') {
+      if (_coachCatalogLoadPromise) {
+        try { await _coachCatalogLoadPromise; } catch (_) {}
+      } else if (!_coachSecondaryLoaded.catalogo) {
+        _coachSecondaryLoaded.catalogo = true;
+        const p = Promise.resolve(loadExerciseCatalog());
+        _coachCatalogLoadPromise = p;
+        try { await p; }
+        catch (_) { _coachSecondaryLoaded.catalogo = false; }
+        finally { if (_coachCatalogLoadPromise === p) _coachCatalogLoadPromise = null; }
+      }
     }
     if (sectionId === 'templates' && !_coachSecondaryLoaded.templates) {
       _coachSecondaryLoaded.templates = true;
@@ -17753,6 +18166,43 @@ El esfuerzo no es negociable.
     }
   };
 
+  function _hydratePlanExercisePhotoThumbs(cont) {
+    if (!cont || !currentCoach || !_detailClientId || !_detailPlanData) return;
+    const c = _detailClientData || {};
+    const p = _detailPlanData || {};
+    const days = Array.isArray(p.days) ? p.days : [];
+    const clientGym = ((_detailFichaData && _detailFichaData.data && (_detailFichaData.data.gimnasio || _detailFichaData.data.gym)) || c.gimnasio || c.gym || p.gym || p.sede || '');
+    const visualCatalog = typeof window !== 'undefined' ? window.VDSEN_EXERCISE_VISUAL_CATALOG : null;
+    cont.querySelectorAll('.vdsen-plan-ex-row[data-day-idx][data-ex-idx]').forEach(row => {
+      const di = Number(row.getAttribute('data-day-idx'));
+      const ei = Number(row.getAttribute('data-ex-idx'));
+      const ex = days[di] && days[di].exercises && days[di].exercises[ei];
+      if (!ex) return;
+      const res = _resolvePlanExerciseCatalogMatch(ex, _allExercises, currentCoach.uid, clientGym, visualCatalog);
+      const safeSrc = _safeCoachImgSrc(res && res.match && res.match.imageUrl);
+      const thumbEl = row.querySelector('.vdsen-ex-thumb');
+      const btnEl = row.querySelector('.vdsen-ex-photo-btn');
+      const lblEl = btnEl && btnEl.querySelector('.vdsen-ex-photo-lbl');
+      if (thumbEl) {
+        while (thumbEl.firstChild) thumbEl.removeChild(thumbEl.firstChild);
+        if (safeSrc) {
+          const im = document.createElement('img');
+          im.alt = String(ex.exerciseName || ex.nombre || 'Ejercicio');
+          im.src = safeSrc;
+          thumbEl.appendChild(im);
+        } else {
+          const ph = document.createElement('span');
+          ph.setAttribute('aria-hidden', 'true');
+          ph.style.cssText = 'font-size:10px;color:var(--text-muted);font-weight:700';
+          ph.textContent = '—';
+          thumbEl.appendChild(ph);
+        }
+      }
+      if (btnEl) btnEl.classList.toggle('has-photo', !!safeSrc);
+      if (lblEl) lblEl.textContent = safeSrc ? 'Foto ✓' : 'Imagen';
+    });
+  }
+
   function _renderClientTabPlan(cont) {
     const clientId = _detailClientId;
     const c = _detailClientData;
@@ -17820,10 +18270,11 @@ El esfuerzo no es negociable.
     let planEditorHtml = '';
     let overflowItemsHtml = '';
     if (c.activePlanId && p) {
-      const dayList = (p.days || []).map(d => {
+      const _camSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
+      const dayList = (p.days || []).map((d, di) => {
         const _nmCoach = { fundamental:'#FF6644', suplementario:'#FF9900', asistencia_mayor:'#CCAA00', asistencia_secundario:'#777' };
         const _nmLbl   = { fundamental:'F', suplementario:'S', asistencia_mayor:'AM', asistencia_secundario:'AS' };
-        const exList = (d.exercises || []).map(e => {
+        const exList = (d.exercises || []).map((e, ei) => {
           const sets = (e.sets || []);
           const numSets = sets.length || 3;
           const reps = _setsRepsLabel(sets);
@@ -17834,11 +18285,19 @@ El esfuerzo no es negociable.
           const vvBadge = _vv && _vv.semana_variacion != null
             ? `<span title="${_vv.ejercicio_sustituto||'sustituto'} desde sem ${_vv.semana_variacion}${_vv.nivel_sustituto?' ('+_vv.nivel_sustituto+')':''}" style="font-size:9px;padding:1px 5px;border-radius:2px;background:rgba(100,150,255,.12);border:1px solid rgba(100,150,255,.3);color:#7aabff;cursor:default">↻ S${_vv.semana_variacion}</span>`
             : '';
-          return `<div class="flex items-center gap-2 ml-4 py-1">
-            ${nmBadge}${vvBadge}
-            <span class="text-sm text-white">${_escH(e.exerciseName)}</span>
-            <span class="text-xs px-2 py-0.5 rounded" style="background:rgba(244,244,240,.1);border:1px solid rgba(244,244,240,.25);color:#F4F4F0">${numSets}×${reps}</span>
-            <span class="text-xs text-[#888]">RIR ${rir}</span>
+          const exDisp = e.exerciseName || e.nombre || ('Ejercicio ' + (ei + 1));
+          return `<div class="vdsen-plan-ex-row" data-day-idx="${di}" data-ex-idx="${ei}">
+            <div class="vdsen-plan-ex-main">
+              <span class="vdsen-ex-thumb" aria-hidden="true"></span>
+              ${nmBadge}${vvBadge}
+              <span class="text-sm text-white">${_escH(exDisp)}</span>
+              <span class="text-xs px-2 py-0.5 rounded" style="background:rgba(244,244,240,.1);border:1px solid rgba(244,244,240,.25);color:#F4F4F0">${numSets}×${reps}</span>
+              <span class="text-xs text-[#888]">RIR ${rir}</span>
+            </div>
+            <button type="button" class="vdsen-ex-photo-btn" data-plan-ex-photo="${di}:${ei}" onclick="window._openPlanExercisePhoto(${di},${ei})" aria-label="Imagen de ${_escH(exDisp)}">
+              ${_camSvg}
+              <span class="vdsen-ex-photo-lbl">Imagen</span>
+            </button>
           </div>`;
         }).join("") || '<span class="text-xs text-[#555] ml-4">Sin ejercicios</span>';
         return `<div class="mb-3"><div class="font-medium text-[#F4F4F0] text-sm mb-1">${_escH(d.label)}</div>${exList}</div>`;
@@ -17935,6 +18394,20 @@ El esfuerzo no es negociable.
         <div id="supplement-view">${renderSupplementView(c.supplementPlan || {})}</div>
         <div id="supplement-editor" style="display:none;">${renderSupplementEditor(c.supplementPlan || {})}</div>
       </div>`;
+    _hydratePlanExercisePhotoThumbs(cont);
+    if (_coachSecondaryLoaded && !_coachSecondaryLoaded.catalogo && typeof _ensureSecondaryLoaded === 'function') {
+      _ensureSecondaryLoaded('catalogo').then(function () {
+        if (_detailClientId !== clientId || _detailActiveTab !== 'plan') return;
+        const liveCont = document.getElementById('clientDetailTabContent');
+        if (liveCont) _hydratePlanExercisePhotoThumbs(liveCont);
+      }).catch(function () {});
+    } else if (typeof _coachCatalogLoadPromise !== 'undefined' && _coachCatalogLoadPromise) {
+      _coachCatalogLoadPromise.then(function () {
+        if (_detailClientId !== clientId || _detailActiveTab !== 'plan') return;
+        const liveCont = document.getElementById('clientDetailTabContent');
+        if (liveCont) _hydratePlanExercisePhotoThumbs(liveCont);
+      }).catch(function () {});
+    }
   }
 
   // ========== FASE 58 — COACH CLIENT-PLAN MIRROR VIEW ==========
@@ -27356,19 +27829,17 @@ El esfuerzo no es negociable.
   document.addEventListener('keydown', ev => {
     if (ev.key !== 'Escape') return;
     if (window._vdsenMenu && window._vdsenMenu.isOpen()) {
-      window._vdsenMenu.closeAll({ restoreFocus: true });
-      ev.preventDefault();
-      ev.stopPropagation();
-      return;
+      window._vdsenMenu.closeAll({ restoreFocus: true }); ev.preventDefault(); ev.stopPropagation(); return;
+    }
+    if (document.getElementById('planExercisePhotoModal')) {
+      _closePlanExercisePhoto(); ev.preventDefault(); ev.stopPropagation(); return;
     }
     const mm = document.getElementById('modalMoreMenu');
-    if (mm && mm.style.display === 'block') { _toggleClientModalMoreMenu(true); return; }
+    if (mm && mm.style.display === 'block') return _toggleClientModalMoreMenu(true);
     const pm = document.getElementById('planMoreMenu');
-    if (pm && pm.style.display === 'block' && typeof window._togglePlanMoreMenu === 'function') {
-      window._togglePlanMoreMenu(true); return;
-    }
+    if (pm && pm.style.display === 'block') return window._togglePlanMoreMenu(true);
     const cm = document.getElementById('clientModal');
-    if (cm && cm.style.display === 'flex' && typeof closeClientModal === 'function') closeClientModal();
+    if (cm && cm.style.display === 'flex') closeClientModal();
   });
 </script>
 

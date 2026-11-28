@@ -36,11 +36,13 @@
         };
       },
       generation: { token: function () { return ctx.token(); } },
+      onStateChange: opts.onStateChange,
     });
 
     var handle = section.attach(overlay, saveBtn);
 
     function buildMetadata() {
+      if (typeof opts.buildMetadata === 'function') return opts.buildMetadata();
       return root.VDSEN_VISUAL_METADATA_EDITOR.buildPatch({
         gym: opts.read('vm-gym'),
         equipment: opts.read('vm-equipment'),

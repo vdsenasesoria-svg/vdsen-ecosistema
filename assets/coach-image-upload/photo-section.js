@@ -117,9 +117,20 @@
       }
       var ex = deps.getContext().exercise || {};
       var hasAny = !!(currentManagedPath() || persistedPreviewSrc() || ex.assetRef);
-      if (els.pick) els.pick.textContent = (staged || hasAny) ? 'Cambiar foto' : 'Subir foto';
+      if (els.pick) els.pick.textContent = (staged || hasAny) ? 'Cambiar en galería' : 'Elegir de galería';
       if (els.discard) els.discard.style.display = (staged || removeStaged) ? '' : 'none';
       if (els.remove) els.remove.style.display = (hasAny && !removeStaged) ? '' : 'none';
+      if (typeof deps.onStateChange === 'function') {
+        try {
+          deps.onStateChange({
+            origin: originLabel(),
+            staged: !!staged,
+            removeStaged: !!removeStaged,
+            hasAny: hasAny,
+            status: els.status ? els.status.textContent : '',
+          });
+        } catch (e) {}
+      }
     }
 
     async function onFileChosen(file) {
@@ -131,6 +142,7 @@
       revokePreview();
       staged = null;
       if (els.pick) els.pick.disabled = true;
+      if (els.cameraBtn) els.cameraBtn.disabled = true;
       setStatus(MESSAGES.PROCESSING);
       try {
         var token = deps.generation.token();
@@ -148,6 +160,7 @@
         if (myGen === gen) { staged = null; revokePreview(); setStatus(MESSAGES.INVALID); }
       } finally {
         if (els.pick) els.pick.disabled = false;
+        if (els.cameraBtn) els.cameraBtn.disabled = false;
         if (myGen === gen) render();
       }
     }
@@ -184,7 +197,7 @@
             currentPath: currentManagedPath(), metadata: metadata,
           });
           if (!rr.ok) return { handled: true, ok: false, message: rr.message };
-          return { handled: true, ok: true, message: 'Foto eliminada', cleanup: rr.cleanup };
+          return { handled: true, ok: true, removed: true, removedPath: rr.removedPath || null, message: 'Foto eliminada', cleanup: rr.cleanup };
         }
         setStatus(MESSAGES.UPLOADING);
         var r = await deps.controllerApi.savePrepared(staged, {
@@ -194,7 +207,7 @@
         if (!r.ok) return { handled: true, ok: false, message: r.message };
         setStatus(MESSAGES.SAVING);
         // A PENDING old-object cleanup is NOT a failure: Firestore already points at the new object.
-        return { handled: true, ok: true, message: r.warning || 'Imagen actualizada', cleanup: r.cleanup };
+        return { handled: true, ok: true, url: r.url, path: r.path, replaced: !!r.replaced, message: r.warning || 'Imagen actualizada', cleanup: r.cleanup };
       } catch (e) {
         // Includes the Storage-unavailable case, so the coach gets a friendly message instead of a raw
         // getProvider exception, and the rest of the editor stays usable.
@@ -206,19 +219,22 @@
     function attach(overlay, saveBtn) {
       var box = deps.env.document.createElement('div');
       box.id = 'vm-photo-section';
-      box.style.cssText = 'margin:14px 0;padding:12px;border:1px solid #444;border-radius:8px;background:#101010';
-      box.innerHTML =
-        '<div style="font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#9ab;margin-bottom:8px">Foto del ejercicio</div>' +
-        '<div id="vm-photo-preview"></div>' +
-        '<div id="vm-photo-source" style="margin-top:8px;font-size:12px;color:#c8a54a"></div>' +
-        '<div id="vm-photo-meta" style="font-size:11px;color:#888;min-height:14px"></div>' +
-        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">' +
-          '<button type="button" id="vm-photo-pick" class="btn-secondary">Subir foto</button>' +
-          '<button type="button" id="vm-photo-discard" class="btn-secondary" style="display:none">Descartar selección</button>' +
-          '<button type="button" id="vm-photo-remove" class="btn-secondary" style="display:none">Eliminar foto</button>' +
-        '</div>' +
-        '<input type="file" id="vm-photo-file" accept="image/jpeg,image/png,image/webp" style="display:none">' +
-        '<div id="vm-photo-status" style="font-size:12px;min-height:16px;margin-top:6px" aria-live="polite"></div>';
+      box.style.cssText = 'width:100%;box-sizing:border-box;flex:1 0 100%;margin:14px 0;padding:12px;border:1px solid #2A2A2A;border-radius:4px;background:#111111';
+      box.innerHTML = [
+        '<div style="font-size:11px;letter-spacing:1.1px;text-transform:uppercase;color:#B4B4AE;font-weight:700;margin-bottom:8px">Foto del ejercicio</div>',
+        '<div id="vm-photo-preview"></div>',
+        '<div id="vm-photo-source" style="margin-top:8px;font-size:12px;color:#C6FF00;font-weight:600"></div>',
+        '<div id="vm-photo-meta" style="font-size:11px;color:#9A9A94;min-height:14px"></div>',
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">',
+          '<button type="button" id="vm-photo-camera-btn" class="btn-secondary" style="min-height:44px;border-color:rgba(198,255,0,.55);color:#C6FF00">Tomar foto</button>',
+          '<button type="button" id="vm-photo-pick" class="btn-secondary" style="min-height:44px">Elegir de galería</button>',
+          '<button type="button" id="vm-photo-discard" class="btn-secondary" style="display:none;min-height:44px">Descartar selección</button>',
+          '<button type="button" id="vm-photo-remove" class="btn-secondary" style="display:none;min-height:44px;border-color:rgba(201,59,59,.55);color:#E05A5A">Eliminar foto</button>',
+        '</div>',
+        '<input type="file" id="vm-photo-camera" accept="image/jpeg,image/png,image/webp" capture="environment" style="display:none">',
+        '<input type="file" id="vm-photo-file" accept="image/jpeg,image/png,image/webp" style="display:none">',
+        '<div id="vm-photo-status" style="font-size:12px;min-height:16px;margin-top:8px;color:#F4F4F0" aria-live="polite"></div>',
+      ].join('');
       saveBtn.parentNode.insertBefore(box, saveBtn);
 
       els = {
@@ -226,6 +242,8 @@
         preview: box.querySelector('#vm-photo-preview'),
         origin: box.querySelector('#vm-photo-source'),
         meta: box.querySelector('#vm-photo-meta'),
+        cameraBtn: box.querySelector('#vm-photo-camera-btn'),
+        camera: box.querySelector('#vm-photo-camera'),
         pick: box.querySelector('#vm-photo-pick'),
         discard: box.querySelector('#vm-photo-discard'),
         remove: box.querySelector('#vm-photo-remove'),
@@ -233,12 +251,15 @@
         status: box.querySelector('#vm-photo-status'),
       };
 
-      els.pick.onclick = function () { els.file.click(); };
-      els.file.onchange = function () {
-        var f = els.file.files && els.file.files[0];
-        els.file.value = '';   // cleared so choosing the SAME file twice still fires a change event
+      var handlePickedFile = function (inputEl) {
+        var f = inputEl && inputEl.files && inputEl.files[0];
+        if (inputEl) inputEl.value = '';   // cleared so choosing the SAME file twice still fires a change event
         onFileChosen(f);
       };
+      if (els.cameraBtn) els.cameraBtn.onclick = function () { if (els.camera) els.camera.click(); };
+      if (els.camera) els.camera.onchange = function () { handlePickedFile(els.camera); };
+      els.pick.onclick = function () { els.file.click(); };
+      els.file.onchange = function () { handlePickedFile(els.file); };
       els.discard.onclick = discard;
       els.remove.onclick = stageRemoval;
 
