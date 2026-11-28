@@ -1,9 +1,9 @@
 {
-  "runtime_sha": "8b86bd9b69ee2760be4fff650adb2c2c2c1c462a",
-  "production_deployment": "dpl_2UQFqfwdGEMyu5wDzAAAPewkkRPR",
+  "runtime_sha": "220b63f0fd04e492a0fee6e672816fc8108ba488",
+  "production_deployment": "dpl_6MGQMrVHCm9WtQ5AbZ9pEM6zm8Z3",
   "rollback_deployment": "dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8",
   "rollback_runtime_sha": "3fc264e23d67a8ecb1611a6c8af04ad739f422da",
-  "target_deployment": "dpl_2UQFqfwdGEMyu5wDzAAAPewkkRPR",
+  "target_deployment": "dpl_6MGQMrVHCm9WtQ5AbZ9pEM6zm8Z3",
   "production_project": "prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN",
   "vercel_team": "team_VZc5H7Q1DBIJ3g0mwrSBz1o8",
   "production_origin": "https://vdsen-ecosistema.vercel.app",
@@ -41,19 +41,19 @@
     "preview_production_env_verified": true,
     "human_ux_approved": true
   },
-  "observation_source": "T883 read-only Vercel dispatch provenance sync after official APP-ONLY release run 45920885555 (official ZIP artifact app-release-result-45920885555 id 15164905632 digest sha256:a44bafc4bd35f8223099bf846e1158a1dd61eb1a89ef3503a8d07768ca5345aa). Production serves dpl_2UQFqfwdGEMyu5wDzAAAPewkkRPR (runtime 8b86bd9b69ee2760be4fff650adb2c2c2c1c462a, candidate dpl_6Mam5vLUHVoj2vKc8WYBQvaiikRZ, 46 verified surfaces, state=VERIFIED, Numeric Apply DISARMED, rules_mutated=false, main_unchanged=true). Immediate previous OFF production deployment is dpl_9XWGFYHPi9AjFh7skxvPaZzXFaMU (runtime 68622cdf68c88adb30dc15cd0f44ee188c46b644, run 45837357054, digest sha256:7b482e6b9ec2a4a2128fb7d82998622dd90c9ef940c37c1c8f3576fe9d02daa9; restored from T883 pilot deployment dpl_J21BSoZ8A8qzKcJZNBikwb9anjAH in run 45920804206 after fleet STOP run 45920754671). Live SAFE_OFF_BASELINE anchor remains dpl_4H91D85NYxvq4FSaJRvtdzRH3bcT (runtime af2629a8e6f9f4473bd583005d5ed2a5f2be9d5f, run 44662166798, official ZIP digest sha256:05e67f626c98e128963d55485dff86d11279072a8215ca2cdb3702b87c404b82). Historical rollback provenance remains dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8 (runtime 3fc264e23d67a8ecb1611a6c8af04ad739f422da, run 43132135716). Published Firestore rules T788 (sha256 486606574a2f10d65212cedb26fe7f73686e5d6610995e9c4bfe4a424972c460) from T810 run 43620978036.",
+  "observation_source": "T257 read-only Vercel dispatch provenance sync after official APP-ONLY release run 46095085499 (official ZIP artifact app-release-result-46095085499 id 15242862621 digest sha256:4766ac99ab941994f2b5cb78363844afa93de129d592746cd5da2a42fc6bebe4). Production serves dpl_6MGQMrVHCm9WtQ5AbZ9pEM6zm8Z3 (runtime 220b63f0fd04e492a0fee6e672816fc8108ba488, candidate dpl_9ayphTxxptqdgWvaLuxo9qP69L7W, 46 verified surfaces, state=VERIFIED, Numeric Apply DISARMED, rules_mutated=false, main_unchanged=true). Immediate previous OFF production deployment is dpl_2UQFqfwdGEMyu5wDzAAAPewkkRPR (runtime 8b86bd9b69ee2760be4fff650adb2c2c2c1c462a, run 45920885555, digest sha256:a44bafc4bd35f8223099bf846e1158a1dd61eb1a89ef3503a8d07768ca5345aa; restored from T883 pilot deployment dpl_Ej3zpsMw1vHmmWPr9FPa9MKtBzbU in run 46094963968 after fleet STOP run 46094894565). Live SAFE_OFF_BASELINE anchor remains dpl_4H91D85NYxvq4FSaJRvtdzRH3bcT (runtime af2629a8e6f9f4473bd583005d5ed2a5f2be9d5f, run 44662166798, official ZIP digest sha256:05e67f626c98e128963d55485dff86d11279072a8215ca2cdb3702b87c404b82). Historical rollback provenance remains dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8 (runtime 3fc264e23d67a8ecb1611a6c8af04ad739f422da, run 43132135716). Published Firestore rules T788 (sha256 486606574a2f10d65212cedb26fe7f73686e5d6610995e9c4bfe4a424972c460) from T810 run 43620978036.",
   "release_mode": "app_only",
   "app_release": {
-    "runtime_sha": "8b86bd9b69ee2760be4fff650adb2c2c2c1c462a",
-    "deployment": "dpl_2UQFqfwdGEMyu5wDzAAAPewkkRPR",
+    "runtime_sha": "220b63f0fd04e492a0fee6e672816fc8108ba488",
+    "deployment": "dpl_6MGQMrVHCm9WtQ5AbZ9pEM6zm8Z3",
     "promotion_model": "staged_production",
-    "previous_deployment": "dpl_9XWGFYHPi9AjFh7skxvPaZzXFaMU",
-    "previous_runtime_sha": "68622cdf68c88adb30dc15cd0f44ee188c46b644",
+    "previous_deployment": "dpl_2UQFqfwdGEMyu5wDzAAAPewkkRPR",
+    "previous_runtime_sha": "8b86bd9b69ee2760be4fff650adb2c2c2c1c462a",
     "safe_recovery_deployment": "dpl_8A6T9EkMNThqwjYeLZGt2xcetoK8",
     "safe_recovery_runtime_sha": "3fc264e23d67a8ecb1611a6c8af04ad739f422da",
     "verified_surfaces": 46,
-    "source_release_run": "45920885555",
-    "completed_at": "2026-11-27T01:18:57Z"
+    "source_release_run": "46095085499",
+    "completed_at": "2026-11-28T02:00:32Z"
   },
   "published_rules": {
     "sha256": "486606574a2f10d65212cedb26fe7f73686e5d6610995e9c4bfe4a424972c460",
