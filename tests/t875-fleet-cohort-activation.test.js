@@ -126,16 +126,17 @@ test('staged recovery attestation binds the seal and refuses unverified or alrea
   const verifyValues = (token = issue()) => cohortOps.verifyFleetDeploymentLive(
     'test-token', deployment.id, SHA, shards.map(shard => shard.name), probeFetcher, {expectedLive,digest}, shards, token);
   await assert.rejects(verifyValues(''), /RECOVERY_PROBE_AUTH_UNAVAILABLE/);
-  await assert.rejects(verifyValues('wrong-token'), /RECOVERY_RUNTIME_PROBE_MISMATCH/);
+  await assert.rejects(verifyValues('wrong-token'), /RECOVERY_PROBE_OIDC_ERROR:AUTH_INVALID/);
   for (const claims of [{aud:'vdsen-recovery-shards:dpl_other'}, {environment:'Preview'}, {ref:'refs/heads/main'},
-    {workflow_ref:repo+'/.github/workflows/vdsen-ayrton-window.yml@'+ref}, {repository:'other/repo'}, {exp:now-1}]) {
-    await assert.rejects(verifyValues(issue(claims)), /RECOVERY_RUNTIME_PROBE_MISMATCH/);
+    {workflow_ref:repo+'/.github/workflows/vdsen-ayrton-window.yml@'+ref}, {repository:'other/repo'}]) {
+    await assert.rejects(verifyValues(issue(claims)), /RECOVERY_PROBE_OIDC_ERROR:OIDC_FORBIDDEN/);
   }
+  await assert.rejects(verifyValues(issue({exp:now-1})), /RECOVERY_PROBE_OIDC_ERROR:AUTH_EXPIRED/);
   runtimeEnv[shards[0].name] = '[]';
-  await assert.rejects(verifyValues(), /RECOVERY_RUNTIME_PROBE_MISMATCH/);
+  await assert.rejects(verifyValues(), /RECOVERY_PROBE_WINDOW_COUNT_MISMATCH/);
   runtimeEnv[shards[0].name] = JSON.stringify(shards[0].windows);
   runtimeEnv.VERCEL_DEPLOYMENT_ID = 'dpl_wrong';
-  await assert.rejects(verifyValues(), /RECOVERY_RUNTIME_PROBE_MISMATCH/);
+  await assert.rejects(verifyValues(), /RECOVERY_PROBE_OIDC_ERROR:OIDC_FORBIDDEN/);
   runtimeEnv.VERCEL_DEPLOYMENT_ID = deployment.id;
   assert.equal((await verifyValues()).attested, true);
   deployment.env.push('VDSEN_NUMERIC_COHORT_6');
@@ -277,4 +278,198 @@ test('T875.2 Sharded env runtimeAuthorization + cryptographic pidsHash verificat
   };
   assert.equal(consumer.inCanaryScope(twoCanary, 'u_01', u1.pids[0]), false);
   assert.equal(consumer.inCanaryScope(twoCanary, 'u_12', manifest.cohorts[1].clients[1].pids[0]), true);
+});
+
+test('attestRecoveryShards differentiates probe failures, sends bypass header safely, and redacts secrets', async () => {
+  const { computeServedCohortDigest } = require(path.join(root, 'api/_planActivationSync.js'));
+  const deployment = { id: 'dpl_stageProbe1', url: 'staged-probe.vercel.app' };
+  const shards = [{
+    name: 'VDSEN_NUMERIC_COHORT_1',
+    windows: [{ uid: 'client_01', planId: 'plan_01', pidsHash: 'h1', pidCount: 33, operationId: 'op1', runtimeSha: SHA, expiresAt: EXPIRES, cohortId: 'cohort-01' }],
+  }];
+  const expectedDigest = computeServedCohortDigest(shards[0].windows);
+  const encode = v => Buffer.from(JSON.stringify(v)).toString('base64url');
+  const nowSec = Math.floor(Date.now() / 1000);
+  const token = `${encode({ alg: 'RS256', kid: 'k1' })}.${encode({
+    iss: 'https://token.actions.githubusercontent.com',
+    aud: 'vdsen-recovery-shards:' + deployment.id,
+    sub: 'repo:vdsenasesoria-svg/vdsen-ecosistema:environment:Production',
+    repository: 'vdsenasesoria-svg/vdsen-ecosistema',
+    ref: 'refs/heads/codex/client-app-next',
+    event_name: 'workflow_dispatch',
+    environment: 'Production',
+    workflow_ref: 'vdsenasesoria-svg/vdsen-ecosistema/.github/workflows/vdsen-numeric-pilot.yml@refs/heads/codex/client-app-next',
+    run_attempt: '1',
+    iat: nowSec,
+    exp: nowSec + 300,
+  })}.sig_secret_never_log`;
+  const bypassSecret = 'bypass_secret_value_never_log';
+
+  const runFailureCase = async (fetcher, opts = {}) => {
+    let caught;
+    try {
+      await cohortOps.attestRecoveryShards(deployment, shards, SHA, token, fetcher, {
+        protectionBypassSecret: bypassSecret,
+        ssoProtectionType: 'standard_protection',
+        ...opts,
+      });
+    } catch (err) {
+      caught = err;
+    }
+    assert.ok(caught, 'expected attestRecoveryShards to reject');
+    const serialized = JSON.stringify({ message: caught.message, diagnostic: caught.diagnostic || null });
+    assert.ok(!serialized.includes(bypassSecret), 'bypass secret must never appear in error or diagnostic');
+    assert.ok(!serialized.includes('sig_secret_never_log'), 'raw JWT signature must never appear in error or diagnostic');
+    return caught;
+  };
+
+  // Transport error
+  let err = await runFailureCase(async () => { throw new Error('ECONNRESET'); });
+  assert.equal(err.message, 'RECOVERY_PROBE_TRANSPORT_ERROR');
+
+  // Timeout
+  err = await runFailureCase(async () => { const e = new Error('timed out'); e.name = 'TimeoutError'; throw e; });
+  assert.equal(err.message, 'RECOVERY_PROBE_TIMEOUT');
+
+  // Vercel protection: 302 redirect, redirect fetch error, and 401 HTML
+  err = await runFailureCase(async () => ({ status: 302, headers: new Headers({ location: 'https://vercel.com/sso-api' }), text: async () => '' }));
+  assert.equal(err.message, 'RECOVERY_PROBE_DEPLOYMENT_PROTECTION');
+  assert.equal(err.diagnostic.vercelProtectionDetected, true);
+
+  err = await runFailureCase(async () => { throw new TypeError('fetch failed', { cause: new Error('unexpected redirect') }); });
+  assert.equal(err.message, 'RECOVERY_PROBE_DEPLOYMENT_PROTECTION');
+  assert.equal(err.diagnostic.vercelProtectionDetected, true);
+
+  err = await runFailureCase(async () => ({
+    status: 401,
+    headers: new Headers({ 'content-type': 'text/html; charset=utf-8' }),
+    text: async () => '<html><title>Authentication Required - Vercel</title></html>',
+  }));
+  assert.equal(err.message, 'RECOVERY_PROBE_DEPLOYMENT_PROTECTION');
+  assert.equal(err.diagnostic.vercelProtectionDetected, true);
+
+  // OIDC error JSON
+  err = await runFailureCase(async () => ({
+    status: 403,
+    headers: new Headers({ 'content-type': 'application/json' }),
+    text: async () => JSON.stringify({ error: 'OIDC_FORBIDDEN' }),
+  }));
+  assert.equal(err.message, 'RECOVERY_PROBE_OIDC_ERROR:OIDC_FORBIDDEN');
+  assert.equal(err.diagnostic.apiError, 'OIDC_FORBIDDEN');
+  assert.equal(err.diagnostic.oidcClaims.aud, 'vdsen-recovery-shards:' + deployment.id);
+
+  err = await runFailureCase(async () => ({
+    status: 403,
+    headers: new Headers({ 'content-type': 'application/json' }),
+    text: async () => JSON.stringify({ error: 'DEPLOYMENT_ID_UNAVAILABLE' }),
+  }));
+  assert.equal(err.message, 'RECOVERY_PROBE_OIDC_ERROR:DEPLOYMENT_ID_UNAVAILABLE');
+
+  // Other HTTP status
+  err = await runFailureCase(async () => ({
+    status: 502,
+    headers: new Headers({ 'content-type': 'application/json' }),
+    text: async () => JSON.stringify({ error: 'UPSTREAM_BAD_GATEWAY' }),
+  }));
+  assert.equal(err.message, 'RECOVERY_PROBE_HTTP_502');
+
+  // Invalid JSON
+  err = await runFailureCase(async () => ({
+    status: 200,
+    headers: new Headers({ 'content-type': 'text/plain' }),
+    text: async () => 'not-json',
+  }));
+  assert.equal(err.message, 'RECOVERY_PROBE_INVALID_JSON');
+
+  // Field mismatches
+  const validPayload = {
+    schema: 'vdsen-served-cohort-probe-v1',
+    deploymentId: deployment.id,
+    cohortId: 'cohort-01',
+    runtimeSha: SHA,
+    windowCount: 1,
+    windowsDigest: expectedDigest,
+  };
+  const mismatchCases = [
+    [{ schema: 'wrong-schema' }, 'RECOVERY_PROBE_SCHEMA_MISMATCH'],
+    [{ deploymentId: 'dpl_other' }, 'RECOVERY_PROBE_DEPLOYMENT_ID_MISMATCH'],
+    [{ cohortId: 'cohort-02' }, 'RECOVERY_PROBE_COHORT_ID_MISMATCH'],
+    [{ runtimeSha: 'b'.repeat(40) }, 'RECOVERY_PROBE_RUNTIME_SHA_MISMATCH'],
+    [{ windowCount: 99 }, 'RECOVERY_PROBE_WINDOW_COUNT_MISMATCH'],
+    [{ windowsDigest: '0'.repeat(64) }, 'RECOVERY_PROBE_DIGEST_MISMATCH'],
+  ];
+  for (const [override, expectedCode] of mismatchCases) {
+    err = await runFailureCase(async () => ({
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      text: async () => JSON.stringify({ ...validPayload, ...override }),
+    }));
+    assert.equal(err.message, expectedCode);
+  }
+
+  // Sends x-vercel-protection-bypass and succeeds on valid probe
+  let seenHeaders = null;
+  const ok = await cohortOps.attestRecoveryShards(deployment, shards, SHA, token, async (_url, reqOpts) => {
+    seenHeaders = reqOpts.headers;
+    return {
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      text: async () => JSON.stringify(validPayload),
+    };
+  }, { protectionBypassSecret: bypassSecret });
+  assert.equal(seenHeaders.authorization, 'Bearer ' + token);
+  assert.equal(seenHeaders['x-vercel-protection-bypass'], bypassSecret);
+  assert.deepEqual(ok, [{ cohortId: 'cohort-01', windowCount: 1, windowsDigest: expectedDigest }]);
+
+  // readVercelAutomationBypass picks up automation-bypass key from project config
+  const bypassInfo = await cohortOps.readVercelAutomationBypass('vercel-token', async () => ({
+    status: 200,
+    json: async () => ({
+      ssoProtection: { deploymentType: 'standard_protection' },
+      protectionBypass: {
+        otherKey: { scope: 'shareable-link' },
+        [bypassSecret]: { scope: 'automation-bypass' },
+      },
+    }),
+  }));
+  assert.equal(bypassInfo.secret, bypassSecret);
+  assert.equal(bypassInfo.ssoProtectionType, 'standard_protection');
+  assert.equal(bypassInfo.hasAutomationBypass, true);
+});
+
+test('findReusableRecoveryCandidate selects matching READY candidate and skips live or mismatched deployments', async () => {
+  const digest = 'c'.repeat(64);
+  const expectedLive = 'dpl_liveCurrent';
+  const shardNames = ['VDSEN_NUMERIC_COHORT_1', 'VDSEN_NUMERIC_COHORT_2'];
+  const deploymentsList = [
+    // Matches everything, EXCEPT it is the live deployment
+    { uid: expectedLive, readyState: 'READY', target: 'production', createdAt: 500, meta: { githubCommitSha: SHA, vdsenRecoverySeal: digest } },
+    // Not READY
+    { uid: 'dpl_building', readyState: 'BUILDING', target: 'production', createdAt: 400, meta: { githubCommitSha: SHA, vdsenRecoverySeal: digest } },
+    // Wrong seal
+    { uid: 'dpl_wrongSeal', readyState: 'READY', target: 'production', createdAt: 300, meta: { githubCommitSha: SHA, vdsenRecoverySeal: 'd'.repeat(64) } },
+    // Matching newest candidate
+    { uid: 'dpl_goodNew', readyState: 'READY', target: 'production', createdAt: 200, meta: { githubCommitSha: SHA, vdsenRecoverySeal: digest } },
+    // Older matching candidate
+    { uid: 'dpl_goodOld', readyState: 'READY', target: 'production', createdAt: 100, meta: { githubCommitSha: SHA, vdsenRecoverySeal: digest } },
+  ];
+  const fullById = {
+    dpl_goodNew: {
+      id: 'dpl_goodNew', url: 'good-new.vercel.app', readyState: 'READY', target: 'production',
+      meta: { githubCommitSha: SHA, vdsenRecoverySeal: digest },
+      env: ['AUTONOMOUS_PROGRESSION_ENABLED', ...shardNames],
+    },
+  };
+  const fetcher = async (url) => {
+    if (url.includes('/v6/deployments?')) return { status: 200, json: async () => ({ deployments: deploymentsList }) };
+    if (url.includes('/v13/deployments/dpl_goodNew')) return { status: 200, json: async () => fullById.dpl_goodNew };
+    throw new Error('Unexpected URL: ' + url);
+  };
+  const found = await cohortOps.findReusableRecoveryCandidate('tok', SHA, digest, expectedLive, shardNames, fetcher);
+  assert.equal(found && found.id, 'dpl_goodNew');
+
+  // Returns null when shard set mismatches
+  fullById.dpl_goodNew.env = ['AUTONOMOUS_PROGRESSION_ENABLED', 'VDSEN_NUMERIC_COHORT_1'];
+  const missingShard = await cohortOps.findReusableRecoveryCandidate('tok', SHA, digest, expectedLive, shardNames, fetcher);
+  assert.equal(missingShard, null);
 });
